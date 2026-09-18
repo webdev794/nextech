@@ -1,0 +1,90 @@
+.checkout-modal h2{max-width:330px}.form-row{display:grid;grid-template-columns:1fr 90px;gap:11px}.order-total{display:flex;justify-content:space-between;align-items:center;margin:14px 0 25px;padding:17px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);font-size:13px}.order-total strong{font-size:23px;letter-spacing:-.04em}
+.order-breakdown{display:grid;gap:7px;margin:22px 0 0;font-size:12px;color:var(--muted)}.order-breakdown>div{display:flex;justify-content:space-between}
+.delivery-note{display:block;width:100%;margin:14px 0 4px;padding:12px;border:1px solid var(--line);background:white;outline:0;color:var(--ink);font:13px 'Okra',sans-serif;resize:vertical}
+.gift-card-field{margin:12px 0 0;font:12px 'Okra',sans-serif;color:var(--muted)}
+.gift-card-field summary{cursor:pointer;padding:6px 0;font-weight:700;color:var(--ink)}
+.gift-card-field .form-row{grid-template-columns:1fr 1fr;margin:8px 0}
+.gift-card-field input{width:100%;padding:11px;border:1px solid var(--line);background:white;outline:0;color:var(--ink);font:13px 'Okra',sans-serif}
+.gift-card-field input:focus{border-color:var(--green)}
+.gift-card-field .switch-auth{margin:0}
+.gift-card-ok{display:block;margin-top:8px;color:var(--green);font-weight:600}
+.gift-card-field .auth-message{display:block;margin-top:8px}
+.checkout-phone{display:block;margin:14px 0 0}
+.checkout-phone>span{display:block;margin-bottom:5px;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em}
+.checkout-phone>input{display:block;width:100%;padding:12px;border:1px solid var(--line);background:white;outline:0;color:var(--ink);font:13px 'Okra',sans-serif}
+.checkout-phone>input:focus{border-color:var(--green)}
+.delivery-note:focus{border-color:var(--green)}@media(max-width:520px){.form-row{grid-template-columns:1fr 78px}}
+.address-picker{display:grid;gap:8px;margin-bottom:16px;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.1em}.address-picker select{padding:13px;border:1px solid var(--line);background:white;color:var(--ink);font:12px 'Okra',sans-serif;text-transform:none;letter-spacing:0}
+.orders-modal{max-width:460px}.orders-list{list-style:none;margin:18px 0 0;padding:0;display:grid;gap:12px;max-height:52vh;overflow-y:auto}.order-row{padding:14px;border:1px solid var(--line);background:white}.order-row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.order-row-head strong{font-size:14px;letter-spacing:-.02em}.order-row-meta{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font:11px 'Okra',sans-serif}.order-row-meta strong{color:var(--ink);font-size:14px}.order-badge{padding:3px 9px;border-radius:999px;font:9px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;background:#eef1ec;color:var(--muted)}.order-badge-paid{background:#e4f3e4;color:#2f6d34}.order-badge-failed{background:#f6e3e0;color:#a23b28}.order-badge-cancelled{background:#efe6d8;color:#8a6d2f}.order-pay{margin-top:11px;padding:0;font:11px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--ink)}.order-pay span{margin-left:4px}
+.order-cancel{display:block;margin-top:9px;padding:0;font:11px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#a23b28;background:0;border:0;cursor:pointer}
+.order-help{display:block;margin-top:9px;padding:0;font:11px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--green,#3f7d43);background:0;border:0;cursor:pointer}
+.order-receipt{display:block;margin-top:9px;padding:0;font:11px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--ink);background:0;border:0;cursor:pointer;text-decoration:underline}
+.account-modal{max-width:480px}
+.account-form{display:grid;gap:12px;margin-top:18px}
+.account-form label{display:grid;gap:5px;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em}
+.account-form input{padding:12px;border:1px solid var(--line);background:white;outline:0;color:var(--ink);font:13px 'Okra',sans-serif}
+.account-form input:focus{border-color:var(--green)}
+.account-form .form-row3{display:grid;grid-template-columns:1.4fr 1fr .9fr;gap:10px}
+.account-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px;text-transform:none!important;letter-spacing:0!important;font:12px 'Okra',sans-serif!important;color:var(--ink)!important}
+.account-check input{width:auto;padding:0}
+.account-sub{margin:4px 0 0;font-size:14px;letter-spacing:-.02em}
+.account-hint{margin:0;color:var(--muted);font:11px 'Okra',sans-serif;line-height:1.5}
+.account-list{list-style:none;margin:18px 0 14px;padding:0;display:grid;gap:10px;max-height:46vh;overflow-y:auto}
+.account-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--line);background:white;border-radius:10px}
+.account-row>div:first-child{display:grid;gap:3px;min-width:0}
+.account-row strong{font-size:13px;letter-spacing:-.01em;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.account-row span{color:var(--muted);font:11px 'Okra',sans-serif;overflow:hidden;text-overflow:ellipsis}
+.account-tag{padding:2px 7px;border-radius:999px;background:#e4f3e4;color:#2f6d34;font:8px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em}
+.account-row-actions{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:0 0 auto}
+.account-row-actions .text-button{padding:0;border:0;background:0;font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.07em;color:var(--green);cursor:pointer}
+.account-row-actions .text-button.danger{color:#a23b28}
+.account-row-actions .text-button:disabled{opacity:.5;cursor:default}
+.pay-cards{display:grid;gap:8px;margin:4px 0 6px}
+.pay-card{display:flex;align-items:center;gap:10px;padding:11px 13px;border:1px solid var(--line);background:white;cursor:pointer;font:13px 'Okra',sans-serif}
+.pay-card.active{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.pay-card input{width:auto;margin:0}
+.pay-card em{margin-left:auto;color:var(--muted);font:11px 'Okra',sans-serif;font-style:normal}
+.order-modal .order-receipt{margin:0 0 12px}
+.support-modal{max-width:460px}
+.support-list{list-style:none;margin:16px 0 0;padding:0;display:grid;gap:8px;max-height:46vh;overflow-y:auto}
+.support-list button{display:block;width:100%;text-align:left;padding:11px 13px;border:1px solid var(--line);background:white;cursor:pointer}
+.support-list button:hover{border-color:var(--green,#3f7d43)}
+.support-list strong{display:block;font-size:13px}
+.support-list span{color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.06em}
+.support-field{display:grid;gap:6px;margin:14px 0;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.1em}
+.support-field select{padding:12px;border:1px solid var(--line);background:white;color:var(--ink);font:13px 'Okra',sans-serif;text-transform:none;letter-spacing:0}
+.issue-chips{display:flex;flex-wrap:wrap;gap:7px;margin:6px 0 12px}
+.issue-chip{padding:7px 11px;border:1px solid var(--line);background:white;border-radius:999px;font-size:12px;cursor:pointer}
+.issue-chip.active{border-color:var(--green,#3f7d43);background:var(--lime,#eef6e6);color:var(--green,#3f7d43)}
+.chat-log{margin:14px 0;padding:12px;background:#f3f5ef;max-height:44vh;overflow-y:auto;display:flex;flex-direction:column;gap:9px}
+.chat-msg{max-width:80%;padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.4}
+.chat-msg em{display:block;margin-top:3px;font-size:9px;opacity:.6;font-style:normal}
+.chat-msg.me{align-self:flex-end;background:var(--green,#3f7d43);color:white}
+.chat-msg.staff{align-self:flex-start;background:white;border:1px solid var(--line)}
+.chat-msg.system{align-self:center;background:#e7eef6;color:#2f5a8a;font-size:11px;text-align:center}
+.chat-send{display:flex;gap:8px}
+.chat-send input{flex:1;padding:12px;border:1px solid var(--line);background:white;outline:0;color:var(--ink)}
+.chat-send button{padding:0 16px;border:0;background:var(--ink);color:white;font-size:12px;font-weight:800;cursor:pointer}
+.chat-send button:disabled{opacity:.5;cursor:not-allowed}
+.end-chat-button{width:100%;margin-top:10px;padding:12px 16px;border:1px solid var(--line);border-radius:10px;background:white;color:var(--ink);font:13px 'Okra',sans-serif;font-weight:700;cursor:pointer}
+.end-chat-button:hover{border-color:#a23b28;color:#a23b28}
+.end-chat-button:disabled{opacity:.5;cursor:not-allowed}
+.order-badge-refund_pending,.order-badge-refunded{background:#e7eef6;color:#2f5a8a}.order-track{display:flex;align-items:center;gap:4px;margin-top:11px;flex-wrap:wrap}.track-step{flex:0 0 auto;width:20px;height:4px;border-radius:2px;background:#e3e7e0}.track-step.done{background:#3f7d43}.order-track em{margin-left:6px;font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-style:normal}.order-track-note{margin:10px 0 0;font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em;color:#a23b28}
+.pay-methods-label{margin:18px 0 8px;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.1em}.pay-methods{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:0 0 18px}.pay-method{display:grid;gap:3px;padding:13px;border:1px solid var(--line);background:white;text-align:left;cursor:pointer}.pay-method strong{font-size:13px;letter-spacing:-.02em;color:var(--ink)}.pay-method span{color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.08em}.pay-method.active{border-color:#3f7d43;box-shadow:inset 0 0 0 1px #3f7d43}@media(max-width:520px){.pay-methods{grid-template-columns:1fr}}
+.order-badge-cod,.order-badge-pending{background:#e7eef6;color:#2f5a8a}
+.payment-form{display:grid;gap:18px}.payment-form label{display:grid;gap:9px;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.1em}.payment-form .StripeElement{padding:14px;border:1px solid var(--line);background:white}.checkout-button:disabled{opacity:.6;cursor:not-allowed}.form-caption{margin:4px 0 0;color:var(--muted);font:10px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.1em}.form-caption span{color:#9ca59b;text-transform:none;letter-spacing:0}
+
+.order-handover{margin:10px 0 0;padding:9px 11px;border-radius:8px;background:#e7f0ff;color:#1f4e8a;font-size:12px;line-height:1.45}
+.order-handover b{font:15px/1 'Okra',sans-serif;letter-spacing:.18em;color:#123a6b}
+
+.rider-rating{margin:11px 0 0;padding:11px 12px;border:1px solid var(--line);border-radius:9px;background:#fafbf7;display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+.rider-rating.done{flex-direction:row;align-items:center;gap:9px;font-size:12px;color:var(--muted)}
+.rider-rating-h{font-size:12px;font-weight:700;color:var(--ink)}
+.rider-rating textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--line);border-radius:7px;font:13px/1.4 inherit;background:white;color:var(--ink);resize:vertical}
+.rider-rating-actions{display:flex;gap:12px}
+.rider-rating-msg{margin:0;font-size:11px;color:var(--muted)}
+.star-picker{display:inline-flex;gap:2px}
+.star-picker .star{border:0;background:transparent;cursor:pointer;font-size:20px;line-height:1;color:#d3d8cd;padding:0}
+.star-picker .star.on{color:#f5a623}
+.star-picker .star:disabled{cursor:default}
+.chat-rating{margin:12px 0}
