@@ -1,6 +1,6 @@
 # NexTech Electronics Delivery Platform
 
-start "NexTech API" cmd /k "cd /d D:\gdp\backend && D:\xampp8-2-12\php84\php.exe -d display_errors=0 artisan serve" && start "NexTech Web" cmd /k "cd /d D:\gdp\web && npm.cmd --cache D:\gdp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
+start "NexTech API" cmd /k "cd /d D:\edp\backend && D:\xampp8-2-12\php84\php.exe -d display_errors=0 artisan serve" && start "NexTech Web" cmd /k "cd /d D:\edp\web && npm.cmd --cache D:\edp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
                                   
 /admin:	test@example.com
 [client](http://127.0.0.1:5173/): testcaresort@outlook.com
@@ -13,7 +13,7 @@ password: password
 Open Windows Command Prompt and run:
 
 ```cmd
-cd /d D:\gdp\backend
+cd /d D:\edp\backend
 "D:\xampp8-2-12\php84\php.exe" -d display_errors=0 artisan serve
 ```
 
@@ -31,7 +31,7 @@ Open the application in a browser:
 To start the designed React storefront, open another Command Prompt window and run:
 
 ```cmd
-cd /d D:\gdp\web
+cd /d D:\edp\web
 npm.cmd run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -151,7 +151,7 @@ Administrators must be able to manage:
 - [x] Laravel 13 API project created in `backend/`
 - [x] PHP 8.4 verified and used for Laravel commands
 - [x] Composer dependencies installed
-- [x] MySQL database `gdp` configured and migrations executed
+- [x] MySQL database `edp` configured and migrations executed
 - [x] Laravel application key generated
 - [x] Laravel Sanctum installed
 - [x] Sanctum token migration published and executed
@@ -916,9 +916,9 @@ social platform (blank hides that icon), and a list of extra label+URL links.
 From Windows Command Prompt:
 
 ```cmd
-set "TMP=D:\gdp\.tmp"
-set "TEMP=D:\gdp\.tmp"
-cd /d D:\gdp\backend
+set "TMP=D:\edp\.tmp"
+set "TEMP=D:\edp\.tmp"
+cd /d D:\edp\backend
 
 "D:\xampp8-2-12\php84\php.exe" artisan migrate
 "D:\xampp8-2-12\php84\php.exe" artisan storage:link
@@ -930,12 +930,12 @@ The local API is available at `http://127.0.0.1:8000`.
 For frontend commands, use the D-drive npm cache:
 
 ```cmd
-cd /d D:\gdp\web
-npm.cmd --cache D:\gdp\.tmp\npm-cache install
-npm.cmd --cache D:\gdp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173
+cd /d D:\edp\web
+npm.cmd --cache D:\edp\.tmp\npm-cache install
+npm.cmd --cache D:\edp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173
 ```
 
-All temporary project output should go under `D:\gdp\.tmp`. Do not use the nearly-full `C:` drive for project caches or temporary output.
+All temporary project output should go under `D:\edp\.tmp`. Do not use the nearly-full `C:` drive for project caches or temporary output.
 
 To enable Stripe test payments, add these values to `backend/.env`:
 
@@ -962,7 +962,7 @@ stripe version
 The CLI is installed for this workstation under the D-drive temporary tools folder. In a new Command Prompt, run:
 
 ```cmd
-set "PATH=D:\gdp\.tmp\npm-global;%PATH%"
+set "PATH=D:\edp\.tmp\npm-global;%PATH%"
 stripe version
 stripe login
 stripe listen --events payment_intent.succeeded,payment_intent.payment_failed,payment_intent.canceled --forward-to http://127.0.0.1:8000/api/payments/stripe/webhook
@@ -981,8 +981,8 @@ Never commit either environment file or any Stripe secret.
 Run tests with:
 
 ```cmd
-set "TMP=D:\gdp\.tmp"
-set "TEMP=D:\gdp\.tmp"
+set "TMP=D:\edp\.tmp"
+set "TEMP=D:\edp\.tmp"
 "D:\xampp8-2-12\php84\php.exe" artisan test
 ```
 
@@ -991,7 +991,7 @@ Never commit `.env`, Stripe keys, database passwords, customer data, `vendor/`, 
 ## Repository Layout
 
 ```text
-gdp/
+edp/
 ├── .github/agents/       Custom development agent
 ├── backend/              Laravel API
 ├── web/                  React customer website (Vite)

@@ -4,7 +4,7 @@
 
 ## Admin access
 
-**URL:** https://testcaresortwork.co.in/gdp/admin
+**URL:** https://testcaresortwork.co.in/edp/admin
 **Username:** test@example.com
 **Password:** password
 
@@ -33,7 +33,7 @@
 
 ## Client access
 
-**URL:** https://testcaresortwork.co.in/gdp/
+**URL:** https://testcaresortwork.co.in/edp/
 **Username:** testcaresort@outlook.com
 **Password:** password
 

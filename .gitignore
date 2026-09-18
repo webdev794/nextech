@@ -1,2 +1,5 @@
 # Local temporary output and package caches
 /.tmp/
+
+# Database dumps kept locally for safekeeping only
+/backend/web_deploy/

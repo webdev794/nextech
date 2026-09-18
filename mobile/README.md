@@ -6,9 +6,9 @@ storefront (`backend/`). No Android Studio required — it runs in **Expo Go**.
 ## First run
 
 ```cmd
-cd /d D:\gdp\mobile
-npm.cmd --cache D:\gdp\.tmp\npm-cache install
-npm.cmd --cache D:\gdp\.tmp\npm-cache start
+cd /d D:\edp\mobile
+npm.cmd --cache D:\edp\.tmp\npm-cache install
+npm.cmd --cache D:\edp\.tmp\npm-cache start
 ```
 
 Then:
@@ -31,7 +31,7 @@ The one thing you must do: start Laravel so the phone can reach it. `artisan ser
 to `127.0.0.1` only by default, which a phone cannot see. Bind to all interfaces:
 
 ```cmd
-cd /d D:\gdp\backend
+cd /d D:\edp\backend
 "D:\xampp8-2-12\php84\php.exe" artisan serve --host 0.0.0.0 --port 8000
 ```
 
