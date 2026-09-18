@@ -1,6 +1,6 @@
-# GDP Grocery Delivery Platform
+# NexTech Electronics Delivery Platform
 
-start "GDP API" cmd /k "cd /d D:\gdp\backend && D:\xampp8-2-12\php84\php.exe -d display_errors=0 artisan serve" && start "GDP Web" cmd /k "cd /d D:\gdp\web && npm.cmd --cache D:\gdp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
+start "NexTech API" cmd /k "cd /d D:\gdp\backend && D:\xampp8-2-12\php84\php.exe -d display_errors=0 artisan serve" && start "NexTech Web" cmd /k "cd /d D:\gdp\web && npm.cmd --cache D:\gdp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
                                   
 /admin:	test@example.com
 [client](http://127.0.0.1:5173/): testcaresort@outlook.com
@@ -48,13 +48,13 @@ curl http://127.0.0.1:8000/api/products
 
 Press `Ctrl+C` in the server terminal to stop Laravel.
 
-USA online grocery delivery MVP with a Blinkit-style customer ordering journey. The initial market is the United States and the currency is USD.
+**NexTech** — "Navigate to the Future of Technology" — is a USA electronics delivery MVP: phones, laptops, audio, smart home, gaming and other gadgets, ordered online and delivered from a local store network. The customer ordering journey and delivery mechanics (riders, auto-assignment, cash on delivery, delivery radius) are Blinkit-inspired; the storefront browsing experience (deals strips, category carousel, product cards) follows Temu's UI patterns. The initial market is the United States and the currency is USD.
 
 The project is designed around one Laravel API that will serve the customer website, admin panel, and future Android and iOS applications.
 
 ## Product Goal
 
-Build a simple, professional, reliable grocery delivery MVP that can be tested with real US customers and expanded in future versions. The objective is not to build a full Blinkit clone.
+Build a simple, professional, reliable electronics delivery MVP that can be tested with real US customers and expanded in future versions. The objective is not to clone any single reference site — Blinkit and Temu are workflow/UI references, not the product.
 
 ## Technology Plan
 
@@ -167,7 +167,7 @@ Administrators must be able to manage:
 - [x] Active catalog visibility and category filtering
 - [x] Server-side product search by name, description, and SKU
 - [x] Catalog feature tests
-- [x] Repeatable demo grocery catalog seed data
+- [x] Repeatable demo electronics catalog seed data
 - [x] JSON response for unauthenticated API requests
 - [x] Authenticated server-side cart with inventory validation
 - [x] Cart feature tests
@@ -211,7 +211,7 @@ Administrators must be able to manage:
 - [x] Admin console in the storefront: dashboard, orders, products, categories, customers
 - [x] Order status advancing, cancellation, and courier assignment from the admin order table
 - [x] Admin product create, edit, delete with slug generation and order-safety guard
-- [x] Product variants (Blinkit-style pack sizes): per-variant price, stock, SKU, image
+- [x] Product variants (storage/colour/size options, one flat list): per-variant price, stock, SKU, image
 - [x] Admin image upload for products and variants (`POST /api/admin/media`, swappable to S3)
 - [x] Optional delivery instructions at checkout, shown to the admin on the order
 - [x] Admin category create, edit, delete with in-use guard
@@ -265,7 +265,7 @@ Administrators must be able to manage:
 - The React app has no router; the admin console is a full-screen overlay shown to `is_admin` users. Revisit if the panel grows.
 - Product and variant images can be uploaded (admin) or pasted as a URL; category and store images are still URL-only.
 - Uploads land on the local `public` disk (`storage/app/public`, served via the `storage` symlink). Swap `FILESYSTEM_DISK` to S3 for production — `MediaController` and callers don't change.
-- Product variants are one flat axis (a "pack size" list). A multi-axis matrix (size × colour) is out of scope for the grocery MVP.
+- Product variants are one flat axis (a labelled option list — storage size, colour, etc.). A multi-axis matrix (e.g. size × colour together) is out of scope for the MVP.
 - The mobile app confirms card payments in a WebView (Stripe Elements). A native
   `@stripe/stripe-react-native` PaymentSheet would need an Expo dev/EAS build and is a later option.
 - `mobile/` has no app icon or splash image assets yet; Expo uses defaults.
@@ -681,11 +681,10 @@ openssl.cafile = "D:\xampp8-2-12\php84\extras\ssl\cacert.pem"
 
 ## Product Variants
 
-Products can carry **variants** (Blinkit's "unit" selector) — one flat list of
-labelled options, each with its own **price, stock, SKU and image**. The label is
-free text, so it covers pack size, weight, colour, flavour or a mix
-("1 kg", "Red / Large"). There are no structured Size × Colour axes — one row per
-sellable option.
+Products can carry **variants** — one flat list of labelled options, each with
+its own **price, stock, SKU and image**. The label is free text, so it covers
+storage size, colour, capacity or a mix ("256GB", "Midnight Black"). There are
+no structured Size × Colour axes — one row per sellable option.
 
 - **Opt-in.** A product with no variant rows works exactly as before
   (price/stock/SKU/image on the product). Add rows under **Admin console →
@@ -714,8 +713,8 @@ sellable option.
 ## Per-store inventory
 
 Each store keeps its **own stock count** for a product and its variants, so a
-multi-store shop can say "Store A is out of milk, Store B has 20". Set it in
-**Admin console → Products → Store stock**.
+multi-store shop can say "Store A is out of that phone, Store B has 20". Set it
+in **Admin console → Products → Store stock**.
 
 - Table `store_inventory` — one row per `(store_id, product_id, product_variant_id)`
   (a null variant is the base product): `quantity` + `is_stocked` (the store
@@ -835,48 +834,63 @@ fees) and are exposed through `GET /api/config` / `GET /api/admin/settings`;
 
 ## Homepage editor
 
-The storefront homepage (no search, no category selected) is a Blinkit-style feed
-curated from **Admin console → homepage**:
+The storefront homepage (no search, no category selected) follows a Temu-style
+layout, curated from **Admin console → homepage / categories**:
 
-1. **Promo banners** — the first (lowest `sort_order`) active banner is a
-   full-width hero; the rest form a horizontal strip below it.
-2. **Curated category tiles** — the first three active tiles render as large
-   feature cards (image, item count, sample product names); the rest as a grid.
+1. **Deals strips** — Lightning Deals and Unbeatable Deals columns (products
+   flagged `deal_type` in the admin product editor), each linking to its own
+   dedicated page (`#/deals/lightning`, `#/deals/unbeatable`). Shown whenever
+   there's inventory tagged for either, regardless of which category is selected.
+2. **Category carousel** — a horizontal, drag-scrollable pill rail. A
+   **"Recommended"** pill sits first (clears the category filter, shows every
+   product); the rest are the curated category tiles (or, with none configured,
+   every active category). Selecting a pill filters the product grid below it
+   without scrolling the page back to the top.
+3. **Product grid** — the selected category's products (or everything, under
+   Recommended), paginated with a **See more** button (loads another page of
+   rows rather than everything at once).
 
-Both a banner and a tile link the same way: a chosen **category** wins, otherwise
-a custom **`link_url`** opens in a new tab.
+A dedicated **Exclusive Offer** carousel and page (`#/deals/exclusive`) covers
+products flagged `is_exclusive_offer`, linked from the Lightning Deals page.
 
-**Banners** (`banners` table) — `image_url` (paste a URL or upload via
-`POST /api/admin/media`), optional `headline`, `category_slug` **or** `link_url`,
-`sort_order`, `is_active`.
+Promo banners (`banners` table, hero + 3-up strip) are still manageable under
+**Admin console → homepage** but are **no longer rendered on the storefront
+homepage** — Temu's homepage doesn't use them. The admin CRUD and API
+(`GET/POST /api/admin/banners`, `PATCH/DELETE /api/admin/banners/{banner}`) are
+unchanged for when a future layout wants them back.
 
-**Category tiles** (`home_tiles` table) — `category_slug` (the link target — "pick
-up the category"), optional `title` and `image_url` overrides (blank falls back to
-the category's own name/image), optional `link_url` for a non-category tile,
-`sort_order`, `is_active`. With **no active tiles** the homepage falls back to
-listing every category.
+**Category tiles** (`home_tiles` table) — `category_slug` (the link target),
+optional `title` override (blank falls back to the category's own name),
+optional `link_url` for a non-category tile, `sort_order`, `is_active`. The tile
+**image** is no longer set per-tile: it's the category's own `image_url`
+(**Admin console → Categories**, since that image is reused everywhere a
+category appears, not just the homepage), with an optional custom override still
+settable via the API. With **no active tiles** the homepage lists every category.
 
-Admin API (`+admin`): `GET/POST /api/admin/banners`,
-`PATCH/DELETE /api/admin/banners/{banner}`; `GET/POST /api/admin/home-tiles`,
+Admin API (`+admin`): `GET/POST /api/admin/home-tiles`,
 `PATCH/DELETE /api/admin/home-tiles/{homeTile}`. `GET /api/config` exposes the
-resolved `data.banners` and `data.home_tiles` (title/image already coalesced with
-the category; tiles that resolve to no destination are dropped).
+resolved `data.home_tiles` (title/image already coalesced with the category;
+tiles that resolve to no destination are dropped).
 
-The seeder ships ~16 grocery categories (each with a few products), three demo
+The seeder ships electronics categories (Mobiles & Smartphones, Laptops &
+Computers, Audio & Headphones, Smart Home, Health & Fitness Tech, Premium &
+Flagship, Car Electronics, and more, each with a few products), three demo
 banners, and one tile per category so the editor is populated on a fresh install.
 
 ## Content pages
 
-The storefront has a **Blinkit-style footer**: a **Useful Links** column, a
-**Categories** column with "see all", then a row with the copyright line, the
-**Download App** badges (App Store / Google Play) and **social icons**
-(Facebook, X, Instagram, LinkedIn, YouTube), and a disclaimer note. "Useful Links"
-lists the published **content pages** plus any extra links set in the footer editor.
+The storefront has a **multi-column footer**: **Company info**, **Customer
+service**, **Help** (each listing published content pages assigned to that
+group, via `footer_group`), and a shared column with **Download the App**
+badges (App Store / Google Play) and **Connect with Us** social icons
+(Facebook, X, Instagram, LinkedIn, YouTube). A centred bottom bar carries the
+copyright line and the `bottom`-group pages (Terms, Privacy, etc.) as plain
+legal links — no duplicate Terms/Privacy in both places.
 
 Everything except the pages is a `footer` settings blob (`config/footer.php`
 defaults, `App\Support\FooterConfig` merges/normalises, `GET /api/config` exposes
 `data.footer`), edited under **Admin console → Pages → Footer**: copyright line
-(`{year}` is substituted), disclaimer note, App Store / Play Store URLs, a URL per
+(`{year}` is substituted), footer background/text colour, App Store / Play Store URLs, a URL per
 social platform (blank hides that icon), and a list of extra label+URL links.
 `PATCH /api/admin/settings` accepts a nested `footer` object.
 
@@ -988,9 +1002,9 @@ See `mobile/README.md` for how to run the app in Expo Go and point it at the API
 
 ## Backup Repository
 
-GitHub repository: <https://github.com/webdev794/gdp>
+- Full development history (all branches, e.g. `nextech_v11`): <https://github.com/webdev794/gdp>
+- Clean NexTech snapshot (`main`, current code only): <https://github.com/webdev794/nextech>
 
 -----
-Tasks to do: 
-Mobile android app.
-Mobile ios app. 
+Tasks to do:
+iOS build/testing pass for the mobile app (see Known Gaps To Revisit).

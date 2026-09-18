@@ -16,7 +16,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project overview
 
-**NexTech** ("GDP") — a Blinkit-style grocery delivery platform. Three apps in one repo:
+**NexTech** ("Navigate to the Future of Technology") — a USA electronics delivery platform (phones, laptops, audio, smart home, and other gadgets), still tracked internally under the `gdp` repo/folder name. Delivery mechanics (riders, auto-assignment, COD, delivery radius) are Blinkit-inspired; the storefront browsing UI (deals strips, category carousel, product cards) follows Temu's patterns. Three apps in one repo:
 
 | Path | Stack | Purpose |
 |------|-------|---------|
@@ -45,10 +45,10 @@ Test accounts and more detail live in `README.md`.
 
 - **Environment is Windows + PowerShell.** A Bash tool is also available for POSIX scripts.
 - **Production is served under a sub-path** (`/gdp/`, set via `VITE_BASE` in `web/.env.production`). Reference bundled assets with paths Vite can rewrite (`./assets/...` from CSS, `import.meta.env.BASE_URL` in JS) — never hard-code a leading `/`.
-- **Fonts:** the web app uses **Okra** (the typeface blinkit.com uses), self-hosted in `web/src/assets/fonts/` and declared in `web/src/index.css`. Match Blinkit's type scale: 14px base / 12px secondary (nothing smaller), default weight 500, section headings 24px/600.
+- **Fonts:** the web app uses **Okra** (the typeface blinkit.com uses), self-hosted in `web/src/assets/fonts/` and declared in `web/src/index.css`. Type scale: 14px base / 12px secondary (nothing smaller), default weight 500, section headings 24px/600. Storefront UI patterns (deals strips, category carousel, product cards, product detail page) follow Temu as the visual reference, not Blinkit — check recent Temu screenshots the user shares before assuming Blinkit conventions.
 - **CSS lives in per-surface files** (`StorefrontBase.css`, `Storefront.css`, `Admin.css`, `Rider.css`, `Checkout.css`) — mostly single-line minified-style rules. Match the surrounding format when editing.
 - Deploy tooling for cPanel is in `scripts/`.
-- Commit / push only when asked. Default branch is `main`; feature work happens on `v7`.
+- Commit / push only when asked. Active feature work happens on `nextech_v11` (this repo's `origin` is `webdev794/gdp`; a clean current-code-only snapshot is also pushed to `webdev794/nextech`'s `main`).
 
 ## Notes
 

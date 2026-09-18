@@ -21,7 +21,7 @@
 | **Stores** | Manage store/hub locations — address, map coordinates, delivery radius and active state. Stores can be in different cities; a customer inside any store's radius can order, and the nearest covering store serves them. |
 | **Store settings** | Set the store name, tagline, logo, favicon, light/dark theme, brand colours and boxed/full page width. |
 | **Secure access** | Change the admin email/phone and manage the Stripe API keys, protected by a password re-check. |
-| **Pages → Homepage** | Manage the homepage banners (hero and 3-up strip) and the category tiles — images, links, order and visibility. |
+| **Pages → Homepage** | Manage the curated category tiles shown in the homepage carousel — link, order and visibility (the tile's image now comes from the category itself, set in **Categories**). The old hero/strip banners are still editable here but are no longer shown on the storefront homepage. |
 | **Pages → Footer** | Edit the footer copyright, disclaimer, App Store / Play Store links, social-media links and custom links. |
 | **Pages → All pages** | Create and edit content pages (About, Contact, Privacy, etc.) using text or drag-and-drop section blocks and a header banner image. |
 | **Pages → Blogs** | Create and edit blog posts as their own pages, kept in a separate group. |
