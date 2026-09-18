@@ -23,6 +23,7 @@ class Product extends Model
         'compare_at_price_cents',
         'inventory_quantity',
         'image_url',
+        'video_url',
         'is_active',
         'deal_type',
         'is_exclusive_offer',
@@ -144,6 +145,11 @@ class Product extends Model
     }
 
     public function getImageUrlAttribute(?string $value): ?string
+    {
+        return PublicMedia::url($value);
+    }
+
+    public function getVideoUrlAttribute(?string $value): ?string
     {
         return PublicMedia::url($value);
     }

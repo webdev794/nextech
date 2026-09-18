@@ -911,6 +911,68 @@ social platform (blank hides that icon), and a list of extra label+URL links.
 - The seeder creates About, Blog, Contact, FAQs, Privacy, Terms and Security with
   placeholder copy.
 
+## First-Time Setup (Fresh Clone)
+
+Run this once after cloning the repo, or any time `backend/vendor/` or `web/node_modules/`
+is missing (the symptoms are `'vite' is not recognized as an internal or external command`
+and `Failed opening required '...vendor/autoload.php'`). These folders are never committed
+to git, so every fresh clone needs this before the servers below will start.
+
+```cmd
+cd /d D:\edp\backend
+composer install
+copy .env.example .env
+"D:\xampp8-2-12\php84\php.exe" artisan key:generate
+```
+
+Edit `backend\.env` and point it at MySQL (defaults below match a stock XAMPP install —
+`root` user, no password; create the database first with
+`"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root -e "CREATE DATABASE edp"` if it doesn't exist):
+
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=edp
+DB_USERNAME=root
+DB_PASSWORD=
+```
+
+Then apply the schema — either a fresh migrate, or restore a saved dump first:
+
+```cmd
+"D:\xampp8-2-12\php84\php.exe" artisan migrate
+"D:\xampp8-2-12\php84\php.exe" artisan storage:link
+```
+
+**Restoring a database dump instead of migrating fresh** (e.g. a backup saved at
+`backend/web_deploy/edp.sql`):
+
+```cmd
+"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp < D:\edp\backend\web_deploy\edp.sql
+"D:\xampp8-2-12\php84\php.exe" artisan migrate
+```
+
+The final `migrate` applies any migrations added after the dump was taken. If one fails with
+"table already exists", that table was already present in the dump — confirm its columns
+match the migration (`"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp -e "DESCRIBE <table>;"`),
+then record it as applied instead of re-running it or touching the data:
+
+```cmd
+"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp -e "INSERT INTO migrations (migration, batch) VALUES ('<migration_filename_without_.php>', <next_batch_number>);"
+```
+
+Finally, install the web app's dependencies:
+
+```cmd
+cd /d D:\edp\web
+npm.cmd --cache D:\edp\.tmp\npm-cache install
+```
+
+Once this section is done, use "Local Backend Setup" below (or the one-liner at the very top
+of this file) for day-to-day starts — you don't need to repeat this section unless you
+re-clone or a dependency changes.
+
 ## Local Backend Setup
 
 From Windows Command Prompt:
@@ -987,6 +1049,43 @@ set "TEMP=D:\edp\.tmp"
 ```
 
 Never commit `.env`, Stripe keys, database passwords, customer data, `vendor/`, `node_modules/`, logs, or generated local files.
+
+## Troubleshooting: Servers Not Responding
+
+Everything below is a plain command-line fix — no code changes are ever needed to get the
+servers running again.
+
+**Symptom: the web page shows "Showing sample products while the API is offline."**
+The backend (`artisan serve`, port 8000) isn't running or was killed. Check it:
+
+```cmd
+curl http://127.0.0.1:8000/api/categories
+```
+
+If that doesn't return JSON, start the backend again — either the one-liner at the top of
+this file, or just the API half:
+
+```cmd
+cd /d D:\edp\backend
+"D:\xampp8-2-12\php84\php.exe" -d display_errors=0 artisan serve
+```
+
+**Symptom: `'vite' is not recognized as an internal or external command`**
+`web/node_modules/` is missing — see "First-Time Setup (Fresh Clone)" above.
+
+**Symptom: `Failed opening required '...vendor/autoload.php'`**
+`backend/vendor/` is missing — see "First-Time Setup (Fresh Clone)" above.
+
+**Finding and stopping a stuck server**
+Avoid `taskkill /F /IM php.exe` or `/IM node.exe` — that kills *every* PHP or Node process
+on the machine, including unrelated ones outside this project. Instead, find the process
+bound to the specific port and kill only that one:
+
+```cmd
+netstat -ano | findstr :8000
+netstat -ano | findstr :5173
+taskkill /F /PID <pid-from-the-last-column>
+```
 
 ## Repository Layout
 

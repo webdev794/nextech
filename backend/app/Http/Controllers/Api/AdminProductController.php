@@ -122,7 +122,8 @@ class AdminProductController extends Controller
             'price_cents' => [$product ? 'sometimes' : 'required', 'integer', 'min:0'],
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
-            'image_url' => ['sometimes', 'nullable', 'url', 'max:500'],
+            'image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'video_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_active' => ['sometimes', 'boolean'],
             'deal_type' => ['sometimes', 'nullable', Rule::in(['lightning', 'unbeatable'])],
             'is_exclusive_offer' => ['sometimes', 'boolean'],
@@ -144,7 +145,7 @@ class AdminProductController extends Controller
             'variants.*.price_cents' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'variants.*.inventory_quantity' => ['sometimes', 'integer', 'min:0'],
-            'variants.*.image_url' => ['sometimes', 'nullable', 'url', 'max:500'],
+            'variants.*.image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'variants.*.sort_order' => ['sometimes', 'integer', 'min:0'],
             'variants.*.is_active' => ['sometimes', 'boolean'],
         ]);
