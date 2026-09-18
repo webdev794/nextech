@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "NexTech",
+    "slug": "nextech-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "nextech",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#141a12"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "package": "com.nextech.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#8bd08f"
+      }
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nextech.app"
+    },
+    "extra": {
+      "apiUrl": "http://10.0.2.2:8000/api"
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "NexTech uses your location to show items your nearest store stocks and to estimate delivery."
+        }
+      ]
+    ]
+  }
+}
