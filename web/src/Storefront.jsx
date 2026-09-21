@@ -110,6 +110,21 @@ const CATEGORY_EMOJI = [
 ]
 function categoryEmoji(name = '') { return (CATEGORY_EMOJI.find(([re]) => re.test(name)) ?? [null, '\u{1F6D2}'])[1] }
 
+// Groupings for the Categories mega-menu's left rail — our catalog is a single
+// department (electronics), so these aren't real DB-backed parent categories,
+// just a sensible split of the 20 real categories into browsable clusters.
+const CATEGORY_GROUPS = [
+  ['Phones & Tablets', ['Mobiles & Smartphones', 'Mobile Accessories', 'Kids & Baby Tech']],
+  ['Computers & Office', ['Laptops & Computers', 'Computer Accessories', 'Storage Devices', 'Networking Devices', 'Office Electronics']],
+  ['Audio & Entertainment', ['Audio & Headphones', 'Televisions', 'Gaming Consoles & Accessories']],
+  ['Wearables & Cameras', ['Smart Watches & Wearables', 'Cameras & Photography', 'Health & Fitness Tech']],
+  ['Smart Home & Appliances', ['Home Appliances', 'Smart Home', 'Personal Care Electronics']],
+  ['Power & Charging', ['Power Banks & Chargers']],
+  ['Car & Premium', ['Car Electronics', 'Premium & Flagship']],
+]
+
+const SORT_CHANNELS = ['best_selling', 'top_rated', 'newest']
+
 // Lightweight, dependency-free placeholder shown under a product image while
 // it loads (or in place of a broken one) — a generic photo glyph, no network
 // request, no per-product guessing.
@@ -360,6 +375,29 @@ export default function Storefront() {
   const [products, setProducts] = useState([])
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState(null)
+  const [categoriesMenuGroup, setCategoriesMenuGroup] = useState(CATEGORY_GROUPS[0][0])
+  // Dropdown panels open on CSS :hover, which a click can't dismiss (the mouse
+  // hasn't moved) — this force-closes one after a menu action, and clears
+  // automatically once the cursor actually leaves the trigger.
+  const [closedMenu, setClosedMenu] = useState(null) // null | 'categories' | 'support' | 'account'
+  function menuAction(menu, fn) { return () => { fn(); setClosedMenu(menu) } }
+  // The searchbar re-filters the existing home grid in place rather than
+  // navigating to a new page, so without this the results can sit off-screen
+  // below the fold — scroll it into view so the change is actually seen.
+  function scrollToProductGrid() { setTimeout(() => (productGridRef.current ?? mainRef.current)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350) }
+  // The mega-menu links to a dedicated category page (like the deals pages)
+  // rather than filtering the home grid in place — that in-place path had no
+  // heading and hid the grid entirely on a genuinely empty result.
+  function selectCategoryFromMenu(cat) { openCategoryPage(cat.slug) }
+
+  // Promo bar above the main menu row: each column cycles through a couple
+  // of messages on a shared timer, rather than staying static.
+  const [promoTick, setPromoTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setPromoTick((t) => t + 1), 4500)
+    return () => clearInterval(id)
+  }, [])
+
   const [showBackToTop, setShowBackToTop] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [feedbackRating, setFeedbackRating] = useState(null)
@@ -412,6 +450,7 @@ export default function Storefront() {
   const dealsExclusiveRef = useRef(null)
   const dealsExclusiveDrag = useRef({ down: false, moved: false, startX: 0, scrollLeft: 0 })
   const homeCatsWrapRef = useRef(null)
+  const mainRef = useRef(null)
   const dealsCatsWrapRef = useRef(null)
   const dealsExclusiveWrapRef = useRef(null)
   const [branding, setBranding] = useState(null)
@@ -675,7 +714,8 @@ export default function Storefront() {
   const buildDealsProductsUrl = (page) => {
     const params = new URLSearchParams()
     if (dealsPage === 'exclusive') params.set('exclusive', '1')
-    else params.set('deal_type', dealsPage)
+    else if (SORT_CHANNELS.includes(dealsPage)) params.set('sort', dealsPage)
+    else if (dealsPage !== 'category') params.set('deal_type', dealsPage)
     if (dealsCategorySlug) params.set('category', dealsCategorySlug)
     params.set('per_page', String(Math.min(50, Math.max(itemsPerRow * 8, 8))))
     params.set('page', String(page))
@@ -813,17 +853,26 @@ export default function Storefront() {
     return () => window.removeEventListener('hashchange', sync)
   }, [])
 
-  // Deals pages: #/deals/lightning or #/deals/unbeatable.
+  // Deals pages: #/deals/lightning or #/deals/unbeatable. A plain category
+  // browse (from the Categories menu) reuses the same page shell as
+  // #/deals/category/<slug> — categories loads async, so this re-resolves
+  // the name once it's populated.
   useEffect(() => {
     const sync = () => {
-      const match = window.location.hash.match(/^#\/deals\/(lightning|unbeatable|exclusive)$/)
+      const categoryMatch = window.location.hash.match(/^#\/deals\/category\/([a-z0-9-]+)$/)
+      if (categoryMatch) {
+        setDealsPageState('category')
+        setDealsCategory(categories.find((c) => c.slug === categoryMatch[1])?.name ?? null)
+        return
+      }
+      const match = window.location.hash.match(/^#\/deals\/(lightning|unbeatable|exclusive|best_selling|top_rated|newest)$/)
       setDealsPageState(match ? match[1] : null)
       setDealsCategory(null)
     }
     sync()
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
-  }, [])
+  }, [categories])
 
   // Product detail page: #/product/<slug>.
   useEffect(() => {
@@ -855,6 +904,10 @@ export default function Storefront() {
 
   function openDeals(type) {
     window.location.hash = `#/deals/${type}`
+    window.scrollTo({ top: 0 })
+  }
+  function openCategoryPage(slug) {
+    window.location.hash = `#/deals/category/${slug}`
     window.scrollTo({ top: 0 })
   }
   function closeDeals() {
@@ -902,6 +955,47 @@ export default function Storefront() {
   const etaText = outOfArea
     ? 'Not available here yet'
     : fees.free_delivery_threshold_cents > 0 ? `Free shipping over ${price(fees.free_delivery_threshold_cents)}` : 'Free shipping'
+
+  // Promo bar columns, each a small set of messages that swap on promoTick.
+  // Only real, currently-live features are advertised here.
+  const appStoreUrl = footer?.app_store_url || footer?.play_store_url || null
+  const promoColumns = useMemo(() => {
+    const truckGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="7" width="14" height="10" rx="1" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="17" cy="19" r="2" /></svg>
+    const shieldGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><polyline points="9 12 11 14 15 10" /></svg>
+    const cashGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="3" /><path d="M6 6v.01M18 18v-.01" /></svg>
+    const phoneGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2" width="12" height="20" rx="2" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
+    const headsetGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M3 12v5a2 2 0 0 0 2 2h1v-7H4a1 1 0 0 0-1 1z" /><path d="M21 12v5a2 2 0 0 1-2 2h-1v-7h2a1 1 0 0 1 1 1z" /></svg>
+
+    const columns = [
+      {
+        icon: truckGlyph,
+        messages: fees.free_delivery_threshold_cents > 0
+          ? [{ title: 'Free shipping', sub: `On orders over ${price(fees.free_delivery_threshold_cents)}` }, { title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }]
+          : [{ title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }],
+        onClick: () => openPage('shipping-info'),
+      },
+      {
+        icon: shieldGlyph,
+        messages: [{ title: 'Purchase protection', sub: 'Refund for any issues' }, { title: 'Easy returns', sub: 'Simple return & refund policy' }],
+        onClick: () => openPage('purchase-protection'),
+      },
+    ]
+    if (codEnabled) columns.push({
+      icon: cashGlyph,
+      messages: [{ title: 'Cash on delivery', sub: 'Pay when it arrives' }, { title: 'Secure payments', sub: 'Your details stay protected' }],
+      onClick: () => openPage('faqs'),
+    })
+    if (appStoreUrl) columns.push({
+      icon: phoneGlyph,
+      messages: [{ title: `Get the ${branding?.store_name || 'NexTech'} App`, sub: 'Shop faster on mobile' }],
+      href: appStoreUrl,
+    }); else columns.push({
+      icon: headsetGlyph,
+      messages: [{ title: '24/7 Support', sub: 'We’re here if anything comes up' }],
+      onClick: () => openPage('support-center'),
+    })
+    return columns
+  }, [fees.free_delivery_threshold_cents, codEnabled, appStoreUrl, branding?.store_name])
 
   // Filtering (category / search) now happens server-side, page by page —
   // `products` already holds exactly the rows for the active filter.
@@ -1840,28 +1934,103 @@ export default function Storefront() {
     </section>
   }
 
+  const chevronDown = <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+  const chevronRight = <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
+  const activeGroupCategories = (CATEGORY_GROUPS.find(([group]) => group === categoriesMenuGroup)?.[1] ?? [])
+    .map((name) => categories.find((c) => c.name === name))
+    .filter(Boolean)
+  const starGlyph = <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.4 7 .8-5.2 4.8 1.4 6.9L12 17.6 5.9 20.9l1.4-6.9L2.1 9.2l7-.8z" /></svg>
+  const flameGlyph = <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></svg>
+
   return <><div className="app-shell">
     <header className="topbar">
+      <div className="promo-bar">
+        <button className="deliver-to" type="button" onClick={() => { setLocationOpen(true); setLocationMsg('') }}>
+          <span className="deliver-eta">{etaText}</span><strong>{location ? location.label : 'Set your location'} <em aria-hidden>&#9662;</em></strong>
+        </button>
+        <div className="promo-bar-items">
+          {promoColumns.map((column, index) => {
+            const message = column.messages[promoTick % column.messages.length]
+            return column.href
+              ? <a key={index} className="promo-bar-item" href={column.href} target="_blank" rel="noopener noreferrer">
+                {column.icon}
+                <span className="promo-bar-item-copy" key={message.title}><b>{message.title}</b><small>{message.sub}</small></span>
+              </a>
+              : <button key={index} type="button" className="promo-bar-item" onClick={column.onClick}>
+                {column.icon}
+                <span className="promo-bar-item-copy" key={message.title}><b>{message.title}</b><small>{message.sub}</small></span>
+              </button>
+          })}
+        </div>
+      </div>
       <div className="topbar-row">
         <a className="brand" href={import.meta.env.BASE_URL || '/'} aria-label={`${branding?.store_name || 'NexTech'} home`}>{branding?.logo_url
           ? <img className="brand-logo" src={mediaUrl(branding.logo_url)} alt={branding?.store_name || 'NexTech'} />
           : <><span className="brand-mark">{(branding?.store_name || 'n').trim().charAt(0).toLowerCase() || 'n'}</span>{(branding?.store_name || 'nextech').toLowerCase()}</>}</a>
-        <button className="deliver-to" type="button" onClick={() => { setLocationOpen(true); setLocationMsg('') }}><span className="deliver-eta">{etaText}</span><strong>{location ? location.label : 'Set your location'} <em aria-hidden>&#9662;</em></strong></button>
+        <nav className="topbar-quicklinks" aria-label="Quick browse">
+          <button type="button" className={dealsPage === 'best_selling' ? 'quicklink active' : 'quicklink'} onClick={() => openDeals('best_selling')}>{flameGlyph}Best-Selling</button>
+          <button type="button" className={dealsPage === 'top_rated' ? 'quicklink active' : 'quicklink'} onClick={() => openDeals('top_rated')}>{starGlyph}5-Star Rated</button>
+          <button type="button" className={dealsPage === 'newest' ? 'quicklink active' : 'quicklink'} onClick={() => openDeals('newest')}>New In</button>
+        </nav>
+        <div className={closedMenu === 'categories' ? 'nav-dropdown categories-dropdown menu-closed' : 'nav-dropdown categories-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+          <button type="button" className="nav-dropdown-trigger" aria-haspopup="true">Categories {chevronDown}</button>
+          <div className="nav-dropdown-panel categories-panel" role="menu">
+            <div className="nav-dropdown-panel-inner categories-panel-inner">
+              <div className="categories-panel-left">
+                {CATEGORY_GROUPS.map(([group]) => <button type="button" key={group} className={categoriesMenuGroup === group ? 'categories-group active' : 'categories-group'} onMouseEnter={() => setCategoriesMenuGroup(group)} onFocus={() => setCategoriesMenuGroup(group)}>{group}{chevronRight}</button>)}
+              </div>
+              <div className="categories-panel-right">
+                <div className="categories-panel-right-head">All {categoriesMenuGroup} {chevronRight}</div>
+                <div className="categories-panel-grid">
+                  {activeGroupCategories.map((cat) => <button type="button" role="menuitem" key={cat.id} className="categories-panel-item" onClick={menuAction('categories', () => selectCategoryFromMenu(cat))}>
+                    <span className="categories-panel-item-img" aria-hidden>{categoryEmoji(cat.name)}{cat.image_url && <img src={mediaUrl(cat.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</span>
+                    <span className="categories-panel-item-label" title={cat.name}>{cat.name}</span>
+                  </button>)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <label className="searchbar">
+          <input aria-label="Search products" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search for phones, laptops, headphones…" />
+          <button type="button" className="searchbar-btn" aria-label="Search" onClick={scrollToProductGrid}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></button>
+        </label>
         <div className="topbar-actions">
-          {currentUser ? <>
-            <button className="link-btn" type="button" onClick={() => { setOrdersOpen(true); setOrdersLoading(true); setOrders([]); setOrdersMessage('') }}>Orders</button>
-            <button className="link-btn" type="button" onClick={() => openAccount('profile')}>Account</button>
-            <button className={supportUnread ? 'link-btn has-dot' : 'link-btn'} type="button" onClick={() => openSupport()}>Help{supportUnread ? <span className="link-dot" aria-label={`${supportUnread} new message${supportUnread === 1 ? '' : 's'}`} /> : null}</button>
-            {currentUser.is_admin && <button className="link-btn" type="button" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}admin` }}>Admin</button>}
-            {currentUser.is_rider && <button className="link-btn" type="button" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}rider` }}>Deliveries</button>}
-            <button className="link-btn" type="button" onClick={logout}>{(currentUser.name || currentUser.email || 'Account').split(' ')[0]} &middot; Log out</button>
-          </> : <button className="link-btn" type="button" onClick={() => { setAuthMode('login'); setAuthMessage('') }}>Sign in</button>}
+          {currentUser ? <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+            <button type="button" className="link-btn account-trigger" aria-haspopup="true">
+              <span className="account-avatar" aria-hidden>{(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase()}</span>
+              <span className="account-trigger-copy"><small>Hello, {(currentUser.name || currentUser.email || 'there').split(' ')[0]}</small><b>Orders &amp; Account</b></span>
+            </button>
+            <div className="nav-dropdown-panel account-panel" role="menu">
+              <div className="nav-dropdown-panel-inner">
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => { setOrdersOpen(true); setOrdersLoading(true); setOrders([]); setOrdersMessage('') })}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>Orders</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => openAccount('profile'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg>Account</button>
+                {currentUser.is_admin && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}admin` }}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>Admin</button>}
+                {currentUser.is_rider && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}rider` }}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="7" width="14" height="10" rx="1" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="17" cy="19" r="2" /></svg>Deliveries</button>}
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={logout}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>Log out</button>
+              </div>
+            </div>
+          </div> : <button className="link-btn" type="button" onClick={() => { setAuthMode('login'); setAuthMessage('') }}>Sign in</button>}
+          <div className={closedMenu === 'support' ? 'nav-dropdown support-dropdown menu-closed' : 'nav-dropdown support-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+            <button type="button" className={supportUnread ? 'link-btn has-dot' : 'link-btn'} aria-haspopup="true">Support{supportUnread ? <span className="link-dot" aria-label={`${supportUnread} new message${supportUnread === 1 ? '' : 's'}`} /> : null}</button>
+            <div className="nav-dropdown-panel support-panel" role="menu">
+              <div className="nav-dropdown-panel-inner">
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('support-center'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M3 12v5a2 2 0 0 0 2 2h1v-7H4a1 1 0 0 0-1 1z" /><path d="M21 12v5a2 2 0 0 1-2 2h-1v-7h2a1 1 0 0 1 1 1z" /></svg>Support center</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('safety-center'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /></svg>Safety center</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openSupport())}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5A8.38 8.38 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3 8.38 8.38 0 0 1 21 11.5z" /></svg>Chat with us</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('purchase-protection'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><polyline points="9 12 11 14 15 10" /></svg>Purchase protection</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('privacy'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Privacy policy</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('terms'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>Terms of use</button>
+              </div>
+            </div>
+          </div>
+          <div className="region-pill" aria-hidden="true"><span>&#127482;&#127480;</span> English</div>
           <button className="cart-pill" type="button" onClick={() => setCartOpen(true)} aria-label={`Cart with ${cartCount} items`}><span aria-hidden>&#128722;</span> <b>{cartCount}</b></button>
         </div>
       </div>
-      <label className="searchbar"><span aria-hidden>&#8981;</span><input aria-label="Search products" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search for phones, laptops, headphones…" /></label>
     </header>
-    <main className="catalog">
+    <div className="menu-scrim" aria-hidden="true" />
+    <main className="catalog" ref={mainRef}>
       {pageView ? (() => {
         const withSections = pageView !== 'loading' && Array.isArray(pageView.sections) && pageView.sections.length > 0
         const hasBanner = pageView !== 'loading' && !!pageView.banner_image
@@ -1878,7 +2047,13 @@ export default function Storefront() {
         </article>
         )
       })() : dealsPage ? (() => {
-        const dealsLabel = dealsPage === 'lightning' ? 'Lightning Deals' : dealsPage === 'unbeatable' ? 'Unbeatable Deals' : 'Exclusive Offer'
+        const dealsLabel = dealsPage === 'lightning' ? 'Lightning Deals'
+          : dealsPage === 'unbeatable' ? 'Unbeatable Deals'
+          : dealsPage === 'exclusive' ? 'Exclusive Offer'
+          : dealsPage === 'best_selling' ? 'Best-Selling'
+          : dealsPage === 'top_rated' ? '5-Star Rated'
+          : dealsPage === 'newest' ? 'New In'
+          : dealsCategory || 'Category'
         return <article className={`deals-page deals-page-${dealsPage}`}>
           <button type="button" className="page-back" onClick={closeDeals}>&larr; Back to shopping</button>
           <nav className="deals-breadcrumb" aria-label="Breadcrumb">
@@ -2046,13 +2221,13 @@ export default function Storefront() {
             ))}
           </section>}
 
-          {categoryCarousel(homeCatsRef, homeCatsDrag, homeCatsWrapRef, activeCategory, (tile) => (tile ? openHomeTarget(tile) : setActiveCategory(null)), true, true)}
+          {categoryCarousel(homeCatsRef, homeCatsDrag, homeCatsWrapRef, activeCategory, (tile) => { if (tile) openHomeTarget(tile); else setActiveCategory(null) }, true, true)}
 
-          {products.length > 0 && (loading ? <div className="empty-state">Loading…</div> : (
-            <>
-              {productGrid}
-            </>
-          ))}
+          {/* With a category picked, always render the grid (it has its own
+              "Nothing here yet" fallback) so a genuinely empty category
+              doesn't just disappear with no heading or message. */}
+          {activeCategory && <div className="catalog-head"><h2>{activeCategory}</h2><span>{visibleProducts.length} items</span></div>}
+          {(activeCategory || products.length > 0) && (loading ? <div className="empty-state">Loading…</div> : productGrid)}
         </>
       ) : loading ? <div className="empty-state">Loading…</div> : (
         <>

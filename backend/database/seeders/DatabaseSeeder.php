@@ -1059,14 +1059,22 @@ MD,
             $hasRating = $hash % 100 < 85;
             $ratingAvg = $hasRating ? round(3.5 + (($hash >> 8) % 151) / 100, 2) : null;
             $ratingCount = $hasRating ? 3 + ($hash % 797) : 0;
-            $unitsSold = 2 + (($hash >> 16) % 14998);
 
-            Product::updateOrCreate(['sku' => $sku], [
+            // units_sold is tied to a synthetic age instead of being fully
+            // independent, so a "New In" (sort by created_at) listing doesn't
+            // surface items that already show thousands of units sold.
+            $ageDays = $hash % 365; // 0 = seeded today .. 364 = about a year old
+            $dailyRate = 3 + (($hash >> 24) % 40); // 3-42 units/day, deterministic per SKU
+            $unitsSold = max(2, (int) round($ageDays * $dailyRate * (0.6 + (($hash >> 18) % 60) / 100)));
+            $createdAt = now()->subDays($ageDays)->subMinutes($hash % 1440);
+
+            $product = Product::updateOrCreate(['sku' => $sku], [
                 'name' => $name, 'slug' => $slug, 'description' => $description,
                 'price_cents' => $price, 'compare_at_price_cents' => $compareAt,
                 'inventory_quantity' => $inventory, 'image_url' => $image, 'category_id' => $category->id,
                 'rating_avg' => $ratingAvg, 'rating_count' => $ratingCount, 'units_sold' => $unitsSold,
             ]);
+            $product->forceFill(['created_at' => $createdAt])->save();
         }
     }
 

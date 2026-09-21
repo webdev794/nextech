@@ -58,6 +58,7 @@ class CatalogController extends Controller
             'search' => ['sometimes', 'string', 'min:2', 'max:100'],
             'deal_type' => ['sometimes', Rule::in(['lightning', 'unbeatable'])],
             'exclusive' => ['sometimes', 'boolean'],
+            'sort' => ['sometimes', Rule::in(['best_selling', 'top_rated', 'newest'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
@@ -91,7 +92,16 @@ class CatalogController extends Controller
             ))
             ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
-            ->orderBy('name')
+            ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5))
+            ->when(
+                $validated['sort'] ?? null,
+                fn ($query, $sort) => match ($sort) {
+                    'best_selling' => $query->orderByDesc('units_sold'),
+                    'top_rated' => $query->orderByDesc('rating_avg')->orderByDesc('rating_count'),
+                    'newest' => $query->orderByDesc('created_at'),
+                },
+                fn ($query) => $query->orderBy('name'),
+            )
             ->paginate($validated['per_page'] ?? 20)
             ->through(fn (Product $product) => $this->present($product, $storeId));
 
