@@ -14,6 +14,19 @@ use Throwable;
 class MediaController extends Controller
 {
     /**
+     * Product photos (folder=products, both the admin and seller upload paths
+     * land here) get a stricter bar than other image folders: square, small
+     * enough the storefront isn't loading multi-megabyte photos, JPEG/PNG
+     * only. Other folders (categories/stores/banners/shops) have their own
+     * natural aspect ratios and are unaffected.
+     */
+    private const PRODUCT_IMAGE_RULES = [
+        'mimes:jpg,jpeg,png',
+        'max:800',
+        'dimensions:min_width=400,min_height=400,ratio=1/1',
+    ];
+
+    /**
      * Store on storage/app/public/{folder} (unchanged layout).
      *
      * Returns an /api/media/file/... URL so the browser always hits Laravel.
@@ -22,9 +35,14 @@ class MediaController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $folder = $request->input('folder', 'products');
+
         $validated = $request->validate([
-            'file' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops'],
+            'file' => array_merge(
+                ['required', 'file'],
+                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', 'max:4096']
+            ),
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';

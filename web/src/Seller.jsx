@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
+import { checkProductImage } from './productImageCheck'
+import { renderMarkdown } from './markdown'
+import { PageSection } from './PageSections'
 import './Seller.css'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -55,6 +58,12 @@ const STATUS_COPY = {
 }
 
 const PRODUCT_STATUS_LABELS = { pending: 'Pending review', approved: 'Live', rejected: 'Rejected' }
+const SUPPORT_ISSUE_LABELS = {
+  item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
+  not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other', delivery: 'Delivery message',
+  seller_product_issue: 'Product issue', seller_other: 'Other',
+}
+const EMPTY_PAYOUT_FORM = { payout_method: 'bank', holder_name: '', account_number: '', routing_number: '', bank_name: '', email: '' }
 const dollarsOrBlank = (cents) => (cents != null ? (cents / 100).toFixed(2) : '')
 const EMPTY_SELLER_VARIANT = { label: '', sku: '', price: '', compare_at: '', stock: 0, image_url: '', is_active: true }
 const EMPTY_SELLER_PRODUCT = { category_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', suggested_category_name: '', images: [], variants: [] }
@@ -83,6 +92,14 @@ export default function Seller({ token, onSignOut }) {
   const [orderSummary, setOrderSummary] = useState(null)
   const [orders, setOrders] = useState([])
   const [orderMsg, setOrderMsg] = useState('')
+  const [payoutForm, setPayoutForm] = useState(null)
+  const [payoutMsg, setPayoutMsg] = useState('')
+  const [supportThreads, setSupportThreads] = useState([])
+  const [supportThread, setSupportThread] = useState(null)
+  const [supportReply, setSupportReply] = useState('')
+  const [supportMsg, setSupportMsg] = useState('')
+  const [newThreadForm, setNewThreadForm] = useState(null)
+  const [pageView, setPageView] = useState(null) // { slug, title, content } | 'loading' | null
 
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
 
@@ -109,6 +126,107 @@ export default function Seller({ token, onSignOut }) {
       .catch(() => { if (!cancelled) setLoadError('Could not reach the API. Start Laravel on port 8000 and reload.') })
     return () => { cancelled = true }
   }, [authHeaders])
+
+  // Seller-only Terms & Conditions (and any other page) via the same #/p/<slug>
+  // hash mechanism Storefront's openPage() uses — reused here as its own small
+  // page view rather than switching to the storefront SPA route.
+  useEffect(() => {
+    const sync = () => {
+      const match = window.location.hash.match(/^#\/p\/([a-z0-9-]+)$/)
+      if (!match) { setPageView(null); return }
+      const slug = match[1]
+      setPageView((current) => (current && current !== 'loading' && current.slug === slug ? current : 'loading'))
+      fetch(`${API_URL}/pages/${slug}`, { headers: { Accept: 'application/json' } })
+        .then(readJson)
+        .then((res) => setPageView(res?.data ?? { slug, title: 'Page not found', content: 'That page does not exist.' }))
+        .catch(() => setPageView({ slug, title: 'Page not found', content: 'That page does not exist.' }))
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
+  function openPage(slug) {
+    window.location.hash = `#/p/${slug}`
+    window.scrollTo({ top: 0 })
+  }
+  function closePage() {
+    if (window.location.hash) window.location.hash = ''
+    else setPageView(null)
+  }
+
+  async function savePayoutMethod(event) {
+    event.preventDefault()
+    setPayoutMsg('')
+    try {
+      const payload = { payout_method: payoutForm.payout_method }
+      if (payoutForm.payout_method === 'bank') {
+        payload.holder_name = payoutForm.holder_name.trim()
+        payload.account_number = payoutForm.account_number.trim()
+        payload.routing_number = payoutForm.routing_number.trim()
+        payload.bank_name = payoutForm.bank_name.trim()
+      } else {
+        payload.email = payoutForm.email.trim()
+      }
+      const response = await fetch(`${API_URL}/seller/payout-method`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save your payout details.')
+      setMe((m) => ({ ...m, payout_method: data.data.payout_method, payout_details: data.data.payout_details }))
+      setPayoutMsg('Saved.')
+    } catch (error) {
+      setPayoutMsg(error.message)
+    }
+  }
+
+  const loadSupportThreads = useCallback(() => {
+    fetch(`${API_URL}/support/threads`, { headers: authHeaders() }).then(readJson)
+      .then((res) => setSupportThreads(res?.data ?? []))
+      .catch(() => setSupportMsg('Could not load your messages.'))
+  }, [authHeaders])
+
+  async function openSupportThread(id) {
+    setSupportMsg('')
+    try {
+      const response = await fetch(`${API_URL}/support/threads/${id}`, { headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not load that conversation.')
+      setSupportThread(data.data)
+    } catch (error) {
+      setSupportMsg(error.message)
+    }
+  }
+
+  async function replySupportThread(event) {
+    event.preventDefault()
+    const body = supportReply.trim()
+    if (!body || !supportThread) return
+    try {
+      const response = await fetch(`${API_URL}/support/threads/${supportThread.id}/messages`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Message not sent.')
+      setSupportReply('')
+      setSupportThread(data.data)
+      loadSupportThreads()
+    } catch (error) {
+      setSupportMsg(error.message)
+    }
+  }
+
+  async function startSupportThread(event) {
+    event.preventDefault()
+    const message = newThreadForm.message.trim()
+    if (!message) return
+    try {
+      const response = await fetch(`${API_URL}/support/threads`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ issue_type: newThreadForm.issue_type, message }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not send your message.')
+      setNewThreadForm(null)
+      setSupportThread(data.data)
+      loadSupportThreads()
+    } catch (error) {
+      setSupportMsg(error.message)
+    }
+  }
 
   const countryMap = useMemo(() => Object.fromEntries(countries.map((c) => [c.code, c])), [countries])
   const country = countryMap[form.country]
@@ -275,13 +393,15 @@ export default function Seller({ token, onSignOut }) {
   }, [authHeaders])
 
   useEffect(() => {
-    if (me?.status === 'approved') { loadProducts(); loadOrders() }
-  }, [me?.status, loadProducts, loadOrders])
+    if (me?.status === 'approved') { loadProducts(); loadOrders(); loadSupportThreads() }
+  }, [me?.status, loadProducts, loadOrders, loadSupportThreads])
 
   async function uploadProductImage(file, apply) {
     if (!file) return
-    setProductImgBusy(true)
     setProductMsg('')
+    const problem = await checkProductImage(file)
+    if (problem) { setProductMsg(problem); return }
+    setProductImgBusy(true)
     try {
       const body = new FormData()
       body.append('file', file)
@@ -379,6 +499,19 @@ export default function Seller({ token, onSignOut }) {
       </header>
 
       <main className="seller-main">
+        {pageView ? (
+          <article className="seller-page-view">
+            <button type="button" className="seller-btn ghost" onClick={closePage}>&larr; Back</button>
+            {pageView === 'loading'
+              ? <p className="seller-loading">Loading&hellip;</p>
+              : <>
+                  <h2>{pageView.title}</h2>
+                  {Array.isArray(pageView.sections) && pageView.sections.length > 0
+                    ? <div className="page-sections">{pageView.sections.map((section, index) => <PageSection key={index} section={section} />)}</div>
+                    : <div className="page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageView.content) }} />}
+                </>}
+          </article>
+        ) : <>
         {me === undefined && !loadError && <p className="seller-loading">Loading&hellip;</p>}
         {loadError && <p className="seller-error">{loadError}</p>}
 
@@ -567,7 +700,7 @@ export default function Seller({ token, onSignOut }) {
             <div className="seller-earnings">
               <h3>Earnings</h3>
               <p className="seller-earnings-balance">Balance: <strong>{money(me.balance_cents ?? 0)}</strong></p>
-              <p className="seller-earnings-note">Payouts are settled by NexTech outside the app (bank transfer); this reflects what you&rsquo;re owed.</p>
+              <p className="seller-earnings-note">Payouts are settled by NexTech outside the app (bank transfer/PayPal); this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
               <ul className="seller-earnings-list">
                 {(me.ledger_entries ?? []).map((entry) => (
                   <li key={entry.id}>
@@ -577,6 +710,47 @@ export default function Seller({ token, onSignOut }) {
                 ))}
                 {(me.ledger_entries ?? []).length === 0 && <li className="seller-earnings-empty">No activity yet.</li>}
               </ul>
+
+              {me.has_sales ? (
+                payoutForm ? (
+                  <form className="seller-shop-form seller-payout-form" onSubmit={savePayoutMethod}>
+                    <p className="seller-field-label">Payout method</p>
+                    <div className="seller-payout-radios">
+                      <label><input type="radio" name="payout_method" value="bank" checked={payoutForm.payout_method === 'bank'} onChange={() => setPayoutForm({ ...payoutForm, payout_method: 'bank' })} /> Bank account</label>
+                      <label><input type="radio" name="payout_method" value="paypal" checked={payoutForm.payout_method === 'paypal'} onChange={() => setPayoutForm({ ...payoutForm, payout_method: 'paypal' })} /> PayPal</label>
+                    </div>
+                    {payoutForm.payout_method === 'bank' ? (
+                      <>
+                        <label>Account holder name<input required value={payoutForm.holder_name} onChange={(event) => setPayoutForm({ ...payoutForm, holder_name: event.target.value })} /></label>
+                        <label>Bank name<input required value={payoutForm.bank_name} onChange={(event) => setPayoutForm({ ...payoutForm, bank_name: event.target.value })} /></label>
+                        <label>Account number<input required value={payoutForm.account_number} onChange={(event) => setPayoutForm({ ...payoutForm, account_number: event.target.value })} /></label>
+                        <label>Routing number<input required value={payoutForm.routing_number} onChange={(event) => setPayoutForm({ ...payoutForm, routing_number: event.target.value })} /></label>
+                      </>
+                    ) : (
+                      <label>PayPal email<input required type="email" value={payoutForm.email} onChange={(event) => setPayoutForm({ ...payoutForm, email: event.target.value })} /></label>
+                    )}
+                    <div className="seller-wizard-actions">
+                      <button type="submit" className="seller-btn">Save payout details</button>
+                      <button type="button" className="seller-btn ghost" onClick={() => setPayoutForm(null)}>Cancel</button>
+                    </div>
+                    {payoutMsg && <p className="seller-inline-error">{payoutMsg}</p>}
+                  </form>
+                ) : (
+                  <div className="seller-payout-form">
+                    {me.payout_method && (
+                      <p className="seller-earnings-note">
+                        On file: {me.payout_method === 'bank'
+                          ? <>Bank transfer — {me.payout_details?.bank_name}, acct ending {String(me.payout_details?.account_number ?? '').slice(-4)}</>
+                          : <>PayPal — {me.payout_details?.email}</>}
+                      </p>
+                    )}
+                    <button type="button" className="seller-btn ghost" onClick={() => setPayoutForm({ ...EMPTY_PAYOUT_FORM, payout_method: me.payout_method || 'bank', ...(me.payout_details ?? {}) })}>{me.payout_method ? 'Edit payout details' : 'Add payout details'}</button>
+                    {payoutMsg && <p className="seller-inline-error">{payoutMsg}</p>}
+                  </div>
+                )
+              ) : (
+                <p className="seller-earnings-note">Add your payout details once you&rsquo;ve made your first sale — you&rsquo;ll see this unlock here.</p>
+              )}
             </div>
 
             <div className="seller-orders">
@@ -726,8 +900,71 @@ export default function Seller({ token, onSignOut }) {
                 </form>
               )}
             </div>
+
+            <div className="seller-support">
+              <h3>Support</h3>
+              {!supportThread && !newThreadForm && (
+                <button type="button" className="seller-btn ghost" onClick={() => setNewThreadForm({ issue_type: 'seller_product_issue', message: '' })}>New message</button>
+              )}
+
+              {newThreadForm && (
+                <form className="seller-shop-form" onSubmit={startSupportThread}>
+                  <label>What&rsquo;s this about?
+                    <select value={newThreadForm.issue_type} onChange={(event) => setNewThreadForm({ ...newThreadForm, issue_type: event.target.value })}>
+                      <option value="seller_product_issue">Product issue</option>
+                      <option value="seller_other">Other</option>
+                    </select>
+                  </label>
+                  <label>Message
+                    <textarea rows="4" required value={newThreadForm.message} onChange={(event) => setNewThreadForm({ ...newThreadForm, message: event.target.value })} />
+                  </label>
+                  <div className="seller-wizard-actions">
+                    <button type="submit" className="seller-btn">Send</button>
+                    <button type="button" className="seller-btn ghost" onClick={() => setNewThreadForm(null)}>Cancel</button>
+                  </div>
+                </form>
+              )}
+
+              {!supportThread && !newThreadForm && (
+                <ul className="seller-earnings-list seller-thread-list">
+                  {supportThreads.map((t) => (
+                    <li key={t.id}>
+                      <button type="button" className="seller-thread-row" onClick={() => openSupportThread(t.id)}>
+                        <span>{SUPPORT_ISSUE_LABELS[t.issue_type] ?? t.issue_type}{t.needs_reply && <span className="seller-thread-dot" aria-label="Needs your reply" />}</span>
+                        <span>{t.status}{t.last_message_at ? ` · ${new Date(t.last_message_at).toLocaleDateString()}` : ''}</span>
+                      </button>
+                    </li>
+                  ))}
+                  {supportThreads.length === 0 && <li className="seller-earnings-empty">No messages yet.</li>}
+                </ul>
+              )}
+
+              {supportThread && (
+                <div className="seller-thread-detail">
+                  <button type="button" className="seller-btn ghost" onClick={() => setSupportThread(null)}>&larr; Back to messages</button>
+                  <h4>{SUPPORT_ISSUE_LABELS[supportThread.issue_type] ?? supportThread.issue_type}</h4>
+                  <div className="seller-thread-messages">
+                    {(supportThread.messages ?? []).map((msg) => (
+                      <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
+                        <strong>{msg.is_staff ? 'NexTech' : 'You'}:</strong> {msg.body}
+                      </p>
+                    ))}
+                  </div>
+                  <form className="seller-thread-reply" onSubmit={replySupportThread}>
+                    <textarea rows="2" placeholder="Reply…" value={supportReply} onChange={(event) => setSupportReply(event.target.value)} />
+                    <button type="submit" className="seller-btn">Send</button>
+                  </form>
+                </div>
+              )}
+              {supportMsg && <p className="seller-inline-error">{supportMsg}</p>}
+            </div>
+
+            <footer className="seller-footer">
+              <button type="button" className="seller-footer-link" onClick={() => openPage('seller-terms')}>Terms &amp; Conditions</button>
+            </footer>
           </div>
         )}
+        </>}
       </main>
     </div>
   )

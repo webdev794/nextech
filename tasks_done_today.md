@@ -1,7 +1,8 @@
 # Tasks Done Today
 
-- Built a new Temu-style top navigation: quick links, Categories mega-menu, and icon-labelled Support and Account dropdowns — plus a promo bar (with its own icons) above the menu and a redesigned search bar, with many rounds of visual/interaction bug fixes
-- Added 3 new pages (Support Center, Safety Center, Purchase Protection) linked from the new menu
-- Added dedicated pages for Best-Selling, 5-Star Rated, New In, and each product category (clicking any of these used to just filter in place and could show no results — now each opens its own page)
-- Fixed data/display bugs: unrealistic "New In" sales numbers, wrong brand color, an odd-looking Best-Selling flame icon
-- Clarified current category setup and what admin can already manage vs. what would need building
+- Built the multi-vendor Seller Center (`/seller`): registration wizard, admin approval, country-driven business fields (India/US), seller-managed products (variants, image gallery, admin approval queue), seller-side order view, and a commission + payout ledger with a $1000 minimum payout threshold
+- Added a dual delivery system: own riders (unchanged) plus a pluggable online-courier fallback for out-of-radius orders, with a mock provider now and admin-entered credentials for a real one later
+- Added seller payout method (bank/PayPal), a seller-only Terms & Conditions page, and two-way seller↔admin messaging (reusing the support-thread system, visible to admin under a dedicated filter)
+- Added strict product-photo rules (1:1, JPEG/PNG, 800KB max, 8-photo gallery cap) with instant client-side validation, without breaking category/banner/branding uploads that share the same upload code
+- Fixed a real regression: an earlier cleanup pass had deleted the seeded `test@example.com` admin account — restored it and cleaned up other leftover test data; `logins.md` now documents all current accounts accurately
+- Committed and pushed everything to a new `v4` branch on GitHub (not merged — no PR opened, per instruction)

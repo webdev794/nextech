@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Seller;
 use App\Models\Shop;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -107,9 +108,49 @@ class SellerController extends Controller
                 ->latest()
                 ->limit(20)
                 ->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at']);
+            // Whether payout details are relevant yet — a seller who's been
+            // fully paid out (balance back to 0) still needs their method on
+            // file, so this checks ledger history, not the current balance.
+            $seller->has_sales = $seller->shop->ledgerEntries()->exists();
+            $seller->min_payout_cents = SellerLedger::minPayoutCents();
         }
 
         return response()->json(['data' => $seller]);
+    }
+
+    /**
+     * Where admin should manually send this seller's payouts — gated to an
+     * approved seller like the product endpoints, not just "has applied".
+     */
+    public function payoutMethod(Request $request): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($seller?->status === 'approved', 403, 'Approved seller access required.');
+
+        $data = $request->validate([
+            'payout_method' => ['required', Rule::in(['bank', 'paypal'])],
+            'holder_name' => ['required_if:payout_method,bank', 'string', 'max:160'],
+            'account_number' => ['required_if:payout_method,bank', 'string', 'max:60'],
+            'routing_number' => ['required_if:payout_method,bank', 'string', 'max:60'],
+            'bank_name' => ['required_if:payout_method,bank', 'string', 'max:160'],
+            'email' => ['required_if:payout_method,paypal', 'email', 'max:160'],
+        ]);
+
+        $details = $data['payout_method'] === 'bank'
+            ? [
+                'holder_name' => $data['holder_name'],
+                'account_number' => $data['account_number'],
+                'routing_number' => $data['routing_number'],
+                'bank_name' => $data['bank_name'],
+            ]
+            : ['email' => $data['email']];
+
+        $seller->forceFill([
+            'payout_method' => $data['payout_method'],
+            'payout_details' => $details,
+        ])->save();
+
+        return response()->json(['data' => $seller->fresh()]);
     }
 
     /**

@@ -183,6 +183,7 @@ class AdminSettingController extends Controller
                 'active_countries' => ['sometimes', 'array'],
                 'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
                 'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+                'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
             ]
             + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
@@ -201,6 +202,10 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('commission_rate_bps', $validated)) {
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        if (array_key_exists('min_payout_cents', $validated)) {
+            Setting::put('min_payout_cents', (int) $validated['min_payout_cents']);
         }
 
         $this->mergeInto('checkout_fees', array_intersect_key($validated, self::FEE_RULES));
@@ -269,6 +274,7 @@ class AdminSettingController extends Controller
             'active_countries' => Country::active(),
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
             'commission_rate_bps' => SellerLedger::rate(),
+            'min_payout_cents' => SellerLedger::minPayoutCents(),
             ...CheckoutFees::current(),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),

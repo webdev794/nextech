@@ -31,6 +31,8 @@ class Seller extends Model
         'reviewed_by',
         'reviewed_at',
         'submitted_at',
+        'payout_method',
+        'payout_details',
     ];
 
     protected function casts(): array
@@ -39,6 +41,7 @@ class Seller extends Model
             'date_of_birth' => 'date',
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
+            'payout_details' => 'array',
         ];
     }
 

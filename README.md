@@ -253,8 +253,14 @@ Administrators must be able to manage:
     - [ ] Standalone build config (`expo-build-properties` for cleartext, app icons, EAS)
 11. [x] Support chat (per-order + general threads, polling) with admin inbox + refunds from a thread
 12. [ ] Testing and deployment hardening
-13. [x] Multi-vendor Seller Center (registration, admin approval, per-country business fields) — see **Seller Center**
+13. [x] Multi-vendor Seller Center (registration, admin approval, per-country business fields, seller-managed products, commission ledger + payout threshold, seller payout method, seller Terms page, seller↔admin messaging) — see **Seller Center**
     - [ ] Full multi-currency storefront checkout / per-country delivery operations (foundation is in place; not yet built)
+    - [ ] Seller-facing price/fee estimator (commission + tax + delivery cost breakdown) so a seller can price low-margin items sensibly — not built
+    - [ ] Seller "ship-from" pickup address, distinct from the KYC registered address — needed before a real courier integration can actually schedule pickups; not collected today
+    - [ ] Decide whether the storefront's "free delivery above $35" threshold should be recovered from the seller's payout when it applies to their product, or stays a platform-absorbed cost as today — not decided, not built
+14. [x] Dual delivery: own riders (unchanged) + pluggable online-courier fallback for out-of-radius orders (mock provider today, admin-entered credentials for a real one later) — see **Seller Center**/`Courier`
+    - [ ] Real courier provider integration (Bluedart/Delhivery/Shiprocket/etc.) — the generic `RealCourierProvider` template needs adjusting to whichever provider's actual API once an account exists
+    - [ ] Per-store delivery-mode flag (mark a store as courier-only vs relying on its own riders) and geo-restricting product *visibility* (not just checkout) to what a store can actually reach — discussed, not scoped/built
 
 ### Known Gaps To Revisit
 
@@ -525,6 +531,28 @@ directly by NexTech", which is every pre-existing product).
   (`GET /api/admin/sellers/shops` for the option list) so any product — new or
   existing — can be attached to an approved shop, or left as "Sold directly by
   NexTech".
+- **Sellers manage their own catalog** from `/seller` (My products panel):
+  create/edit products with variants and a multi-image gallery, picking an
+  existing category (or leaving a free-text "suggest a category" note for
+  admin). Every save — create or edit — goes to `status: pending` and is
+  invisible on the storefront until **Admin → Products** approves it (status
+  filter + Approve/Reject-with-reason, next to the normal edit form so admin
+  can fix things first). Admin's own products are always auto-approved, no
+  behavior change there. Sellers also get a read-only **My orders** panel
+  scoped to just their own shop's line items within an order — never the
+  order total, other sellers' items, or the customer's identity; `/admin`
+  remains the only place with full order/customer access and payouts.
+- **Product photo rules** (`folder=products`, both the admin product/variant
+  image field and the seller gallery uploader go through this): **JPEG or PNG
+  only, square (1:1), at least 400×400px, 800 KB max**, and a product's
+  gallery is capped at 8 photos. The browser checks a file the moment it's
+  picked and shows a specific reason immediately (wrong format / too small /
+  not square / too big) before ever uploading it; the server (`MediaController`)
+  enforces the same rule as the real gate either way. Shop logos/banners,
+  category images, page content images, and branding logo/favicon are on
+  separate storage folders with the older, looser rule (any of
+  jpg/jpeg/png/webp/gif, 4 MB max, no ratio requirement) — this only applies
+  to actual product photos.
 
 ## Customer support
 

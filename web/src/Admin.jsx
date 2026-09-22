@@ -4,6 +4,7 @@ import { Delta, Heatmap, LineChart, PieChart } from './Charts'
 import { renderMarkdown } from './markdown'
 import { SECTION_TYPES, blankSection } from './pageSectionTypes'
 import { mediaUrl } from './mediaUrl'
+import { checkProductImage } from './productImageCheck'
 import './Admin.css'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -132,7 +133,9 @@ const ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other',
   delivery: 'Delivery message',
+  seller_product_issue: 'Seller: product issue', seller_other: 'Seller: other',
 }
+const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
 const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
 
@@ -302,6 +305,7 @@ function feesToForm(s) {
     small_cart_min: dollars(s.small_cart_min_cents),
     tax_rate_pct: ((s.tax_rate_bps ?? 0) / 100).toFixed(2),
     commission_rate_pct: ((s.commission_rate_bps ?? 0) / 100).toFixed(2),
+    min_payout: dollars(s.min_payout_cents),
   }
 }
 
@@ -317,6 +321,7 @@ function formToFees(f) {
     small_cart_min_cents: toCents(f.small_cart_min),
     tax_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.tax_rate_pct || 0) * 100))),
     commission_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.commission_rate_pct || 0) * 100))),
+    min_payout_cents: toCents(f.min_payout),
   }
 }
 
@@ -588,7 +593,11 @@ export default function Admin({ token, onClose }) {
   }, [authHeaders])
 
   const loadThreads = useCallback(() => {
-    const query = threadStatus === 'all' ? '' : `?status=${threadStatus}`
+    // "sellers" isn't a status — it swaps the filter dimension to issue_type,
+    // sent as a comma-separated list (AdminSupportController::index() accepts
+    // either a single value or several this way).
+    const query = threadStatus === 'sellers' ? `?issue_type=${SELLER_ISSUE_TYPES.join(',')}`
+      : threadStatus === 'all' ? '' : `?status=${threadStatus}`
     fetch(`${API_URL}/admin/support/threads${query}`, { headers: authHeaders() }).then(readJson)
       .then((data) => setThreads(data.data ?? [])).catch(() => setMessage('Could not load support threads.'))
   }, [authHeaders, threadStatus])
@@ -1473,13 +1482,22 @@ export default function Admin({ token, onClose }) {
   }
 
   // Upload an image file to /api/admin/media and hand the stored URL to `apply`.
-  async function uploadImage(file, apply) {
+  // `folder` defaults to 'products' — product/variant photos, which the
+  // server holds to a stricter bar (square, JPEG/PNG, 800KB) than category,
+  // banner, page, or branding images, so only that folder gets the client-side
+  // pre-check too.
+  async function uploadImage(file, apply, folder = 'products') {
     if (!file) return
     setMessage('')
+    if (folder === 'products') {
+      const problem = await checkProductImage(file)
+      if (problem) { fail(new Error(problem)); return }
+    }
     setImgBusy(true)
     try {
       const body = new FormData()
       body.append('file', file)
+      if (folder !== 'products') body.append('folder', folder)
       const response = await fetch(`${API_URL}/admin/media`, { method: 'POST', headers: authHeaders(), body })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Upload failed.')
@@ -1590,6 +1608,22 @@ export default function Admin({ token, onClose }) {
     if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
     const note = window.prompt('Note (optional):', '') ?? ''
     sellerAction(seller, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  // Deliberately not routed through sellerAction() — that helper expects the
+  // response's `data` to be a Seller row it can merge into sellers/sellerDetail
+  // state, but this endpoint returns the SupportThread instead.
+  async function messageSeller(seller) {
+    const body = window.prompt(`Message to ${seller.shop?.name ?? 'this seller'}:`, '')
+    if (!body || !body.trim()) return
+    setBusyId(seller.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}/message`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body: body.trim() }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not send the message.')
+      setMessage('Message sent.')
+    } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
   // KYC documents live on the private disk, gated by auth — not a plain <a
@@ -2366,7 +2400,7 @@ export default function Admin({ token, onClose }) {
                   : <div className="admin-banner-thumb placeholder">category image</div>}
                 <div>
                   <label>Image URL<input value={categoryForm.image_url} onChange={(event) => setCategoryForm({ ...categoryForm, image_url: event.target.value })} /></label>
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setCategoryForm((form) => ({ ...form, image_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setCategoryForm((form) => ({ ...form, image_url: url })), 'categories')} />
                   {imgBusy && <span className="muted"> uploading…</span>}
                 </div>
               </div>
@@ -2654,7 +2688,7 @@ export default function Admin({ token, onClose }) {
                   : <div className="admin-banner-preview placeholder">No image</div>}
                 <div>
                   <label>Image URL<input value={bannerForm.image_url} onChange={(event) => setBannerForm({ ...bannerForm, image_url: event.target.value })} placeholder="https://…" /></label>
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBannerForm((form) => ({ ...form, image_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBannerForm((form) => ({ ...form, image_url: url })), 'banners')} />
                   {imgBusy && <span className="muted"> uploading…</span>}
                 </div>
               </div>
@@ -2773,7 +2807,7 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-image-field">
                   {pageForm.banner_image && <img src={mediaUrl(pageForm.banner_image)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input value={pageForm.banner_image ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => setPageForm({ ...pageForm, banner_image: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })), 'pages')} />
                   {pageForm.banner_image && <button type="button" className="act ghost" onClick={() => setPageForm({ ...pageForm, banner_image: '' })}>Clear</button>}
                 </div>
               </label>
@@ -2802,7 +2836,7 @@ export default function Admin({ token, onClose }) {
                             <div className="admin-image-field">
                               {s.image_url && <img src={mediaUrl(s.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                               <input value={s.image_url ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => patchSection(i, { image_url: event.target.value })} />
-                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }))} />
+                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }), 'pages')} />
                               {s.image_url && <button type="button" className="act ghost" onClick={() => patchSection(i, { image_url: '' })}>Clear</button>}
                             </div>
                           </label>
@@ -2821,7 +2855,7 @@ export default function Admin({ token, onClose }) {
                           <div className="admin-image-field">
                             {s.image_url && <img src={mediaUrl(s.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                             <input value={s.image_url ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => patchSection(i, { image_url: event.target.value })} />
-                            <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }))} />
+                            <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }), 'pages')} />
                             {s.image_url && <button type="button" className="act ghost" onClick={() => patchSection(i, { image_url: '' })}>Clear</button>}
                           </div>
                         </label>
@@ -2837,7 +2871,7 @@ export default function Admin({ token, onClose }) {
                           <div className="admin-feature-row admin-feature-row--quad" key={ii}>
                             <span className="admin-variant-img">
                               <input placeholder="Icon / image URL" value={it.image_url ?? ''} onChange={(event) => patchItem(i, ii, { image_url: event.target.value })} />
-                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchItem(i, ii, { image_url: url }))} />
+                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchItem(i, ii, { image_url: url }), 'pages')} />
                             </span>
                             <input placeholder="Title" value={it.title ?? ''} onChange={(event) => patchItem(i, ii, { title: event.target.value })} />
                             <input placeholder="Text" value={it.text ?? ''} onChange={(event) => patchItem(i, ii, { text: event.target.value })} />
@@ -2935,7 +2969,7 @@ export default function Admin({ token, onClose }) {
       {tab === 'support' && (
         <section className="admin-panel">
           <div className="admin-filters">
-            {['open', 'resolved', 'all'].map((value) => (
+            {['open', 'resolved', 'all', 'sellers'].map((value) => (
               <button key={value} type="button" className={threadStatus === value ? 'chip active' : 'chip'} onClick={() => setThreadStatus(value)}>{value}</button>
             ))}
           </div>
@@ -3068,7 +3102,7 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-image-field">
                   {brandingForm.logo_url && <img className="admin-image-preview" src={mediaUrl(brandingForm.logo_url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Logo image URL, or upload →" value={brandingForm.logo_url} onChange={(event) => setBrandingForm({ ...brandingForm, logo_url: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, logo_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, logo_url: url })), 'branding')} />
                   {brandingForm.logo_url && <button type="button" className="act ghost" onClick={() => setBrandingForm({ ...brandingForm, logo_url: '' })}>Clear</button>}
                 </div>
               </label>
@@ -3076,7 +3110,7 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-image-field">
                   {brandingForm.favicon_url && <img className="admin-image-preview" src={mediaUrl(brandingForm.favicon_url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Favicon URL (.png / .ico / .svg), or upload →" value={brandingForm.favicon_url} onChange={(event) => setBrandingForm({ ...brandingForm, favicon_url: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, favicon_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, favicon_url: url })), 'branding')} />
                   {brandingForm.favicon_url && <button type="button" className="act ghost" onClick={() => setBrandingForm({ ...brandingForm, favicon_url: '' })}>Clear</button>}
                 </div>
               </label>
@@ -3245,7 +3279,9 @@ export default function Admin({ token, onClose }) {
                 <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
                 <div className="admin-form-grid">
                   <label>Commission rate (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
+                  <label>Minimum payout ($)<input type="number" min="0" step="0.01" value={feesForm.min_payout} onChange={(event) => setFeesForm({ ...feesForm, min_payout: event.target.value })} /></label>
                 </div>
+                <p className="muted">A seller's balance must reach this amount before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces).</p>
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
 
@@ -3423,7 +3459,13 @@ export default function Admin({ token, onClose }) {
                 {sellerDetail.shop && (
                   <>
                     <h4>Payouts</h4>
-                    <p className="muted">Balance: <strong>{money(sellerDetail.balance_cents ?? 0)}</strong></p>
+                    <p className="muted">Balance: <strong>{money(sellerDetail.balance_cents ?? 0)}</strong> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0)}</p>
+                    {sellerDetail.payout_method ? (
+                      <p className="muted">
+                        {sellerDetail.payout_method === 'bank' ? <>Bank transfer — {sellerDetail.payout_details?.holder_name}, {sellerDetail.payout_details?.bank_name}, acct {sellerDetail.payout_details?.account_number} · routing {sellerDetail.payout_details?.routing_number}</>
+                          : <>PayPal — {sellerDetail.payout_details?.email}</>}
+                      </p>
+                    ) : <p className="muted">No payout method on file yet.</p>}
                     {(sellerDetail.ledger_entries ?? []).length > 0 && (
                       <div className="admin-gift-issued">
                         {sellerDetail.ledger_entries.map((entry) => (
@@ -3433,7 +3475,8 @@ export default function Admin({ token, onClose }) {
                     )}
                     {sellerDetail.status === 'approved' && (
                       <div className="admin-form-actions">
-                        <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
+                        <button className="act" type="button" disabled={busyId === sellerDetail.id || (sellerDetail.balance_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0)} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
+                        {(sellerDetail.balance_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Below the {money(sellerDetail.min_payout_cents ?? 0)} minimum — payout unlocks once the balance reaches it.</p>}
                       </div>
                     )}
                   </>
@@ -3441,6 +3484,7 @@ export default function Admin({ token, onClose }) {
 
                 <h4>Actions</h4>
                 <div className="admin-form-actions">
+                  <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => messageSeller(sellerDetail)}>Message seller</button>
                   {sellerDetail.status === 'pending' && <>
                     <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'approve')}>Approve</button>
                     <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectSeller(sellerDetail)}>Reject</button>

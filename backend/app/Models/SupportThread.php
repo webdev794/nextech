@@ -12,6 +12,8 @@ class SupportThread extends Model
         'item_missing', 'item_damaged', 'wrong_item', 'not_delivered', 'payment_issue', 'other',
         // Opened by the delivery rider, not chosen by the customer.
         'delivery',
+        // Seller <-> admin channel, not a customer order complaint.
+        'seller_product_issue', 'seller_other',
     ];
 
     protected $fillable = [

@@ -134,7 +134,7 @@ class SellerProductController extends Controller
             'suggested_category_name' => ['sometimes', 'nullable', 'string', 'max:160'],
 
             // Full-replace gallery — see syncImages().
-            'images' => ['sometimes', 'array'],
+            'images' => ['sometimes', 'array', 'max:8'],
             'images.*' => ['string', 'max:500'],
 
             'variants' => ['sometimes', 'array'],

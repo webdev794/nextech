@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Seller;
 use App\Models\Shop;
+use App\Models\SupportThread;
 use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -126,11 +127,46 @@ class AdminSellerController extends Controller
             ], 422);
         }
 
+        $minPayout = SellerLedger::minPayoutCents();
+        if ($balance < $minPayout) {
+            return response()->json([
+                'message' => 'Balance must reach $'.number_format($minPayout / 100, 2)." before a payout can be recorded (currently $".number_format($balance / 100, 2).').',
+            ], 422);
+        }
+
         SellerLedger::recordPayout($shop, $data['amount_cents'], $data['note'] ?? null, $request->user());
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
         ]);
+    }
+
+    /**
+     * Admin-originated message to a seller — mirrors RiderController::threadFor():
+     * finds or creates an open seller_product_issue thread for the seller's
+     * user_id and posts the first/next message as staff.
+     */
+    public function message(Request $request, Seller $seller): JsonResponse
+    {
+        $data = $request->validate(['body' => ['required', 'string', 'max:2000']]);
+
+        $thread = SupportThread::where('user_id', $seller->user_id)
+            ->whereIn('issue_type', ['seller_product_issue', 'seller_other'])
+            ->where('status', 'open')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $thread) {
+            $thread = SupportThread::create([
+                'user_id' => $seller->user_id,
+                'issue_type' => 'seller_product_issue',
+                'status' => 'open',
+            ]);
+        }
+
+        $thread->post($request->user(), $data['body'], isStaff: true);
+
+        return response()->json(['data' => $thread->fresh()]);
     }
 
     public function reinstate(Seller $seller): JsonResponse
@@ -194,6 +230,8 @@ class AdminSellerController extends Controller
                 'id_document_path' => $seller->id_document_path,
                 'business_document_path' => $seller->business_document_path,
                 'reviewer' => $seller->reviewer ? ['id' => $seller->reviewer->id, 'name' => $seller->reviewer->name] : null,
+                'payout_method' => $seller->payout_method,
+                'payout_details' => $seller->payout_details,
             ];
 
             $shop = $seller->relationLoaded('shop') ? $seller->shop : null;
@@ -201,6 +239,7 @@ class AdminSellerController extends Controller
             $row['ledger_entries'] = $shop
                 ? $shop->ledgerEntries()->latest()->limit(20)->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at'])
                 : [];
+            $row['min_payout_cents'] = SellerLedger::minPayoutCents();
         }
 
         return $row;

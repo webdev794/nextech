@@ -22,6 +22,12 @@ class SellerLedger
         return (int) Setting::get('commission_rate_bps', config('commission.rate_bps'));
     }
 
+    /** Minimum balance a payout can be recorded against — batches small amounts instead of paying out per order. */
+    public static function minPayoutCents(): int
+    {
+        return (int) Setting::get('min_payout_cents', config('commission.min_payout_cents'));
+    }
+
     /**
      * One order_credit entry per shop represented on the order (skipping a
      * null shop_id — NexTech's own inventory), each for that shop's subtotal

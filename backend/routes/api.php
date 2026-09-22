@@ -134,6 +134,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
+    Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
 
     Route::get('/orders', [AdminOrderController::class, 'index']);
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
@@ -199,6 +200,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
+    Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
 
     // The `seller` middleware only requires having applied at all; the real
     // "must be approved" gate for managing products is SellerProductController's

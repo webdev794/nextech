@@ -14,14 +14,21 @@ class AdminSupportController extends Controller
     {
         $validated = $request->validate([
             'status' => ['sometimes', Rule::in(['open', 'resolved'])],
-            'issue_type' => ['sometimes', Rule::in(SupportThread::ISSUE_TYPES)],
+            // Comma-separated list of issue types (e.g. the Sellers filter chip
+            // sends "seller_product_issue,seller_other") — a single value still
+            // works exactly as before.
+            'issue_type' => ['sometimes', 'string'],
         ]);
+
+        $issueTypes = isset($validated['issue_type'])
+            ? array_values(array_intersect(explode(',', $validated['issue_type']), SupportThread::ISSUE_TYPES))
+            : [];
 
         $threads = SupportThread::query()
             ->with(['user:id,name,email', 'order:id,status,total_cents'])
             ->withCount('messages')
             ->when($validated['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
-            ->when($validated['issue_type'] ?? null, fn ($q, $t) => $q->where('issue_type', $t))
+            ->when($issueTypes, fn ($q) => $q->whereIn('issue_type', $issueTypes))
             ->orderByRaw("status = 'open' desc")
             ->orderByDesc('last_message_at')
             ->paginate(30);
