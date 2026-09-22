@@ -28,11 +28,11 @@ The web app has three entry surfaces: storefront (`Storefront.jsx`), admin (`Adm
 
 ## Running locally (Windows)
 
-PHP is at `D:\xampp8-2-12\php84\php.exe` (not on PATH). From the repo root:
+PHP is at `D:\xampp\php84\php.exe` (not on PATH). From the repo root:
 
 ```sh
 # API — http://127.0.0.1:8000
-cd backend && "D:/xampp8-2-12/php84/php.exe" -d display_errors=0 artisan serve --host 127.0.0.1 --port 8000
+cd backend && "D:/xampp/php84/php.exe" -d display_errors=0 artisan serve --host 127.0.0.1 --port 8000
 
 # Web — http://127.0.0.1:5173 (Vite picks the next free port if taken)
 cd web && npm --cache D:/edp/.tmp/npm-cache run dev -- --host 127.0.0.1 --port 5173

@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\StripeEvent;
 use App\Models\SupportThread;
 use App\Models\User;
+use App\Support\SellerLedger;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -166,6 +167,8 @@ class PaymentController extends Controller
             'stripe_refund_id' => $refund->id,
         ]);
 
+        SellerLedger::debitForRefund($order, $amount);
+
         $order->update([
             'refunded_amount_cents' => $refundedTotal,
             'stripe_refund_id' => $refund->id,
@@ -316,6 +319,7 @@ class PaymentController extends Controller
         }
 
         $order->update(['payment_status' => 'paid', 'status' => 'confirmed']);
+        SellerLedger::creditForOrder($order);
     }
 
     private function markFailed(Order $order): void

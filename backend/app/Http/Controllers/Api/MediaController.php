@@ -24,7 +24,7 @@ class MediaController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners'],
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';
@@ -59,6 +59,33 @@ class MediaController extends Controller
                 'path' => $path,
             ],
         ], 201);
+    }
+
+    /**
+     * Shop logo/banner uploads, reachable by any authenticated user (a
+     * first-time seller applicant has no Seller row yet, so the `seller`
+     * middleware can't gate this). Forces folder=shops regardless of what's
+     * sent, so this relaxed auth can't be used to write into the admin-only
+     * folders store() otherwise allows.
+     */
+    public function storeShopAsset(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'shops']);
+
+        return $this->store($request);
+    }
+
+    /**
+     * Seller product-gallery uploads. Forces folder=products regardless of
+     * what's sent, same reasoning as storeShopAsset() above. The `seller`
+     * middleware on this route only requires having applied at all — the real
+     * "must be approved" gate lives in SellerProductController.
+     */
+    public function storeSellerProductAsset(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'products']);
+
+        return $this->store($request);
     }
 
     /**

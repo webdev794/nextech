@@ -169,6 +169,12 @@
 .pill-failed{background:#f6e3e0;color:#a23b28}
 .pill-cancelled{background:#efe6d8;color:#8a6d2f}
 .pill-refund_pending,.pill-refunded{background:#e7eef6;color:#2f5a8a}
+.pill-approved{background:#e4f3e4;color:#2f6d34}
+.pill-rejected{background:#f6e3e0;color:#a23b28}
+.pill-suspended{background:#efe6d8;color:#8a6d2f}
+.pill-booked{background:#f7efd2;color:#8a6a24}
+.pill-in_transit{background:#e7eef6;color:#2f5a8a}
+.pill-delivered{background:#e4f3e4;color:#2f6d34}
 /* Not display:flex — a flex <td> in a border-collapse table leaves its
    background unpainted past the content (white gap on zebra rows). Inline-flex
    children + margins lay out the same and let the cell paint normally. */

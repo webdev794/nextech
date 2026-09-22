@@ -43,7 +43,7 @@ class CatalogController extends Controller
                 // store in context, list them all as before.
                 ->when($storeId !== null, fn ($query) => $query->whereHas(
                     'products',
-                    fn ($inner) => $inner->where('is_active', true)->visibleAtStore($storeId),
+                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->visibleAtStore($storeId),
                 ))
                 ->orderBy('sort_order')
                 ->orderBy('name')
@@ -69,8 +69,10 @@ class CatalogController extends Controller
                 'category',
                 'variants' => fn ($query) => $query->where('is_active', true),
                 'storeInventory',
+                'images',
             ])
             ->where('is_active', true)
+            ->where('status', 'approved')
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->when(isset($validated['search']), function ($query) use ($validated) {
@@ -128,8 +130,10 @@ class CatalogController extends Controller
                 'category',
                 'variants' => fn ($query) => $query->where('is_active', true),
                 'storeInventory',
+                'images',
             ])
             ->where('is_active', true)
+            ->where('status', 'approved')
             ->where('deal_type', $validated['deal_type'])
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
@@ -150,10 +154,12 @@ class CatalogController extends Controller
             'category',
             'variants' => fn ($query) => $query->where('is_active', true),
             'storeInventory',
+            'images',
         ]);
 
         abort_unless(
             $product->is_active
+                && $product->status === 'approved'
                 && $product->category?->is_active
                 && ($storeId === null || ! $product->usesStoreInventory()
                     || $product->availabilityAt($storeId)['sold']

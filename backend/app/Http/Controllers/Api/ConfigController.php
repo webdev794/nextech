@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\Store;
 use App\Support\Branding;
 use App\Support\CheckoutFees;
+use App\Support\Country;
 use App\Support\FooterConfig;
 use App\Support\Payments;
 use Illuminate\Http\JsonResponse;
@@ -24,6 +25,7 @@ class ConfigController extends Controller
         return response()->json([
             'data' => [
                 'currency' => 'usd',
+                'active_countries' => Country::active(),
                 'stripe_publishable_key' => Payments::stripe()['key'],
                 'payments_enabled' => Payments::stripe()['secret'] !== '',
                 'branding' => Branding::current(),

@@ -15,6 +15,7 @@ class Product extends Model
 
     protected $fillable = [
         'category_id',
+        'shop_id',
         'name',
         'slug',
         'description',
@@ -30,6 +31,9 @@ class Product extends Model
         'rating_avg',
         'rating_count',
         'units_sold',
+        'status',
+        'rejection_reason',
+        'suggested_category_name',
     ];
 
     protected function casts(): array
@@ -51,6 +55,12 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /** The third-party shop this product belongs to, or null = sold directly by NexTech. */
+    public function shop(): BelongsTo
+    {
+        return $this->belongsTo(Shop::class);
+    }
+
     public function variants(): HasMany
     {
         return $this->hasMany(ProductVariant::class)->orderBy('sort_order')->orderBy('id');
@@ -59,6 +69,12 @@ class Product extends Model
     public function activeVariants(): HasMany
     {
         return $this->variants()->where('is_active', true);
+    }
+
+    /** The product's multi-image gallery, in display order. */
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function hasVariants(): bool

@@ -106,18 +106,24 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'riders', 'stores', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'riders', 'sellers', 'stores', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', categories: 'Categories',
-  customers: 'Customers', riders: 'Riders', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
+  customers: 'Customers', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
   homepage: 'Homepage', support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', riders: '\u{1F6F5}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
+  customers: '\u{1F465}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
   homepage: '\u{1F5BC}️',
 }
+const SELLER_STATUS_FILTERS = ['pending', 'approved', 'rejected', 'suspended']
+const SELLER_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
+const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
+const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
+const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -128,7 +134,7 @@ const ISSUE_LABELS = {
   delivery: 'Delivery message',
 }
 
-const EMPTY_PRODUCT = { category_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
+const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
 
 // Build the per-store stock grid ({ [storeId]: { is_stocked, base, variants: { [variantIndex]: qty } } })
 // from a product's store_inventory rows.
@@ -295,6 +301,7 @@ function feesToForm(s) {
     small_cart_fee: dollars(s.small_cart_fee_cents),
     small_cart_min: dollars(s.small_cart_min_cents),
     tax_rate_pct: ((s.tax_rate_bps ?? 0) / 100).toFixed(2),
+    commission_rate_pct: ((s.commission_rate_bps ?? 0) / 100).toFixed(2),
   }
 }
 
@@ -309,6 +316,7 @@ function formToFees(f) {
     small_cart_fee_cents: toCents(f.small_cart_fee),
     small_cart_min_cents: toCents(f.small_cart_min),
     tax_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.tax_rate_pct || 0) * 100))),
+    commission_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.commission_rate_pct || 0) * 100))),
   }
 }
 
@@ -359,6 +367,10 @@ export default function Admin({ token, onClose }) {
   const [productSort, setProductSort] = useState('newest')
   const [productStore, setProductStore] = useState('')
   const [productCategory, setProductCategory] = useState('')
+  // Default 'all' — admin's own products (always approved) stay visible by
+  // default; a pending seller submission is flagged by its status pill rather
+  // than requiring the admin to switch filters to notice it exists.
+  const [productStatus, setProductStatus] = useState('all')
   // Rows per page — shared across every list, remembered per browser.
   const [pageSize, setPageSizeRaw] = useState(() => {
     const n = Number(localStorage.getItem('gdp_admin_page_size'))
@@ -375,11 +387,12 @@ export default function Admin({ token, onClose }) {
   const [categoriesPage, setCategoriesPage] = useState(1)
   const [ridersPage, setRidersPage] = useState(1)
   const [storesPage, setStoresPage] = useState(1)
+  const [sellersPage, setSellersPage] = useState(1)
   const setPageSize = useCallback((n) => {
     setPageSizeRaw(n)
     try { localStorage.setItem('gdp_admin_page_size', String(n)) } catch { /* private mode */ }
     setOrdersPage(1); setProductsPage(1); setCustomersPage(1)
-    setCategoriesPage(1); setRidersPage(1); setStoresPage(1)
+    setCategoriesPage(1); setRidersPage(1); setStoresPage(1); setSellersPage(1)
   }, [])
   const pageSlice = (list, page) => list.slice((page - 1) * pageSize, page * pageSize)
   const [productForm, setProductForm] = useState(null)
@@ -401,6 +414,10 @@ export default function Admin({ token, onClose }) {
   const [riderEmail, setRiderEmail] = useState('')
   const [riderHireStoreId, setRiderHireStoreId] = useState('')
   const [riderDetail, setRiderDetail] = useState(null)
+  const [sellers, setSellers] = useState([])
+  const [sellerStatus, setSellerStatus] = useState('pending')
+  const [sellerDetail, setSellerDetail] = useState(null)
+  const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [riderReport, setRiderReport] = useState(null)
   const [settings, setSettings] = useState(null)
@@ -408,6 +425,7 @@ export default function Admin({ token, onClose }) {
   const [brandingForm, setBrandingForm] = useState(null)
   const [footerForm, setFooterForm] = useState(null)
   const [paymentsForm, setPaymentsForm] = useState(null)
+  const [courierForm, setCourierForm] = useState(null)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
   const [secureGate, setSecureGate] = useState('locked') // locked | code | unlocked
   const [secureSecret, setSecureSecret] = useState('') // password or OTP code
@@ -496,9 +514,10 @@ export default function Admin({ token, onClose }) {
     if (productSearch.trim()) qs.set('search', productSearch.trim())
     if (productStore) qs.set('store_id', productStore)
     if (productCategory) qs.set('category_id', productCategory)
+    if (productStatus !== 'all') qs.set('status', productStatus)
     track('products', fetch(`${API_URL}/admin/products?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setProducts(data.data ?? []); setProductsMeta(data.meta ?? null) }).catch(() => setMessage('Could not load products.')))
-  }, [authHeaders, productSearch, productSort, productStore, productCategory, productsPage, pageSize, track])
+  }, [authHeaders, productSearch, productSort, productStore, productCategory, productStatus, productsPage, pageSize, track])
 
   const loadCategories = useCallback(() => {
     track('categories', fetch(`${API_URL}/admin/categories`, { headers: authHeaders() }).then(readJson)
@@ -516,6 +535,19 @@ export default function Admin({ token, onClose }) {
       .then((data) => setRiders(data.data ?? [])).catch(() => setMessage('Could not load riders.')))
   }, [authHeaders, track])
 
+  const loadSellers = useCallback(() => {
+    const qs = new URLSearchParams(sellerStatus === 'all' ? {} : { status: sellerStatus })
+    track('sellers', fetch(`${API_URL}/admin/sellers?${qs}`, { headers: authHeaders() }).then(readJson)
+      .then((data) => setSellers(data.data ?? [])).catch(() => setMessage('Could not load seller applications.')))
+  }, [authHeaders, sellerStatus, track])
+
+  // Approved shops, for the Products form's Shop picker — kept separate from
+  // loadSellers() since it's needed on the Products tab too, not just Sellers.
+  const loadShops = useCallback(() => {
+    fetch(`${API_URL}/admin/sellers/shops`, { headers: authHeaders() }).then(readJson)
+      .then((data) => setShops(data.data ?? [])).catch(() => {})
+  }, [authHeaders])
+
   const loadSettings = useCallback(() => {
     fetch(`${API_URL}/admin/settings`, { headers: authHeaders() }).then(readJson)
       .then((data) => {
@@ -524,6 +556,13 @@ export default function Admin({ token, onClose }) {
         setBrandingForm({ ...EMPTY_BRANDING, ...(data.data.branding ?? {}) })
         setFooterForm({ ...EMPTY_FOOTER, ...(data.data.footer ?? {}), socials: { ...EMPTY_FOOTER.socials, ...(data.data.footer?.socials ?? {}) }, links: (data.data.footer?.links ?? []).map((l) => ({ ...l })) })
         setPaymentsForm({ stripe_key: data.data.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
+        setCourierForm({
+          courier_provider: data.data.courier?.provider ?? 'mock',
+          courier_base_url: data.data.courier?.base_url ?? '',
+          courier_account_code: data.data.courier?.account_code ?? '',
+          courier_api_key: '',
+          courier_api_secret: '',
+        })
       })
       .catch(() => setMessage('Could not load settings.'))
   }, [authHeaders])
@@ -567,10 +606,11 @@ export default function Admin({ token, onClose }) {
     const t = setInterval(loadOrders, 15000)
     return () => clearInterval(t)
   }, [tab, loadOrders])
-  useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores() } }, [tab, loadProducts, loadCategories, loadStores])
+  useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
   useEffect(() => { if (tab === 'customers') loadCustomers() }, [tab, loadCustomers])
   useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores() } }, [tab, loadRiders, loadStores])
+  useEffect(() => { if (tab === 'sellers') loadSellers() }, [tab, loadSellers])
   useEffect(() => { if (tab === 'stores') loadStores() }, [tab, loadStores])
   useEffect(() => { if (tab === 'homepage') { loadBanners(); loadHomeTiles(); loadCategories() } }, [tab, loadBanners, loadHomeTiles, loadCategories])
   useEffect(() => { if (tab === 'support') loadThreads() }, [tab, loadThreads])
@@ -1001,6 +1041,7 @@ export default function Admin({ token, onClose }) {
       setSecureGate('unlocked')
       if (data.data.account) setAccountForm({ name: data.data.account.name ?? '', email: data.data.account.email ?? '', phone: data.data.account.phone ?? '' })
       if (data.data.payments) setSettings((s) => (s ? { ...s, payments: data.data.payments } : s))
+      if (data.data.courier) setSettings((s) => (s ? { ...s, courier: data.data.courier } : s))
     } catch (error) { setSecureMsg(error.message) }
   }
 
@@ -1013,6 +1054,30 @@ export default function Admin({ token, onClose }) {
     if (saved) {
       setPaymentsForm({ stripe_key: saved.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
       setMessage('Payment settings saved — they take effect immediately.')
+    } else {
+      setSecureGate('locked'); setSecureToken('')
+    }
+  }
+
+  async function saveCourier(event) {
+    event.preventDefault()
+    const patch = {
+      courier_provider: courierForm.courier_provider,
+      courier_base_url: courierForm.courier_base_url.trim(),
+      courier_account_code: courierForm.courier_account_code.trim(),
+    }
+    if (courierForm.courier_api_key.trim()) patch.courier_api_key = courierForm.courier_api_key.trim()
+    if (courierForm.courier_api_secret.trim()) patch.courier_api_secret = courierForm.courier_api_secret.trim()
+    const saved = await saveSetting(patch, { 'X-Secure-Access': secureToken })
+    if (saved) {
+      setCourierForm({
+        courier_provider: saved.courier?.provider ?? 'mock',
+        courier_base_url: saved.courier?.base_url ?? '',
+        courier_account_code: saved.courier?.account_code ?? '',
+        courier_api_key: '',
+        courier_api_secret: '',
+      })
+      setMessage('Courier settings saved — they take effect immediately.')
     } else {
       setSecureGate('locked'); setSecureToken('')
     }
@@ -1058,6 +1123,35 @@ export default function Admin({ token, onClose }) {
       if (!response.ok) throw new Error(data.message ?? 'Refund failed.')
       setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
       setMessage('Refund issued.')
+      loadMetrics()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Pulls the courier's current tracking status; a `delivered` result
+  // auto-completes the order (handled server-side).
+  async function syncTracking(order) {
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/orders/${order.id}/sync-tracking`, { method: 'POST', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not pull tracking.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
+      loadMetrics()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Manual escalation for an own-rider order stuck unassigned in the pool —
+  // hands it to the online courier instead, immediately booking a shipment.
+  async function escalateToCourier(order) {
+    if (!window.confirm('Send this order via online courier instead of waiting for a rider?')) return
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/orders/${order.id}/escalate-to-courier`, { method: 'POST', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not escalate to courier.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
       loadMetrics()
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
@@ -1338,7 +1432,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
-    const payload = { ...rest, category_id: Number(rest.category_id), inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, image_url: rest.image_url?.trim() || null, video_url: rest.video_url?.trim() || null }
+    const payload = { ...rest, category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, image_url: rest.image_url?.trim() || null, video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
     // sent as [] so the backend drops any rows.
@@ -1438,6 +1532,76 @@ export default function Admin({ token, onClose }) {
       if (!response.ok) throw new Error(data.message ?? 'Could not load the customer.')
       setCustomerDetail(data.data)
     } catch (error) { setCustomerDetail(null); fail(error) }
+  }
+
+  async function openSellerDetail(id) {
+    setMessage('')
+    setSellerDetail({ loading: true })
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${id}`, { headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not load the application.')
+      setSellerDetail(data.data)
+    } catch (error) { setSellerDetail(null); fail(error) }
+  }
+
+  async function sellerAction(seller, action, body) {
+    setBusyId(seller.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the application.')
+      setSellers((cur) => cur.map((s) => (s.id === seller.id ? data.data : s)))
+      setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, ...data.data } : cur))
+      if (action === 'approve') loadShops()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function rejectSeller(seller) {
+    const reason = window.prompt('Reason for rejecting this application:', '')
+    if (reason) sellerAction(seller, 'reject', { reason })
+  }
+
+  async function productAction(product, action, body) {
+    setBusyId(product.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the product.')
+      setProducts((cur) => cur.map((p) => (p.id === product.id ? data.data : p)))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function rejectProduct(product) {
+    const reason = window.prompt(`Reason for rejecting "${product.name}":`, '')
+    if (reason) productAction(product, 'reject', { reason })
+  }
+  function suspendSeller(seller) {
+    const reason = window.prompt(`Reason for suspending ${seller.shop?.name ?? 'this seller'}:`, '')
+    if (reason) sellerAction(seller, 'suspend', { reason })
+  }
+
+  function recordSellerPayout(seller) {
+    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} ($) — balance ${money(seller.balance_cents ?? 0)}:`, '')
+    if (!amountStr) return
+    const amount_cents = toCents(amountStr)
+    if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
+    const note = window.prompt('Note (optional):', '') ?? ''
+    sellerAction(seller, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  // KYC documents live on the private disk, gated by auth — not a plain <a
+  // href>, since the browser needs the bearer token to fetch them.
+  async function viewKycDocument(path) {
+    if (!path) return
+    try {
+      const response = await fetch(`${API_URL}/seller/kyc-document/${path}`, { headers: authHeaders() })
+      if (!response.ok) throw new Error('Could not load the document.')
+      const blob = await response.blob()
+      window.open(URL.createObjectURL(blob), '_blank')
+    } catch (error) { fail(error) }
   }
 
   async function openRiderDetail(id, view = 'full') {
@@ -1935,7 +2099,17 @@ export default function Admin({ token, onClose }) {
                     <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
                     <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
-                      {order.status === 'completed' || order.status === 'cancelled' ? (
+                      {order.delivery_method === 'online_courier' ? (
+                        order.shipment ? (
+                          <>
+                            <span className="admin-note">{order.shipment.carrier} · {order.shipment.tracking_number}</span>
+                            <span className={`pill pill-${order.shipment.status}`}>{order.shipment.status.replace('_', ' ')}</span>
+                            {order.status !== 'completed' && order.status !== 'cancelled' && order.shipment.status !== 'delivered' && (
+                              <button type="button" disabled={busyId === order.id} onClick={() => syncTracking(order)}>Sync tracking</button>
+                            )}
+                          </>
+                        ) : <span className="muted">booking…</span>
+                      ) : order.status === 'completed' || order.status === 'cancelled' ? (
                         order.courier_name || <span className="muted">—</span>
                       ) : riders.length > 0 ? (
                         <>
@@ -1949,6 +2123,9 @@ export default function Admin({ token, onClose }) {
                               <button type="button" className="link" disabled={busyId === order.id} onClick={() => patchOrder(order, { courier_name: null })}> clear</button>
                             </span>
                           )}
+                          {order.status === 'ready_for_delivery' && !order.delivery_partner_id && (
+                            <button type="button" disabled={busyId === order.id} onClick={() => escalateToCourier(order)}>Send via online courier instead</button>
+                          )}
                         </>
                       ) : (
                         // No riders configured yet — fall back to a free-text courier name.
@@ -1956,6 +2133,9 @@ export default function Admin({ token, onClose }) {
                           <input value={courierDraft[order.id] ?? (order.courier_name ?? '')} placeholder="courier name"
                             onChange={(event) => setCourierDraft((current) => ({ ...current, [order.id]: event.target.value }))} />
                           <button type="button" disabled={busyId === order.id || courierDraft[order.id] === undefined} onClick={() => patchOrder(order, { courier_name: (courierDraft[order.id] ?? '').trim() || null })}>Save</button>
+                          {order.status === 'ready_for_delivery' && (
+                            <button type="button" disabled={busyId === order.id} onClick={() => escalateToCourier(order)}>Send via online courier instead</button>
+                          )}
                         </>
                       )}
                     </td>
@@ -2003,6 +2183,12 @@ export default function Admin({ token, onClose }) {
                 </select>
               </label>
             )}
+            <label>Status
+              <select value={productStatus} onChange={(event) => { setProductStatus(event.target.value); setProductsPage(1) }}>
+                <option value="all">All</option>
+                {PRODUCT_STATUS_FILTERS.map((s) => <option key={s} value={s}>{PRODUCT_STATUS_LABELS[s]}</option>)}
+              </select>
+            </label>
             <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollFormIntoView('admin-product-form') }}>New product</button>
           </div>
 
@@ -2014,6 +2200,13 @@ export default function Admin({ token, onClose }) {
                   <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
                     <option value="" disabled>Choose…</option>
                     {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                  </select>
+                  {productForm.suggested_category_name && <p className="admin-note">Seller suggested a new category: &ldquo;{productForm.suggested_category_name}&rdquo;</p>}
+                </label>
+                <label>Shop
+                  <select value={productForm.shop_id ?? ''} onChange={(event) => setProductForm({ ...productForm, shop_id: event.target.value })}>
+                    <option value="">Sold directly by NexTech</option>
+                    {shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                   </select>
                 </label>
                 <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
@@ -2124,7 +2317,7 @@ export default function Admin({ token, onClose }) {
 
           {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th></th></tr></thead>
               <tbody>
                 {products.map((product) => {
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
@@ -2133,12 +2326,20 @@ export default function Admin({ token, onClose }) {
                     <td>{product.name}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
+                    <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
+                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}</td>
                     <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)))}+` : <>{money(product.price_cents)}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents)}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '' }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      {product.shop_id && product.status === 'pending' && <>
+                        <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>
+                        <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
+                      </>}
+                      {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
+                      {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>}
                       <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>
                     </td>
                   </tr>
@@ -2335,6 +2536,42 @@ export default function Admin({ token, onClose }) {
             </table>
           )}
           <Pager page={ridersPage} pageCount={Math.max(1, Math.ceil(riders.length / pageSize))} total={riders.length} onPage={setRidersPage} pageSize={pageSize} onPageSize={setPageSize} />
+        </section>
+      )}
+
+      {tab === 'sellers' && (
+        <section className="admin-panel">
+          <div className="admin-toolbar">
+            <label>Status
+              <select value={sellerStatus} onChange={(event) => { setSellerStatus(event.target.value); setSellersPage(1) }}>
+                {SELLER_STATUS_FILTERS.map((s) => <option key={s} value={s}>{SELLER_STATUS_LABELS[s]}</option>)}
+                <option value="all">All</option>
+              </select>
+            </label>
+            <span className="muted">Applications sellers submit at /seller. Approving flips the shop live on the storefront.</span>
+          </div>
+
+          {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications.</p> : (
+            <table className="admin-table">
+              <thead><tr><th>Shop</th><th>Contact</th><th>Country</th><th>Business type</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+              <tbody>
+                {pageSlice(sellers, sellersPage).map((seller) => (
+                  <tr key={seller.id}>
+                    <td>{seller.shop?.name ?? '—'}</td>
+                    <td>{seller.user?.name}<br /><span className="muted">{seller.user?.email}</span></td>
+                    <td>{seller.country}</td>
+                    <td>{seller.business_type}</td>
+                    <td><span className={`pill pill-${seller.status}`}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</span></td>
+                    <td>{seller.submitted_at ? new Date(seller.submitted_at).toLocaleDateString() : '—'}</td>
+                    <td className="admin-actions">
+                      <button className="act" type="button" onClick={() => openSellerDetail(seller.id)}>Review</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <Pager page={sellersPage} pageCount={Math.max(1, Math.ceil(sellers.length / pageSize))} total={sellers.length} onPage={setSellersPage} pageSize={pageSize} onPageSize={setPageSize} />
         </section>
       )}
 
@@ -2934,6 +3171,41 @@ export default function Admin({ token, onClose }) {
                   <div className="admin-form-actions"><button className="act" type="submit">Save payment settings</button></div>
                 </form>
               )}
+
+              {courierForm && settings && (
+                <form className="admin-form" onSubmit={saveCourier}>
+                  <h3>Courier — real provider</h3>
+                  <p className="muted">
+                    Deliveries fall back to the built-in mock courier whenever the real provider isn&rsquo;t configured or a call fails, so switching this on is always safe.
+                    The real provider is a generic REST template — adjust its endpoint/field names once you have a specific carrier&rsquo;s API docs.
+                  </p>
+                  <label>Provider
+                    <select value={courierForm.courier_provider} onChange={(event) => setCourierForm({ ...courierForm, courier_provider: event.target.value })}>
+                      <option value="mock">Mock (default)</option>
+                      <option value="real">Real</option>
+                    </select>
+                  </label>
+                  <label>Base URL
+                    <input value={courierForm.courier_base_url} placeholder="https://api.example-courier.com"
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_base_url: event.target.value })} />
+                  </label>
+                  <label>Account code
+                    <input value={courierForm.courier_account_code} onChange={(event) => setCourierForm({ ...courierForm, courier_account_code: event.target.value })} />
+                  </label>
+                  <label>API key
+                    <input type="password" autoComplete="off" value={courierForm.courier_api_key}
+                      placeholder={settings.courier?.api_key_set ? `current: ${settings.courier.api_key_hint} — leave blank to keep` : 'API key'}
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_api_key: event.target.value })} />
+                  </label>
+                  <label>API secret
+                    <input type="password" autoComplete="off" value={courierForm.courier_api_secret}
+                      placeholder={settings.courier?.api_secret_set ? `current: ${settings.courier.api_secret_hint} — leave blank to keep` : 'API secret'}
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_api_secret: event.target.value })} />
+                  </label>
+                  <p className="muted">Secrets are stored in the database and shown afterwards only as a hint.</p>
+                  <div className="admin-form-actions"><button className="act" type="submit">Save courier settings</button></div>
+                </form>
+              )}
             </>
           )}
         </section>
@@ -2951,6 +3223,31 @@ export default function Admin({ token, onClose }) {
                 </label>
                 <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
               </div>
+
+              <div className="admin-form">
+                <h3>Countries</h3>
+                <p className="muted">Countries enabled here appear as options in seller registration (business type, tax-ID format, and address labels all follow whichever country a seller picks). Enabling just one keeps the platform single-country; enabling several turns on multi-country selection everywhere that depends on it.</p>
+                {(settings.all_countries ?? []).map((country) => {
+                  const activeCodes = (settings.active_countries ?? []).map((c) => c.code)
+                  const checked = activeCodes.includes(country.code)
+                  return <label className="admin-check" key={country.code}>
+                    <input type="checkbox" checked={checked} onChange={(event) => {
+                      const next = event.target.checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
+                      saveSetting({ active_countries: next })
+                    }} />
+                    {country.name} ({country.code})
+                  </label>
+                })}
+              </div>
+
+              <form className="admin-form" onSubmit={saveFees}>
+                <h3>Marketplace commission</h3>
+                <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
+                <div className="admin-form-grid">
+                  <label>Commission rate (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
+                </div>
+                <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
+              </form>
 
               <div className="admin-form">
                 <h3>Delivery</h3>
@@ -3095,6 +3392,74 @@ export default function Admin({ token, onClose }) {
         </div>
       )}
 
+      {sellerDetail && (
+        <div className="admin-drawer" role="presentation" onClick={() => setSellerDetail(null)}>
+          <aside onClick={(event) => event.stopPropagation()}>
+            <button className="admin-close" type="button" onClick={() => setSellerDetail(null)}>Close</button>
+            {sellerDetail.loading ? <Loading>Loading…</Loading> : (
+              <>
+                <h3>{sellerDetail.shop?.name ?? sellerDetail.company_name}</h3>
+                <p className="muted"><span className={`pill pill-${sellerDetail.status}`}>{SELLER_STATUS_LABELS[sellerDetail.status] ?? sellerDetail.status}</span> · submitted {sellerDetail.submitted_at ? new Date(sellerDetail.submitted_at).toLocaleString() : '—'}</p>
+                {sellerDetail.rejection_reason && <p className="admin-cash-holding overdue">Reason: {sellerDetail.rejection_reason}</p>}
+
+                <h4>Business</h4>
+                <p className="muted">{sellerDetail.company_name} · {sellerDetail.business_type} · {sellerDetail.country}</p>
+                <p className="muted">Tax ID: {sellerDetail.tax_id}</p>
+                <p className="muted">{[sellerDetail.registered_line1, sellerDetail.registered_line2, sellerDetail.registered_city, sellerDetail.registered_state, sellerDetail.registered_postal_code, sellerDetail.registered_country].filter(Boolean).join(', ')}</p>
+
+                <h4>Seller / contact</h4>
+                <p className="muted">{sellerDetail.contact_name} · {sellerDetail.user?.email}</p>
+                <p className="muted">{SELLER_ID_TYPE_LABELS[sellerDetail.id_type] ?? sellerDetail.id_type}: {sellerDetail.id_number} · DOB {sellerDetail.date_of_birth}</p>
+
+                <h4>Documents</h4>
+                <div className="admin-form-actions">
+                  <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.id_document_path)}>View ID document</button>
+                  <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.business_document_path)}>View business document</button>
+                </div>
+
+                <h4>Shop</h4>
+                <p className="muted">{sellerDetail.shop?.name} {sellerDetail.shop?.is_active ? '(live)' : '(hidden)'}</p>
+
+                {sellerDetail.shop && (
+                  <>
+                    <h4>Payouts</h4>
+                    <p className="muted">Balance: <strong>{money(sellerDetail.balance_cents ?? 0)}</strong></p>
+                    {(sellerDetail.ledger_entries ?? []).length > 0 && (
+                      <div className="admin-gift-issued">
+                        {sellerDetail.ledger_entries.map((entry) => (
+                          <p key={entry.id}>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type} <b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents))}</b>{entry.order_id ? ` — order #${entry.order_id}` : ''}{entry.note ? ` — ${entry.note}` : ''} · {new Date(entry.created_at).toLocaleDateString()}</p>
+                        ))}
+                      </div>
+                    )}
+                    {sellerDetail.status === 'approved' && (
+                      <div className="admin-form-actions">
+                        <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <h4>Actions</h4>
+                <div className="admin-form-actions">
+                  {sellerDetail.status === 'pending' && <>
+                    <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'approve')}>Approve</button>
+                    <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectSeller(sellerDetail)}>Reject</button>
+                  </>}
+                  {sellerDetail.status === 'approved' && (
+                    <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => suspendSeller(sellerDetail)}>Suspend</button>
+                  )}
+                  {sellerDetail.status === 'suspended' && (
+                    <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'reinstate')}>Reinstate</button>
+                  )}
+                  {sellerDetail.status === 'rejected' && <span className="muted">No further action.</span>}
+                </div>
+                {sellerDetail.reviewer && <p className="muted">Reviewed by {sellerDetail.reviewer.name}{sellerDetail.reviewed_at ? ` on ${new Date(sellerDetail.reviewed_at).toLocaleDateString()}` : ''}</p>}
+              </>
+            )}
+          </aside>
+        </div>
+      )}
+
       {orderDetail && (() => {
         const o = orders.find((x) => x.id === orderDetail.id) ?? orderDetail
         const addr = o.delivery_address ?? {}
@@ -3154,6 +3519,15 @@ export default function Admin({ token, onClose }) {
               <p className="muted">{addrLine || 'No address on file'}</p>
               {o.delivery_instructions && <p className="muted">Note: &ldquo;{o.delivery_instructions}&rdquo;</p>}
               <p className="muted">{o.payment_method === 'cod' ? 'Cash on delivery (C.O.D.)' : 'Card'}{(o.delivery_partner?.name || o.courier_name) ? ` · Courier: ${o.delivery_partner?.name || o.courier_name}` : ''}{o.store ? ` · Fulfilled by ${o.store.name}` : ''}</p>
+              {o.delivery_method === 'online_courier' && (
+                o.shipment ? (
+                  <p className="muted">Tracking {o.shipment.tracking_number} · <span className={`pill pill-${o.shipment.status}`}>{o.shipment.status.replace('_', ' ')}</span>
+                    {o.status !== 'completed' && o.status !== 'cancelled' && o.shipment.status !== 'delivered' && (
+                      <button type="button" className="link" disabled={busyId === o.id} onClick={() => syncTracking(o)}> Sync tracking</button>
+                    )}
+                  </p>
+                ) : <p className="muted">Online courier — awaiting booking.</p>
+              )}
               {o.rider_accepted_at && <p className="muted">Accepted{o.delivery_partner?.name ? ` by ${o.delivery_partner.name}` : ''} · {new Date(o.rider_accepted_at).toLocaleString()}</p>}
               {!o.rider_accepted_at && o.rider_offer_expires_at && <p className="muted">Offered{o.delivery_partner?.name ? ` to ${o.delivery_partner.name}` : ''}, expires {new Date(o.rider_offer_expires_at).toLocaleString()}</p>}
               {o.rider_offer_decline_count > 0 && <p className="muted">Declined or missed by {o.rider_offer_decline_count} rider{o.rider_offer_decline_count === 1 ? '' : 's'} before this assignment.</p>}

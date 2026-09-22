@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsRider;
+use App\Http\Middleware\EnsureUserIsSeller;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -28,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'admin' => EnsureUserIsAdmin::class,
             'rider' => EnsureUserIsRider::class,
+            'seller' => EnsureUserIsSeller::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

@@ -1,14 +1,8 @@
 # NexTech Electronics Delivery Platform
 
-start "NexTech API" cmd /k "cd /d D:\edp\backend && D:\xampp8-2-12\php84\php.exe -d display_errors=0 artisan serve" && start "NexTech Web" cmd /k "cd /d D:\edp\web && npm.cmd --cache D:\edp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
-                                  
-/admin:	test@example.com
-[client](http://127.0.0.1:5173/): testcaresort@outlook.com
-/rider: rider@example.com
+start "NexTech API" cmd /k "cd /d D:\edp\backend && D:\xampp\php84\php.exe -d display_errors=0 artisan serve" && start "NexTech Web" cmd /k "cd /d D:\edp\web && npm.cmd --cache D:\edp\.tmp\npm-cache run dev -- --host 127.0.0.1 --port 5173" 
 
-password: password
-
-https://www.loom.com/share/f8d2cde4e5344ea9bb0f703d42493c54
+See **[logins.md](logins.md)** for local URLs (storefront, admin, rider, seller) and test account logins.
 
 ## See Output Quickly
 
@@ -16,7 +10,7 @@ Open Windows Command Prompt and run:
 
 ```cmd
 cd /d D:\edp\backend
-"D:\xampp8-2-12\php84\php.exe" -d display_errors=0 artisan serve
+"D:\xampp\php84\php.exe" -d display_errors=0 artisan serve
 ```
 
 Open the application in a browser:
@@ -28,7 +22,8 @@ Open the application in a browser:
 - API products endpoint: <http://127.0.0.1:8000/api/products>
 - API orders endpoint (requires a bearer token): <http://127.0.0.1:8000/api/orders>
 - API admin orders endpoint (requires an admin bearer token): <http://127.0.0.1:8000/api/admin/orders>
-- API public client config (Stripe publishable key, checkout fees): <http://127.0.0.1:8000/api/config>
+- API public client config (Stripe publishable key, checkout fees, active countries): <http://127.0.0.1:8000/api/config>
+- Seller Center: <http://127.0.0.1:5173/seller> (see **Seller Center** below and `logins.md`)
 
 To start the designed React storefront, open another Command Prompt window and run:
 
@@ -50,7 +45,7 @@ curl http://127.0.0.1:8000/api/products
 
 Press `Ctrl+C` in the server terminal to stop Laravel.
 
-**NexTech** — "Navigate to the Future of Technology" — is a USA electronics delivery MVP: phones, laptops, audio, smart home, gaming and other gadgets, ordered online and delivered from a local store network. The customer ordering journey and delivery mechanics (riders, auto-assignment, cash on delivery, delivery radius) are Blinkit-inspired; the storefront browsing experience (deals strips, category carousel, product cards) follows Temu's UI patterns. The initial market is the United States and the currency is USD.
+**NexTech** — "Navigate to the Future of Technology" — is an electronics delivery MVP: phones, laptops, audio, smart home, gaming and other gadgets, ordered online and delivered from a local store network. The customer ordering journey and delivery mechanics (riders, auto-assignment, cash on delivery, delivery radius) are Blinkit-inspired; the storefront browsing experience (deals strips, category carousel, product cards) follows Temu's UI patterns. The initial market is the United States and the currency is USD; a country foundation (see **Seller Center**) exists so more countries can be enabled without a rewrite, but multi-currency storefront checkout itself isn't built yet. A Temu-style **Seller Center** lets third-party sellers register and (once admin-approved) list products under their own shop alongside NexTech's own catalog.
 
 The project is designed around one Laravel API that will serve the customer website, admin panel, and future Android and iOS applications.
 
@@ -235,6 +230,7 @@ Administrators must be able to manage:
 - [x] Public storage symlink created
 - [x] Initial test suite passing
 - [x] Initial project backup pushed to `webdev794/gdp`
+- [x] Multi-vendor Seller Center: seller registration wizard, admin approval (`Seller`/`Shop` models, `products.shop_id`), and an admin-configurable country foundation (`config/countries.php`, active-countries setting) driving business-type/tax-ID/address fields per country
 
 ### Pending Development Priorities
 
@@ -257,6 +253,8 @@ Administrators must be able to manage:
     - [ ] Standalone build config (`expo-build-properties` for cleartext, app icons, EAS)
 11. [x] Support chat (per-order + general threads, polling) with admin inbox + refunds from a thread
 12. [ ] Testing and deployment hardening
+13. [x] Multi-vendor Seller Center (registration, admin approval, per-country business fields) — see **Seller Center**
+    - [ ] Full multi-currency storefront checkout / per-country delivery operations (foundation is in place; not yet built)
 
 ### Known Gaps To Revisit
 
@@ -485,6 +483,49 @@ Two front ends, same API:
 
 Admins can still override any status / courier from the Orders tab.
 
+## Seller Center
+
+A multi-vendor marketplace layer alongside the platform's own catalog: third-party
+sellers register, get admin-approved, and their approved shop can then be attached
+to products (`products.shop_id`, nullable — a product with no shop is still "sold
+directly by NexTech", which is every pre-existing product).
+
+- **`Seller`** holds the registration/KYC data (business info, tax ID, registered
+  address, identity, uploaded documents) and a `status`:
+  `pending` → `approved` / `rejected` (with a reason) → can later be `suspended` /
+  `reinstated`. **`Shop`** is the separate public-facing record (name, slug, logo,
+  category, description, `is_active`) a seller's products are attached to —
+  `is_active` only flips on when `Seller.status = approved`, and back off on
+  suspend, independently of the underlying KYC record.
+- No dedicated seller login — any authenticated customer account can apply.
+  `GET /api/seller/me` returns `null` (show the wizard) or the seller+shop+status
+  (show a status page, or the post-approval dashboard).
+- **Registration is one `POST /api/seller/apply`** covering all 4 wizard steps at
+  once (Business information / Seller information / Shop / Verification), not a
+  call per step — the wizard keeps state client-side so "Back" works, and there's
+  no partial/abandoned `Seller` row if someone leaves mid-flow.
+- **Country-driven fields.** `GET /api/config` exposes `active_countries` (from
+  `config/countries.php`, filtered to **Admin → Settings → Countries**' checked
+  list — see `Country::active()`). Whichever country the wizard's *Business
+  location* dropdown has selected drives the business-type options, the tax-ID
+  field's label/placeholder (e.g. GSTIN vs EIN), and the address section's
+  State/postal-code labels (PIN code vs ZIP code). Enabling just one country
+  keeps the platform single-country everywhere this depends on it; enabling
+  several turns on the multi-country selector — there's no separate mode flag.
+- **KYC documents are private**, not on the public media disk: uploaded via
+  `POST /api/seller/kyc-document`, fetched only via the gated
+  `GET /api/seller/kyc-document/{path}` (owning seller or an admin, checked
+  server-side) — unlike shop logos/banners (`POST /api/seller/media`, public,
+  like any other product/category image).
+- **Admin console → Sellers** (`AdminSellerController`, `*/api/admin/sellers*`):
+  a status-filtered queue (defaults to `pending`), a detail view with every
+  field plus both uploaded documents, and Approve / Reject(+reason) /
+  Suspend(+reason) / Reinstate actions.
+- **Admin console → Products** gets a **Shop** dropdown next to Category
+  (`GET /api/admin/sellers/shops` for the option list) so any product — new or
+  existing — can be attached to an approved shop, or left as "Sold directly by
+  NexTech".
+
 ## Customer support
 
 Customers raise issues from **Order history → "Get help"** (or the header **Help**
@@ -533,7 +574,7 @@ The same flows are in the Expo app (`Support` / `SupportThread` screens,
 Grant admin rights to an existing account:
 
 ```cmd
-"D:\xampp8-2-12\php84\php.exe" artisan tinker --execute="App\Models\User::where('email','test@example.com')->update(['is_admin'=>true]);"
+"D:\xampp\php84\php.exe" artisan tinker --execute="App\Models\User::where('email','test@example.com')->update(['is_admin'=>true]);"
 ```
 
 The database seeder already flags `test@example.com` as an administrator.
@@ -565,7 +606,7 @@ Local development: `MAIL_MAILER=log`, so the email is written to
 line as `OTP for <email> (<purpose>): <code>`. Watch it live with:
 
 ```cmd
-"D:\xampp8-2-12\php84\php.exe" artisan pail
+"D:\xampp\php84\php.exe" artisan pail
 ```
 
 To sign in with password only (no code), set `AUTH_OTP_ENABLED=false` in `backend/.env` and
@@ -677,8 +718,8 @@ the CA bundle committed at `backend/resources/certs/cacert.pem` when the ini has
 none. The proper fix is to point `php.ini` at a real bundle:
 
 ```ini
-curl.cainfo = "D:\xampp8-2-12\php84\extras\ssl\cacert.pem"
-openssl.cafile = "D:\xampp8-2-12\php84\extras\ssl\cacert.pem"
+curl.cainfo = "D:\xampp\php84\extras\ssl\cacert.pem"
+openssl.cafile = "D:\xampp\php84\extras\ssl\cacert.pem"
 ```
 
 ## Product Variants
@@ -924,12 +965,12 @@ to git, so every fresh clone needs this before the servers below will start.
 cd /d D:\edp\backend
 composer install
 copy .env.example .env
-"D:\xampp8-2-12\php84\php.exe" artisan key:generate
+"D:\xampp\php84\php.exe" artisan key:generate
 ```
 
 Edit `backend\.env` and point it at MySQL (defaults below match a stock XAMPP install —
 `root` user, no password; create the database first with
-`"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root -e "CREATE DATABASE edp"` if it doesn't exist):
+`"D:\xampp\mysql\bin\mysql.exe" -u root -e "CREATE DATABASE edp"` if it doesn't exist):
 
 ```env
 DB_CONNECTION=mysql
@@ -943,25 +984,25 @@ DB_PASSWORD=
 Then apply the schema — either a fresh migrate, or restore a saved dump first:
 
 ```cmd
-"D:\xampp8-2-12\php84\php.exe" artisan migrate
-"D:\xampp8-2-12\php84\php.exe" artisan storage:link
+"D:\xampp\php84\php.exe" artisan migrate
+"D:\xampp\php84\php.exe" artisan storage:link
 ```
 
 **Restoring a database dump instead of migrating fresh** (e.g. a backup saved at
 `backend/web_deploy/edp.sql`):
 
 ```cmd
-"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp < D:\edp\backend\web_deploy\edp.sql
-"D:\xampp8-2-12\php84\php.exe" artisan migrate
+"D:\xampp\mysql\bin\mysql.exe" -u root edp < D:\edp\backend\web_deploy\edp.sql
+"D:\xampp\php84\php.exe" artisan migrate
 ```
 
 The final `migrate` applies any migrations added after the dump was taken. If one fails with
 "table already exists", that table was already present in the dump — confirm its columns
-match the migration (`"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp -e "DESCRIBE <table>;"`),
+match the migration (`"D:\xampp\mysql\bin\mysql.exe" -u root edp -e "DESCRIBE <table>;"`),
 then record it as applied instead of re-running it or touching the data:
 
 ```cmd
-"D:\xampp8-2-12\mysql\bin\mysql.exe" -u root edp -e "INSERT INTO migrations (migration, batch) VALUES ('<migration_filename_without_.php>', <next_batch_number>);"
+"D:\xampp\mysql\bin\mysql.exe" -u root edp -e "INSERT INTO migrations (migration, batch) VALUES ('<migration_filename_without_.php>', <next_batch_number>);"
 ```
 
 Finally, install the web app's dependencies:
@@ -984,9 +1025,9 @@ set "TMP=D:\edp\.tmp"
 set "TEMP=D:\edp\.tmp"
 cd /d D:\edp\backend
 
-"D:\xampp8-2-12\php84\php.exe" artisan migrate
-"D:\xampp8-2-12\php84\php.exe" artisan storage:link
-"D:\xampp8-2-12\php84\php.exe" -d display_errors=0 artisan serve
+"D:\xampp\php84\php.exe" artisan migrate
+"D:\xampp\php84\php.exe" artisan storage:link
+"D:\xampp\php84\php.exe" -d display_errors=0 artisan serve
 ```
 
 The local API is available at `http://127.0.0.1:8000`.
@@ -1047,7 +1088,7 @@ Run tests with:
 ```cmd
 set "TMP=D:\edp\.tmp"
 set "TEMP=D:\edp\.tmp"
-"D:\xampp8-2-12\php84\php.exe" artisan test
+"D:\xampp\php84\php.exe" artisan test
 ```
 
 Never commit `.env`, Stripe keys, database passwords, customer data, `vendor/`, `node_modules/`, logs, or generated local files.
@@ -1069,7 +1110,7 @@ this file, or just the API half:
 
 ```cmd
 cd /d D:\edp\backend
-"D:\xampp8-2-12\php84\php.exe" -d display_errors=0 artisan serve
+"D:\xampp\php84\php.exe" -d display_errors=0 artisan serve
 ```
 
 **Symptom: `'vite' is not recognized as an internal or external command`**

@@ -27,6 +27,12 @@ class User extends Authenticatable
         return $this->hasOne(Cart::class);
     }
 
+    /** Is this user a seller? Simply `$user->seller !== null` — no new boolean. */
+    public function seller(): HasOne
+    {
+        return $this->hasOne(Seller::class);
+    }
+
     public function addresses(): HasMany
     {
         return $this->hasMany(Address::class);

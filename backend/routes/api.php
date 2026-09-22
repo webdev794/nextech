@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\AdminOrderController;
 use App\Http\Controllers\Api\AdminPageController;
 use App\Http\Controllers\Api\AdminProductController;
 use App\Http\Controllers\Api\AdminRiderController;
+use App\Http\Controllers\Api\AdminSellerController;
 use App\Http\Controllers\Api\AdminSettingController;
 use App\Http\Controllers\Api\AdminStoreController;
 use App\Http\Controllers\Api\AdminSupportController;
@@ -28,6 +29,10 @@ use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RiderController;
+use App\Http\Controllers\Api\SellerController;
+use App\Http\Controllers\Api\SellerKycController;
+use App\Http\Controllers\Api\SellerOrderController;
+use App\Http\Controllers\Api\SellerProductController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
 use Illuminate\Http\Request;
@@ -119,9 +124,22 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::patch('/riders/{user}', [AdminRiderController::class, 'update']);
     Route::delete('/riders/{user}', [AdminRiderController::class, 'destroy']);
     Route::post('/riders/{user}/cash-settle', [AdminRiderController::class, 'settleCash']);
+
+    // Static path before the {seller} binding, so "shops" isn't swallowed by it.
+    Route::get('/sellers/shops', [AdminSellerController::class, 'shops']);
+    Route::get('/sellers', [AdminSellerController::class, 'index']);
+    Route::get('/sellers/{seller}', [AdminSellerController::class, 'show']);
+    Route::post('/sellers/{seller}/approve', [AdminSellerController::class, 'approve']);
+    Route::post('/sellers/{seller}/reject', [AdminSellerController::class, 'reject']);
+    Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
+    Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
+    Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
+
     Route::get('/orders', [AdminOrderController::class, 'index']);
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
     Route::patch('/orders/{order}', [AdminOrderController::class, 'update']);
+    Route::post('/orders/{order}/sync-tracking', [AdminOrderController::class, 'syncTracking']);
+    Route::post('/orders/{order}/escalate-to-courier', [AdminOrderController::class, 'escalateToCourier']);
     Route::post('/orders/{order}/refund', [PaymentController::class, 'refund']);
     Route::post('/orders/{order}/gift-card', [AdminGiftCardController::class, 'issue']);
     Route::post('/orders/{order}/apply-gift-card', [AdminGiftCardController::class, 'applyToOrder']);
@@ -134,6 +152,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/products', [AdminProductController::class, 'index']);
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);
+    Route::post('/products/{product}/approve', [AdminProductController::class, 'approve']);
+    Route::post('/products/{product}/reject', [AdminProductController::class, 'reject']);
     Route::delete('/products/{product}', [AdminProductController::class, 'destroy']);
 
     Route::post('/media', [MediaController::class, 'store']);
@@ -162,6 +182,33 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/categories', [AdminCategoryController::class, 'store']);
     Route::patch('/categories/{category}', [AdminCategoryController::class, 'update']);
     Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
+});
+
+// Plain auth:sanctum, not `seller`-gated, so a first-time applicant (and an
+// admin reviewing documents) can reach these.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/seller/apply', [SellerController::class, 'apply']);
+    Route::get('/seller/me', [SellerController::class, 'me']);
+    Route::post('/seller/kyc-document', [SellerKycController::class, 'store']);
+    Route::get('/seller/kyc-document/{path}', [SellerKycController::class, 'show'])->where('path', '.*');
+    // Shop logo/banner: a first-time applicant has no Seller row yet, so this
+    // can't be `seller`-gated. storeShopAsset() forces folder=shops so this
+    // relaxed auth can't reach the admin-only folders store() also serves.
+    Route::post('/seller/media', [MediaController::class, 'storeShopAsset']);
+});
+
+Route::middleware(['auth:sanctum', 'seller'])->group(function () {
+    Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
+
+    // The `seller` middleware only requires having applied at all; the real
+    // "must be approved" gate for managing products is SellerProductController's
+    // own check (see its shop() helper), same reasoning as updateShop() above.
+    Route::get('/seller/products', [SellerProductController::class, 'index']);
+    Route::post('/seller/products', [SellerProductController::class, 'store']);
+    Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
+    Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
+    Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
+    Route::get('/seller/orders', [SellerOrderController::class, 'index']);
 });
 
 Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function () {

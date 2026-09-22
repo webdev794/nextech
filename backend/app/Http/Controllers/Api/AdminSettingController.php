@@ -7,8 +7,11 @@ use App\Models\Setting;
 use App\Services\OtpService;
 use App\Support\Branding;
 use App\Support\CheckoutFees;
+use App\Support\Country;
+use App\Support\CourierCredentials;
 use App\Support\FooterConfig;
 use App\Support\Payments;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -59,6 +62,15 @@ class AdminSettingController extends Controller
         'stripe_key' => ['sometimes', 'nullable', 'string', 'max:255'],
         'stripe_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
         'stripe_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
+    ];
+
+    /** Real-courier-provider credentials. */
+    private const COURIER_RULES = [
+        'courier_provider' => ['sometimes', 'in:mock,real'],
+        'courier_base_url' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_account_code' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_api_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
     ];
 
     /** Footer content (a nested blob, sanitised by FooterConfig). */
@@ -134,6 +146,7 @@ class AdminSettingController extends Controller
             'expires_in' => $this->ttlMinutes() * 60,
             'account' => $this->accountPayload($user),
             'payments' => $this->payload()['payments'],
+            'courier' => $this->payload()['courier'],
         ]]);
     }
 
@@ -167,8 +180,11 @@ class AdminSettingController extends Controller
             [
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
+                'active_countries' => ['sometimes', 'array'],
+                'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
+                'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
             ]
-            + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::FOOTER_RULES
+            + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
 
         if (array_key_exists('cod_enabled', $validated)) {
@@ -177,6 +193,14 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('rider_auto_assign', $validated)) {
             Setting::put('rider_auto_assign', (bool) $validated['rider_auto_assign']);
+        }
+
+        if (array_key_exists('active_countries', $validated)) {
+            Setting::put('active_countries', array_values(array_unique(array_map('strtoupper', $validated['active_countries']))));
+        }
+
+        if (array_key_exists('commission_rate_bps', $validated)) {
+            Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
         }
 
         $this->mergeInto('checkout_fees', array_intersect_key($validated, self::FEE_RULES));
@@ -202,6 +226,19 @@ class AdminSettingController extends Controller
         }
         $this->mergeInto('payments', $payments);
 
+        // Courier credentials live behind the same Secure access unlock.
+        $courier = array_intersect_key($validated, self::COURIER_RULES);
+        if ($courier !== []) {
+            $this->assertUnlocked($request);
+        }
+
+        foreach (['courier_api_key', 'courier_api_secret'] as $secret) {
+            if (array_key_exists($secret, $courier) && trim((string) $courier[$secret]) === '') {
+                unset($courier[$secret]);
+            }
+        }
+        $this->mergeInto('courier', $courier);
+
         return response()->json(['data' => $this->payload()]);
     }
 
@@ -224,10 +261,14 @@ class AdminSettingController extends Controller
     private function payload(): array
     {
         $stripe = Payments::stripe();
+        $courier = CourierCredentials::current();
 
         return [
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
+            'active_countries' => Country::active(),
+            'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
+            'commission_rate_bps' => SellerLedger::rate(),
             ...CheckoutFees::current(),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),
@@ -240,6 +281,15 @@ class AdminSettingController extends Controller
                 'stripe_secret_hint' => self::hint($stripe['secret']),
                 'stripe_webhook_secret_set' => $stripe['webhook_secret'] !== '',
                 'stripe_webhook_secret_hint' => self::hint($stripe['webhook_secret']),
+            ],
+            'courier' => [
+                'provider' => $courier['provider'],
+                'base_url' => $courier['base_url'],
+                'account_code' => $courier['account_code'],
+                'api_key_set' => $courier['api_key'] !== '',
+                'api_key_hint' => self::hint($courier['api_key']),
+                'api_secret_set' => $courier['api_secret'] !== '',
+                'api_secret_hint' => self::hint($courier['api_secret']),
             ],
         ];
     }

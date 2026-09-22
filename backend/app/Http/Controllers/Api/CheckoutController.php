@@ -9,8 +9,10 @@ use App\Models\Order;
 use App\Models\Setting;
 use App\Models\Store;
 use App\Support\CheckoutFees;
+use App\Support\Courier;
 use App\Support\Geo;
 use App\Support\Purchasable;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -142,6 +144,10 @@ class CheckoutController extends Controller
                 $orderItems[] = [
                     'product_id' => $product->id,
                     'product_variant_id' => $variant?->id,
+                    // Frozen the same way product_name/sku are, so an admin
+                    // reassigning a product's shop later can't rewrite a
+                    // shop's earnings history.
+                    'shop_id' => $product->shop_id,
                     'product_name' => $product->name,
                     'sku' => $variant->sku ?? $product->sku,
                     'variant_label' => $state['label'],
@@ -171,7 +177,11 @@ class CheckoutController extends Controller
             }
 
             $tax = (int) round($subtotal * $fees['tax_rate_bps'] / 10000);
-            $deliveryFee = CheckoutFees::deliveryFeeCents($fees, $subtotal, $area['km'], $area['radius_km']);
+            // The online-courier path charges the flat courier quote instead of
+            // the near/far distance fee; the own-rider path is unchanged.
+            $deliveryFee = $area['delivery_method'] === 'online_courier'
+                ? (int) $area['courier_quote_cents']
+                : CheckoutFees::deliveryFeeCents($fees, $subtotal, $area['km'], $area['radius_km']);
             $handlingFee = (int) $fees['handling_fee_cents'];
             $smallCartFee = $subtotal < $fees['small_cart_min_cents']
                 ? (int) $fees['small_cart_fee_cents']
@@ -182,6 +192,7 @@ class CheckoutController extends Controller
                 // The store whose radius covers this address (null when no stores
                 // are configured); it's the one that packs and dispatches.
                 'store_id' => $area['store']?->id,
+                'delivery_method' => $area['delivery_method'],
                 // Cash-on-delivery skips Stripe, so the order is confirmed and
                 // enters the delivery pipeline immediately; cash is collected on
                 // hand-off and an admin marks it paid then.
@@ -223,6 +234,7 @@ class CheckoutController extends Controller
             // Nothing left to pay (gift card covered it) — settle immediately.
             if ((int) $order->total_cents <= 0) {
                 $order->update(['status' => 'confirmed', 'payment_status' => 'paid']);
+                SellerLedger::creditForOrder($order);
             }
 
             return $order->load('items');
@@ -234,18 +246,19 @@ class CheckoutController extends Controller
     /**
      * Resolve the delivery point against the active stores: find the store that
      * serves the address (nearest one whose radius reaches it), reject an
-     * out-of-range address when radius enforcement is on, and return that
-     * store's distance + radius for a distance-based delivery fee. The returned
-     * `store` also drives the per-product availability check at checkout.
+     * out-of-range address when radius enforcement is on (unless the online
+     * courier can reach it instead), and return that store's distance + radius
+     * for a distance-based delivery fee. The returned `store` also drives the
+     * per-product availability check at checkout.
      *
      * @param  array<string, mixed>  $address
      * @param  array<string, int|string>  $fees
-     * @return array{km: float|null, radius_km: float|null, store: Store|null}
+     * @return array{km: float|null, radius_km: float|null, store: Store|null, delivery_method: string, courier_quote_cents: int|null}
      */
     private function resolveDelivery(array $address, array $fees): array
     {
         $enforce = (bool) config('checkout.enforce_radius');
-        $none = ['km' => null, 'radius_km' => null, 'store' => null];
+        $none = ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => 'own_rider', 'courier_quote_cents' => null];
 
         $stores = Store::query()->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')->get();
@@ -284,6 +297,23 @@ class CheckoutController extends Controller
         // availability applies). Stores can be in different cities.
         $serving = Geo::servingStore($stores, (float) $lat, (float) $lng);
 
+        // Outside every store's radius: hand off to the online courier instead
+        // of hard-rejecting, when it can reach the address (the mock provider
+        // always can — a real integration is where "not serviceable" bites).
+        if ($serving === null && Courier::isServiceable($address)) {
+            $basis = Geo::nearestStore($stores, (float) $lat, (float) $lng);
+
+            return [
+                'km' => $basis['km'],
+                'radius_km' => (float) $basis['store']->delivery_radius_km,
+                // Sourced from the nearest store for inventory/fulfillment even
+                // though the courier — not that store's own riders — delivers it.
+                'store' => $basis['store'],
+                'delivery_method' => 'online_courier',
+                'courier_quote_cents' => Courier::quote($address)['cost_cents'],
+            ];
+        }
+
         if ($serving === null && $enforce) {
             throw ValidationException::withMessages([
                 'address' => ["We don't deliver to your area yet — we're expanding fast and will reach you soon."],
@@ -298,6 +328,8 @@ class CheckoutController extends Controller
             'km' => $basis['km'],
             'radius_km' => (float) $basis['store']->delivery_radius_km,
             'store' => $serving['store'] ?? null,
+            'delivery_method' => 'own_rider',
+            'courier_quote_cents' => null,
         ];
     }
 }

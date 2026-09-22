@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
-use App\Models\ProductVariant;
+use App\Support\ProductVariants;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,6 +20,7 @@ class AdminProductController extends Controller
             'search' => ['sometimes', 'string', 'max:100'],
             'category_id' => ['sometimes', 'integer', 'exists:categories,id'],
             'store_id' => ['sometimes', 'integer', 'exists:stores,id'],
+            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected'])],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
         ]);
@@ -28,7 +29,7 @@ class AdminProductController extends Controller
         $sort = $validated['sort'] ?? 'newest';
 
         $products = Product::query()
-            ->with(['category:id,name', 'variants', 'storeInventory'])
+            ->with(['category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images'])
             // When filtering by store, `effective_stock` is that store's on-hand
             // count (its stocked row, else the product's single count); otherwise
             // it's just the single count. Used by the stock sorts.
@@ -45,6 +46,7 @@ class AdminProductController extends Controller
                 fn ($inner) => $inner->where('products.name', 'like', "%{$search}%")->orWhere('products.sku', 'like', "%{$search}%")
             ))
             ->when($validated['category_id'] ?? null, fn ($query, $id) => $query->where('products.category_id', $id))
+            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('products.status', $status))
             ->when($sort === 'newest', fn ($query) => $query->orderByDesc('products.created_at')->orderByDesc('products.id'))
             ->when($sort === 'oldest', fn ($query) => $query->orderBy('products.created_at')->orderBy('products.id'))
             ->when($sort === 'name', fn ($query) => $query->orderBy('products.name'))
@@ -69,16 +71,19 @@ class AdminProductController extends Controller
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
         $data['slug'] ??= $this->uniqueSlug($data['name']);
+        // Admin-created products are never seller-moderated — always approved,
+        // regardless of anything the payload sends.
+        $data['status'] = 'approved';
 
         $product = DB::transaction(function () use ($data, $variants, $storeStock): Product {
             $product = Product::create($data);
-            $this->syncVariants($product, $variants);
+            ProductVariants::sync($product, $variants);
             $this->syncStoreStock($product, $storeStock);
 
             return $product;
         });
 
-        return response()->json(['data' => $product->load('category:id,name', 'variants', 'storeInventory')], 201);
+        return response()->json(['data' => $product->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')], 201);
     }
 
     public function update(Request $request, Product $product): JsonResponse
@@ -86,14 +91,40 @@ class AdminProductController extends Controller
         $data = $this->validated($request, $product);
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
+        $data['status'] = 'approved';
 
         DB::transaction(function () use ($product, $data, $variants, $storeStock): void {
             $product->update($data);
-            $this->syncVariants($product, $variants);
+            ProductVariants::sync($product, $variants);
             $this->syncStoreStock($product, $storeStock);
         });
 
-        return response()->json(['data' => $product->fresh()->load('category:id,name', 'variants', 'storeInventory')]);
+        return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+    }
+
+    /**
+     * Approve a seller-submitted product. Only meaningful for a shop-owned
+     * row — an admin-owned product (shop_id null) is always already
+     * 'approved' via store()/update() forcing it, so this is a no-op there.
+     */
+    public function approve(Product $product): JsonResponse
+    {
+        abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
+
+        $product->forceFill(['status' => 'approved', 'rejection_reason' => null])->save();
+
+        return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+    }
+
+    public function reject(Request $request, Product $product): JsonResponse
+    {
+        abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
+
+        $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        $product->forceFill(['status' => 'rejected', 'rejection_reason' => $data['reason']])->save();
+
+        return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
     }
 
     public function destroy(Product $product): JsonResponse
@@ -115,6 +146,7 @@ class AdminProductController extends Controller
 
         return $request->validate([
             'category_id' => [$product ? 'sometimes' : 'required', 'integer', 'exists:categories,id'],
+            'shop_id' => ['sometimes', 'nullable', 'integer', 'exists:shops,id'],
             'name' => [$product ? 'sometimes' : 'required', 'string', 'max:160'],
             'slug' => ['sometimes', 'nullable', 'string', 'max:180', 'alpha_dash', $unique],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
@@ -220,58 +252,6 @@ class AdminProductController extends Controller
         }
 
         $product->storeInventory()->whereNotIn('id', $keep)->delete();
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>|null  $rows
-     */
-    private function syncVariants(Product $product, ?array $rows): void
-    {
-        if ($rows === null) {
-            return;
-        }
-
-        foreach ($rows as $index => $row) {
-            $existing = ! empty($row['id'])
-                ? $product->variants()->whereKey($row['id'])->first()
-                : null;
-
-            if (! empty($row['_delete'])) {
-                if ($existing) {
-                    try {
-                        $existing->delete();
-                    } catch (QueryException) {
-                        abort(422, "\"{$existing->label}\" is on an existing order — deactivate it instead of deleting.");
-                    }
-                }
-
-                continue;
-            }
-
-            $skuOwner = ProductVariant::where('sku', $row['sku'])->first();
-            if ($skuOwner && $skuOwner->id !== ($existing->id ?? null)) {
-                abort(422, "The variant SKU \"{$row['sku']}\" is already in use.");
-            }
-
-            $compareAt = $row['compare_at_price_cents'] ?? null;
-
-            $attributes = [
-                'label' => $row['label'],
-                'sku' => $row['sku'],
-                'price_cents' => (int) $row['price_cents'],
-                'compare_at_price_cents' => ($compareAt === null || $compareAt === '') ? null : (int) $compareAt,
-                'inventory_quantity' => (int) ($row['inventory_quantity'] ?? 0),
-                'image_url' => $row['image_url'] ?? null,
-                'sort_order' => (int) ($row['sort_order'] ?? $index),
-                'is_active' => (bool) ($row['is_active'] ?? true),
-            ];
-
-            if ($existing) {
-                $existing->update($attributes);
-            } else {
-                $product->variants()->create($attributes);
-            }
-        }
     }
 
     private function uniqueSlug(string $name): string

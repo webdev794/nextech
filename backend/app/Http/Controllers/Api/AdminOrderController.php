@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\User;
 use App\Notifications\RiderAssigned;
+use App\Support\Courier;
 use App\Support\CustomerNames;
 use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -31,7 +33,7 @@ class AdminOrderController extends Controller
 
         $orders = Order::query()
             ->with([
-                'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city',
+                'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
                 'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -58,7 +60,7 @@ class AdminOrderController extends Controller
     public function show(Order $order): JsonResponse
     {
         $order->load([
-            'items', 'user:id,name,email,phone', 'store:id,name,city',
+            'items', 'user:id,name,email,phone', 'store:id,name,city', 'shipment',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -189,8 +191,13 @@ class AdminOrderController extends Controller
         }
 
         $previousRiderId = $order->delivery_partner_id;
+        $becamePaid = ($changes['payment_status'] ?? null) === 'paid';
 
         $order->update($changes);
+
+        if ($becamePaid) {
+            SellerLedger::creditForOrder($order);
+        }
 
         // Cancelling voids any gift-card balance spent on this order at checkout.
         if (($changes['status'] ?? null) === 'cancelled') {
@@ -206,19 +213,81 @@ class AdminOrderController extends Controller
             $rider->notify(RiderAssigned::forOrder($order));
         }
 
-        // An order that just became ready for delivery with no rider gets one
-        // auto-assigned (nearest rider linked to its store); if none is eligible
-        // it drops into the first-come pool as before.
-        if (($changes['status'] ?? null) === 'ready_for_delivery' && ! $order->delivery_partner_id) {
-            RiderAssignment::assign($order);
+        // An order that just became ready for delivery is handed off per its
+        // delivery method: an online-courier order is booked with the courier
+        // (and — since there's no separate pickup step for a third party —
+        // goes straight out for delivery); an own-rider order with none yet
+        // gets one auto-assigned, or drops into the first-come pool as before.
+        if (($changes['status'] ?? null) === 'ready_for_delivery') {
+            if ($order->usesOnlineCourier()) {
+                if (! $order->shipment) {
+                    $shipment = Courier::book($order);
+                    $order->update(['courier_name' => $shipment->carrier, 'status' => 'out_for_delivery']);
+                }
+            } elseif (! $order->delivery_partner_id) {
+                RiderAssignment::assign($order);
+            }
         }
 
         // Marking delivered, or collecting cash on a delivered order, sends the
         // customer their summary email with the PDF bill.
         $order->refresh()->sendDeliveredReceiptIfReady();
 
+        $fresh = $this->detail($order);
+
+        return response()->json(['data' => $fresh]);
+    }
+
+    /**
+     * Pull the courier's current status for this order's shipment. A status of
+     * `delivered` completes the order the same way the rider app's override
+     * completion does — no handover code to check for a third-party courier.
+     */
+    public function syncTracking(Order $order): JsonResponse
+    {
+        if (! $order->usesOnlineCourier() || ! $order->shipment) {
+            return response()->json(['message' => 'This order has no online-courier shipment to track.'], 422);
+        }
+
+        $shipment = Courier::track($order->shipment);
+
+        if ($shipment->status === 'delivered' && $order->canTransitionTo('completed')) {
+            $order->forceFill([
+                'status' => 'completed',
+                'delivered_at' => now(),
+                'delivery_verified' => false,
+                'delivery_note' => "Delivered by online courier ({$shipment->carrier} {$shipment->tracking_number}).",
+                'rider_offer_expires_at' => null,
+            ])->save();
+            $order->refresh()->sendDeliveredReceiptIfReady();
+        }
+
+        return response()->json(['data' => $this->detail($order)]);
+    }
+
+    /**
+     * Manual escalation for the "no rider ever available" case: an own-rider
+     * order sitting unassigned in the ready-for-delivery pool is handed off to
+     * the online courier instead, deliberately by hand rather than on a timer.
+     */
+    public function escalateToCourier(Order $order): JsonResponse
+    {
+        if ($order->usesOnlineCourier() || $order->status !== 'ready_for_delivery' || $order->delivery_partner_id) {
+            return response()->json(['message' => 'Only an unassigned, ready-for-delivery own-rider order can be sent via online courier.'], 422);
+        }
+
+        $order->update(['delivery_method' => 'online_courier']);
+        $shipment = Courier::book($order);
+        $order->update(['courier_name' => $shipment->carrier, 'status' => 'out_for_delivery']);
+
+        return response()->json(['data' => $this->detail($order)]);
+    }
+
+    /** The order shape shared by every action response here. */
+    private function detail(Order $order): Order
+    {
         $fresh = $order->fresh()->load([
-            'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city',
+            'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -227,7 +296,7 @@ class AdminOrderController extends Controller
         ]);
         $this->attachCustomerNames([$fresh]);
 
-        return response()->json(['data' => $fresh]);
+        return $fresh;
     }
 
     /** @param  iterable<Order>  $orders */

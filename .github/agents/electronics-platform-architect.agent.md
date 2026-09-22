@@ -37,7 +37,7 @@ The initial customer journey includes registration/login, categories, products, 
 - Use versioned API routes and documented resource contracts when introducing client-facing endpoints.
 
 ## Local Environment
-- On this Windows workstation, prefer `D:\xampp8-2-12\php84\php.exe` for Laravel and Composer commands.
+- On this Windows workstation, prefer `D:\xampp\php84\php.exe` for Laravel and Composer commands.
 - Do not assume the global Composer PHP selection is correct; verify `php -v` and `composer about` or invoke Composer through the selected PHP environment.
 - Use MySQL from the XAMPP installation only after confirming the intended service, database name, user, and port.
 - Do not commit `.env`, Stripe keys, database passwords, generated secrets, or customer data.

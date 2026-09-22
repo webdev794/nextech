@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\GiftCard;
 use App\Models\Order;
 use App\Models\SupportThread;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -149,6 +150,10 @@ class AdminGiftCardController extends Controller
                 'total_cents' => $newTotal,
                 'payment_status' => $newTotal <= 0 ? 'paid' : $order->payment_status,
             ]);
+
+            if ($newTotal <= 0) {
+                SellerLedger::creditForOrder($order);
+            }
 
             return ['card' => $card, 'applied' => $applied, 'order' => $order->fresh()];
         });

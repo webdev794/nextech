@@ -11,6 +11,7 @@ use App\Notifications\RiderMessage;
 use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
 use App\Support\RiderAttendance;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -443,6 +444,7 @@ class RiderController extends Controller
 
         if ($order->payment_status !== 'paid') {
             $order->update(['payment_status' => 'paid', 'cash_collected_at' => now()]);
+            SellerLedger::creditForOrder($order);
             // Cash settled after the drop-off completes the paid + delivered pair.
             $order->sendDeliveredReceiptIfReady();
         }

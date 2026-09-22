@@ -380,7 +380,15 @@ export default function Storefront() {
   // hasn't moved) — this force-closes one after a menu action, and clears
   // automatically once the cursor actually leaves the trigger.
   const [closedMenu, setClosedMenu] = useState(null) // null | 'categories' | 'support' | 'account'
-  function menuAction(menu, fn) { return () => { fn(); setClosedMenu(menu) } }
+  // Force-closing the panel on click (via pointer-events/visibility) pulls it out
+  // from under the still-stationary cursor, which makes the browser immediately
+  // fire a real mouseleave on the wrapper — so the panel would already be hidden
+  // by :hover/:focus-within turning false on their own. But the clicked button
+  // keeps DOM focus after a click, and :focus-within doesn't care about the
+  // mouse, so it re-opens the panel the instant the forced-close class lifts.
+  // Blurring the clicked control removes that stuck-open path.
+  function menuAction(menu, fn) { return (event) => { fn(); event.currentTarget.blur(); setClosedMenu(menu) } }
+  function menuLeave() { setClosedMenu(null) }
   // The searchbar re-filters the existing home grid in place rather than
   // navigating to a new page, so without this the results can sit off-screen
   // below the fold — scroll it into view so the change is actually seen.
@@ -1110,10 +1118,11 @@ export default function Storefront() {
     return { variants, hasVariants, options, chosen, variant, unitPrice, compareAt, onSale, pctOff, stock, key, qty, img }
   }
 
-  // Every distinct photo for a product: its own image plus each variant's
-  // own image (variants that reuse the base photo don't add a duplicate).
+  // Every distinct photo for a product: its own image, its gallery (seller
+  // multi-image uploads), plus each variant's own image (anything reusing an
+  // already-listed photo doesn't add a duplicate).
   function galleryImages(product) {
-    const urls = [product.image_url, ...(product.variants ?? []).map((v) => v.image_url)].filter(Boolean)
+    const urls = [product.image_url, ...(product.images ?? []).map((i) => i.url), ...(product.variants ?? []).map((v) => v.image_url)].filter(Boolean)
     return [...new Set(urls)]
   }
 
@@ -1972,7 +1981,7 @@ export default function Storefront() {
           <button type="button" className={dealsPage === 'top_rated' ? 'quicklink active' : 'quicklink'} onClick={() => openDeals('top_rated')}>{starGlyph}5-Star Rated</button>
           <button type="button" className={dealsPage === 'newest' ? 'quicklink active' : 'quicklink'} onClick={() => openDeals('newest')}>New In</button>
         </nav>
-        <div className={closedMenu === 'categories' ? 'nav-dropdown categories-dropdown menu-closed' : 'nav-dropdown categories-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+        <div className={closedMenu === 'categories' ? 'nav-dropdown categories-dropdown menu-closed' : 'nav-dropdown categories-dropdown'} onMouseLeave={menuLeave}>
           <button type="button" className="nav-dropdown-trigger" aria-haspopup="true">Categories {chevronDown}</button>
           <div className="nav-dropdown-panel categories-panel" role="menu">
             <div className="nav-dropdown-panel-inner categories-panel-inner">
@@ -1996,7 +2005,7 @@ export default function Storefront() {
           <button type="button" className="searchbar-btn" aria-label="Search" onClick={scrollToProductGrid}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></button>
         </label>
         <div className="topbar-actions">
-          {currentUser ? <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+          {currentUser ? <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={menuLeave}>
             <button type="button" className="link-btn account-trigger" aria-haspopup="true">
               <span className="account-avatar" aria-hidden>{(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase()}</span>
               <span className="account-trigger-copy"><small>Hello, {(currentUser.name || currentUser.email || 'there').split(' ')[0]}</small><b>Orders &amp; Account</b></span>
@@ -2011,7 +2020,7 @@ export default function Storefront() {
               </div>
             </div>
           </div> : <button className="link-btn" type="button" onClick={() => { setAuthMode('login'); setAuthMessage('') }}>Sign in</button>}
-          <div className={closedMenu === 'support' ? 'nav-dropdown support-dropdown menu-closed' : 'nav-dropdown support-dropdown'} onMouseLeave={() => setClosedMenu(null)}>
+          <div className={closedMenu === 'support' ? 'nav-dropdown support-dropdown menu-closed' : 'nav-dropdown support-dropdown'} onMouseLeave={menuLeave}>
             <button type="button" className={supportUnread ? 'link-btn has-dot' : 'link-btn'} aria-haspopup="true">Support{supportUnread ? <span className="link-dot" aria-label={`${supportUnread} new message${supportUnread === 1 ? '' : 's'}`} /> : null}</button>
             <div className="nav-dropdown-panel support-panel" role="menu">
               <div className="nav-dropdown-panel-inner">
@@ -2025,7 +2034,10 @@ export default function Storefront() {
             </div>
           </div>
           <div className="region-pill" aria-hidden="true"><span>&#127482;&#127480;</span> English</div>
-          <button className="cart-pill" type="button" onClick={() => setCartOpen(true)} aria-label={`Cart with ${cartCount} items`}><span aria-hidden>&#128722;</span> <b>{cartCount}</b></button>
+          <button className="cart-pill" type="button" onClick={() => setCartOpen(true)} aria-label={`Cart with ${cartCount} items`}>
+            <svg aria-hidden width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></svg>
+            {cartCount > 0 && <b>{cartCount}</b>}
+          </button>
         </div>
       </div>
     </header>
