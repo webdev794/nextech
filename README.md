@@ -8,6 +8,8 @@ start "NexTech API" cmd /k "cd /d D:\edp\backend && D:\xampp8-2-12\php84\php.exe
 
 password: password
 
+https://www.loom.com/share/f8d2cde4e5344ea9bb0f703d42493c54
+
 ## See Output Quickly
 
 Open Windows Command Prompt and run:
