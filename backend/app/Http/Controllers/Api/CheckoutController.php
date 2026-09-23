@@ -90,8 +90,6 @@ class CheckoutController extends Controller
             // even if the customer later edits their profile.
             $address['phone'] = $phone;
 
-            $fees = CheckoutFees::current();
-            $area = $this->resolveDelivery($address, $fees);
             $cart = Cart::query()->where('user_id', $request->user()->id)->first();
 
             if (! $cart) {
@@ -102,6 +100,11 @@ class CheckoutController extends Controller
             if ($cart->items->isEmpty()) {
                 throw ValidationException::withMessages(['cart' => ['Your cart is empty.']]);
             }
+
+            $hasShopItems = $cart->items->contains(fn ($cartItem) => $cartItem->product?->shop_id !== null);
+
+            $fees = CheckoutFees::current();
+            $area = $this->resolveDelivery($address, $fees, $hasShopItems);
 
             $subtotal = 0;
             $orderItems = [];
@@ -244,6 +247,38 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Wraps the store-radius resolution below with one override: a cart
+     * holding any seller (shop_id) item can never actually be handed to a
+     * NexTech rider — nothing sends a rider to a seller's own address to
+     * collect it — so such a cart always ships by online courier, even when
+     * the address sits inside a store's delivery radius. The store/km/radius
+     * lookup itself is left untouched (still needed for any NexTech-owned
+     * items riding along in the same cart, and for per-store availability),
+     * only the final delivery_method/courier_quote_cents get overridden.
+     *
+     * @param  array<string, mixed>  $address
+     * @param  array<string, int|string>  $fees
+     * @return array{km: float|null, radius_km: float|null, store: Store|null, delivery_method: string, courier_quote_cents: int|null}
+     */
+    private function resolveDelivery(array $address, array $fees, bool $hasShopItems = false): array
+    {
+        $area = $this->resolveStoreDelivery($address, $fees);
+
+        if ($hasShopItems && $area['delivery_method'] === 'own_rider') {
+            if (! Courier::isServiceable($address) && (bool) config('checkout.enforce_radius')) {
+                throw ValidationException::withMessages([
+                    'address' => ["We don't deliver to your area yet — we're expanding fast and will reach you soon."],
+                ]);
+            }
+
+            $area['delivery_method'] = 'online_courier';
+            $area['courier_quote_cents'] = Courier::quote($address)['cost_cents'];
+        }
+
+        return $area;
+    }
+
+    /**
      * Resolve the delivery point against the active stores: find the store that
      * serves the address (nearest one whose radius reaches it), reject an
      * out-of-range address when radius enforcement is on (unless the online
@@ -255,7 +290,7 @@ class CheckoutController extends Controller
      * @param  array<string, int|string>  $fees
      * @return array{km: float|null, radius_km: float|null, store: Store|null, delivery_method: string, courier_quote_cents: int|null}
      */
-    private function resolveDelivery(array $address, array $fees): array
+    private function resolveStoreDelivery(array $address, array $fees): array
     {
         $enforce = (bool) config('checkout.enforce_radius');
         $none = ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => 'own_rider', 'courier_quote_cents' => null];

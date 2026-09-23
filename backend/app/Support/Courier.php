@@ -52,7 +52,9 @@ class Courier
     /** Books the shipment with the provider and persists it as the order's Shipment row. */
     public static function book(Order $order): Shipment
     {
-        [$booking, $providerName] = self::withFallback(fn (CourierProvider $provider) => $provider->book($order));
+        $origin = self::originAddress($order);
+
+        [$booking, $providerName] = self::withFallback(fn (CourierProvider $provider) => $provider->book($order, $origin));
 
         return $order->shipment()->updateOrCreate([], [
             // The provider that actually handled the booking, not just the
@@ -75,6 +77,34 @@ class Courier
         $shipment->update(['status' => $status]);
 
         return $shipment;
+    }
+
+    /**
+     * Where the courier should collect this order from: the seller's pickup
+     * address for a marketplace order (first shop item — a shipment is one
+     * per order, so a mixed-vendor cart picks up from a single origin same
+     * as the rest of the shipment model), falling back to the fulfilling
+     * store's address for NexTech's own inventory.
+     */
+    private static function originAddress(Order $order): array
+    {
+        $seller = $order->items()->whereNotNull('shop_id')->with('shop.seller')->first()?->shop?->seller;
+
+        if ($seller) {
+            return $seller->pickupAddress();
+        }
+
+        $store = $order->store;
+
+        return [
+            'phone' => null,
+            'line1' => $store?->line1,
+            'line2' => $store?->line2,
+            'city' => $store?->city,
+            'state' => $store?->state,
+            'postal_code' => $store?->postal_code,
+            'country' => $store?->country,
+        ];
     }
 
     /**

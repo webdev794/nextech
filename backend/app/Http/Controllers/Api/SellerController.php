@@ -22,8 +22,13 @@ class SellerController extends Controller
     public function apply(Request $request): JsonResponse
     {
         $user = $request->user();
+        $existing = $user->seller;
 
-        abort_if($user->seller !== null, 409, 'You already have a seller application.');
+        // A first-time applicant creates a new row; a seller admin sent back
+        // to 'needs_changes' resubmits against the same row instead — anyone
+        // else (pending/approved/rejected/suspended) already has a decision
+        // in flight and can't re-apply.
+        abort_if($existing !== null && $existing->status !== 'needs_changes', 409, 'You already have a seller application.');
 
         $countryCodes = array_keys(config('countries', []));
 
@@ -40,6 +45,15 @@ class SellerController extends Controller
             'registered_postal_code' => ['required', 'string', 'max:12'],
             'registered_country' => ['required', 'string', Rule::in($countryCodes)],
 
+            'pickup_same_as_registered' => ['sometimes', 'boolean'],
+            'pickup_phone' => ['required', 'string', 'max:32'],
+            'pickup_line1' => ['required_if:pickup_same_as_registered,false', 'nullable', 'string', 'max:255'],
+            'pickup_line2' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'pickup_city' => ['required_if:pickup_same_as_registered,false', 'nullable', 'string', 'max:100'],
+            'pickup_state' => ['required_if:pickup_same_as_registered,false', 'nullable', 'string', 'max:60'],
+            'pickup_postal_code' => ['required_if:pickup_same_as_registered,false', 'nullable', 'string', 'max:12'],
+            'pickup_country' => ['required_if:pickup_same_as_registered,false', 'nullable', 'string', Rule::in($countryCodes)],
+
             'contact_name' => ['required', 'string', 'max:160'],
             'id_type' => ['required', 'string', 'max:32'],
             'id_number' => ['required', 'string', 'max:60'],
@@ -54,9 +68,10 @@ class SellerController extends Controller
             'shop_description' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
 
-        $seller = DB::transaction(function () use ($user, $data): Seller {
-            $seller = Seller::create([
-                'user_id' => $user->id,
+        $sameAsRegistered = (bool) ($data['pickup_same_as_registered'] ?? true);
+
+        $seller = DB::transaction(function () use ($user, $data, $sameAsRegistered, $existing): Seller {
+            $attributes = [
                 'country' => strtoupper($data['country']),
                 'business_type' => $data['business_type'],
                 'company_name' => $data['company_name'],
@@ -67,6 +82,14 @@ class SellerController extends Controller
                 'registered_state' => $data['registered_state'],
                 'registered_postal_code' => $data['registered_postal_code'],
                 'registered_country' => strtoupper($data['registered_country']),
+                'pickup_same_as_registered' => $sameAsRegistered,
+                'pickup_phone' => $data['pickup_phone'],
+                'pickup_line1' => $sameAsRegistered ? $data['registered_line1'] : $data['pickup_line1'],
+                'pickup_line2' => $sameAsRegistered ? ($data['registered_line2'] ?? null) : ($data['pickup_line2'] ?? null),
+                'pickup_city' => $sameAsRegistered ? $data['registered_city'] : $data['pickup_city'],
+                'pickup_state' => $sameAsRegistered ? $data['registered_state'] : $data['pickup_state'],
+                'pickup_postal_code' => $sameAsRegistered ? $data['registered_postal_code'] : $data['pickup_postal_code'],
+                'pickup_country' => $sameAsRegistered ? strtoupper($data['registered_country']) : strtoupper($data['pickup_country']),
                 'contact_name' => $data['contact_name'],
                 'id_type' => $data['id_type'],
                 'id_number' => $data['id_number'],
@@ -75,22 +98,44 @@ class SellerController extends Controller
                 'business_document_path' => $data['business_document_path'],
                 'status' => 'pending',
                 'submitted_at' => now(),
-            ]);
+            ];
 
-            $seller->shop()->create([
-                'name' => $data['shop_name'],
-                'slug' => $this->uniqueSlug($data['shop_name']),
+            if ($existing) {
+                // Resubmission after 'needs_changes' — back into the review
+                // queue clean, with no stale reviewer/reason from last time.
+                $existing->forceFill($attributes + [
+                    'reviewed_by' => null,
+                    'reviewed_at' => null,
+                    'rejection_reason' => null,
+                ])->save();
+                $seller = $existing;
+            } else {
+                $seller = Seller::create(['user_id' => $user->id] + $attributes);
+            }
+
+            $shopAttributes = [
                 'logo_url' => $data['shop_logo_url'] ?? null,
                 'banner_url' => $data['shop_banner_url'] ?? null,
                 'category_id' => $data['shop_category_id'] ?? null,
                 'description' => $data['shop_description'] ?? null,
-                'is_active' => false,
-            ]);
+            ];
+
+            if ($seller->shop) {
+                // Slug stays put on a resubmission — the shop may already be
+                // linked to elsewhere (or just be familiar to the seller).
+                $seller->shop->update(['name' => $data['shop_name']] + $shopAttributes);
+            } else {
+                $seller->shop()->create([
+                    'name' => $data['shop_name'],
+                    'slug' => $this->uniqueSlug($data['shop_name']),
+                    'is_active' => false,
+                ] + $shopAttributes);
+            }
 
             return $seller;
         });
 
-        return response()->json(['data' => $seller->load('shop')], 201);
+        return response()->json(['data' => $seller->load('shop')], $existing ? 200 : 201);
     }
 
     /**

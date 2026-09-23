@@ -21,8 +21,11 @@ interface CourierProvider
      */
     public function quote(array $address): array;
 
-    /** @return array{tracking_number: string, carrier: string, label_url: ?string} */
-    public function book(Order $order): array;
+    /**
+     * @param  array<string, mixed>  $origin  Where the courier should collect the order from.
+     * @return array{tracking_number: string, carrier: string, label_url: ?string}
+     */
+    public function book(Order $order, array $origin): array;
 
     /** Current status for a booked shipment: booked|in_transit|delivered|failed. */
     public function track(Shipment $shipment): string;

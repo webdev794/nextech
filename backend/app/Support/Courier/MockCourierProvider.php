@@ -34,7 +34,7 @@ class MockCourierProvider implements CourierProvider
         ];
     }
 
-    public function book(Order $order): array
+    public function book(Order $order, array $origin): array
     {
         return [
             'tracking_number' => 'MOCK-'.strtoupper(Str::random(10)),

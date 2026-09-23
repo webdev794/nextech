@@ -135,6 +135,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
+    Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
 
     Route::get('/orders', [AdminOrderController::class, 'index']);
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);

@@ -58,6 +58,8 @@ class AdminPageController extends Controller
             'is_published' => ['sometimes', 'boolean'],
             'show_in_footer' => ['sometimes', 'boolean'],
             'footer_group' => ['sometimes', 'string', 'max:60'],
+            'menu_placements' => ['sometimes', 'array', 'max:10'],
+            'menu_placements.*' => ['string', 'in:main_menu,main_footer,seller_footer,blog'],
             'sort_order' => ['sometimes', 'integer', 'min:0', 'max:9999'],
 
             // Structured content blocks. Text is plain / Markdown and is rendered

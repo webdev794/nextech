@@ -54,11 +54,12 @@ class RealCourierProvider implements CourierProvider
         ];
     }
 
-    public function book(Order $order): array
+    public function book(Order $order, array $origin): array
     {
         $data = $this->decode($this->request()->post($this->endpoint('shipments'), [
             'account_code' => $this->credentials['account_code'],
             'order_id' => $order->id,
+            'origin_address' => $origin,
             'address' => $order->delivery_address ?? [],
         ]));
 

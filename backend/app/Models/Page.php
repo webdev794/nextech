@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class Page extends Model
 {
     protected $fillable = [
-        'slug', 'title', 'banner_image', 'content', 'sections', 'is_published', 'show_in_footer', 'footer_group', 'sort_order',
+        'slug', 'title', 'banner_image', 'content', 'sections', 'is_published', 'show_in_footer', 'footer_group', 'menu_placements', 'sort_order',
     ];
 
     protected function casts(): array
@@ -17,6 +17,7 @@ class Page extends Model
             'sections' => 'array',
             'is_published' => 'boolean',
             'show_in_footer' => 'boolean',
+            'menu_placements' => 'array',
             'sort_order' => 'integer',
         ];
     }

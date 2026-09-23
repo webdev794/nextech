@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Seller;
 use App\Models\Shop;
+use App\Models\SupportMessage;
 use App\Models\SupportThread;
+use App\Models\User;
 use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +19,7 @@ class AdminSellerController extends Controller
     public function index(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'suspended'])],
+            'status' => ['sometimes', Rule::in(['pending', 'needs_changes', 'approved', 'rejected', 'suspended'])],
         ]);
 
         $sellers = Seller::query()
@@ -142,14 +144,53 @@ class AdminSellerController extends Controller
     }
 
     /**
-     * Admin-originated message to a seller — mirrors RiderController::threadFor():
-     * finds or creates an open seller_product_issue thread for the seller's
-     * user_id and posts the first/next message as staff.
+     * Admin-originated message to a seller — posts into the same
+     * seller_product_issue/seller_other thread the seller sees and can
+     * reply to from their own Seller Center (SupportThreadController, same
+     * /support/threads endpoints, scoped to their user_id).
      */
     public function message(Request $request, Seller $seller): JsonResponse
     {
         $data = $request->validate(['body' => ['required', 'string', 'max:2000']]);
 
+        $thread = $this->postToSellerThread($seller, $request->user(), $data['body']);
+
+        return response()->json(['data' => $thread->fresh()]);
+    }
+
+    /**
+     * Sends the application back to the seller for edits — sets status to
+     * needs_changes (which unlocks SellerController::apply() for a
+     * resubmission against this same row) and posts the reason into the
+     * seller's message thread so it isn't just a status change with no
+     * explanation of what to fix.
+     */
+    public function requestChanges(Request $request, Seller $seller): JsonResponse
+    {
+        abort_unless(in_array($seller->status, ['pending', 'rejected'], true), 422, 'Changes can only be requested on a pending or rejected application.');
+
+        $data = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
+
+        DB::transaction(function () use ($seller, $data, $request): void {
+            $seller->forceFill([
+                'status' => 'needs_changes',
+                'rejection_reason' => $data['reason'],
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+            ])->save();
+
+            $this->postToSellerThread($seller, $request->user(), $data['reason']);
+        });
+
+        return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
+    }
+
+    /**
+     * Finds or creates an open seller<->admin thread for this seller and
+     * posts a staff message into it — mirrors RiderController::threadFor().
+     */
+    private function postToSellerThread(Seller $seller, User $sender, string $body): SupportThread
+    {
         $thread = SupportThread::where('user_id', $seller->user_id)
             ->whereIn('issue_type', ['seller_product_issue', 'seller_other'])
             ->where('status', 'open')
@@ -164,9 +205,9 @@ class AdminSellerController extends Controller
             ]);
         }
 
-        $thread->post($request->user(), $data['body'], isStaff: true);
+        $thread->post($sender, $body, isStaff: true);
 
-        return response()->json(['data' => $thread->fresh()]);
+        return $thread;
     }
 
     public function reinstate(Seller $seller): JsonResponse
@@ -206,6 +247,7 @@ class AdminSellerController extends Controller
             'rejection_reason' => $seller->rejection_reason,
             'submitted_at' => $seller->submitted_at,
             'reviewed_at' => $seller->reviewed_at,
+            'last_message' => $this->lastMessage($seller),
             'shop' => $seller->relationLoaded('shop') && $seller->shop ? [
                 'id' => $seller->shop->id,
                 'name' => $seller->shop->name,
@@ -223,6 +265,14 @@ class AdminSellerController extends Controller
                 'registered_state' => $seller->registered_state,
                 'registered_postal_code' => $seller->registered_postal_code,
                 'registered_country' => $seller->registered_country,
+                'pickup_same_as_registered' => (bool) $seller->pickup_same_as_registered,
+                'pickup_phone' => $seller->pickup_phone,
+                'pickup_line1' => $seller->pickup_line1,
+                'pickup_line2' => $seller->pickup_line2,
+                'pickup_city' => $seller->pickup_city,
+                'pickup_state' => $seller->pickup_state,
+                'pickup_postal_code' => $seller->pickup_postal_code,
+                'pickup_country' => $seller->pickup_country,
                 'contact_name' => $seller->contact_name,
                 'id_type' => $seller->id_type,
                 'id_number' => $seller->id_number,
@@ -243,5 +293,27 @@ class AdminSellerController extends Controller
         }
 
         return $row;
+    }
+
+    /**
+     * The newest non-internal message in the seller's admin thread, so the
+     * list/drawer can show what was last asked without opening the separate
+     * Support inbox. Null once no message has ever been exchanged.
+     */
+    private function lastMessage(Seller $seller): ?array
+    {
+        $message = SupportMessage::whereHas('thread', function ($query) use ($seller): void {
+            $query->where('user_id', $seller->user_id)->whereIn('issue_type', ['seller_product_issue', 'seller_other']);
+        })->where('internal', false)->latest()->first();
+
+        if (! $message) {
+            return null;
+        }
+
+        return [
+            'body' => $message->body,
+            'is_staff' => (bool) $message->is_staff,
+            'created_at' => $message->created_at,
+        ];
     }
 }

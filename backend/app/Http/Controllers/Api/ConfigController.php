@@ -13,6 +13,7 @@ use App\Support\CheckoutFees;
 use App\Support\Country;
 use App\Support\FooterConfig;
 use App\Support\Payments;
+use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 
 class ConfigController extends Controller
@@ -33,6 +34,10 @@ class ConfigController extends Controller
                 'otp_enabled' => (bool) config('otp.enabled'),
                 'cod_enabled' => (bool) Setting::get('cod_enabled', false),
                 'enforce_radius' => (bool) config('checkout.enforce_radius'),
+                // Read-only and not sensitive — a seller can already back this
+                // out from their own ledger entries, so surfacing it directly
+                // lets the Seller Center price estimator use the real rate.
+                'commission_rate_bps' => SellerLedger::rate(),
                 ...CheckoutFees::current(),
                 'stores' => Store::query()->where('is_active', true)
                     ->whereNotNull('latitude')->whereNotNull('longitude')

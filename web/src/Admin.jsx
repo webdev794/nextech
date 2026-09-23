@@ -119,8 +119,8 @@ const TAB_ICONS = {
   customers: '\u{1F465}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
   homepage: '\u{1F5BC}️',
 }
-const SELLER_STATUS_FILTERS = ['pending', 'approved', 'rejected', 'suspended']
-const SELLER_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
+const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended']
+const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
 const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
 const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
@@ -215,8 +215,13 @@ function riderStatusChip(rider) {
 }
 const EMPTY_BANNER = { image_url: '', headline: '', category_slug: '', link_url: '', placement: 'strip', sort_order: 0, is_active: true }
 const EMPTY_TILE = { title: '', image_url: '', category_slug: '', link_url: '', sort_order: 0, is_active: true }
-const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', show_in_footer: true, is_published: true, sort_order: 0 }
+const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', menu_placements: ['main_footer'], show_in_footer: true, is_published: true, sort_order: 0 }
 const FOOTER_GROUP_LABELS = { company: 'Company info', legal: 'Customer service', help: 'Help', bottom: 'Lower footer', blog: 'Blog (not shown in footer columns)' }
+const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
+// Where a page is actually linked from on the live site — purely for admin
+// tracking/organization; show_in_footer is still what gates the real render.
+const MENU_PLACEMENT_OPTIONS = ['main_menu', 'main_footer', 'seller_footer', 'blog']
+const MENU_PLACEMENT_LABELS = { main_menu: 'Main menu (storefront Help menu)', main_footer: 'Main footer', seller_footer: 'Seller Center footer', blog: 'Blog' }
 const sectionLabel = (type) => (SECTION_TYPES.find(([value]) => value === type) ?? [type, type])[1]
 
 // Reference rows for the "Formatting guide" tab. Each `code` is fed through the
@@ -412,7 +417,31 @@ export default function Admin({ token, onClose }) {
   const [pageForm, setPageForm] = useState(null)
   const [pagePreview, setPagePreview] = useState(false)
   const [pagesExpanded, setPagesExpanded] = useState(false)
-  const [blogsExpanded, setBlogsExpanded] = useState(false)
+  const [expandedPageGroups, setExpandedPageGroups] = useState({})
+  const [pageGroupFilter, setPageGroupFilter] = useState(null)
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false)
+
+  // Clicking a group's own header should actually show that group — not just
+  // expand/collapse the sidebar while the main panel keeps showing whatever
+  // page (or none) was open before. WordPress-style: shows the group's page
+  // list (scopes the table to it) rather than jumping into an editor — the
+  // admin picks a page from the list and hits Edit there. A second click
+  // (already open) just collapses it — including its sub-sub-groups, e.g.
+  // Main footer's columns — without touching whatever's shown on the right.
+  function selectPageGroup(key) {
+    const willOpen = !expandedPageGroups[key]
+    setExpandedPageGroups((cur) => ({ ...cur, [key]: willOpen }))
+    if (!willOpen) return
+    setPageGroupFilter(key)
+    goTab('pages')
+    setPageForm(null)
+  }
+
+  function selectPageInGroup(page, key) {
+    setPageGroupFilter(key)
+    goTab('pages')
+    editPage(page)
+  }
   const [courierDraft, setCourierDraft] = useState({})
   const [riders, setRiders] = useState([])
   const [riderForm, setRiderForm] = useState(null)
@@ -441,6 +470,7 @@ export default function Admin({ token, onClose }) {
   const [threadStatus, setThreadStatus] = useState('open')
   const [thread, setThread] = useState(null)
   const [threadReply, setThreadReply] = useState('')
+  const chatLogRef = useRef(null)
   const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '' })
   const [giftIssued, setGiftIssued] = useState(null)
   const [supportBadge, setSupportBadge] = useState(0)
@@ -632,6 +662,14 @@ export default function Admin({ token, onClose }) {
     }, 5000)
     return () => clearInterval(timer)
   }, [threadId, authHeaders])
+  // Keep the chat pinned to the newest message — on open, after sending, and
+  // when the 5s poll above brings in a customer's reply.
+  const threadMessageCount = thread?.messages?.length ?? 0
+  const lastThreadMessageId = thread?.messages?.[threadMessageCount - 1]?.id ?? null
+  useEffect(() => {
+    if (!chatLogRef.current) return
+    chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
+  }, [threadId, threadMessageCount, lastThreadMessageId])
   useEffect(() => { if (tab === 'settings') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
   useEffect(() => { if (tab === 'branding' || tab === 'secure' || tab === 'footer') loadSettings() }, [tab, loadSettings])
 
@@ -920,11 +958,14 @@ export default function Admin({ token, onClose }) {
 
   function editPage(page) {
     setPagePreview(false)
+    setPageSettingsOpen(false)
     setPageForm({
       id: page.id, title: page.title ?? '', slug: page.slug ?? '', banner_image: page.banner_image ?? '',
       content: page.content ?? '',
       sections: Array.isArray(page.sections) ? page.sections : [],
-      footer_group: page.footer_group ?? 'useful_links', show_in_footer: page.show_in_footer,
+      footer_group: page.footer_group ?? 'useful_links',
+      menu_placements: Array.isArray(page.menu_placements) ? page.menu_placements : [],
+      show_in_footer: page.show_in_footer,
       is_published: page.is_published, sort_order: page.sort_order ?? 0,
     })
     scrollAdminTop()
@@ -932,6 +973,7 @@ export default function Admin({ token, onClose }) {
 
   function newPage(extra = {}) {
     setPagePreview(false)
+    setPageSettingsOpen(false)
     setPageForm({ ...EMPTY_PAGE, ...extra })
     scrollAdminTop()
   }
@@ -1612,7 +1654,8 @@ export default function Admin({ token, onClose }) {
 
   // Deliberately not routed through sellerAction() — that helper expects the
   // response's `data` to be a Seller row it can merge into sellers/sellerDetail
-  // state, but this endpoint returns the SupportThread instead.
+  // state, but this endpoint returns the SupportThread instead. Re-opens the
+  // detail drawer afterward so the "Last message" line reflects what was sent.
   async function messageSeller(seller) {
     const body = window.prompt(`Message to ${seller.shop?.name ?? 'this seller'}:`, '')
     if (!body || !body.trim()) return
@@ -1623,7 +1666,13 @@ export default function Admin({ token, onClose }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not send the message.')
       setMessage('Message sent.')
+      openSellerDetail(seller.id)
     } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function requestSellerChanges(seller) {
+    const reason = window.prompt(`What does ${seller.shop?.name ?? 'this seller'} need to change? (sent to them as a message, and reopens the application for editing)`, '')
+    if (reason) sellerAction(seller, 'request-changes', { reason })
   }
 
   // KYC documents live on the private disk, gated by auth — not a plain <a
@@ -1925,7 +1974,7 @@ export default function Admin({ token, onClose }) {
             </button>
           ))}
 
-          {(() => { const inGroup = tab === 'pages' || tab === 'homepage' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded || inGroup; return <>
+          {(() => { const inGroup = tab === 'pages' || tab === 'homepage' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
           <button type="button" className={`nav-group-toggle${inGroup ? ' active' : ''}`} aria-expanded={open} onClick={() => setPagesExpanded((v) => !v)}>
             <span className="nav-ico" aria-hidden>{'\u{1F4C4}'}</span>
             <span className="nav-label">Pages</span>
@@ -1935,23 +1984,63 @@ export default function Admin({ token, onClose }) {
             <div className="admin-nav-sub">
               <button type="button" className={tab === 'homepage' ? 'active' : ''} onClick={() => goTab('homepage')}>Homepage</button>
               <button type="button" className={tab === 'footer' ? 'active' : ''} onClick={() => goTab('footer')}>Footer</button>
-              <button type="button" className={tab === 'pages' && !pageForm ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null) }}>All pages</button>
-              {pages.filter((p) => p.footer_group !== 'blog').map((p) => (
-                <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => { goTab('pages'); editPage(p) }}>{p.title}</button>
-              ))}
-              <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); newPage() }}>+ New page</button>
-              {(() => { const blogPages = pages.filter((p) => p.footer_group === 'blog'); const blogOpen = blogsExpanded || (tab === 'pages' && pageForm?.footer_group === 'blog'); return <>
-                <button type="button" className="nav-subgroup-toggle" aria-expanded={blogOpen} onClick={() => setBlogsExpanded((v) => !v)}>Blogs<span className="nav-caret" aria-hidden>{blogOpen ? '▾' : '▸'}</span></button>
-                {blogOpen && (
-                  <div className="admin-nav-sub">
-                    {blogPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No blog posts</button>}
-                    {blogPages.map((p) => (
-                      <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => { goTab('pages'); editPage(p) }}>{p.title}</button>
-                    ))}
-                    <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); newPage({ footer_group: 'blog', show_in_footer: false }) }}>+ New blog post</button>
+              <button type="button" className={tab === 'pages' && !pageForm && !pageGroupFilter ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null); setPageGroupFilter(null) }}>All pages</button>
+
+              {MENU_PLACEMENT_OPTIONS.map((key) => {
+                const groupPages = pages.filter((p) => Array.isArray(p.menu_placements) && p.menu_placements.includes(key))
+                const isOpen = !!expandedPageGroups[key]
+                return (
+                  <div key={key}>
+                    <button type="button" className={`nav-subgroup-toggle${pageGroupFilter === key ? ' active' : ''}`} aria-expanded={isOpen} onClick={() => selectPageGroup(key)}>
+                      {MENU_PLACEMENT_LABELS[key]}<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="admin-nav-sub">
+                        {key === 'main_footer' ? FOOTER_COLUMNS.map((fg) => {
+                          const colPages = groupPages.filter((p) => (p.footer_group || 'company') === fg)
+                          return (
+                            <div key={fg}>
+                              <span className="nav-sub-label">{FOOTER_GROUP_LABELS[fg]}</span>
+                              {colPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No pages</button>}
+                              {colPages.map((p) => (
+                                <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, key)}>{p.title}</button>
+                              ))}
+                            </div>
+                          )
+                        }) : <>
+                          {groupPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No pages</button>}
+                          {groupPages.map((p) => (
+                            <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, key)}>{p.title}</button>
+                          ))}
+                        </>}
+                        <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); setPageGroupFilter(key); newPage({ menu_placements: [key], ...(key === 'blog' ? { show_in_footer: false } : {}) }) }}>+ New page</button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </> })()}
+                )
+              })}
+
+              {(() => {
+                const unassigned = pages.filter((p) => !Array.isArray(p.menu_placements) || p.menu_placements.length === 0)
+                if (unassigned.length === 0) return null
+                const isOpen = !!expandedPageGroups.unassigned
+                return (
+                  <div>
+                    <button type="button" className={`nav-subgroup-toggle${pageGroupFilter === 'unassigned' ? ' active' : ''}`} aria-expanded={isOpen} onClick={() => selectPageGroup('unassigned')}>
+                      Unassigned<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="admin-nav-sub">
+                        {unassigned.map((p) => (
+                          <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, 'unassigned')}>{p.title}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); setPageGroupFilter(null); newPage() }}>+ New page</button>
               <button type="button" className={tab === 'formatting' ? 'active' : ''} onClick={() => goTab('formatting')}>Formatting guide</button>
             </div>
           )}
@@ -2587,7 +2676,7 @@ export default function Admin({ token, onClose }) {
 
           {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Shop</th><th>Contact</th><th>Country</th><th>Business type</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+              <thead><tr><th>Shop</th><th>Contact</th><th>Country</th><th>Business type</th><th>Status</th><th>Last message</th><th>Submitted</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(sellers, sellersPage).map((seller) => (
                   <tr key={seller.id}>
@@ -2596,6 +2685,7 @@ export default function Admin({ token, onClose }) {
                     <td>{seller.country}</td>
                     <td>{seller.business_type}</td>
                     <td><span className={`pill pill-${seller.status}`}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</span></td>
+                    <td>{seller.last_message ? <span className="muted">{seller.last_message.is_staff ? 'You: ' : ''}{seller.last_message.body.length > 60 ? `${seller.last_message.body.slice(0, 60)}…` : seller.last_message.body}</span> : <span className="muted">—</span>}</td>
                     <td>{seller.submitted_at ? new Date(seller.submitted_at).toLocaleDateString() : '—'}</td>
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => openSellerDetail(seller.id)}>Review</button>
@@ -2778,41 +2868,97 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
-      {tab === 'pages' && (
+      {tab === 'pages' && (() => {
+        const visiblePages = pageGroupFilter
+          ? pages.filter((p) => (pageGroupFilter === 'unassigned'
+            ? !Array.isArray(p.menu_placements) || p.menu_placements.length === 0
+            : Array.isArray(p.menu_placements) && p.menu_placements.includes(pageGroupFilter)))
+          : pages
+        const filterLabel = pageGroupFilter === 'unassigned' ? 'Unassigned' : MENU_PLACEMENT_LABELS[pageGroupFilter]
+        return (
         <section className="admin-panel">
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => newPage()}>New page</button>
-            <span className="muted">Content pages linked from the storefront footer. Content is Markdown (## heading, **bold**, - list, [text](url)).</span>
-          </div>
+          {!pageForm && (
+            <>
+              <div className="admin-toolbar">
+                <button className="act" type="button" onClick={() => { setPageGroupFilter(null); newPage() }}>New page</button>
+                <span className="muted">Content pages linked from the storefront footer. Content is Markdown (## heading, **bold**, - list, [text](url)).</span>
+              </div>
+
+              {pageGroupFilter && (
+                <p className="admin-filter-note">Showing <strong>{filterLabel}</strong> pages only — <button type="button" className="act ghost" onClick={() => setPageGroupFilter(null)}>Show all pages</button></p>
+              )}
+            </>
+          )}
 
           {pageForm && (
             <form className="admin-form" onSubmit={savePage}>
-              <h3>{pageForm.id ? `Edit “${pageForm.title || 'page'}”` : 'New page'}</h3>
-              <div className="admin-form-grid">
-                <label>Title<input required maxLength="160" value={pageForm.title} onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })} /></label>
-                <label>Slug (optional)<input value={pageForm.slug} placeholder="auto from title" onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })} /></label>
-                <label>Footer placement
-                  <select value={pageForm.footer_group} onChange={(event) => setPageForm({ ...pageForm, footer_group: event.target.value })}>
-                    <option value="company">Upper footer — Company info</option>
-                    <option value="legal">Upper footer — Customer service</option>
-                    <option value="help">Upper footer — Help</option>
-                    <option value="bottom">Lower footer (legal links bar)</option>
-                  </select>
-                </label>
-                <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
-                <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
-              </div>
-              <label>Banner image — shown above the title
-                <div className="admin-image-field">
-                  {pageForm.banner_image && <img src={mediaUrl(pageForm.banner_image)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
-                  <input value={pageForm.banner_image ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => setPageForm({ ...pageForm, banner_image: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })), 'pages')} />
-                  {pageForm.banner_image && <button type="button" className="act ghost" onClick={() => setPageForm({ ...pageForm, banner_image: '' })}>Clear</button>}
+              <div className="admin-form-topbar">
+                <h3>{pageForm.id ? `Edit “${pageForm.title || 'page'}”` : 'New page'}</h3>
+                <div className="admin-form-actions admin-form-actions-top">
+                  <button className="act" type="submit">Save</button>
+                  <button className="act ghost" type="button" onClick={() => setPageForm(null)}>&larr; Back to pages</button>
+                  {pageForm.id && <button className="act danger" type="button" onClick={() => removePage(pageForm)}>Delete</button>}
                 </div>
+              </div>
+              <label className="admin-page-title-field">Title
+                <input required maxLength="160" value={pageForm.title} onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })} placeholder="Page title" />
               </label>
-              <div className="admin-sections">
-                <div className="admin-subhead" style={{ marginTop: 4 }}>Sections</div>
+
+              <div className="admin-fieldset admin-collapsible-box">
+                <div className="admin-collapsible-header">
+                  <span>Page settings</span>
+                  <button type="button" className="admin-collapsible-arrow" aria-expanded={pageSettingsOpen} aria-label={pageSettingsOpen ? 'Collapse page settings' : 'Expand page settings'} onClick={() => setPageSettingsOpen((v) => !v)}>
+                    {pageSettingsOpen ? '▾' : '▸'}
+                  </button>
+                </div>
+                {pageSettingsOpen && (
+                  <div className="admin-collapsible-body">
+                    <div className="admin-form-grid">
+                      <label>Slug (optional)<input value={pageForm.slug} placeholder="auto from title" onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })} /></label>
+                      <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
+                    </div>
+
+                    <div className="admin-subhead" style={{ marginTop: 4 }}>Placement</div>
+                    <p className="muted">Where this page is tracked as belonging, for the sidebar/list here — tick every menu it's actually linked from on the live site (a page can be in more than one).</p>
+                    <div className="admin-check-list">
+                      {MENU_PLACEMENT_OPTIONS.map((opt) => (
+                        <label className="admin-check" key={opt}>
+                          <input type="checkbox" checked={pageForm.menu_placements.includes(opt)}
+                            onChange={(event) => setPageForm((f) => ({
+                              ...f,
+                              menu_placements: event.target.checked ? [...f.menu_placements, opt] : f.menu_placements.filter((v) => v !== opt),
+                            }))} /> {MENU_PLACEMENT_LABELS[opt]}
+                        </label>
+                      ))}
+                    </div>
+                    {pageForm.menu_placements.includes('main_footer') && (
+                      <label>Footer column
+                        <select value={pageForm.footer_group} onChange={(event) => setPageForm({ ...pageForm, footer_group: event.target.value })}>
+                          <option value="company">Company info</option>
+                          <option value="legal">Customer service</option>
+                          <option value="help">Help</option>
+                          <option value="bottom">Lower footer (legal links bar)</option>
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <fieldset className="admin-fieldset admin-fieldset-content">
+                <legend>Content</legend>
+                <label>Banner image — shown above the title
+                  <div className="admin-image-field">
+                    {pageForm.banner_image && <img src={mediaUrl(pageForm.banner_image)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+                    <input value={pageForm.banner_image ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => setPageForm({ ...pageForm, banner_image: event.target.value })} />
+                    <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })), 'pages')} />
+                    {pageForm.banner_image && <button type="button" className="act ghost" onClick={() => setPageForm({ ...pageForm, banner_image: '' })}>Clear</button>}
+                  </div>
+                </label>
+                <div className="admin-sections">
+                  <div className="admin-subhead" style={{ marginTop: 4 }}>Sections</div>
                 {(pageForm.sections ?? []).length === 0
                   ? <p className="muted">No sections yet — the page shows the body text below. Add sections for a richer layout; preview on the storefront at <code>/#/p/{pageForm.slug || 'slug'}</code>.</p>
                   : null}
@@ -2923,35 +3069,34 @@ export default function Admin({ token, onClose }) {
                 </div>
               </div>
 
-              <label>Page body (Markdown) — shown when the page has no sections
-                <div className="admin-page-editor">
-                  <div className="admin-page-tabs">
-                    <button type="button" className={!pagePreview ? 'active' : ''} onClick={() => setPagePreview(false)}>Write</button>
-                    <button type="button" className={pagePreview ? 'active' : ''} onClick={() => setPagePreview(true)}>Preview</button>
+                <label>Page body (Markdown) — shown when the page has no sections
+                  <div className="admin-page-editor">
+                    <div className="admin-page-tabs">
+                      <button type="button" className={!pagePreview ? 'active' : ''} onClick={() => setPagePreview(false)}>Write</button>
+                      <button type="button" className={pagePreview ? 'active' : ''} onClick={() => setPagePreview(true)}>Preview</button>
+                    </div>
+                    {pagePreview
+                      ? <div className="admin-page-preview page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageForm.content) }} />
+                      : <textarea rows="16" value={pageForm.content} onChange={(event) => setPageForm({ ...pageForm, content: event.target.value })} />}
                   </div>
-                  {pagePreview
-                    ? <div className="admin-page-preview page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageForm.content) }} />
-                    : <textarea rows="16" value={pageForm.content} onChange={(event) => setPageForm({ ...pageForm, content: event.target.value })} />}
-                </div>
-              </label>
+                </label>
+              </fieldset>
               {pageForm.id && pageForm.is_published && <p className="muted">Storefront link: <code>/#/p/{pageForm.slug}</code></p>}
-              <div className="admin-form-actions">
-                <button className="act" type="submit">Save</button>
-                <button className="act ghost" type="button" onClick={() => setPageForm(null)}>Cancel</button>
-                {pageForm.id && <button className="act danger" type="button" onClick={() => removePage(pageForm)}>Delete</button>}
-              </div>
             </form>
           )}
 
-          {pages.length === 0 ? <p className="admin-empty">No pages yet.</p> : (
+          {!pageForm && (visiblePages.length === 0 ? <p className="admin-empty">{pageGroupFilter ? `No ${filterLabel.toLowerCase()} pages yet.` : 'No pages yet.'}</p> : (
             <table className="admin-table">
-              <thead><tr><th>Title</th><th>Slug</th><th>Footer group</th><th>In footer</th><th>Published</th><th></th></tr></thead>
+              <thead><tr><th>Title</th><th>Slug</th><th>Placement</th><th>In footer</th><th>Published</th><th></th></tr></thead>
               <tbody>
-                {pages.map((page) => (
+                {visiblePages.map((page) => (
                   <tr key={page.id}>
                     <td>{page.title}</td>
                     <td><code>{page.slug}</code></td>
-                    <td>{FOOTER_GROUP_LABELS[page.footer_group] ?? page.footer_group}</td>
+                    <td>{Array.isArray(page.menu_placements) && page.menu_placements.length > 0
+                      ? page.menu_placements.map((p) => MENU_PLACEMENT_LABELS[p]?.split(' (')[0] ?? p).join(', ')
+                        + (page.menu_placements.includes('main_footer') ? ` — ${FOOTER_GROUP_LABELS[page.footer_group] ?? page.footer_group}` : '')
+                      : <span className="muted">Unassigned</span>}</td>
                     <td>{page.show_in_footer ? 'Yes' : 'No'}</td>
                     <td>{page.is_published ? 'Yes' : <span className="muted">Draft</span>}</td>
                     <td className="admin-actions">
@@ -2962,9 +3107,10 @@ export default function Admin({ token, onClose }) {
                 ))}
               </tbody>
             </table>
-          )}
+          ))}
         </section>
-      )}
+        )
+      })()}
 
       {tab === 'support' && (
         <section className="admin-panel">
@@ -3359,7 +3505,7 @@ export default function Admin({ token, onClose }) {
                 {thread.rating_comment && <span className="admin-chat-rating-c">“{thread.rating_comment}”</span>}
               </p>
             )}
-            <div className="chat-log">{(thread.messages ?? []).map((m) => (
+            <div className="chat-log" ref={chatLogRef}>{(thread.messages ?? []).map((m) => (
               <div key={m.id} className={`chat-msg ${m.internal ? 'internal' : m.is_staff && m.user_id ? 'staff' : m.user_id ? 'customer' : 'system'}`}>
                 <span>{m.internal && '🔒 '}{m.body}</span>
                 <em>{m.internal ? 'Internal note — not visible to customer · ' : ''}{new Date(m.created_at).toLocaleString()}</em>
@@ -3386,7 +3532,7 @@ export default function Admin({ token, onClose }) {
               <div className="admin-form" style={{ marginTop: 16 }}>
                 <h4>Attach an order</h4>
                 <p className="muted">This chat wasn&rsquo;t opened against a specific order — pick one of {thread.user?.email ?? 'this customer'}&rsquo;s orders to unlock refunds &amp; gift cards.</p>
-                <select defaultValue="" onChange={(event) => { if (event.target.value) linkThreadOrder(event.target.value) }}>
+                <select className="admin-order-picker" defaultValue="" onChange={(event) => { if (event.target.value) linkThreadOrder(event.target.value) }}>
                   <option value="" disabled>Choose an order…</option>
                   {thread.user.orders.map((o) => (
                     <option key={o.id} value={o.id}>#{o.id} — {money(o.total_cents)} — {STATUS_LABELS[o.status] ?? o.status} — {new Date(o.created_at).toLocaleDateString()}</option>
@@ -3436,12 +3582,21 @@ export default function Admin({ token, onClose }) {
               <>
                 <h3>{sellerDetail.shop?.name ?? sellerDetail.company_name}</h3>
                 <p className="muted"><span className={`pill pill-${sellerDetail.status}`}>{SELLER_STATUS_LABELS[sellerDetail.status] ?? sellerDetail.status}</span> · submitted {sellerDetail.submitted_at ? new Date(sellerDetail.submitted_at).toLocaleString() : '—'}</p>
-                {sellerDetail.rejection_reason && <p className="admin-cash-holding overdue">Reason: {sellerDetail.rejection_reason}</p>}
+                {sellerDetail.rejection_reason && <p className="admin-cash-holding overdue">{sellerDetail.status === 'needs_changes' ? 'Changes requested: ' : 'Reason: '}{sellerDetail.rejection_reason}</p>}
+                {sellerDetail.last_message && (
+                  <p className="muted">Last message ({sellerDetail.last_message.is_staff ? 'you' : 'seller'}, {new Date(sellerDetail.last_message.created_at).toLocaleString()}): &ldquo;{sellerDetail.last_message.body}&rdquo;</p>
+                )}
 
                 <h4>Business</h4>
                 <p className="muted">{sellerDetail.company_name} · {sellerDetail.business_type} · {sellerDetail.country}</p>
                 <p className="muted">Tax ID: {sellerDetail.tax_id}</p>
                 <p className="muted">{[sellerDetail.registered_line1, sellerDetail.registered_line2, sellerDetail.registered_city, sellerDetail.registered_state, sellerDetail.registered_postal_code, sellerDetail.registered_country].filter(Boolean).join(', ')}</p>
+
+                <h4>Pickup address</h4>
+                <p className="muted">{sellerDetail.pickup_phone}</p>
+                <p className="muted">{sellerDetail.pickup_same_as_registered
+                  ? 'Same as registered address (above)'
+                  : [sellerDetail.pickup_line1, sellerDetail.pickup_line2, sellerDetail.pickup_city, sellerDetail.pickup_state, sellerDetail.pickup_postal_code, sellerDetail.pickup_country].filter(Boolean).join(', ')}</p>
 
                 <h4>Seller / contact</h4>
                 <p className="muted">{sellerDetail.contact_name} · {sellerDetail.user?.email}</p>
@@ -3485,6 +3640,9 @@ export default function Admin({ token, onClose }) {
                 <h4>Actions</h4>
                 <div className="admin-form-actions">
                   <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => messageSeller(sellerDetail)}>Message seller</button>
+                  {(sellerDetail.status === 'pending' || sellerDetail.status === 'rejected') && (
+                    <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => requestSellerChanges(sellerDetail)}>Request changes</button>
+                  )}
                   {sellerDetail.status === 'pending' && <>
                     <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'approve')}>Approve</button>
                     <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectSeller(sellerDetail)}>Reject</button>
@@ -3495,6 +3653,7 @@ export default function Admin({ token, onClose }) {
                   {sellerDetail.status === 'suspended' && (
                     <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'reinstate')}>Reinstate</button>
                   )}
+                  {sellerDetail.status === 'needs_changes' && <span className="muted">Waiting on the seller to edit and resubmit.</span>}
                   {sellerDetail.status === 'rejected' && <span className="muted">No further action.</span>}
                 </div>
                 {sellerDetail.reviewer && <p className="muted">Reviewed by {sellerDetail.reviewer.name}{sellerDetail.reviewed_at ? ` on ${new Date(sellerDetail.reviewed_at).toLocaleDateString()}` : ''}</p>}

@@ -20,6 +20,14 @@ class Seller extends Model
         'registered_state',
         'registered_postal_code',
         'registered_country',
+        'pickup_same_as_registered',
+        'pickup_phone',
+        'pickup_line1',
+        'pickup_line2',
+        'pickup_city',
+        'pickup_state',
+        'pickup_postal_code',
+        'pickup_country',
         'contact_name',
         'id_type',
         'id_number',
@@ -42,6 +50,7 @@ class Seller extends Model
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
             'payout_details' => 'array',
+            'pickup_same_as_registered' => 'boolean',
         ];
     }
 
@@ -58,5 +67,21 @@ class Seller extends Model
     public function reviewer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    /** Where a courier should collect this seller's orders from, resolving the same-as-registered flag. */
+    public function pickupAddress(): array
+    {
+        $sameAsRegistered = (bool) $this->pickup_same_as_registered;
+
+        return [
+            'phone' => $this->pickup_phone,
+            'line1' => $sameAsRegistered ? $this->registered_line1 : $this->pickup_line1,
+            'line2' => $sameAsRegistered ? $this->registered_line2 : $this->pickup_line2,
+            'city' => $sameAsRegistered ? $this->registered_city : $this->pickup_city,
+            'state' => $sameAsRegistered ? $this->registered_state : $this->pickup_state,
+            'postal_code' => $sameAsRegistered ? $this->registered_postal_code : $this->pickup_postal_code,
+            'country' => $sameAsRegistered ? $this->registered_country : $this->pickup_country,
+        ];
     }
 }

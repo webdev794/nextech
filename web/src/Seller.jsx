@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { checkProductImage } from './productImageCheck'
 import { renderMarkdown } from './markdown'
@@ -13,8 +13,54 @@ async function readJson(response) {
   try { return text ? JSON.parse(text) : {} } catch { return {} }
 }
 
+// A short two-note chime for a new admin message — plain WebAudio, no sound
+// file to ship. Mirrors Admin.jsx's playChime() so the "new message" tone is
+// consistent on both sides of the same conversation.
+function playMessageChime() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext
+    if (!Ctx) return
+    const ctx = new Ctx()
+    const blip = (freq, at, dur = 0.2) => {
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.connect(gain); gain.connect(ctx.destination)
+      osc.type = 'sine'
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime + at)
+      gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + at + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur)
+      osc.start(ctx.currentTime + at)
+      osc.stop(ctx.currentTime + at + dur + 0.02)
+    }
+    blip(740, 0)
+    blip(988, 0.16, 0.3)
+    setTimeout(() => ctx.close(), 900)
+  } catch { /* audio blocked — nothing else to fall back to */ }
+}
+
 const money = (cents) => `$${((cents ?? 0) / 100).toFixed(2)}`
 const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout' }
+
+// A commission-only estimate, shown while a seller is pricing a product —
+// not a quote: the real payout is computed server-side at order time.
+function estimateSellerFees(priceDollars, config) {
+  const priceCents = Math.round(Number(priceDollars) * 100)
+  if (!config || !priceCents || Number.isNaN(priceCents) || priceCents <= 0) return null
+
+  const commissionBps = config.commission_rate_bps ?? 0
+  const taxBps = config.tax_rate_bps ?? 0
+  const freeThreshold = config.free_delivery_threshold_cents ?? 0
+  const deliveryFee = config.delivery_fee_cents ?? config.delivery_far_fee_cents ?? 0
+
+  const commissionCents = Math.round((priceCents * commissionBps) / 10000)
+  const netCents = priceCents - commissionCents
+  const taxCents = Math.round((priceCents * taxBps) / 10000)
+  const belowFreeThreshold = priceCents < freeThreshold
+  const customerTotalCents = priceCents + taxCents + (belowFreeThreshold ? deliveryFee : 0)
+
+  return { priceCents, commissionBps, commissionCents, netCents, taxCents, belowFreeThreshold, customerTotalCents }
+}
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -37,6 +83,14 @@ const EMPTY_FORM = {
   registered_state: '',
   registered_postal_code: '',
   registered_country: '',
+  pickup_same_as_registered: true,
+  pickup_phone: '',
+  pickup_line1: '',
+  pickup_line2: '',
+  pickup_city: '',
+  pickup_state: '',
+  pickup_postal_code: '',
+  pickup_country: '',
   contact_name: '',
   id_type: '',
   id_number: '',
@@ -53,9 +107,43 @@ const EMPTY_FORM = {
 
 const STATUS_COPY = {
   pending: { title: 'Application submitted', body: 'Your seller application is in review. This usually takes a few business days — we’ll email you as soon as there’s a decision.' },
+  needs_changes: { title: 'Changes requested', body: 'We need a change before we can approve your application — see the message below, then edit and resubmit.' },
   rejected: { title: 'Application not approved', body: 'Your seller application was not approved.' },
   suspended: { title: 'Seller account suspended', body: 'Your seller account is currently suspended and your shop is hidden from customers.' },
 }
+
+const formFromSeller = (seller) => ({
+  country: seller.country ?? '',
+  business_type: seller.business_type ?? '',
+  company_name: seller.company_name ?? '',
+  tax_id: seller.tax_id ?? '',
+  registered_line1: seller.registered_line1 ?? '',
+  registered_line2: seller.registered_line2 ?? '',
+  registered_city: seller.registered_city ?? '',
+  registered_state: seller.registered_state ?? '',
+  registered_postal_code: seller.registered_postal_code ?? '',
+  registered_country: seller.registered_country ?? '',
+  pickup_same_as_registered: seller.pickup_same_as_registered ?? true,
+  pickup_phone: seller.pickup_phone ?? '',
+  pickup_line1: seller.pickup_line1 ?? '',
+  pickup_line2: seller.pickup_line2 ?? '',
+  pickup_city: seller.pickup_city ?? '',
+  pickup_state: seller.pickup_state ?? '',
+  pickup_postal_code: seller.pickup_postal_code ?? '',
+  pickup_country: seller.pickup_country ?? '',
+  contact_name: seller.contact_name ?? '',
+  id_type: seller.id_type ?? '',
+  id_number: seller.id_number ?? '',
+  date_of_birth: seller.date_of_birth ?? '',
+  id_document_path: seller.id_document_path ?? '',
+  id_document_name: seller.id_document_path ? seller.id_document_path.split('/').pop() : '',
+  business_document_path: seller.business_document_path ?? '',
+  business_document_name: seller.business_document_path ? seller.business_document_path.split('/').pop() : '',
+  shop_name: seller.shop?.name ?? '',
+  shop_logo_url: seller.shop?.logo_url ?? '',
+  shop_category_id: seller.shop?.category_id ?? '',
+  shop_description: seller.shop?.description ?? '',
+})
 
 const PRODUCT_STATUS_LABELS = { pending: 'Pending review', approved: 'Live', rejected: 'Rejected' }
 const SUPPORT_ISSUE_LABELS = {
@@ -74,11 +162,13 @@ const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
 
 export default function Seller({ token, onSignOut }) {
   const [countries, setCountries] = useState([])
+  const [siteConfig, setSiteConfig] = useState(null)
   const [categories, setCategories] = useState([])
   const [me, setMe] = useState(undefined) // undefined = loading, null = no application yet
   const [loadError, setLoadError] = useState('')
   const [step, setStep] = useState(1)
   const [maxStepSeen, setMaxStepSeen] = useState(1)
+  const [editingApplication, setEditingApplication] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [stepError, setStepError] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -100,6 +190,9 @@ export default function Seller({ token, onSignOut }) {
   const [supportMsg, setSupportMsg] = useState('')
   const [newThreadForm, setNewThreadForm] = useState(null)
   const [pageView, setPageView] = useState(null) // { slug, title, content } | 'loading' | null
+  const [soundMuted, setSoundMuted] = useState(() => { try { return localStorage.getItem('nextech_seller_sound_muted') === '1' } catch { return false } })
+  const seenMessagesRef = useRef(null)
+  const supportThreadRef = useRef(null)
 
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
 
@@ -110,6 +203,7 @@ export default function Seller({ token, onSignOut }) {
         if (cancelled) return
         const list = res?.data?.active_countries ?? []
         setCountries(list)
+        setSiteConfig(res?.data ?? null)
         setForm((f) => (f.country ? f : { ...f, country: list[0]?.code ?? '', registered_country: list[0]?.code ?? '' }))
       })
       .catch(() => {})
@@ -308,6 +402,13 @@ export default function Seller({ token, onSignOut }) {
     }
     if (n === 3) {
       if (!form.shop_name.trim()) return 'Enter a shop name.'
+      if (!form.pickup_phone.trim()) return 'Enter a phone number for pickup.'
+      if (!form.pickup_same_as_registered) {
+        if (!form.pickup_line1.trim()) return 'Enter the pickup street address.'
+        if (!form.pickup_city.trim()) return 'Enter the pickup city.'
+        if (!form.pickup_state.trim()) return `Enter the pickup ${address.state_label.toLowerCase()}.`
+        if (!form.pickup_postal_code.trim()) return `Enter the pickup ${address.postal_label.toLowerCase()}.`
+      }
       return ''
     }
     if (n === 4) {
@@ -343,6 +444,14 @@ export default function Seller({ token, onSignOut }) {
         registered_state: form.registered_state.trim(),
         registered_postal_code: form.registered_postal_code.trim(),
         registered_country: form.registered_country,
+        pickup_same_as_registered: form.pickup_same_as_registered,
+        pickup_phone: form.pickup_phone.trim(),
+        pickup_line1: form.pickup_same_as_registered ? null : form.pickup_line1.trim(),
+        pickup_line2: form.pickup_same_as_registered ? null : (form.pickup_line2.trim() || null),
+        pickup_city: form.pickup_same_as_registered ? null : form.pickup_city.trim(),
+        pickup_state: form.pickup_same_as_registered ? null : form.pickup_state.trim(),
+        pickup_postal_code: form.pickup_same_as_registered ? null : form.pickup_postal_code.trim(),
+        pickup_country: form.pickup_same_as_registered ? null : form.pickup_country,
         contact_name: form.contact_name.trim(),
         id_type: form.id_type,
         id_number: form.id_number.trim(),
@@ -358,6 +467,7 @@ export default function Seller({ token, onSignOut }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not submit the application.')
       setMe(data.data)
+      setEditingApplication(false)
     } catch (error) {
       setStepError(error.message)
     } finally {
@@ -393,8 +503,77 @@ export default function Seller({ token, onSignOut }) {
   }, [authHeaders])
 
   useEffect(() => {
-    if (me?.status === 'approved') { loadProducts(); loadOrders(); loadSupportThreads() }
+    if (me?.status === 'approved') { loadProducts(); loadOrders() }
+    // Seller<->admin messages (e.g. "message seller" from the application
+    // review) matter before approval too — load for any existing application.
+    if (me?.status) loadSupportThreads()
   }, [me?.status, loadProducts, loadOrders, loadSupportThreads])
+
+  // On the (non-approved) status page, jump straight into the seller<->admin
+  // conversation instead of making the seller pick it out of a thread list.
+  useEffect(() => {
+    if (!me?.status || me.status === 'approved' || supportThread) return
+    const thread = supportThreads.find((t) => t.issue_type === 'seller_product_issue' || t.issue_type === 'seller_other')
+    if (!thread) return
+    let cancelled = false
+    fetch(`${API_URL}/support/threads/${thread.id}`, { headers: authHeaders() }).then(readJson)
+      .then((res) => { if (!cancelled && res?.data) setSupportThread(res.data) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [me?.status, supportThreads, supportThread, authHeaders])
+
+  useEffect(() => { supportThreadRef.current = supportThread }, [supportThread])
+
+  // Chat wasn't dynamic before — a new admin message only ever showed up
+  // once the seller did something that happened to refetch (e.g. hitting
+  // Send). Poll instead, mirroring Admin.jsx's own notification poll: chime
+  // + refresh the open thread the moment a new *staff* message lands,
+  // without the seller having to do anything.
+  useEffect(() => {
+    if (!me?.status) return undefined
+    let stopped = false
+    const check = async () => {
+      try {
+        const response = await fetch(`${API_URL}/support/threads`, { headers: authHeaders() })
+        const data = await readJson(response)
+        if (stopped) return
+        const threads = data?.data ?? []
+        setSupportThreads(threads)
+
+        const relevant = threads.filter((t) => t.issue_type === 'seller_product_issue' || t.issue_type === 'seller_other')
+        const seenMap = Object.fromEntries(relevant.map((t) => [t.id, t.last_message_at]))
+
+        if (seenMessagesRef.current === null) {
+          seenMessagesRef.current = seenMap // seed — don't chime for history already there
+          return
+        }
+
+        const fresh = relevant.filter((t) => seenMessagesRef.current[t.id] !== t.last_message_at
+          && t.last_staff_message_at && t.last_staff_message_at === t.last_message_at)
+        seenMessagesRef.current = seenMap
+
+        if (fresh.length === 0) return
+        if (!soundMuted) playMessageChime()
+
+        const openThread = supportThreadRef.current
+        if (openThread && fresh.some((t) => t.id === openThread.id)) {
+          const detailResponse = await fetch(`${API_URL}/support/threads/${openThread.id}`, { headers: authHeaders() })
+          const detail = await readJson(detailResponse)
+          if (!stopped && detail?.data) setSupportThread(detail.data)
+        }
+      } catch { /* keep last */ }
+    }
+    const timer = setInterval(check, 8000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [me?.status, authHeaders, soundMuted])
+
+  function editApplication() {
+    setForm(formFromSeller(me))
+    setStep(1)
+    setMaxStepSeen(4)
+    setStepError('')
+    setEditingApplication(true)
+  }
 
   async function uploadProductImage(file, apply) {
     if (!file) return
@@ -488,13 +667,20 @@ export default function Seller({ token, onSignOut }) {
     onSignOut()
   }
 
-  const breadcrumb = me === null ? STEPS[step - 1] : null
+  const showWizard = me === null || editingApplication
+  const breadcrumb = showWizard ? STEPS[step - 1] : null
 
   return (
     <div className="seller-shell">
       <header className="seller-bar">
         <a className="seller-brand" href={STORE_URL}>NexTech <span>Seller Center</span></a>
         {breadcrumb && <span className="seller-bar-step">Step {step} of 4 — {breadcrumb}</span>}
+        {me?.status && (
+          <button type="button" className="seller-sound-toggle" title={soundMuted ? 'Message sound is off — click to turn on' : 'Message sound is on — click to mute'}
+            onClick={() => setSoundMuted((m) => { const next = !m; try { localStorage.setItem('nextech_seller_sound_muted', next ? '1' : '0') } catch { /* ignore */ } return next })}>
+            {soundMuted ? '🔇' : '🔊'}
+          </button>
+        )}
         <button type="button" className="seller-signout" onClick={signOut}>Sign out</button>
       </header>
 
@@ -515,8 +701,11 @@ export default function Seller({ token, onSignOut }) {
         {me === undefined && !loadError && <p className="seller-loading">Loading&hellip;</p>}
         {loadError && <p className="seller-error">{loadError}</p>}
 
-        {me === null && (
+        {showWizard && (
           <div className="seller-wizard">
+            {editingApplication && (
+              <button type="button" className="seller-btn ghost" onClick={() => setEditingApplication(false)}>&larr; Back without resubmitting</button>
+            )}
             <ol className="seller-stepper">
               {STEPS.map((label, i) => {
                 const n = i + 1
@@ -640,6 +829,49 @@ export default function Seller({ token, onSignOut }) {
                   <label>Shop description (optional)
                     <textarea rows="3" value={form.shop_description} onChange={(event) => setForm({ ...form, shop_description: event.target.value })} />
                   </label>
+
+                  <fieldset className="seller-address">
+                    <legend>Pickup address</legend>
+                    <p className="seller-field-hint">Where a courier collects your orders from — this can differ from your registered business address above.</p>
+                    <label className="seller-checkbox-row">
+                      <input type="checkbox" checked={form.pickup_same_as_registered}
+                        onChange={(event) => setForm((f) => ({
+                          ...f,
+                          pickup_same_as_registered: event.target.checked,
+                          pickup_country: event.target.checked ? f.pickup_country : (f.pickup_country || f.registered_country),
+                        }))} />
+                      Same as registered address
+                    </label>
+                    <label>Pickup contact phone
+                      <input value={form.pickup_phone} onChange={(event) => setForm({ ...form, pickup_phone: event.target.value })} placeholder="For the courier to call on arrival" />
+                    </label>
+                    {!form.pickup_same_as_registered && (
+                      <>
+                        <label>Country / region
+                          <select value={form.pickup_country} onChange={(event) => setForm({ ...form, pickup_country: event.target.value })}>
+                            {countries.map((c) => <option key={c.code} value={c.code}>{c.name}</option>)}
+                          </select>
+                        </label>
+                        <label>Street address
+                          <input value={form.pickup_line1} onChange={(event) => setForm({ ...form, pickup_line1: event.target.value })} />
+                        </label>
+                        <label>Apt / suite (optional)
+                          <input value={form.pickup_line2} onChange={(event) => setForm({ ...form, pickup_line2: event.target.value })} />
+                        </label>
+                        <div className="seller-row-3">
+                          <label>{address.postal_label}
+                            <input value={form.pickup_postal_code} onChange={(event) => setForm({ ...form, pickup_postal_code: event.target.value })} />
+                          </label>
+                          <label>{address.state_label}
+                            <input value={form.pickup_state} onChange={(event) => setForm({ ...form, pickup_state: event.target.value })} />
+                          </label>
+                          <label>City
+                            <input value={form.pickup_city} onChange={(event) => setForm({ ...form, pickup_city: event.target.value })} />
+                          </label>
+                        </div>
+                      </>
+                    )}
+                  </fieldset>
                 </section>
               )}
 
@@ -660,6 +892,12 @@ export default function Seller({ token, onSignOut }) {
                     <h4>Shop</h4>
                     <p>{form.shop_name}</p>
                     <p>{categories.find((c) => String(c.id) === String(form.shop_category_id))?.name ?? 'No category chosen'}</p>
+
+                    <h4>Pickup address</h4>
+                    <p>{form.pickup_phone}</p>
+                    <p>{form.pickup_same_as_registered
+                      ? 'Same as registered address'
+                      : [form.pickup_line1, form.pickup_line2, form.pickup_city, form.pickup_state, form.pickup_postal_code].filter(Boolean).join(', ')}</p>
                   </div>
 
                   <label>Business document (registration certificate, license, etc.)
@@ -682,13 +920,39 @@ export default function Seller({ token, onSignOut }) {
           </div>
         )}
 
-        {me && me.status && me.status !== 'approved' && (
+        {me && me.status && me.status !== 'approved' && !editingApplication && (
           <div className="seller-status-page">
             <h2>{STATUS_COPY[me.status]?.title ?? me.status}</h2>
             <p>{STATUS_COPY[me.status]?.body}</p>
             {me.status === 'rejected' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
             {me.status === 'suspended' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
+            {me.status === 'needs_changes' && me.rejection_reason && <p className="seller-reason">What to change: {me.rejection_reason}</p>}
             <p className="seller-shopname">Shop: {me.shop?.name}</p>
+
+            {me.status === 'needs_changes' && (
+              <button type="button" className="seller-btn" onClick={editApplication}>Edit &amp; resubmit application</button>
+            )}
+
+            {supportThread && (
+              <div className="seller-support seller-status-thread">
+                <h3>Messages</h3>
+                <div className="seller-thread-detail">
+                  <div className="seller-thread-messages">
+                    {(supportThread.messages ?? []).map((msg) => (
+                      <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
+                        <strong>{msg.is_staff ? 'NexTech' : 'You'}:</strong> {msg.body}
+                      </p>
+                    ))}
+                    {(supportThread.messages ?? []).length === 0 && <p className="seller-earnings-empty">No messages yet.</p>}
+                  </div>
+                  <form className="seller-thread-reply" onSubmit={replySupportThread}>
+                    <textarea rows="2" placeholder="Reply…" value={supportReply} onChange={(event) => setSupportReply(event.target.value)} />
+                    <button type="submit" className="seller-btn">Send</button>
+                  </form>
+                </div>
+                {supportMsg && <p className="seller-inline-error">{supportMsg}</p>}
+              </div>
+            )}
           </div>
         )}
 
@@ -849,6 +1113,21 @@ export default function Seller({ token, onSignOut }) {
                     <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
                     <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>
                   </div>
+
+                  {(() => {
+                    const est = estimateSellerFees(productForm.price, siteConfig)
+                    if (!est) return null
+                    const lowMargin = est.netCents > 0 && est.netCents < 300
+                    return (
+                      <div className="seller-fee-estimate">
+                        <p className="seller-fee-row"><span>Platform commission ({(est.commissionBps / 100).toFixed(1)}%)</span><span>&minus;{money(est.commissionCents)}</span></p>
+                        <p className="seller-fee-row total"><span>You receive per sale</span><span>{money(est.netCents)}</span></p>
+                        <p className="seller-fee-row muted"><span>Customer pays (approx., with tax{est.belowFreeThreshold ? ' + delivery' : ''})</span><span>~{money(est.customerTotalCents)}</span></p>
+                        <p className="seller-field-hint">Commission also covers NexTech&rsquo;s delivery/logistics cost — nothing else is deducted from your payout.</p>
+                        {lowMargin && <p className="seller-inline-error">Only {money(est.netCents)} per sale at this price — card processing and packaging eat into margins this thin. Consider pricing this item a bit higher.</p>}
+                      </div>
+                    )
+                  })()}
 
                   <label>Description<textarea rows="3" value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} /></label>
 
