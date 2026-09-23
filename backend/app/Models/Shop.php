@@ -13,6 +13,8 @@ class Shop extends Model
         'seller_id',
         'name',
         'slug',
+        'shop_code',
+        'next_product_seq',
         'logo_url',
         'banner_url',
         'category_id',
@@ -24,6 +26,7 @@ class Shop extends Model
     {
         return [
             'is_active' => 'boolean',
+            'next_product_seq' => 'integer',
         ];
     }
 

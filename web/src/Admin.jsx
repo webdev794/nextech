@@ -1483,29 +1483,32 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
+    delete rest.sku
     const payload = { ...rest, category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, image_url: rest.image_url?.trim() || null, video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
-    // sent as [] so the backend drops any rows.
-    const liveVariants = (variants ?? []).filter((v) => !v._delete && (v.sku || '').trim())
+    // sent as [] so the backend drops any rows. `rows` below (sent as
+    // payload.variants) is what the backend indexes `variant_index` against,
+    // so store-stock rows must reference positions in `rows`, not `variants`.
+    const rows = (variants ?? []).filter((row) => row.id || !row._delete)
+    const liveVariants = rows.filter((v) => !v._delete && (v.label || '').trim())
     payload.store_stock = perStore
       ? Object.entries(storeStockMap ?? {}).flatMap(([sid, row]) => {
           const stocked = row.is_stocked !== false
-          const base = { store_id: Number(sid), variant_sku: null, is_stocked: stocked, quantity: Number(row.base || 0) }
+          const base = { store_id: Number(sid), variant_index: null, is_stocked: stocked, quantity: Number(row.base || 0) }
           const vRows = liveVariants.map((v) => {
-            const idx = variants.indexOf(v)
-            return { store_id: Number(sid), variant_sku: v.sku.trim(), is_stocked: stocked, quantity: Number(row.variants?.[idx] || 0) }
+            const localIdx = variants.indexOf(v)
+            const payloadIdx = rows.indexOf(v)
+            return { store_id: Number(sid), variant_index: payloadIdx, is_stocked: stocked, quantity: Number(row.variants?.[localIdx] || 0) }
           })
           return [base, ...vRows]
         })
       : []
-    const rows = (variants ?? []).filter((row) => row.id || !row._delete)
     if (id || rows.length) {
       payload.variants = rows.map((row) => ({
         ...(row.id ? { id: row.id } : {}),
         ...(row._delete ? { _delete: true } : {}),
         label: (row.label || '').trim(),
-        sku: (row.sku || '').trim(),
         price_cents: Math.round(Number(row.price || 0) * 100),
         compare_at_price_cents: String(row.compare_at ?? '').trim() ? Math.round(Number(row.compare_at) * 100) : null,
         inventory_quantity: Number(row.stock) || 0,
@@ -2333,7 +2336,7 @@ export default function Admin({ token, onClose }) {
                   </select>
                 </label>
                 <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                <label>SKU<input required value={productForm.sku} onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
+                <label>SKU<input disabled value={productForm.sku || 'Generated automatically on save'} /></label>
                 <label>Price (USD)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                 <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="pre-sale price; blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
                 {productForm.per_store_stock
@@ -2368,11 +2371,11 @@ export default function Admin({ token, onClose }) {
 
               <fieldset className="admin-fieldset">
                 <legend>Options / variants</legend>
-                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock, SKU and image.</p>
+                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock and image; its SKU is generated automatically on save.</p>
                 {(productForm.variants ?? []).map((row, index) => row._delete ? null : (
                   <div className="admin-variant-row" key={row.id ?? `new-${index}`}>
                     <input placeholder="Label (1 kg, Red / Large…)" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
-                    <input placeholder="SKU" value={row.sku} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, sku: event.target.value } : r) })} />
+                    <input disabled placeholder="SKU" value={row.sku || 'Auto on save'} />
                     <input type="number" min="0" step="0.01" placeholder="Price $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
                     <input type="number" min="0" step="0.01" placeholder="Reg. $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
                     <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />

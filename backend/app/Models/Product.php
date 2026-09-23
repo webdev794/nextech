@@ -20,6 +20,7 @@ class Product extends Model
         'slug',
         'description',
         'sku',
+        'next_variant_seq',
         'price_cents',
         'compare_at_price_cents',
         'inventory_quantity',
@@ -40,6 +41,7 @@ class Product extends Model
     {
         return [
             'price_cents' => 'integer',
+            'next_variant_seq' => 'integer',
             'compare_at_price_cents' => 'integer',
             'inventory_quantity' => 'integer',
             'is_active' => 'boolean',

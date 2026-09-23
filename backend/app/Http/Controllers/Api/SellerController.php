@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Seller;
 use App\Models\Shop;
 use App\Support\SellerLedger;
+use App\Support\Sku;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -128,6 +129,7 @@ class SellerController extends Controller
                 $seller->shop()->create([
                     'name' => $data['shop_name'],
                     'slug' => $this->uniqueSlug($data['shop_name']),
+                    'shop_code' => Sku::assignShopCode($data['shop_name']),
                     'is_active' => false,
                 ] + $shopAttributes);
             }

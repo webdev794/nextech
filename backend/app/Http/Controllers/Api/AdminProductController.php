@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Support\ProductVariants;
+use App\Support\Sku;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -76,9 +77,14 @@ class AdminProductController extends Controller
         $data['status'] = 'approved';
 
         $product = DB::transaction(function () use ($data, $variants, $storeStock): Product {
-            $product = Product::create($data);
-            ProductVariants::sync($product, $variants);
-            $this->syncStoreStock($product, $storeStock);
+            // sku is NOT NULL+unique and depends on the row's own id, which
+            // only exists after insert — create with a throwaway placeholder,
+            // then immediately overwrite it, all inside this transaction so
+            // the placeholder is never visible outside it.
+            $product = Product::create($data + ['sku' => 'TMP-'.Str::random(20)]);
+            $product->update(['sku' => Sku::forAdminProduct($product->id)]);
+            $variantIndexToId = ProductVariants::sync($product, $variants);
+            $this->syncStoreStock($product, $storeStock, $variantIndexToId);
 
             return $product;
         });
@@ -95,8 +101,8 @@ class AdminProductController extends Controller
 
         DB::transaction(function () use ($product, $data, $variants, $storeStock): void {
             $product->update($data);
-            ProductVariants::sync($product, $variants);
-            $this->syncStoreStock($product, $storeStock);
+            $variantIndexToId = ProductVariants::sync($product, $variants);
+            $this->syncStoreStock($product, $storeStock, $variantIndexToId);
         });
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
@@ -150,7 +156,6 @@ class AdminProductController extends Controller
             'name' => [$product ? 'sometimes' : 'required', 'string', 'max:160'],
             'slug' => ['sometimes', 'nullable', 'string', 'max:180', 'alpha_dash', $unique],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
-            'sku' => [$product ? 'sometimes' : 'required', 'string', 'max:60', $unique],
             'price_cents' => [$product ? 'sometimes' : 'required', 'integer', 'min:0'],
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
@@ -161,11 +166,15 @@ class AdminProductController extends Controller
             'is_exclusive_offer' => ['sometimes', 'boolean'],
 
             // Per-store stock. A full replacement of this product's rows: one
-            // entry per (store, option). `variant_sku` null = the base product.
+            // entry per (store, option). `variant_index` null = the base product.
             // A product with no entries stays on single stock (inventory_quantity).
             'store_stock' => ['sometimes', 'array'],
             'store_stock.*.store_id' => ['required', 'integer', 'exists:stores,id'],
-            'store_stock.*.variant_sku' => ['sometimes', 'nullable', 'string', 'max:60'],
+            // Position of the variant row in the `variants` array this same
+            // request sends (null = the base product) — not the variant's
+            // SKU, which the client can no longer know ahead of a save for a
+            // brand-new variant since it's server-generated.
+            'store_stock.*.variant_index' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'store_stock.*.is_stocked' => ['sometimes', 'boolean'],
             'store_stock.*.quantity' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
 
@@ -173,7 +182,6 @@ class AdminProductController extends Controller
             'variants.*.id' => ['sometimes', 'nullable', 'integer'],
             'variants.*._delete' => ['sometimes', 'boolean'],
             'variants.*.label' => ['required_with:variants', 'string', 'max:80'],
-            'variants.*.sku' => ['required_with:variants', 'string', 'max:60'],
             'variants.*.price_cents' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'variants.*.inventory_quantity' => ['sometimes', 'integer', 'min:0'],
@@ -222,23 +230,24 @@ class AdminProductController extends Controller
      * back to its single `inventory_quantity`.
      *
      * @param  array<int, array<string, mixed>>|null  $rows
+     * @param  array<int, int>  $variantIndexToId  from ProductVariants::sync() — maps a
+     *                                              row's position in the `variants` payload
+     *                                              this same request sent to its variant id.
      */
-    private function syncStoreStock(Product $product, ?array $rows): void
+    private function syncStoreStock(Product $product, ?array $rows, array $variantIndexToId): void
     {
         if ($rows === null) {
             return;
         }
 
-        // Resolve variant SKUs against the just-synced variants.
-        $variantIdBySku = $product->variants()->pluck('id', 'sku');
         $keep = [];
 
         foreach ($rows as $row) {
-            $sku = $row['variant_sku'] ?? null;
-            $variantId = ($sku === null || $sku === '') ? null : $variantIdBySku->get($sku);
+            $index = $row['variant_index'] ?? null;
+            $variantId = $index === null ? null : ($variantIndexToId[$index] ?? null);
 
-            if ($sku && $variantId === null) {
-                continue; // references a variant that no longer exists
+            if ($index !== null && $variantId === null) {
+                continue; // references a variant that was deleted in this same save
             }
 
             $entry = $product->storeInventory()->updateOrCreate(

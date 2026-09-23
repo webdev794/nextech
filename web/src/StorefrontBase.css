@@ -16,19 +16,9 @@ button{cursor:pointer}
 .brand{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:20px;font-weight:800;letter-spacing:-.05em;text-decoration:none}
 .brand-mark{display:grid;place-items:center;width:27px;height:27px;background:var(--green);color:#fff;font-size:20px;border-radius:50%;transform:rotate(-8deg)}
 .brand-logo{height:30px;width:auto;max-width:190px;object-fit:contain;display:block}
-.deliver-to{display:flex;flex-direction:column;align-items:flex-start;line-height:1.25;font-size:13px;color:var(--muted);border:0;border-left:1px solid var(--line);padding:2px 0 2px 16px;background:0;text-align:left;max-width:280px}
-.deliver-eta{font-weight:700;color:var(--ink);font-size:16px}
-.deliver-to strong{font-weight:400;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
-.deliver-to em{color:var(--green);font-style:normal}
-.deliver-to:hover strong{color:var(--green)}
-
-/* Promo strip above the main menu row: address/ETA on the left, a few
-   feature bullets on the right that rotate their message on a timer. */
-.promo-bar{display:flex;align-items:center;gap:24px;padding:8px 20px;margin:-12px -20px 12px;background:var(--ink);color:#fff}
-.promo-bar .deliver-to{border-left:0;padding:0;color:rgba(255,255,255,.7)}
-.promo-bar .deliver-eta{color:#fff}
-.promo-bar .deliver-to strong{color:#fff}
-.promo-bar .deliver-to em{color:#8fe0ab}
+/* Promo strip above the main menu row: a few feature bullets that rotate
+   their message on a timer, evenly spread across the full width. */
+.promo-bar{display:flex;align-items:center;padding:8px 20px;margin:-12px -20px 12px;background:var(--ink);color:#fff}
 .promo-bar-items{display:flex;align-items:center;gap:0;flex:1;min-width:0;overflow:hidden}
 .promo-bar-item{display:flex;align-items:center;gap:8px;flex:1;min-width:0;border:0;border-left:1px solid rgba(255,255,255,.18);background:0;padding:0 18px;color:#fff;text-align:left;text-decoration:none}
 .promo-bar-item:first-child{border-left:0}

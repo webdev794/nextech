@@ -616,6 +616,7 @@ export default function Seller({ token, onSignOut }) {
     event.preventDefault()
     setProductMsg('')
     const { id, price, compare_at: compareAt, variants, images, ...rest } = productForm
+    delete rest.sku
     const payload = {
       ...rest,
       category_id: Number(rest.category_id),
@@ -631,7 +632,6 @@ export default function Seller({ token, onSignOut }) {
         ...(row.id ? { id: row.id } : {}),
         ...(row._delete ? { _delete: true } : {}),
         label: (row.label || '').trim(),
-        sku: (row.sku || '').trim(),
         price_cents: Math.round(Number(row.price || 0) * 100),
         compare_at_price_cents: String(row.compare_at ?? '').trim() ? Math.round(Number(row.compare_at) * 100) : null,
         inventory_quantity: Number(row.stock) || 0,
@@ -1108,7 +1108,7 @@ export default function Seller({ token, onSignOut }) {
                       </select>
                     </label>
                     <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                    <label>SKU<input required value={productForm.sku} onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
+                    <label>SKU<input disabled value={productForm.sku || 'Generated automatically on save'} /></label>
                     <label>Price ($)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                     <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
                     <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>
@@ -1155,7 +1155,7 @@ export default function Seller({ token, onSignOut }) {
                     {(productForm.variants ?? []).map((row, index) => row._delete ? null : (
                       <div className="seller-variant-row" key={row.id ?? `new-${index}`}>
                         <input placeholder="Label" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
-                        <input placeholder="SKU" value={row.sku} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, sku: event.target.value } : r) })} />
+                        <input disabled placeholder="SKU" value={row.sku || 'Auto on save'} />
                         <input type="number" min="0" step="0.01" placeholder="Price $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
                         <input type="number" min="0" step="0.01" placeholder="Reg. $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
                         <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />

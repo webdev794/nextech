@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Shop;
 use App\Support\ProductVariants;
+use App\Support\Sku;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -48,7 +49,8 @@ class SellerProductController extends Controller
         $data['rejection_reason'] = null;
         $data['slug'] ??= $this->uniqueSlug($data['name']);
 
-        $product = DB::transaction(function () use ($data, $variants, $images): Product {
+        $product = DB::transaction(function () use ($shop, $data, $variants, $images): Product {
+            $data['sku'] = Sku::nextForShop($shop);
             $product = Product::create($data);
             ProductVariants::sync($product, $variants);
             $this->syncImages($product, $images);
@@ -123,7 +125,6 @@ class SellerProductController extends Controller
             'name' => [$product ? 'sometimes' : 'required', 'string', 'max:160'],
             'slug' => ['sometimes', 'nullable', 'string', 'max:180', 'alpha_dash', $unique],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
-            'sku' => [$product ? 'sometimes' : 'required', 'string', 'max:60', $unique],
             'price_cents' => [$product ? 'sometimes' : 'required', 'integer', 'min:0'],
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
@@ -141,7 +142,6 @@ class SellerProductController extends Controller
             'variants.*.id' => ['sometimes', 'nullable', 'integer'],
             'variants.*._delete' => ['sometimes', 'boolean'],
             'variants.*.label' => ['required_with:variants', 'string', 'max:80'],
-            'variants.*.sku' => ['required_with:variants', 'string', 'max:60'],
             'variants.*.price_cents' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'variants.*.inventory_quantity' => ['sometimes', 'integer', 'min:0'],

@@ -3,25 +3,32 @@
 namespace App\Support;
 
 use App\Models\Product;
-use App\Models\ProductVariant;
 use Illuminate\Database\QueryException;
 
 /**
  * Shared variant sync — incremental upsert-by-id, used by both the admin
  * product form and the seller product form: a row with `id` updates, a row
  * without one creates, and `_delete: true` deletes (blocked with a friendly
- * 422 if it's on an existing order).
+ * 422 if it's on an existing order). SKUs are always system-generated
+ * (App\Support\Sku) — never taken from the request, and never changed once
+ * assigned.
  */
 class ProductVariants
 {
     /**
      * @param  array<int, array<string, mixed>>|null  $rows
+     * @return array<int, int> maps each surviving row's position in `$rows`
+     *                          to its variant id — callers (e.g. per-store
+     *                          stock sync) that need to reference "the 2nd
+     *                          variant row" use this instead of a client SKU.
      */
-    public static function sync(Product $product, ?array $rows): void
+    public static function sync(Product $product, ?array $rows): array
     {
         if ($rows === null) {
-            return;
+            return [];
         }
+
+        $indexToId = [];
 
         foreach ($rows as $index => $row) {
             $existing = ! empty($row['id'])
@@ -40,16 +47,10 @@ class ProductVariants
                 continue;
             }
 
-            $skuOwner = ProductVariant::where('sku', $row['sku'])->first();
-            if ($skuOwner && $skuOwner->id !== ($existing->id ?? null)) {
-                abort(422, "The variant SKU \"{$row['sku']}\" is already in use.");
-            }
-
             $compareAt = $row['compare_at_price_cents'] ?? null;
 
             $attributes = [
                 'label' => $row['label'],
-                'sku' => $row['sku'],
                 'price_cents' => (int) $row['price_cents'],
                 'compare_at_price_cents' => ($compareAt === null || $compareAt === '') ? null : (int) $compareAt,
                 'inventory_quantity' => (int) ($row['inventory_quantity'] ?? 0),
@@ -60,9 +61,14 @@ class ProductVariants
 
             if ($existing) {
                 $existing->update($attributes);
+                $indexToId[$index] = $existing->id;
             } else {
-                $product->variants()->create($attributes);
+                $attributes['sku'] = Sku::nextVariantSku($product);
+                $variant = $product->variants()->create($attributes);
+                $indexToId[$index] = $variant->id;
             }
         }
+
+        return $indexToId;
     }
 }

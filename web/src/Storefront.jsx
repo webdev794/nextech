@@ -431,10 +431,9 @@ export default function Storefront() {
     try { return JSON.parse(localStorage.getItem('gdp_location') ?? 'null') }
     catch { return null }
   })
-  const [locationOpen, setLocationOpen] = useState(() => {
-    try { return !JSON.parse(localStorage.getItem('gdp_location') ?? 'null') }
-    catch { return true }
-  })
+  // Never auto-prompt for a location on load — like Amazon, it's only asked
+  // for at checkout (via the "Change location" links there).
+  const [locationOpen, setLocationOpen] = useState(false)
   const [editAddress, setEditAddress] = useState(false)
   const [locationQuery, setLocationQuery] = useState('')
   const [locationResults, setLocationResults] = useState([])
@@ -960,10 +959,6 @@ export default function Storefront() {
       : selectedAddress
         ? `${selectedAddress.line1}, ${selectedAddress.city}`
         : [checkoutForm.line1, checkoutForm.city, checkoutForm.state].filter(Boolean).join(', ') || 'New address'
-  const etaText = outOfArea
-    ? 'Not available here yet'
-    : fees.free_delivery_threshold_cents > 0 ? `Free shipping over ${price(fees.free_delivery_threshold_cents)}` : 'Free shipping'
-
   // Promo bar columns, each a small set of messages that swap on promoTick.
   // Only real, currently-live features are advertised here.
   const appStoreUrl = footer?.app_store_url || footer?.play_store_url || null
@@ -988,9 +983,11 @@ export default function Storefront() {
         onClick: () => openPage('purchase-protection'),
       },
     ]
-    if (codEnabled) columns.push({
+    columns.push({
       icon: cashGlyph,
-      messages: [{ title: 'Cash on delivery', sub: 'Pay when it arrives' }, { title: 'Secure payments', sub: 'Your details stay protected' }],
+      messages: codEnabled
+        ? [{ title: 'Cash on delivery', sub: 'Pay when it arrives' }, { title: 'Secure payments', sub: 'Your details stay protected' }]
+        : [{ title: 'Secure payments', sub: 'Your details stay protected' }],
       onClick: () => openPage('faqs'),
     })
     if (appStoreUrl) columns.push({
@@ -1954,9 +1951,6 @@ export default function Storefront() {
   return <><div className="app-shell">
     <header className="topbar">
       <div className="promo-bar">
-        <button className="deliver-to" type="button" onClick={() => { setLocationOpen(true); setLocationMsg('') }}>
-          <span className="deliver-eta">{etaText}</span><strong>{location ? location.label : 'Set your location'} <em aria-hidden>&#9662;</em></strong>
-        </button>
         <div className="promo-bar-items">
           {promoColumns.map((column, index) => {
             const message = column.messages[promoTick % column.messages.length]
