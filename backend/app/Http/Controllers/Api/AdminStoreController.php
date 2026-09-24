@@ -5,19 +5,22 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Support\Geo;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class AdminStoreController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
-        return response()->json(['data' => Store::orderBy('name')->get()]);
+        return response()->json(['data' => Store::where('country', Market::fromRequest($request))->orderBy('name')->get()]);
     }
 
     public function store(Request $request): JsonResponse
     {
-        return response()->json(['data' => Store::create($this->validated($request))], 201);
+        // A new store opens in the country the admin is working in.
+        return response()->json(['data' => Store::create($this->validated($request) + ['country' => Market::fromRequest($request)])], 201);
     }
 
     public function update(Request $request, Store $store): JsonResponse
@@ -42,6 +45,7 @@ class AdminStoreController extends Controller
             'line2' => ['nullable', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:100'],
             'state' => ['required', 'string', 'max:60'],
+            'country' => ['sometimes', Rule::in(Market::codes())],
             'postal_code' => ['required', 'string', 'max:12'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],

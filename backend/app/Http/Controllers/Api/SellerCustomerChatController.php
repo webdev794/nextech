@@ -105,7 +105,7 @@ class SellerCustomerChatController extends Controller
 
     private static function needsSellerReply(SupportThread $thread): bool
     {
-        $last = $thread->messages()->where('internal', false)->where('hidden_from_seller', false)->whereNotNull('user_id')->latest('id')->first();
+        $last = $thread->messages()->where('internal', false)->where('hidden_from_seller', false)->whereNotNull('user_id')->reorder('id', 'desc')->first();
 
         // Nothing to answer if the customer's side last spoke by ending or rating the chat.
         $ratedAfter = $thread->rated_at && $last && $thread->rated_at->gte($last->created_at);

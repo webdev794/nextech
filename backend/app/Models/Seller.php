@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Market;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -57,6 +58,16 @@ class Seller extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    protected static function booted(): void
+    {
+        // Changing the seller's country moves their shop (and products) to that market.
+        static::updated(function (Seller $seller): void {
+            if ($seller->wasChanged('country') && $seller->shop) {
+                $seller->shop->update(['market' => Market::forCountry($seller->country)]);
+            }
+        });
     }
 
     public function shop(): HasOne

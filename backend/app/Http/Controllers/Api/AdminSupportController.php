@@ -147,6 +147,7 @@ class AdminSupportController extends Controller
             return response()->json(['message' => 'Provide a status change or an order to attach.'], 422);
         }
 
+        $statusChanged = array_key_exists('status', $validated) && $validated['status'] !== $thread->status;
         if (array_key_exists('status', $validated)) {
             $thread->status = $validated['status'];
             $thread->resolved_at = $validated['status'] === 'resolved' ? now() : null;
@@ -158,6 +159,12 @@ class AdminSupportController extends Controller
 
         $thread->save();
 
-        return response()->json(['data' => $thread->fresh($this->threadRelations())]);
+        if ($statusChanged) {
+            $thread->post(null, $thread->status === 'resolved'
+                ? 'NexTech marked this conversation as resolved.'
+                : 'NexTech reopened this conversation.', isStaff: true, system: true);
+        }
+
+        return response()->json(['data' => $this->withSellerOptions($thread->fresh($this->threadRelations()))]);
     }
 }

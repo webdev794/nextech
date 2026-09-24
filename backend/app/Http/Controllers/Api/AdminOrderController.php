@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\SellerShipping;
+use App\Support\SellerFulfillment;
+use App\Models\OrderPackage;
 use App\Models\Order;
 use App\Models\User;
 use App\Notifications\RiderAssigned;
@@ -11,6 +14,7 @@ use App\Support\CustomerNames;
 use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
 use App\Support\SellerLedger;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -32,8 +36,10 @@ class AdminOrderController extends Controller
         }
 
         $orders = Order::query()
+            ->where('market', Market::fromRequest($request))
             ->with([
                 'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
                 'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -90,6 +96,15 @@ class AdminOrderController extends Controller
             && ! array_key_exists('refunded', $validated)
             && ! array_key_exists('items_returned', $validated)) {
             return response()->json(['message' => 'Provide a status change, a courier assignment, or a payment update.'], 422);
+        }
+
+        // A seller-shipped-only order moves with its packages (see
+        // SellerFulfillment::sync) — NexTech doesn't pack or deliver it.
+        if (isset($validated['status']) && $order->isSellerShippedOnly()
+            && in_array($validated['status'], ['packing', 'ready_for_delivery', 'out_for_delivery', 'completed'], true)) {
+            return response()->json([
+                'message' => 'The seller ships this order themselves — it updates as they confirm shipment and delivery. You can still cancel it or mark packages delivered.',
+            ], 422);
         }
 
         if (isset($validated['status']) && ! $order->canTransitionTo($validated['status'])) {
@@ -283,11 +298,36 @@ class AdminOrderController extends Controller
         return response()->json(['data' => $this->detail($order)]);
     }
 
+    /**
+     * Admin override on a seller's package: correct carrier/tracking (no edit
+     * limit for admin) or set its status (e.g. delivered, lost, returned).
+     */
+    public function updatePackage(Request $request, OrderPackage $package): JsonResponse
+    {
+        $data = $request->validate([
+            'carrier' => ['sometimes', Rule::in(array_keys(Market::allCarriers()))],
+            'tracking_number' => ['sometimes', 'string', 'min:6', 'max:60'],
+            'status' => ['sometimes', Rule::in(['shipped', 'in_transit', 'delivered', 'returned', 'lost'])],
+        ]);
+
+        if (isset($data['tracking_number'])) {
+            $data['tracking_number'] = strtoupper(preg_replace('/\s+/', '', $data['tracking_number']));
+        }
+        if (isset($data['status'])) {
+            $data['delivered_at'] = $data['status'] === 'delivered' ? ($package->delivered_at ?? now()) : null;
+        }
+        $package->update($data);
+        SellerFulfillment::sync($package->order);
+
+        return response()->json(['data' => $this->detail($package->order)]);
+    }
+
     /** The order shape shared by every action response here. */
     private function detail(Order $order): Order
     {
         $fresh = $order->fresh()->load([
             'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',

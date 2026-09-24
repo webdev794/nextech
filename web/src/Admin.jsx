@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
+import { MarketSettings } from './AdminMarkets'
+import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
@@ -17,7 +20,10 @@ const ADMIN_TZ = (() => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' }
 })()
 
-const money = (cents) => `$${((cents ?? 0) / 100).toFixed(2)}`
+// Amounts are in the market's currency — pass it for anything tied to an
+// order, product or seller (India = INR); default is the home market's USD.
+const money = (cents, currency) => storeMoney(cents ?? 0, currency) // defaults to the admin's selected currency
+const MARKET_CURRENCY = { US: 'usd', IN: 'inr' }
 
 // Cap each notification-bell section so a busy week (dozens of refunds, say)
 // doesn't turn the dropdown into a wall of rows — the rest is a "+N more" line.
@@ -27,7 +33,7 @@ const BELL_ITEM_CAP = 5
 // they're always drawn (independent of toggle click order).
 // Revenue and refunds share one dollar axis so their heights compare directly;
 // orders (a count) get their own axis.
-const dollarTick = (cents) => `$${Math.round(cents / 100).toLocaleString()}`
+const dollarTick = (cents) => `${currencySymbol()}${Math.round(cents / 100).toLocaleString()}`
 const CHART_LINES = [
   { key: 'revenue_cents', label: 'Revenue', color: '#1f5fae', axis: 'usd', format: money, tickFormat: dollarTick },
   { key: 'refunded_cents', label: 'Refunds', color: '#a23b28', axis: 'usd', format: money, tickFormat: dollarTick },
@@ -162,7 +168,7 @@ const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes reque
 const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
 const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -217,7 +223,7 @@ const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
   stock: v.inventory_quantity, image_url: v.image_url ?? '', is_active: v.is_active,
 }))
 const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true, show_on_home: true }
-const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
+const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', country: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
 const riderFormFrom = (rider) => ({
   id: rider.id,
   name: rider.name,
@@ -522,6 +528,9 @@ export default function Admin({ token, onClose }) {
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [riderReport, setRiderReport] = useState(null)
   const [settings, setSettings] = useState(null)
+  // The admin's currency / country switch (top bar): Dashboard, Orders,
+  // Products, Sellers and Settings → charges show only that market's entries.
+  const [adminMarket, setAdminMarket] = useState(() => { try { return localStorage.getItem('nextech_admin_market') || '' } catch { return '' } })
   const [feesForm, setFeesForm] = useState(null)
   const [brandingForm, setBrandingForm] = useState(null)
   const [footerForm, setFooterForm] = useState(null)
@@ -577,7 +586,7 @@ export default function Admin({ token, onClose }) {
     return promise.finally(() => setListBusy((b) => ({ ...b, [key]: false })))
   }, [])
 
-  const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
+  const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}`, ...(adminMarket ? { 'X-Market': adminMarket } : {}) }), [token, adminMarket])
   const jsonHeaders = useCallback(() => ({ ...authHeaders(), 'Content-Type': 'application/json' }), [authHeaders])
 
   const fail = (error) => setMessage(error?.message ?? 'Something went wrong.')
@@ -775,7 +784,7 @@ export default function Admin({ token, onClose }) {
           if (fresh.length) {
             if (!soundMuted) playOrderAlert()
             setOrderToasts((cur) => [
-              ...fresh.map((o) => ({ id: o.id, text: `New order #${o.id} — ${money(o.total_cents)} · ${o.user?.email ?? 'customer'} — start packing` })),
+              ...fresh.map((o) => ({ id: o.id, text: `New order #${o.id} — ${money(o.total_cents, o.currency)} · ${o.user?.email ?? 'customer'} — start packing` })),
               ...cur,
             ].slice(0, 4))
           }
@@ -860,7 +869,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, latitude, longitude, ...rest } = storeForm
-    const payload = { ...rest, delivery_radius_km: Number(rest.delivery_radius_km) }
+    const payload = { ...rest, country: rest.country || activeMarket, delivery_radius_km: Number(rest.delivery_radius_km) }
     if (String(latitude).trim() !== '' && String(longitude).trim() !== '') {
       payload.latitude = Number(latitude)
       payload.longitude = Number(longitude)
@@ -1168,7 +1177,7 @@ export default function Admin({ token, onClose }) {
   }
 
   async function refundOrder(order) {
-    if (!window.confirm(`Refund ${money(order.total_cents)} to the customer via Stripe?`)) return
+    if (!window.confirm(`Refund ${money(order.total_cents, order.currency)} to the customer via Stripe?`)) return
     setBusyId(order.id)
     setMessage('')
     try {
@@ -1183,6 +1192,33 @@ export default function Admin({ token, onClose }) {
 
   // Pulls the courier's current tracking status; a `delivered` result
   // auto-completes the order (handled server-side).
+  // Admin override on a seller's package: fix carrier/tracking or set its status.
+  async function patchPackage(order, pkg, body) {
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/packages/${pkg.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the package.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  async function downloadPackageLabel(pkg) {
+    try {
+      const response = await fetch(`${API_URL}/admin/packages/${pkg.id}/label`, { headers: authHeaders() })
+      if (!response.ok) throw new Error('Could not download the label.')
+      const url = URL.createObjectURL(await response.blob())
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (error) { fail(error) }
+  }
+
+  function editPackageTracking(order, pkg) {
+    const tracking = window.prompt(`Tracking number for ${pkg.carrier} package on order #${order.id}:`, pkg.tracking_number)
+    if (tracking && tracking.trim() !== pkg.tracking_number) patchPackage(order, pkg, { tracking_number: tracking.trim() })
+  }
+
   async function syncTracking(order) {
     setBusyId(order.id)
     setMessage('')
@@ -1225,7 +1261,7 @@ export default function Admin({ token, onClose }) {
     const giftCards = order.gift_cards ?? []
     const needsItemReturn = order.cancelled_by === 'rider' && !order.items_returned_at
     const itemsReturned = order.cancelled_by === 'rider' && !!order.items_returned_at
-    const steps = NEXT_ACTIONS[order.status] ?? []
+    const steps = (NEXT_ACTIONS[order.status] ?? []).filter(([status]) => order.delivery_method !== 'seller' || status === 'cancelled')
     if (!codCollect && !needsRefund && !refundedLink && !refundedNote && !giftCards.length && !needsItemReturn && !itemsReturned && steps.length === 0) return null
     return (
       <>
@@ -1242,8 +1278,8 @@ export default function Admin({ token, onClose }) {
         )}
         {refundedNote && (
           <span className="admin-note" style={{ color: '#2f5a8a' }} title={(order.refunds ?? []).length
-            ? order.refunds.map((r) => `${money(r.amount_cents)}${r.reason ? ` — ${r.reason}` : ''}${r.creator?.name ? ` — by ${r.creator.name}` : ''}`).join('\n')
-            : `Refunded ${money(order.refunded_amount_cents ?? 0)}`}>↩ refunded{order.payment_status === 'partially_refunded' ? ' (partial)' : ''}</span>
+            ? order.refunds.map((r) => `${money(r.amount_cents, order.currency)}${r.reason ? ` — ${r.reason}` : ''}${r.creator?.name ? ` — by ${r.creator.name}` : ''}`).join('\n')
+            : `Refunded ${money(order.refunded_amount_cents ?? 0, order.currency)}`}>↩ refunded{order.payment_status === 'partially_refunded' ? ' (partial)' : ''}</span>
         )}
         {giftCards.length > 0 && (
           <span className="admin-note" style={{ color: '#6b4f12' }} title={giftCards.map((g) => `${g.code} — ${money(g.initial_cents)}${g.reason ? ` (${g.reason})` : ''}${g.issued_by?.name ? ` — by ${g.issued_by.name}` : ''}`).join('\n')}>🎁 gift card issued{giftCards.length > 1 ? ` ×${giftCards.length}` : ''}</span>
@@ -1358,8 +1394,8 @@ export default function Admin({ token, onClose }) {
     else if (refundForm.amount) body.amount_cents = Math.round(Number(refundForm.amount) * 100)
     const allItemsPicked = refundForm.items.length > 0 && refundForm.items.length === (order.items ?? []).length
     const label = refundForm.items.length
-      ? money(allItemsPicked ? order.total_cents - (order.refunded_amount_cents ?? 0) : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0))
-      : (refundForm.amount ? `$${refundForm.amount}` : money(order.total_cents - (order.refunded_amount_cents ?? 0)))
+      ? money(allItemsPicked ? order.total_cents - (order.refunded_amount_cents ?? 0) : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0), order.currency)
+      : (refundForm.amount ? money(Math.round(Number(refundForm.amount) * 100), order.currency) : money(order.total_cents - (order.refunded_amount_cents ?? 0), order.currency))
     if (!window.confirm(`Refund ${label} to the customer via Stripe?`)) return
     setBusyId(threadId ?? order.id)
     try {
@@ -1386,8 +1422,8 @@ export default function Admin({ token, onClose }) {
     const allItemsPicked = refundForm.items.length > 0 && refundForm.items.length === (order.items ?? []).length
     const room = order.total_cents - (order.refunded_amount_cents ?? 0) - (order.gift_cards ?? []).reduce((s, g) => s + g.initial_cents, 0)
     const label = refundForm.items.length
-      ? money(allItemsPicked ? room : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0))
-      : (refundForm.amount ? `$${refundForm.amount}` : '')
+      ? money(allItemsPicked ? room : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0), order.currency)
+      : (refundForm.amount ? money(Math.round(Number(refundForm.amount) * 100), order.currency) : '')
     if (!window.confirm(`Issue a ${label || 'store-credit'} gift card to the customer?`)) return
     setBusyId(threadId ?? order.id)
     try {
@@ -1398,7 +1434,7 @@ export default function Admin({ token, onClose }) {
       setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
       if (threadId) openThread(threadId)
       refreshOrderInList(order.id)
-      setMessage(`Gift card ${data.data.code} for ${money(data.data.amount_cents)} issued.`)
+      setMessage(`Gift card ${data.data.code} for ${money(data.data.amount_cents, order.currency)} issued.`)
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
@@ -1406,7 +1442,7 @@ export default function Admin({ token, onClose }) {
   // different order that's still unpaid — for when they ask in chat instead
   // of entering the code themselves at checkout.
   async function applyGiftCardToOrder(card, order, threadId) {
-    const label = money(Math.min(card.balance_cents, order.total_cents))
+    const label = money(Math.min(card.balance_cents, order.total_cents), order.currency)
     if (!window.confirm(`Apply ${label} from gift card ${card.code} to order #${order.id}?`)) return
     setBusyId(threadId ?? order.id)
     try {
@@ -1441,37 +1477,37 @@ export default function Admin({ token, onClose }) {
     const amountOk = bare ? remaining > 0 : (amountCents > 0 && amountCents <= remaining)
     const giftLast = giftIssued && giftIssued.order_id === o.id ? giftIssued : null
     const alreadyIssuedCard = (o.gift_cards ?? [])[0]
-    const alreadyIssuedTitle = alreadyIssuedCard ? `${alreadyIssuedCard.code} — ${money(alreadyIssuedCard.initial_cents)}` : undefined
+    const alreadyIssuedTitle = alreadyIssuedCard ? `${alreadyIssuedCard.code} — ${money(alreadyIssuedCard.initial_cents, o.currency)}` : undefined
     const busyKey = threadId ?? o.id
     return (
       <div className="admin-form" style={{ marginTop: 16 }}>
         <h4>Refund</h4>
-        <p className="muted">Paid {money(o.total_cents)} · refunded {money(o.refunded_amount_cents ?? 0)} · remaining {money(remaining)}</p>
+        <p className="muted">Paid {money(o.total_cents, o.currency)} · refunded {money(o.refunded_amount_cents ?? 0, o.currency)} · remaining {money(remaining, o.currency)}</p>
         {stateOk && remaining > 0 ? (
           <>
             {(o.items ?? []).map((item) => (
               <label key={item.id} className="admin-check">
                 <input type="checkbox" checked={refundForm.items.includes(item.id)} onChange={(event) => setRefundForm((f) => ({ ...f, items: event.target.checked ? [...f.items, item.id] : f.items.filter((x) => x !== item.id) }))} />
-                {item.product_name}{item.variant_label ? ` · ${item.variant_label}` : ''} × {item.quantity} — {money(item.line_total_cents)}
+                {item.product_name}{item.variant_label ? ` · ${item.variant_label}` : ''} × {item.quantity} — {money(item.line_total_cents, o.currency)}
               </label>
             ))}
             <div className="admin-form-grid" style={{ marginTop: 10 }}>
-              <label>Or amount ($)<input type="number" min="0" step="0.01" disabled={refundForm.items.length > 0} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
+              <label>Or amount ({currencySymbol(o.currency)})<input type="number" min="0" step="0.01" disabled={refundForm.items.length > 0} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
               <label>Reason<input value={refundForm.reason} onChange={(event) => setRefundForm({ ...refundForm, reason: event.target.value })} /></label>
             </div>
             {(o.items ?? []).some((i) => i.shop_id) && (
               <div className="admin-seller-charges">
                 <strong>Charge the seller</strong>
-                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_pickup} onChange={(event) => setRefundForm({ ...refundForm, charge_pickup: event.target.checked })} /> Return pickup fee ({money(settings?.return_pickup_fee_cents ?? 499)} per seller)</label>
-                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_delivery} onChange={(event) => setRefundForm({ ...refundForm, charge_delivery: event.target.checked })} /> Their share of the delivery fee ({money(o.delivery_fee_cents ?? 0)} on this order, charged once)</label>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_pickup} onChange={(event) => setRefundForm({ ...refundForm, charge_pickup: event.target.checked })} /> Return pickup fee ({money(settings?.return_pickup_fee_cents ?? 499, o.currency)} per seller)</label>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_delivery} onChange={(event) => setRefundForm({ ...refundForm, charge_delivery: event.target.checked })} /> Their share of the delivery fee ({money(o.delivery_fee_cents ?? 0, o.currency)} on this order, charged once)</label>
                 <span className="muted">The refunded item value (less the commission they paid) is always taken back from the seller. Untick these for a NexTech fault, e.g. delivery damage.</span>
               </div>
             )}
             {refundForm.items.length > 0 && (
               <p className="muted">
                 {allItemsSelected
-                  ? `Every item selected — full refund of ${money(remaining)} (includes tax and fees).`
-                  : `Selected items: ${money(selectedSum)}${selectedSum > remaining ? ' — more than the remaining balance' : ' (tax and fees are refunded separately)'}.`}
+                  ? `Every item selected — full refund of ${money(remaining, o.currency)} (includes tax and fees).`
+                  : `Selected items: ${money(selectedSum, o.currency)}${selectedSum > remaining ? ' — more than the remaining balance' : ' (tax and fees are refunded separately)'}.`}
               </p>
             )}
             <div className="admin-form-actions">
@@ -1491,7 +1527,7 @@ export default function Admin({ token, onClose }) {
           </>
         )}
         {giftLast && (
-          <p className="admin-gift-issued">Gift card <b>{giftLast.code}</b> · password <b>{giftLast.pin}</b> · {money(giftLast.amount_cents)}{threadId ? ' — sent to the customer in this chat.' : ' — share this with the customer.'}</p>
+          <p className="admin-gift-issued">Gift card <b>{giftLast.code}</b> · password <b>{giftLast.pin}</b> · {money(giftLast.amount_cents, o.currency)}{threadId ? ' — sent to the customer in this chat.' : ' — share this with the customer.'}</p>
         )}
       </div>
     )
@@ -1502,7 +1538,7 @@ export default function Admin({ token, onClose }) {
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
     rest.sku = rest.sku?.trim() || null
-    const payload = { ...rest, category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
+    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || activeMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
     // sent as [] so the backend drops any rows. `rows` below (sent as
@@ -1673,8 +1709,8 @@ export default function Admin({ token, onClose }) {
     const balance = Math.max(0, seller.available_cents ?? seller.balance_cents ?? 0)
     const max = seller.max_payout_cents ?? 0
     const suggested = seller.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(balance, max) : balance)
-    const limits = [max > 0 ? `max ${money(max)} per payout` : null, seller.daily_payout_remaining_cents != null ? `${money(seller.daily_payout_remaining_cents)} left today` : null].filter(Boolean).join(', ')
-    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} ($) — available ${money(balance)}${limits ? ` (${limits})` : ''}:`, (suggested / 100).toFixed(2))
+    const limits = [max > 0 ? `max ${money(max, seller.currency)} per payout` : null, seller.daily_payout_remaining_cents != null ? `${money(seller.daily_payout_remaining_cents, seller.currency)} left today` : null].filter(Boolean).join(', ')
+    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} (${currencySymbol(seller.currency)}) — available ${money(balance, seller.currency)}${limits ? ` (${limits})` : ''}:`, (suggested / 100).toFixed(2))
     if (!amountStr) return
     const amount_cents = toCents(amountStr)
     if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
@@ -1861,10 +1897,12 @@ export default function Admin({ token, onClose }) {
   const financialActivityHidden = (notifications.financial_activity ?? []).length - visibleFinancialActivity.length
 
   const payoutRequests = notifications.payout_requests ?? []
+  const labelRequests = notifications.label_requests ?? []
   const riderPayoutRequests = notifications.rider_payout_requests ?? []
   const riderApplications = notifications.rider_applications ?? []
   const sellerApplications = notifications.seller_applications ?? []
   const notificationCount = payoutRequests.length
+    + labelRequests.length
     + sellerApplications.length
     + riderPayoutRequests.length
     + riderApplications.length
@@ -1872,6 +1910,19 @@ export default function Admin({ token, onClose }) {
     + visibleCashOverdue.length
     + visibleNegativeFeedback.length
     + visibleFinancialActivity.length
+
+  const homeMarket = settings?.home_market ?? 'US'
+  const marketOptions = settings?.all_markets?.length ? settings.all_markets : [{ code: homeMarket, name: settings?.home_market_name ?? 'United States', currency: settings?.home_currency ?? 'usd' }]
+  const activeMarket = marketOptions.some((m) => m.code === adminMarket) ? adminMarket : homeMarket
+  const activeCurrency = marketOptions.find((m) => m.code === activeMarket)?.currency ?? 'usd'
+  setStoreCurrency(activeCurrency)
+  const chargesMarket = activeMarket === 'US' ? 'home' : activeMarket // the US uses the original charge forms
+  const switchAdminMarket = (code) => {
+    setAdminMarket(code)
+    try { localStorage.setItem('nextech_admin_market', code) } catch { /* ignore */ }
+    setOrderDetail(null)
+    setProductForm(null)
+  }
 
   const toggleNav = () => setNavOpen((open) => {
     const next = !open
@@ -1905,6 +1956,11 @@ export default function Admin({ token, onClose }) {
         <button className="admin-menu-toggle" type="button" aria-label={navOpen ? 'Hide menu' : 'Show menu'} aria-expanded={navOpen} onClick={toggleNav}>☰</button>
         <div className="admin-brand"><span>g</span> Admin console</div>
         <div className="admin-bar-right">
+          {marketOptions.length > 1 && (
+            <select className="admin-market-select" aria-label="Currency" title="Show entries for this currency / country" value={activeMarket} onChange={(event) => switchAdminMarket(event.target.value)}>
+              {marketOptions.map((m) => <option key={m.code} value={m.code}>{currencySymbol(m.currency)} {m.currency.toUpperCase()} · {m.name}</option>)}
+            </select>
+          )}
           {TOP_TABS.map((name) => (
             <button key={name} type="button" className={`admin-top-tab${tab === name ? ' active' : ''}`} onClick={() => goTab(name)}>
               {TAB_LABELS[name]}{name === 'support' && supportBadge > 0 && <span className="tab-badge">{supportBadge}</span>}
@@ -1919,6 +1975,21 @@ export default function Admin({ token, onClose }) {
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {labelRequests.length > 0 && (
+                      <section>
+                        <h5>Shipping labels to upload</h5>
+                        {labelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`label-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('orders') }}>
+                              🏷️ {r.shop_name ?? 'Seller'} — order #{r.order_id} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {labelRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('orders') }}>+{labelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
+                        )}
+                      </section>
+                    )}
                     {payoutRequests.length > 0 && (
                       <section>
                         <h5>Seller payout requests</h5>
@@ -2068,7 +2139,7 @@ export default function Admin({ token, onClose }) {
                         <h5>New orders to pack</h5>
                         {visibleAwaitingPacking.slice(0, BELL_ITEM_CAP).map((o) => (
                           <button key={packKey(o)} type="button" className="admin-bell-item" onClick={goToOrder}>
-                            🆕 Order #{o.order_id} — {money(o.total_cents)}{o.customer ? ` — ${o.customer}` : ''}
+                            🆕 Order #{o.order_id} — {money(o.total_cents, o.currency)}{o.customer ? ` — ${o.customer}` : ''}
                           </button>
                         ))}
                         {visibleAwaitingPacking.length > BELL_ITEM_CAP && (
@@ -2362,6 +2433,7 @@ export default function Admin({ token, onClose }) {
 
       {tab === 'orders' && (
         <section className="admin-panel">
+          <LabelRequestsPanel authHeaders={authHeaders} onMessage={setMessage} onOpenOrder={openOrderById} refreshKey={labelRequests.length} />
           <div className="admin-filters">
             {STATUS_FILTERS.map((value) => (
               <button key={value} type="button" className={statusFilter === value ? 'chip active' : 'chip'} onClick={() => { setStatusFilter(value); setOrdersPage(1) }}>
@@ -2379,11 +2451,17 @@ export default function Admin({ token, onClose }) {
                     <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button></td>
                     <td>{order.user?.display_name ?? '—'}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                    <td>{money(order.total_cents)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
+                    <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
                     <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
                     <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
-                      {order.delivery_method === 'online_courier' ? (
+                      {order.delivery_method === 'seller' ? (
+                        <>
+                          <span className="pill pill-seller">Seller ships</span>
+                          {(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note">{pk.carrier} · {pk.tracking_number} · {pk.status.replace('_', ' ')}</span>)}
+                          {(order.packages ?? []).length === 0 && order.status !== 'cancelled' && <span className="admin-note">awaiting seller shipment</span>}
+                        </>
+                      ) : order.delivery_method === 'online_courier' ? (
                         order.shipment ? (
                           <>
                             <span className="admin-note">{order.shipment.carrier} · {order.shipment.tracking_number}</span>
@@ -2493,10 +2571,17 @@ export default function Admin({ token, onClose }) {
                     {shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                   </select>
                 </label>
+                {!productForm.shop_id ? (
+                  <label>Sold in (country store)
+                    <select value={productForm.market || activeMarket} onChange={(event) => setProductForm({ ...productForm, market: event.target.value })}>
+                      {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({currencySymbol(m.currency)} {m.currency.toUpperCase()})</option>)}
+                    </select>
+                  </label>
+                ) : <p className="admin-note">Sold in the seller&rsquo;s country store.</p>}
                 <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
                 <label>SKU<input value={productForm.sku ?? ''} placeholder="Auto-generated if left blank" onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
-                <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
-                <label>Sale price ($)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
+                <label>Regular price ({currencySymbol()})<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                <label>Sale price ({currencySymbol()})<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                 <label>Return window (days, max {feesForm?.max_return_days ?? 90})<input type="number" min="0" max={feesForm?.max_return_days ?? 90} placeholder={`default ${feesForm?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
                 {productForm.per_store_stock
                   ? <label>Inventory<input type="text" value="Per store — see below" disabled title="This product tracks stock per store; the counts are in the Store stock section." /></label>
@@ -2636,12 +2721,12 @@ export default function Admin({ token, onClose }) {
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
                     <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}</td>
-                    <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)))}+` : <>{money(product.price_cents)}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents)}</s>}</>}</td>
+                    <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
                       {product.shop_id && product.status === 'pending' && <>
                         <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>
                         <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
@@ -2937,6 +3022,7 @@ export default function Admin({ token, onClose }) {
                 <label>City<input required value={storeForm.city} onChange={(event) => setStoreForm({ ...storeForm, city: event.target.value })} /></label>
                 <label>State<input required maxLength="60" value={storeForm.state} onChange={(event) => setStoreForm({ ...storeForm, state: event.target.value })} /></label>
                 <label>Postal code<input required maxLength="12" value={storeForm.postal_code} onChange={(event) => setStoreForm({ ...storeForm, postal_code: event.target.value })} /></label>
+                <label>Country<select value={storeForm.country || activeMarket} onChange={(event) => setStoreForm({ ...storeForm, country: event.target.value })}>{marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}</select></label>
                 <label>Delivery radius (km)<input required type="number" min="1" max="200" value={storeForm.delivery_radius_km} onChange={(event) => setStoreForm({ ...storeForm, delivery_radius_km: event.target.value })} /></label>
                 <label>Latitude (optional)<input type="number" step="any" value={storeForm.latitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, latitude: event.target.value })} /></label>
                 <label>Longitude (optional)<input type="number" step="any" value={storeForm.longitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, longitude: event.target.value })} /></label>
@@ -2970,7 +3056,7 @@ export default function Admin({ token, onClose }) {
                       : <span className="muted">not located — add coordinates</span>}</td>
                     <td>{store.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', country: store.country ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
                       <button className="act danger" type="button" onClick={() => removeStore(store)}>Delete</button>
                     </td>
                   </tr>
@@ -3523,6 +3609,27 @@ export default function Admin({ token, onClose }) {
               </div>
 
               <div className="admin-form">
+                <h3>Seller shipping</h3>
+                <label>&ldquo;NexTech collects &amp; delivers&rdquo; option for sellers
+                  <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
+                    <option value="available">Available — sellers can choose it</option>
+                    <option value="disabled">Shown but unselectable</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+                <label>NexTech shipping labels (&ldquo;I ship, NexTech label&rdquo;)
+                  <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
+                    <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
+                    <option value="auto">Courier API — paid carrier label bought through the courier connection</option>
+                  </select>
+                </label>
+                <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
+                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a NexTech-bought label), taking pickups off NexTech. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
+              </div>
+
+              <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
+
+              <div className="admin-form">
                 <h3>Countries</h3>
                 <p className="muted">Countries enabled here appear as options in seller registration (business type, tax-ID format, and address labels all follow whichever country a seller picks). Enabling just one keeps the platform single-country; enabling several turns on multi-country selection everywhere that depends on it.</p>
                 {(settings.all_countries ?? []).map((country) => {
@@ -3536,10 +3643,20 @@ export default function Admin({ token, onClose }) {
                     {country.name} ({country.code})
                   </label>
                 })}
+                <label style={{ marginTop: 10 }}>Default country (shoppers and this console start here)
+                  <select value={settings.home_market ?? 'US'} onChange={(event) => saveSetting({ home_market: event.target.value })}>
+                    {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.currency.toUpperCase()})</option>)}
+                  </select>
+                </label>
+                <p className="muted">Every country can have its own NexTech stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
               </div>
 
+              <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === activeMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
+              {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
+                ? <MarketSettings key={chargesMarket} settings={settings} only={chargesMarket} save={saveSetting} onSaved={setMessage} />
+                : <>
               <form className="admin-form" onSubmit={saveFees}>
-                <h3>Marketplace commission</h3>
+                <h3>Marketplace commission &amp; seller payouts ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
                 <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
                 <div className="admin-form-grid">
                   <label>Commission rate (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
@@ -3573,7 +3690,7 @@ export default function Admin({ token, onClose }) {
               </div>
 
               <form className="admin-form" onSubmit={saveFees}>
-                <h3>Delivery &amp; charges</h3>
+                <h3>Delivery &amp; checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
 
                 <fieldset className="admin-fieldset">
                   <legend>Delivery fee</legend>
@@ -3613,6 +3730,7 @@ export default function Admin({ token, onClose }) {
 
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
+                </>}
             </>
           )}
         </section>
@@ -3662,7 +3780,7 @@ export default function Admin({ token, onClose }) {
             {thread.order && thread.order.payment_status === 'pending' && (thread.user?.gift_cards ?? []).length > 0 && (
               <div className="admin-form" style={{ marginTop: 16 }}>
                 <h4>Apply an existing gift card</h4>
-                <p className="muted">Order #{thread.order.id} is still open — total {money(thread.order.total_cents)}.</p>
+                <p className="muted">Order #{thread.order.id} is still open — total {money(thread.order.total_cents, thread.order.currency)}.</p>
                 {thread.user.gift_cards.map((card) => (
                   <button key={card.id} type="button" className="act" disabled={busyId === thread.id} onClick={() => applyGiftCardToOrder(card, thread.order, thread.id)}>
                     Apply {card.code} — {money(card.balance_cents)} balance
@@ -3677,7 +3795,7 @@ export default function Admin({ token, onClose }) {
                 <p className="muted">This chat wasn&rsquo;t opened against a specific order — pick one of {thread.user?.email ?? 'this customer'}&rsquo;s orders to unlock refunds &amp; gift cards.</p>
                 <UpwardPicker
                   placeholder="Choose an order…"
-                  options={thread.user.orders.map((o) => ({ value: o.id, label: `#${o.id} — ${money(o.total_cents)} — ${STATUS_LABELS[o.status] ?? o.status} — ${new Date(o.created_at).toLocaleDateString()}` }))}
+                  options={thread.user.orders.map((o) => ({ value: o.id, label: `#${o.id} — ${money(o.total_cents, o.currency)} — ${STATUS_LABELS[o.status] ?? o.status} — ${new Date(o.created_at).toLocaleDateString()}` }))}
                   onPick={(id) => linkThreadOrder(id)}
                 />
               </div>
@@ -3704,7 +3822,7 @@ export default function Admin({ token, onClose }) {
                 <ul className="admin-order-list">
                   {(customerDetail.orders ?? []).map((order) => (
                     <li key={order.id}>
-                      <strong>#{order.id}</strong> {money(order.total_cents)} · {order.payment_status} · {STATUS_LABELS[order.status] ?? order.status}
+                      <strong>#{order.id}</strong> {money(order.total_cents, order.currency)} · {order.payment_status} · {STATUS_LABELS[order.status] ?? order.status}
                       <span>{order.items?.length ?? 0} items · {new Date(order.created_at).toLocaleDateString()}</span>
                     </li>
                   ))}
@@ -3755,14 +3873,16 @@ export default function Admin({ token, onClose }) {
 
                 {sellerDetail.shop && (
                   <>
+                    <h4>Shipping</h4>
+                    <p className="muted">{{ nextech: 'NexTech collects & delivers this seller’s orders', self: 'Ships orders with their own courier (tracking entered in Seller Center)', label: 'Ships orders on NexTech-bought labels (postage deducted from earnings)' }[sellerDetail.shop?.fulfillment_mode ?? 'nextech']}</p>
                     <h4>Payouts</h4>
-                    <p className="muted">Available: <strong>{money(Math.max(0, sellerDetail.available_cents ?? 0))}</strong> · Held for returns: <strong>{money(sellerDetail.pending_cents ?? 0)}</strong> · Total balance: {money(sellerDetail.balance_cents ?? 0)}</p>
+                    <p className="muted">Available: <strong>{money(Math.max(0, sellerDetail.available_cents ?? 0), sellerDetail.currency)}</strong> · Held for returns: <strong>{money(sellerDetail.pending_cents ?? 0, sellerDetail.currency)}</strong> · Total balance: {money(sellerDetail.balance_cents ?? 0, sellerDetail.currency)}</p>
                     {(sellerDetail.pending_orders ?? []).length > 0 && (
-                      <p className="muted">Held: {sellerDetail.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>
+                      <p className="muted">Held: {sellerDetail.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents, sellerDetail.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>
                     )}
-                    <p className="muted"> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0)}{sellerDetail.max_payout_cents > 0 ? ` · Max per payout: ${money(sellerDetail.max_payout_cents)}` : ''}{sellerDetail.daily_payout_remaining_cents != null ? ` · ${money(sellerDetail.daily_payout_remaining_cents)} left today (all sellers)` : ''}</p>
+                    <p className="muted"> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0, sellerDetail.currency)}{sellerDetail.max_payout_cents > 0 ? ` · Max per payout: ${money(sellerDetail.max_payout_cents, sellerDetail.currency)}` : ''}{sellerDetail.daily_payout_remaining_cents != null ? ` · ${money(sellerDetail.daily_payout_remaining_cents, sellerDetail.currency)} left today (all sellers)` : ''}</p>
                     {sellerDetail.pending_payout_request && (
-                      <p className="admin-payout-request">💸 Seller requested <strong>{money(sellerDetail.pending_payout_request.amount_cents)}</strong> on {new Date(sellerDetail.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
+                      <p className="admin-payout-request">💸 Seller requested <strong>{money(sellerDetail.pending_payout_request.amount_cents, sellerDetail.currency)}</strong> on {new Date(sellerDetail.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
                     )}
                     {sellerDetail.payout_method ? (
                       <p className="muted">
@@ -3773,7 +3893,7 @@ export default function Admin({ token, onClose }) {
                     {(sellerDetail.ledger_entries ?? []).length > 0 && (
                       <div className="admin-gift-issued">
                         {sellerDetail.ledger_entries.map((entry) => (
-                          <p key={entry.id}>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type} <b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents))}</b>{entry.order_id ? ` — order #${entry.order_id}` : ''}{entry.note ? ` — ${entry.note}` : ''} · {new Date(entry.created_at).toLocaleDateString()}</p>
+                          <p key={entry.id}>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type} <b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents), sellerDetail.currency)}</b>{entry.order_id ? ` — order #${entry.order_id}` : ''}{entry.note ? ` — ${entry.note}` : ''} · {new Date(entry.created_at).toLocaleDateString()}</p>
                         ))}
                       </div>
                     )}
@@ -3784,7 +3904,7 @@ export default function Admin({ token, onClose }) {
                           <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
                         )}
                         {sellerDetail.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectPayoutRequest(sellerDetail)}>Decline request</button>}
-                        {(sellerDetail.available_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Available balance is below the {money(sellerDetail.min_payout_cents ?? 0)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</p>}
+                        {(sellerDetail.available_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Available balance is below the {money(sellerDetail.min_payout_cents ?? 0, sellerDetail.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</p>}
                       </div>
                     )}
                   </>
@@ -3836,8 +3956,8 @@ export default function Admin({ token, onClose }) {
                     <tr key={it.id}>
                       <td>{it.product_name}{it.variant_label && <span className="admin-note">{it.variant_label}</span>}</td>
                       <td>{it.quantity}</td>
-                      <td>{money(it.unit_price_cents)}</td>
-                      <td>{money(it.line_total_cents)}</td>
+                      <td>{money(it.unit_price_cents, o.currency)}</td>
+                      <td>{money(it.line_total_cents, o.currency)}</td>
                     </tr>
                   ))}
                   {(o.items ?? []).length === 0 && <tr><td colSpan="4" className="muted">No items recorded.</td></tr>}
@@ -3845,20 +3965,20 @@ export default function Admin({ token, onClose }) {
               </table>
 
               <dl className="admin-order-totals">
-                <div><dt>Subtotal</dt><dd>{money(o.subtotal_cents)}</dd></div>
-                {o.tax_cents > 0 && <div><dt>Tax</dt><dd>{money(o.tax_cents)}</dd></div>}
-                {o.delivery_fee_cents > 0 && <div><dt>Delivery</dt><dd>{money(o.delivery_fee_cents)}</dd></div>}
-                {o.handling_fee_cents > 0 && <div><dt>Handling</dt><dd>{money(o.handling_fee_cents)}</dd></div>}
-                {o.small_cart_fee_cents > 0 && <div><dt>Small-cart fee</dt><dd>{money(o.small_cart_fee_cents)}</dd></div>}
-                {o.gift_card_discount_cents > 0 && <div><dt>Gift card</dt><dd>−{money(o.gift_card_discount_cents)}</dd></div>}
-                {o.refunded_amount_cents > 0 && <div><dt>Refunded</dt><dd>−{money(o.refunded_amount_cents)}</dd></div>}
-                <div className="admin-order-grand"><dt>Total</dt><dd>{money(o.total_cents)}</dd></div>
+                <div><dt>Subtotal</dt><dd>{money(o.subtotal_cents, o.currency)}</dd></div>
+                {o.tax_cents > 0 && <div><dt>Tax</dt><dd>{money(o.tax_cents, o.currency)}</dd></div>}
+                {o.delivery_fee_cents > 0 && <div><dt>Delivery</dt><dd>{money(o.delivery_fee_cents, o.currency)}</dd></div>}
+                {o.handling_fee_cents > 0 && <div><dt>Handling</dt><dd>{money(o.handling_fee_cents, o.currency)}</dd></div>}
+                {o.small_cart_fee_cents > 0 && <div><dt>Small-cart fee</dt><dd>{money(o.small_cart_fee_cents, o.currency)}</dd></div>}
+                {o.gift_card_discount_cents > 0 && <div><dt>Gift card</dt><dd>−{money(o.gift_card_discount_cents, o.currency)}</dd></div>}
+                {o.refunded_amount_cents > 0 && <div><dt>Refunded</dt><dd>−{money(o.refunded_amount_cents, o.currency)}</dd></div>}
+                <div className="admin-order-grand"><dt>Total</dt><dd>{money(o.total_cents, o.currency)}</dd></div>
               </dl>
 
               {(o.gift_cards ?? []).length > 0 && (
                 <div className="admin-gift-issued">
                   {o.gift_cards.map((g) => (
-                    <p key={g.id}>🎁 Gift card <b>{g.code}</b> — {money(g.initial_cents)} issued{g.balance_cents !== g.initial_cents ? `, ${money(g.balance_cents)} left` : ''}{g.reason ? ` — ${g.reason}` : ''}{g.issued_by?.name ? ` (by ${g.issued_by.name})` : ''}</p>
+                    <p key={g.id}>🎁 Gift card <b>{g.code}</b> — {money(g.initial_cents, o.currency)} issued{g.balance_cents !== g.initial_cents ? `, ${money(g.balance_cents, o.currency)} left` : ''}{g.reason ? ` — ${g.reason}` : ''}{g.issued_by?.name ? ` (by ${g.issued_by.name})` : ''}</p>
                   ))}
                 </div>
               )}
@@ -3866,7 +3986,7 @@ export default function Admin({ token, onClose }) {
               {(o.refunds ?? []).length > 0 && (
                 <div className="admin-gift-issued">
                   {o.refunds.map((r) => (
-                    <p key={r.id}>↩ Refund <b>{money(r.amount_cents)}</b>{r.reason ? ` — ${r.reason}` : ''}{r.creator?.name ? ` (by ${r.creator.name})` : ''} · {new Date(r.created_at).toLocaleDateString()}</p>
+                    <p key={r.id}>↩ Refund <b>{money(r.amount_cents, o.currency)}</b>{r.reason ? ` — ${r.reason}` : ''}{r.creator?.name ? ` (by ${r.creator.name})` : ''} · {new Date(r.created_at).toLocaleDateString()}</p>
                   ))}
                 </div>
               )}
@@ -3875,6 +3995,31 @@ export default function Admin({ token, onClose }) {
               <p className="muted">{addrLine || 'No address on file'}</p>
               {o.delivery_instructions && <p className="muted">Note: &ldquo;{o.delivery_instructions}&rdquo;</p>}
               <p className="muted">{o.payment_method === 'cod' ? 'Cash on delivery (C.O.D.)' : 'Card'}{(o.delivery_partner?.name || o.courier_name) ? ` · Courier: ${o.delivery_partner?.name || o.courier_name}` : ''}{o.store ? ` · Fulfilled by ${o.store.name}` : ''}</p>
+              <OrderLabelRequests order={o} authHeaders={authHeaders} onChanged={(msg) => { setMessage(msg); openOrderById(o.id) }} />
+              {(o.shop_shipping ?? []).length > 0 && (
+                <div className="admin-seller-ship">
+                  {o.shop_shipping.map((ss) => {
+                    const pks = (o.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
+                    return (
+                      <div key={ss.id}>
+                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? 'NexTech label' : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
+                        {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
+                        {pks.map((pk) => (
+                          <p key={pk.id} className="muted">
+                            📦 {pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
+                            {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
+                            {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
+                            {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}
+                            {' '}<button type="button" className="link" disabled={busyId === o.id} onClick={() => editPackageTracking(o, pk)}>Edit tracking</button>
+                            {pk.status !== 'delivered' && <button type="button" className="link" disabled={busyId === o.id} onClick={() => patchPackage(o, pk, { status: 'delivered' })}> Mark delivered</button>}
+                            {!['lost', 'delivered'].includes(pk.status) && <button type="button" className="link" disabled={busyId === o.id} onClick={() => { if (window.confirm('Mark this package as lost?')) patchPackage(o, pk, { status: 'lost' }) }}> Lost</button>}
+                          </p>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
               {o.delivery_method === 'online_courier' && (
                 o.shipment ? (
                   <p className="muted">Tracking {o.shipment.tracking_number} · <span className={`pill pill-${o.shipment.status}`}>{o.shipment.status.replace('_', ' ')}</span>

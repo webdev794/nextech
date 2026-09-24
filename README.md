@@ -554,6 +554,62 @@ directly by NexTech", which is every pre-existing product).
   jpg/jpeg/png/webp/gif, 4 MB max, no ratio requirement) — this only applies
   to actual product photos.
 
+## Markets (United States $ / India ₹)
+
+Every country is its own store (`config/markets.php`, `App\Support\Market`):
+its own products, sellers, NexTech stores, riders, currency, fees, commission,
+payout limits and rider pay. **Admin → Settings → Countries** opens countries
+and sets the **Default country** (make India the default and untick the US to run
+India-only).
+
+- **Which country a record belongs to:** `shops.market` = the seller's country;
+  `products.market` = the shop's market, or the admin's choice for NexTech's own
+  products (**Sold in** field); `stores.country`; riders follow their store;
+  `orders.market` + `orders.currency` are frozen at checkout.
+- **Shoppers** send `X-Market` (or `?market=`). The storefront picks it from the
+  device time zone on the first visit, then from the delivery pin's country
+  (`Geo` returns `country`), with a header picker to override. Catalog, config,
+  delivery-ETA, shipping quote and checkout are all scoped to it; carts can't mix
+  countries.
+- **Admin** sends `X-Market` from the top-bar currency switch; Dashboard metrics,
+  Orders, Products, Sellers, Riders, Stores and Settings → charges are scoped to it.
+- **Settings keys:** the US keeps the original keys (`checkout_fees`,
+  `commission_rate_bps`, `min_payout_cents`…, `rider_*`); other markets use
+  `checkout_fees_<CODE>`, `payouts_<CODE>` (incl. `commission_rate_bps`) and
+  `rider_pay_<CODE>`, over the defaults in `config/markets.php`.
+- **India:** prices are GST-inclusive MRP (`products.hsn_code`, `gst_rate_bps`,
+  `country_of_origin`, `manufacturer_info`; required from Indian sellers); the GST
+  inside each line is frozen on `order_items` and totalled in
+  `orders.tax_included_cents`. `SellerLedger` withholds **TCS 0.5%** (GST sec. 52)
+  and **TDS 0.1%** (sec. 194-O) from Indian sellers' credits (`tcs_gst`,
+  `tds_194o` ledger entries) and reverses them on refunds. A grievance officer
+  (Consumer Protection (E-Commerce) Rules 2020) is shown in the India footer.
+  Indian states, holidays (Holi/Diwali dates in `festival_dates` — extend yearly)
+  and carriers are in the market profile.
+- **Money** is formatted per currency by `web/src/money.js` (`formatMoney`,
+  `storeMoney`) and `App\Support\Money` on the server.
+
+## Seller shipping & labels
+
+Sellers choose (**Seller Center → Shipping settings**) between **NexTech collects
+& delivers** (admin can offer, lock or hide it — `nextech_pickup` setting),
+**Ship it yourself** and **I ship, NexTech label**. Self-shipping needs a ship-from
+address, a shipping template (state groups with transit days + fee) and the
+free-shipping rule; checkout then charges the template fee (waived above the
+free-delivery threshold), shows ship-by / arrival dates (working days, weekends
+and holidays per shop), blocks cash on delivery for those items, and splits the
+order into `order_shop_shipping` promises and `order_packages` as the seller ships.
+Seller-only orders skip NexTech packing and complete when every package is delivered.
+
+**Labels** (`nextech_label_mode`): **built-in** — a label request
+(`label_requests`) is rendered to a PDF immediately from the default
+`label_templates` layout (`App\Support\ShippingLabel`, dompdf, private
+`storage/app/private/labels`); the seller can switch template, download it, then
+add tracking. Admin manages templates in Settings and can replace any label with
+their own PDF from the order; with no active template, requests wait for an admin
+upload (bell + top of Orders). **Courier API** mode buys a paid label through
+`Courier::buyLabel` instead.
+
 ## Customer support
 
 Customers raise issues from **Order history → "Get help"** (or the header **Help**

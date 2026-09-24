@@ -106,8 +106,15 @@ class SupportThreadController extends Controller
         abort_unless($thread->user_id === $request->user()->id, 404);
         self::assertContext($request, $thread);
 
+        // Already ended/resolved: nothing to add (no repeated "ended" notes).
+        if ($thread->status === 'resolved') {
+            return response()->json(['data' => $this->withMessages($thread)]);
+        }
+
         $who = self::sellerContext($request) ? 'Seller' : 'Customer';
         $thread->post(null, "{$who} ended the chat.", isStaff: true, system: true);
+        // Ended = resolved; sending a new message reopens it (see message()).
+        $thread->forceFill(['status' => 'resolved', 'resolved_at' => now()])->save();
 
         return response()->json(['data' => $this->withMessages($thread)]);
     }

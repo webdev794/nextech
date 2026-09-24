@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Market;
 use App\Support\PublicMedia;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,14 +17,20 @@ class Product extends Model
     protected $fillable = [
         'category_id',
         'shop_id',
+        'market',
         'name',
         'slug',
         'description',
         'sku',
+        'hsn_code',
+        'gst_rate_bps',
+        'country_of_origin',
+        'manufacturer_info',
         'next_variant_seq',
         'price_cents',
         'compare_at_price_cents',
         'return_days',
+        'shipping_template_id',
         'inventory_quantity',
         'image_url',
         'video_url',
@@ -42,6 +49,7 @@ class Product extends Model
     {
         return [
             'price_cents' => 'integer',
+            'gst_rate_bps' => 'integer',
             'next_variant_seq' => 'integer',
             'compare_at_price_cents' => 'integer',
             'inventory_quantity' => 'integer',
@@ -51,6 +59,27 @@ class Product extends Model
             'rating_count' => 'integer',
             'units_sold' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // A seller product's market is its shop's; NexTech's own products are
+        // in the market the admin created them in.
+        static::saving(function (Product $product): void {
+            // Seller products follow their shop; NexTech's own keep the market
+            // the admin created them in (default: home).
+            if ($product->shop_id && ($product->isDirty('shop_id') || ! $product->exists)) {
+                $product->market = Shop::find($product->shop_id)?->market ?? Market::home();
+            } elseif (! $product->shop_id && ! $product->exists && ! $product->isDirty('market')) {
+                $product->market = Market::home();
+            }
+        });
+    }
+
+    /** Only products sold in this market. */
+    public function scopeInMarket(Builder $query, string $market): Builder
+    {
+        return $query->where($query->qualifyColumn('market'), $market);
     }
 
     public function category(): BelongsTo

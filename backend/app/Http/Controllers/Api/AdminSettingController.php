@@ -10,9 +10,12 @@ use App\Support\CheckoutFees;
 use App\Support\Country;
 use App\Support\CourierCredentials;
 use App\Support\FooterConfig;
+use App\Support\Market;
 use App\Support\Payments;
 use App\Support\RiderLedger;
+use App\Support\SellerFulfillment;
 use App\Support\SellerLedger;
+use App\Support\SellerShipping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -181,6 +184,8 @@ class AdminSettingController extends Controller
             [
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
+                'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
+                'nextech_label_mode' => ['sometimes', Rule::in(['auto', 'manual'])],
                 'active_countries' => ['sometimes', 'array'],
                 'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
                 'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
@@ -194,12 +199,42 @@ class AdminSettingController extends Controller
                 'rider_per_mile_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
                 'rider_min_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'rider_max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                // Other markets (e.g. India): fees + payout limits in their own currency.
+                'market' => ['sometimes', 'string', Rule::in(array_keys(config('markets', [])))],
+                'market_fees' => ['sometimes', 'array'],
+                'market_payouts' => ['sometimes', 'array'],
+                'market_payouts.min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:10000000'],
+                'market_payouts.commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+                'home_market' => ['sometimes', 'string', Rule::in(array_keys(config('markets', [])))],
+                'market_rider_pay' => ['sometimes', 'array'],
+                'market_rider_pay.base_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.per_mile_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'grievance_officer' => ['sometimes', 'nullable', 'array'],
+                'grievance_officer.name' => ['sometimes', 'nullable', 'string', 'max:120'],
+                'grievance_officer.designation' => ['sometimes', 'nullable', 'string', 'max:120'],
+                'grievance_officer.email' => ['sometimes', 'nullable', 'email', 'max:190'],
+                'grievance_officer.phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+                'grievance_officer.address' => ['sometimes', 'nullable', 'string', 'max:500'],
             ]
+            + collect(self::FEE_RULES)->mapWithKeys(fn ($rules, $key) => ['market_fees.'.$key => $rules])->all()
             + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
 
         if (array_key_exists('cod_enabled', $validated)) {
             Setting::put('cod_enabled', (bool) $validated['cod_enabled']);
+        }
+
+        if (array_key_exists('nextech_label_mode', $validated)) {
+            Setting::put('nextech_label_mode', $validated['nextech_label_mode']);
+        }
+
+        if (array_key_exists('nextech_pickup', $validated)) {
+            Setting::put('nextech_pickup', $validated['nextech_pickup']);
         }
 
         if (array_key_exists('rider_auto_assign', $validated)) {
@@ -221,6 +256,22 @@ class AdminSettingController extends Controller
         }
 
         $this->mergeInto('checkout_fees', array_intersect_key($validated, self::FEE_RULES));
+
+        $market = strtoupper($validated['market'] ?? '');
+        if ($market !== '' && ! Market::usesLegacySettings($market)) {
+            $this->mergeInto('checkout_fees_'.$market, array_intersect_key((array) ($validated['market_fees'] ?? []), self::FEE_RULES));
+            $this->mergeInto('payouts_'.$market, (array) ($validated['market_payouts'] ?? []));
+            $this->mergeInto('rider_pay_'.$market, (array) ($validated['market_rider_pay'] ?? []));
+        }
+
+        if (array_key_exists('home_market', $validated)) {
+            Setting::put('home_market', strtoupper($validated['home_market']));
+        }
+
+        if (array_key_exists('grievance_officer', $validated)) {
+            $officer = array_filter((array) $validated['grievance_officer'], fn ($v) => $v !== null && $v !== '');
+            Setting::put('grievance_officer', $officer ?: null);
+        }
         $this->mergeInto('branding', array_intersect_key($validated, self::BRANDING_RULES));
 
         if (array_key_exists('footer', $validated)) {
@@ -283,20 +334,50 @@ class AdminSettingController extends Controller
         return [
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
+            'nextech_pickup' => SellerShipping::nextechPickup(),
+            'nextech_label_mode' => SellerFulfillment::labelMode(),
             'active_countries' => Country::active(),
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
-            'commission_rate_bps' => SellerLedger::rate(),
-            'min_payout_cents' => SellerLedger::minPayoutCents(),
-            'max_payout_cents' => SellerLedger::maxPayoutCents(),
-            'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents(),
+            // The US forms (original settings keys).
+            'commission_rate_bps' => SellerLedger::rate('US'),
+            'min_payout_cents' => SellerLedger::minPayoutCents('US'),
+            'max_payout_cents' => SellerLedger::maxPayoutCents('US'),
+            'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents('US'),
             'return_window_days' => SellerLedger::returnWindowDays(),
             'max_return_days' => SellerLedger::maxReturnDays(),
-            'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents(),
-            'rider_base_pay_cents' => RiderLedger::baseCents(),
-            'rider_per_mile_cents' => RiderLedger::perMileCents(),
-            'rider_min_payout_cents' => RiderLedger::minPayoutCents(),
-            'rider_max_payout_cents' => RiderLedger::maxPayoutCents(),
-            ...CheckoutFees::current(),
+            'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents('US'),
+            'rider_base_pay_cents' => RiderLedger::baseCents('US'),
+            'rider_per_mile_cents' => RiderLedger::perMileCents('US'),
+            'rider_min_payout_cents' => RiderLedger::minPayoutCents('US'),
+            'rider_max_payout_cents' => RiderLedger::maxPayoutCents('US'),
+            ...CheckoutFees::current('US'),
+            'home_market' => Market::home(),
+            'home_market_name' => Country::find(Market::home())['name'] ?? Market::home(),
+            'home_currency' => Market::currency(Market::home()),
+            // Each non-home market's own fees and payout limits (its currency).
+            // Every open country for the admin's currency switch.
+            'all_markets' => collect(Market::codes())->map(fn ($code) => ['code' => $code, 'name' => Country::find($code)['name'] ?? $code, 'currency' => Market::currency($code)])->values(),
+            // Countries with their own (non-US) charge settings.
+            'markets' => collect(Market::codes())->reject(fn ($code) => Market::usesLegacySettings($code))->map(fn ($code) => [
+                'code' => $code,
+                'name' => Country::find($code)['name'] ?? $code,
+                'currency' => Market::currency($code),
+                'fees' => CheckoutFees::current($code),
+                'payouts' => [
+                    'min_payout_cents' => SellerLedger::minPayoutCents($code),
+                    'max_payout_cents' => SellerLedger::maxPayoutCents($code),
+                    'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents($code),
+                    'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents($code),
+                    'commission_rate_bps' => SellerLedger::rate($code),
+                ],
+                'rider_pay' => [
+                    'base_cents' => RiderLedger::baseCents($code),
+                    'per_mile_cents' => RiderLedger::perMileCents($code),
+                    'min_payout_cents' => RiderLedger::minPayoutCents($code),
+                    'max_payout_cents' => RiderLedger::maxPayoutCents($code),
+                ],
+            ])->values(),
+            'grievance_officer' => Setting::get('grievance_officer'),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),
             'secure_access' => ['method' => $this->unlockMethod()],

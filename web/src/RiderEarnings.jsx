@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import { setStoreCurrency, storeMoney } from './money'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
-const money = (cents) => `$${((cents ?? 0) / 100).toFixed(2)}`
+// In the rider's country's currency (set from the earnings payload).
+const money = (cents) => storeMoney(cents ?? 0)
 const EMPTY_METHOD = { payout_method: 'bank', holder_name: '', bank_name: '', account_number: '', routing_number: '', email: '' }
 
 async function readJson(response) {
@@ -16,6 +18,7 @@ async function readJson(response) {
  */
 export default function RiderEarnings({ headers, refreshKey }) {
   const [pay, setPay] = useState(null)
+  setStoreCurrency(pay?.currency ?? 'usd')
   const [open, setOpen] = useState(false)
   const [methodForm, setMethodForm] = useState(null)
   const [busy, setBusy] = useState(false)

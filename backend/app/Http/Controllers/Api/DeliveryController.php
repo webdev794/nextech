@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Store;
 use App\Support\CheckoutFees;
 use App\Support\Geo;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -22,9 +23,11 @@ class DeliveryController extends Controller
             'lng' => ['required', 'numeric', 'between:-180,180'],
         ]);
 
-        $fees = CheckoutFees::current();
+        $market = Market::fromRequest($request);
+        $fees = CheckoutFees::current($market);
 
-        $stores = Store::query()->where('is_active', true)
+        // This country's NexTech stores (and their quick-delivery radius).
+        $stores = Store::query()->where('country', $market)->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')->get();
 
         if ($stores->isEmpty()) {

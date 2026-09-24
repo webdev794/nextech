@@ -11,20 +11,30 @@ use App\Support\Branding;
 use App\Support\CheckoutFees;
 use App\Support\Country;
 use App\Support\FooterConfig;
+use App\Support\Market;
 use App\Support\Payments;
 use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class ConfigController extends Controller
 {
     /**
      * Public client configuration for the web and mobile storefronts.
      */
-    public function __invoke(): JsonResponse
+    public function __invoke(Request $request): JsonResponse
     {
+        $market = Market::fromRequest($request);
+
         return response()->json([
             'data' => [
-                'currency' => 'usd',
+                'market' => $market,
+                'currency' => Market::currency($market),
+                // Every market shoppers can switch to, each with its own fees.
+                'markets' => collect(Market::publicList())->map(fn (array $m) => $m + ['fees' => CheckoutFees::current($m['code'])])->values(),
+                // India: the grievance officer every e-commerce entity must
+                // publish (Consumer Protection (E-Commerce) Rules, 2020, rule 4(4)).
+                'grievance_officer' => Setting::get('grievance_officer'),
                 'active_countries' => Country::active(),
                 'stripe_publishable_key' => Payments::stripe()['key'],
                 'payments_enabled' => Payments::stripe()['secret'] !== '',
@@ -36,11 +46,11 @@ class ConfigController extends Controller
                 // Read-only and not sensitive — a seller can already back this
                 // out from their own ledger entries, so surfacing it directly
                 // lets the Seller Center price estimator use the real rate.
-                'commission_rate_bps' => SellerLedger::rate(),
+                'commission_rate_bps' => SellerLedger::rate($market),
                 'return_window_days' => SellerLedger::returnWindowDays(),
                 'max_return_days' => SellerLedger::maxReturnDays(),
-                ...CheckoutFees::current(),
-                'stores' => Store::query()->where('is_active', true)
+                ...CheckoutFees::current($market),
+                'stores' => Store::query()->where('country', $market)->where('is_active', true)
                     ->whereNotNull('latitude')->whereNotNull('longitude')
                     ->get(['id', 'name', 'latitude', 'longitude', 'delivery_radius_km']),
                 'banners' => Banner::query()->active()->ordered()

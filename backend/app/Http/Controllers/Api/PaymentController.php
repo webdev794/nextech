@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\StripeEvent;
 use App\Models\SupportThread;
 use App\Models\User;
+use App\Support\Money;
 use App\Support\SellerLedger;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
@@ -50,7 +51,7 @@ class PaymentController extends Controller
                 ? $stripe->paymentIntents->retrieve($order->stripe_payment_intent_id)
                 : $stripe->paymentIntents->create([
                     'amount' => $order->total_cents,
-                    'currency' => 'usd',
+                    'currency' => $order->currency ?: 'usd',
                     'customer' => $this->customerId($request->user(), $stripe),
                     'automatic_payment_methods' => ['enabled' => true],
                     'metadata' => ['order_id' => (string) $order->id],
@@ -134,7 +135,7 @@ class PaymentController extends Controller
         };
 
         if ($amount <= 0 || $amount > $remaining) {
-            return response()->json(['message' => "Refund amount must be between \$0.01 and \${$this->dollars($remaining)}."], 422);
+            return response()->json(['message' => 'Refund amount must be between '.Money::format(1, $order->currency).' and '.Money::format($remaining, $order->currency).'.'], 422);
         }
 
         if (! config('services.stripe.secret')) {
@@ -182,7 +183,7 @@ class PaymentController extends Controller
 
         if (! empty($validated['support_thread_id'])) {
             $thread = SupportThread::find($validated['support_thread_id']);
-            $thread?->post(null, 'Refund of $'.$this->dollars($amount).' issued.', isStaff: true, system: true);
+            $thread?->post(null, 'Refund of '.Money::format($amount, $order->currency).' issued.', isStaff: true, system: true);
             // The admin's reason is for later staff reference only — it never
             // reaches the customer's own view of this conversation.
             if (! empty($validated['reason'])) {
@@ -216,11 +217,6 @@ class PaymentController extends Controller
         $user->forceFill(['stripe_customer_id' => $customer->id])->save();
 
         return $customer->id;
-    }
-
-    private function dollars(int $cents): string
-    {
-        return number_format($cents / 100, 2);
     }
 
     public function webhook(Request $request): JsonResponse

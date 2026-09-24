@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\PayoutRequest;
 use App\Models\Seller;
 use App\Models\Shop;
+use App\Support\Market;
+use App\Support\Money;
 use App\Support\SellerLedger;
 use App\Support\Sku;
 use Illuminate\Http\JsonResponse;
@@ -166,9 +168,20 @@ class SellerController extends Controller
             // fully paid out (balance back to 0) still needs their method on
             // file, so this checks ledger history, not the current balance.
             $seller->has_sales = $seller->shop->ledgerEntries()->exists();
-            $seller->min_payout_cents = SellerLedger::minPayoutCents();
-            $seller->max_payout_cents = SellerLedger::maxPayoutCents();
+            $seller->min_payout_cents = SellerLedger::minPayoutCents($seller->shop->market);
+            $seller->max_payout_cents = SellerLedger::maxPayoutCents($seller->shop->market);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
+        }
+
+        // The market the seller sells in: its currency, and whether prices must
+        // include GST (India) with HSN / GST rate / origin / manufacturer details.
+        if ($seller) {
+            $market = $seller->shop?->market ?? Market::forCountry($seller->country);
+            $seller->market = $market;
+            $seller->currency = Market::currency($market);
+            $seller->tax_inclusive = Market::taxInclusive($market);
+            $seller->gst_rates_bps = Market::profile($market)['gst_rates_bps'] ?? [];
+            $seller->withholding = collect(Market::profile($market)['withholding'] ?? [])->map(fn ($r) => $r['label'].' '.($r['rate_bps'] / 100).'%')->values();
         }
 
         return response()->json(['data' => $seller]);
@@ -190,8 +203,8 @@ class SellerController extends Controller
             $shop = Shop::whereKey($seller->shop->id)->lockForUpdate()->first();
             abort_if($shop->payoutRequests()->where('status', 'pending')->exists(), 422, 'You already have a payout request waiting.');
 
-            $min = SellerLedger::minPayoutCents();
-            abort_if(SellerLedger::availableCents($shop) < $min, 422, 'Your available balance (past the return window) needs to reach $'.number_format($min / 100, 2).' first.');
+            $min = SellerLedger::minPayoutCents($shop->market);
+            abort_if(SellerLedger::availableCents($shop) < $min, 422, 'Your available balance (past the return window) needs to reach '.Money::format($min, Market::currency($shop->market)).' first.');
 
             return $shop->payoutRequests()->create([
                 'amount_cents' => SellerLedger::requestableCents($shop),

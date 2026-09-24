@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\RiderLedgerEntry;
 use App\Models\RiderPayoutRequest;
 use App\Models\User;
+use App\Support\Market;
+use App\Support\Money;
 use App\Support\RiderLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -18,8 +20,10 @@ class RiderEarningsController extends Controller
     public function show(Request $request): JsonResponse
     {
         $rider = $request->user();
+        $market = RiderLedger::marketFor($rider);
 
         return response()->json(['data' => [
+            'currency' => Market::currency($market),
             'balance_cents' => RiderLedger::balanceCents($rider),
             'cash_holding_cents' => $rider->codHoldingCents(),
             'owed_cents' => RiderLedger::owedCents($rider),
@@ -29,11 +33,11 @@ class RiderEarningsController extends Controller
                 ->where('created_at', '>=', now()->subDays(7))
                 ->sum('amount_cents'),
             'rates' => [
-                'base_cents' => RiderLedger::baseCents(),
-                'per_mile_cents' => RiderLedger::perMileCents(),
+                'base_cents' => RiderLedger::baseCents($market),
+                'per_mile_cents' => RiderLedger::perMileCents($market),
             ],
-            'min_payout_cents' => RiderLedger::minPayoutCents(),
-            'max_payout_cents' => RiderLedger::maxPayoutCents(),
+            'min_payout_cents' => RiderLedger::minPayoutCents($market),
+            'max_payout_cents' => RiderLedger::maxPayoutCents($market),
             'payout_method' => $rider->rider_payout_method,
             'payout_details' => $rider->rider_payout_details,
             'last_payout_request' => RiderPayoutRequest::where('user_id', $rider->id)->latest('id')->first(),
@@ -84,12 +88,14 @@ class RiderEarningsController extends Controller
                 'You already have a payout request waiting.'
             );
 
-            $min = RiderLedger::minPayoutCents();
+            $market = RiderLedger::marketFor($rider);
+            $cur = Market::currency($market);
+            $min = RiderLedger::minPayoutCents($market);
             $owed = RiderLedger::owedCents($rider);
             if ($owed < $min) {
                 $held = $rider->codHoldingCents();
-                abort(422, 'You can request a payout once you are owed $'.number_format($min / 100, 2)
-                    .($held > 0 ? ' — return the $'.number_format($held / 100, 2).' cash you are holding to your store first.' : '.'));
+                abort(422, 'You can request a payout once you are owed '.Money::format($min, $cur)
+                    .($held > 0 ? ' — return the '.Money::format($held, $cur).' cash you are holding to your store first.' : '.'));
             }
 
             RiderPayoutRequest::create([

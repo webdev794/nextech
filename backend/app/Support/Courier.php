@@ -70,6 +70,45 @@ class Courier
         ]);
     }
 
+    /**
+     * Buy a shipping label on NexTech's courier account for a seller's own
+     * package (the seller ships it; NexTech just supplies the label). Returns
+     * the booking plus what it cost, which the caller charges to the seller.
+     *
+     * @param  array<string, mixed>  $origin  the seller's ship-from address
+     * @return array{tracking_number: string, carrier: string, label_url: ?string, cost_cents: int}
+     */
+    public static function buyLabel(Order $order, array $origin): array
+    {
+        [$booking] = self::withFallback(fn (CourierProvider $provider) => $provider->book($order, $origin));
+        $cost = self::quote((array) $order->delivery_address)['cost_cents'];
+
+        return [
+            'tracking_number' => $booking['tracking_number'],
+            'carrier' => $booking['carrier'],
+            'label_url' => $booking['label_url'] ?? null,
+            'cost_cents' => (int) $cost,
+        ];
+    }
+
+    /**
+     * Current status of a NexTech-bought label, mapped to package statuses
+     * (shipped | in_transit | delivered | lost). Uses an unsaved Shipment as
+     * the provider's input so label packages share the same tracking path.
+     */
+    public static function trackLabel(string $carrier, string $trackingNumber, ?\DateTimeInterface $shippedAt, string $currentStatus): string
+    {
+        $probe = new Shipment([
+            'carrier' => $carrier,
+            'tracking_number' => $trackingNumber,
+            'booked_at' => $shippedAt,
+            'status' => match ($currentStatus) { 'delivered' => 'delivered', 'lost' => 'failed', 'in_transit' => 'in_transit', default => 'booked' },
+        ]);
+        [$status] = self::withFallback(fn (CourierProvider $provider) => $provider->track($probe));
+
+        return match ($status) { 'delivered' => 'delivered', 'failed' => 'lost', 'in_transit' => 'in_transit', default => 'shipped' };
+    }
+
     /** Pulls the provider's current status for a shipment and saves it. */
     public static function track(Shipment $shipment): Shipment
     {
@@ -88,10 +127,17 @@ class Courier
      */
     private static function originAddress(Order $order): array
     {
-        $seller = $order->items()->whereNotNull('shop_id')->with('shop.seller')->first()?->shop?->seller;
+        $shop = $order->items()->whereNotNull('shop_id')->where('fulfilled_by', 'nextech')->with('shop.seller')->first()?->shop;
 
-        if ($seller) {
-            return $seller->pickupAddress();
+        // A default ship-from address set in Shipping settings wins over the
+        // pickup address from the seller application.
+        $default = $shop?->addresses()->where('is_default', true)->first();
+        if ($default) {
+            return $default->toCourierAddress();
+        }
+
+        if ($shop?->seller) {
+            return $shop->seller->pickupAddress();
         }
 
         $store = $order->store;

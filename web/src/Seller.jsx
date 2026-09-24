@@ -5,6 +5,8 @@ import { checkProductImage } from './productImageCheck'
 import { renderMarkdown } from './markdown'
 import { PageSection } from './PageSections'
 import { LineChart, PieChart } from './Charts'
+import { ShipOrders, ShippingSettings } from './SellerShipping'
+import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './Seller.css'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -41,11 +43,12 @@ function playMessageChime() {
   } catch { /* audio blocked — nothing else to fall back to */ }
 }
 
-const money = (cents) => `$${((cents ?? 0) / 100).toFixed(2)}`
+// In the seller's market currency (USD for US sellers, INR for Indian sellers).
+const money = (cents) => storeMoney(cents ?? 0)
 
 // Performance chart lines. Order counts share one axis; amount earned (after
 // refunds) gets its own dollar axis.
-const dollarTick = (cents) => `$${Math.round(cents / 100).toLocaleString()}`
+const dollarTick = (cents) => `${currencySymbol()}${Math.round(cents / 100).toLocaleString()}`
 const SELLER_CHART_LINES = [
   { key: 'orders', label: 'Orders', color: '#1f5fae', axis: 'count', format: (v) => v },
   { key: 'completed', label: 'Delivered', color: '#2e7d32', axis: 'count', format: (v) => v },
@@ -53,7 +56,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 
 // A commission-only estimate, shown while a seller is pricing a product —
 // not a quote: the real payout is computed server-side at order time.
@@ -180,6 +183,9 @@ export default function Seller({ token, onSignOut }) {
   const [siteConfig, setSiteConfig] = useState(null)
   const [categories, setCategories] = useState([])
   const [me, setMe] = useState(undefined) // undefined = loading, null = no application yet
+  setStoreCurrency(me?.currency ?? 'usd')
+  const sym = currencySymbol()
+  const inclusive = !!me?.tax_inclusive
   const [loadError, setLoadError] = useState('')
   const [step, setStep] = useState(1)
   const [maxStepSeen, setMaxStepSeen] = useState(1)
@@ -216,6 +222,7 @@ export default function Seller({ token, onSignOut }) {
   // Customer <-> seller chats (buyer messages, or an order chat NexTech brought the seller into).
   const [messagesTab, setMessagesTab] = useState('customers')
   const [sellerPages, setSellerPages] = useState([]) // policy pages placed in the seller footer
+  const [shipTemplates, setShipTemplates] = useState([])
   const [customerChats, setCustomerChats] = useState([])
   const [customerChat, setCustomerChat] = useState(null)
   const [customerReply, setCustomerReply] = useState('')
@@ -243,7 +250,8 @@ export default function Seller({ token, onSignOut }) {
 
   useEffect(() => {
     let cancelled = false
-    fetch(`${API_URL}/config`, { headers: { Accept: 'application/json' } }).then(readJson)
+    // The seller's own market's config (currency, fees, commission rate).
+    fetch(`${API_URL}/config`, { headers: { Accept: 'application/json', ...(me?.market ? { 'X-Market': me.market } : {}) } }).then(readJson)
       .then((res) => {
         if (cancelled) return
         const list = res?.data?.active_countries ?? []
@@ -256,7 +264,7 @@ export default function Seller({ token, onSignOut }) {
       .then((res) => { if (!cancelled) setCategories(res?.data ?? []) })
       .catch(() => {})
     return () => { cancelled = true }
-  }, [])
+  }, [me?.market])
 
   useEffect(() => {
     let cancelled = false
@@ -340,7 +348,8 @@ export default function Seller({ token, onSignOut }) {
       const response = await fetch(`${API_URL}/support/threads/${supportThread.id}/end?kind=seller`, { method: 'POST', headers: authHeaders() })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not end the chat.')
-      setSupportThread(null)
+      // Stay in the conversation, now shown as Resolved (the End button hides).
+      setSupportThread(data.data)
       loadSupportThreads()
     } catch (error) {
       setSupportMsg(error.message)
@@ -688,6 +697,15 @@ export default function Seller({ token, onSignOut }) {
     return () => { stopped = true; clearInterval(timer) }
   }, [me?.status, authHeaders, soundMuted, markSeen])
 
+  // Shipping templates, for the product form's "Ships under" picker.
+  const shopMode = me?.shop?.fulfillment_mode ?? 'nextech'
+  useEffect(() => {
+    if (me?.status !== 'approved' || shopMode === 'nextech') return
+    fetch(`${API_URL}/seller/shipping`, { headers: authHeaders() }).then(readJson)
+      .then((data) => setShipTemplates(data?.data?.templates ?? []))
+      .catch(() => {})
+  }, [me?.status, shopMode, authHeaders, section])
+
   // Seller policy pages (Pages with the "seller_footer" placement), listed under
   // My account > Policies & rules.
   useEffect(() => {
@@ -758,6 +776,11 @@ export default function Seller({ token, onSignOut }) {
       price: (product.price_cents / 100).toFixed(2),
       compare_at: dollarsOrBlank(product.compare_at_price_cents),
       return_days: product.return_days ?? '',
+      shipping_template_id: product.shipping_template_id ?? '',
+      hsn_code: product.hsn_code ?? '',
+      gst_rate_bps: product.gst_rate_bps ?? '',
+      country_of_origin: product.country_of_origin ?? '',
+      manufacturer_info: product.manufacturer_info ?? '',
       inventory_quantity: product.inventory_quantity,
       description: product.description ?? '',
       suggested_category_name: product.suggested_category_name ?? '',
@@ -782,6 +805,8 @@ export default function Seller({ token, onSignOut }) {
       price_cents: Math.round(Number(price) * 100),
       compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null,
       return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days),
+      shipping_template_id: rest.shipping_template_id ? Number(rest.shipping_template_id) : null,
+      ...(inclusive ? { hsn_code: rest.hsn_code || null, gst_rate_bps: rest.gst_rate_bps === '' || rest.gst_rate_bps == null ? null : Number(rest.gst_rate_bps), country_of_origin: rest.country_of_origin || null, manufacturer_info: rest.manufacturer_info || null } : { hsn_code: undefined, gst_rate_bps: undefined, country_of_origin: undefined, manufacturer_info: undefined }),
       suggested_category_name: rest.suggested_category_name?.trim() || null,
       images: (images ?? []).filter(Boolean),
     }
@@ -877,7 +902,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['policies', 'Policies & rules']] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -943,6 +968,27 @@ export default function Seller({ token, onSignOut }) {
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
                 {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact NexTech via Messages if you think this is a mistake.</div>}
+                {(() => {
+                  const steps = [
+                    ['Add your first product', products.length > 0, () => newProduct()],
+                    ['Choose how orders ship', shopMode !== 'nextech' || !!me.shop?.free_shipping_accepted_at, () => go('shipping')],
+                    ['Add your payout method', !!me.payout_method, () => go('finances')],
+                  ]
+                  const left = steps.filter(([, done]) => !done).length
+                  return left > 0 && (
+                    <div className="sc-card">
+                      <h2 className="sc-h2">Get your shop ready <span className="sc-muted">{steps.length - left}/{steps.length} done</span></h2>
+                      <ul className="ss-checklist">
+                        {steps.map(([label, done, onGo]) => (
+                          <li key={label} className={done ? 'done' : ''}>
+                            <span>{done ? '✓' : '○'} {label}</span>
+                            {!done && <button type="button" className="sc-primary" onClick={onGo}>Set up</button>}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })()}
                 <div className="sc-card">
                   <h2 className="sc-h2">Action needed</h2>
                   <div className="sc-action-grid">
@@ -1037,9 +1083,23 @@ export default function Seller({ token, onSignOut }) {
                                         </label>
                                         <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
                                         <label>SKU<input disabled value={productForm.sku || 'Generated automatically on save'} /></label>
-                                        <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
-                                        <label>Sale price ($)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
+                                        <label>{inclusive ? `MRP (${sym}, incl. GST)` : `Regular price (${sym})`}<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                                        <label>{inclusive ? `Selling price (${sym}, incl. GST)` : `Sale price (${sym})`}<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                                         <label>Return window (days, max {siteConfig?.max_return_days ?? 90})<input type="number" min="0" max={siteConfig?.max_return_days ?? 90} placeholder={`default ${siteConfig?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
+                                        {inclusive && (
+                                          <>
+                                            <label>HSN code<input required inputMode="numeric" pattern="\d{4}(\d{2})?(\d{2})?" placeholder="e.g. 85171300" value={productForm.hsn_code ?? ''} onChange={(event) => setProductForm({ ...productForm, hsn_code: event.target.value.trim() })} /></label>
+                                            <label>GST rate<select required value={productForm.gst_rate_bps ?? ''} onChange={(event) => setProductForm({ ...productForm, gst_rate_bps: event.target.value })}><option value="">Select…</option>{(me?.gst_rates_bps ?? []).map((r) => <option key={r} value={r}>{r / 100}%</option>)}</select></label>
+                                            <label>Country of origin<input required maxLength="60" placeholder="e.g. India" value={productForm.country_of_origin ?? ''} onChange={(event) => setProductForm({ ...productForm, country_of_origin: event.target.value })} /></label>
+                                            <label>Manufacturer / packer / importer (name &amp; address)<input required maxLength="500" value={productForm.manufacturer_info ?? ''} onChange={(event) => setProductForm({ ...productForm, manufacturer_info: event.target.value })} /></label>
+                                          </>
+                                        )}
+                                        {shopMode !== 'nextech' && (
+                                          <label>Ships under template<select value={productForm.shipping_template_id ?? ''} onChange={(event) => setProductForm({ ...productForm, shipping_template_id: event.target.value })}>
+                                            <option value="">Default template</option>
+                                            {shipTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>)}
+                                          </select></label>
+                                        )}
                                         <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>
                                       </div>
 
@@ -1085,8 +1145,8 @@ export default function Seller({ token, onSignOut }) {
                                           <div className="seller-variant-row" key={row.id ?? `new-${index}`}>
                                             <input placeholder="Label" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
                                             <input disabled placeholder="SKU" value={row.sku || 'Auto on save'} />
-                                            <input type="number" min="0" step="0.01" placeholder="Regular $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
-                                            <input type="number" min="0" step="0.01" placeholder="Sale $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
+                                            <input type="number" min="0" step="0.01" placeholder={inclusive ? `MRP ${sym}` : `Regular ${sym}`} value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
+                                            <input type="number" min="0" step="0.01" placeholder={inclusive ? `Price ${sym}` : `Sale ${sym}`} value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
                                             <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />
                                             <span className="seller-variant-img">
                                               <input placeholder="Image URL" value={row.image_url} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, image_url: event.target.value } : r) })} />
@@ -1112,6 +1172,7 @@ export default function Seller({ token, onSignOut }) {
             ) : section === 'orders' ? (
               <>
                 <h1 className="sc-title">Manage orders</h1>
+                {shopMode !== 'nextech' && <ShipOrders headers={authHeaders} mode={shopMode} />}
                 <div className="sc-card">
                   <h2 className="sc-h2">Overview</h2>
                   <div className="sc-action-grid">
@@ -1311,6 +1372,7 @@ export default function Seller({ token, onSignOut }) {
                         {customerChat.order && (
                           <p className="sc-muted">Your items: {(customerChat.order.items ?? []).map((i) => `${i.product_name} × ${i.quantity}`).join(', ') || '—'} · order {customerChat.order.status}</p>
                         )}
+                        {customerChat.status === 'resolved' && <p className="sc-alert">This conversation is resolved. Replying reopens it.</p>}
                         <p className="sc-alert warn">NexTech brought you into this chat to help resolve an order issue. NexTech can see and reply here too.</p>
                         <div className="sc-chat-log">
                           {(customerChat.messages ?? []).map((m) => (
@@ -1341,7 +1403,7 @@ export default function Seller({ token, onSignOut }) {
                               <td>{t.order_id ? `#${t.order_id}` : '—'}</td>
                               <td>Order issue (with NexTech)</td>
                               <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>
-                              <td>{customerUnread(t) ? <span className="sc-pill rejected">Unread</span> : t.needs_seller_reply ? <span className="sc-pill pending">Awaiting your reply</span> : <span className="sc-pill">{t.status}</span>}</td>
+                              <td>{customerUnread(t) ? <span className="sc-pill rejected">Unread</span> : t.needs_seller_reply ? <span className="sc-pill pending">Awaiting your reply</span> : <span className={`sc-pill ${t.status === 'resolved' ? 'approved' : ''}`}>{t.status === 'resolved' ? 'Resolved' : 'Open'}</span>}</td>
                               <td className="sc-actions"><button type="button" onClick={() => openCustomerChat(t)}>Open</button></td>
                             </tr>
                           ))}
@@ -1382,7 +1444,7 @@ export default function Seller({ token, onSignOut }) {
                           <li key={t.id}>
                             <button type="button" className="seller-thread-row" onClick={() => openSupportThread(t.id)}>
                               <span>{SUPPORT_ISSUE_LABELS[t.issue_type] ?? t.issue_type}{nextechUnread(t) && <span className="seller-thread-dot" aria-label="Unread" />}</span>
-                              <span>{t.status}{t.last_message_at ? ` · ${new Date(t.last_message_at).toLocaleDateString()}` : ''}</span>
+                              <span><span className={`sc-pill ${t.status === 'resolved' ? 'approved' : 'pending'}`}>{t.status === 'resolved' ? 'Resolved' : 'Open'}</span>{t.last_message_at ? ` · ${new Date(t.last_message_at).toLocaleDateString()}` : ''}</span>
                             </button>
                           </li>
                         ))}
@@ -1394,9 +1456,10 @@ export default function Seller({ token, onSignOut }) {
                       <div className="seller-thread-detail">
                         <div className="seller-thread-top">
                           <button type="button" className="seller-btn ghost" onClick={() => setSupportThread(null)}>&larr; Back to messages</button>
-                          <button type="button" className="seller-btn ghost" onClick={endSupportThread}>End chat</button>
+                          {supportThread.status !== 'resolved' && <button type="button" className="seller-btn ghost" onClick={endSupportThread}>End chat</button>}
                         </div>
-                        <h4>{SUPPORT_ISSUE_LABELS[supportThread.issue_type] ?? supportThread.issue_type}</h4>
+                        <h4>{SUPPORT_ISSUE_LABELS[supportThread.issue_type] ?? supportThread.issue_type} <span className={`sc-pill ${supportThread.status === 'resolved' ? 'approved' : 'pending'}`}>{supportThread.status === 'resolved' ? 'Resolved' : 'Open'}</span></h4>
+                        {supportThread.status === 'resolved' && <p className="sc-muted">This conversation is resolved. Sending a message reopens it.</p>}
                         <div className="seller-thread-messages">
                           {(supportThread.messages ?? []).map((msg) => (
                             <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
@@ -1415,6 +1478,8 @@ export default function Seller({ token, onSignOut }) {
                 </div>
                 )}
               </>
+            ) : section === 'shipping' ? (
+              <ShippingSettings headers={authHeaders} onChanged={(settings) => setMe((m) => (m?.shop ? { ...m, shop: { ...m.shop, fulfillment_mode: settings.fulfillment_mode } } : m))} />
             ) : section === 'policies' ? (
               <>
                 <h1 className="sc-title">Policies &amp; rules</h1>

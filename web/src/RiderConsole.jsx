@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
 import RiderEarnings from './RiderEarnings'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const STORE_URL = import.meta.env.BASE_URL || '/'
 
-const money = (c) => `$${((c ?? 0) / 100).toFixed(2)}`
+// Order amounts in the order's own currency (India: ₹).
+const money = (c, currency) => formatMoney(c ?? 0, currency || 'usd')
 const STATUS_LABEL = {
   confirmed: 'Confirmed', packing: 'Being packed', ready_for_delivery: 'Ready for pickup',
   out_for_delivery: 'Out for delivery', completed: 'Delivered', cancelled: 'Cancelled',
@@ -69,7 +71,7 @@ function DeliveryCard({ order, pool, headers, onDone, onChat }) {
       <ul className="rider-card-items">
         {order.items?.map((it, i) => <li key={i}>{it.quantity} × {it.name}</li>)}
       </ul>
-      {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due)}</b></p>}
+      {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due, order.currency)}</b></p>}
 
       <div className="rider-card-actions">
         <a className="rider-btn ghost" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressText(a))}`} target="_blank" rel="noreferrer">Directions</a>
@@ -364,7 +366,7 @@ function OfferPrompt({ offers, headers, onResolved }) {
               <h3 className="rider-offer-h">New delivery — Order #{o.id}</h3>
               <p className="rider-offer-sub">{o.customer_name || 'Customer'}<br />{addressText(o.delivery_address)}</p>
               <p className="rider-offer-sub">{o.items?.reduce((n, i) => n + (i.quantity || 0), 0) ?? 0} item(s){o.delivery_instructions ? ` · “${o.delivery_instructions}”` : ''}</p>
-              {o.cod_due > 0 && <p className="rider-offer-cod">Collect cash {money(o.cod_due)}</p>}
+              {o.cod_due > 0 && <p className="rider-offer-cod">Collect cash {money(o.cod_due, o.currency)}</p>}
               <div className={`rider-offer-count${secs > 10 ? ' calm' : ''}`}>{fmtMMSS(secs)}</div>
               {secs === 0
                 ? <p className="rider-offer-wait">Re-offering to another rider…</p>

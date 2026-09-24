@@ -16,7 +16,7 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $orders = $request->user()->orders()
-            ->with(['items', 'riderReview'])
+            ->with(['items', 'riderReview', 'packages.items', 'shopShipping.shop:id,name'])
             ->latest()
             ->paginate(20);
 

@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\Shop;
+use App\Support\Market;
 use App\Support\StoreLocator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,10 +36,16 @@ class CatalogController extends Controller
     public function categories(Request $request): JsonResponse
     {
         $storeId = $this->servingStoreId($request);
+        $market = Market::fromRequest($request);
 
         return response()->json([
             'data' => Category::query()
                 ->where('is_active', true)
+                // Outside the home market, only categories that market sells in.
+                ->when($market !== Market::home(), fn ($query) => $query->whereHas(
+                    'products',
+                    fn ($inner) => $inner->inMarket($market)->where('is_active', true)->where('status', 'approved'),
+                ))
                 // When a store serves this customer, hide a category with nothing
                 // for sale there (an out-of-stock item still counts). With no
                 // store in context, list them all as before.
@@ -76,6 +83,9 @@ class CatalogController extends Controller
             ])
             ->where('is_active', true)
             ->where('status', 'approved')
+            // Shoppers see only their market's products — except on a shop's
+            // own page, which lists that shop whatever market it's in.
+            ->when($shopId === null, fn ($query) => $query->inMarket(Market::fromRequest($request)))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->when(isset($validated['search']), function ($query) use ($validated) {
@@ -139,6 +149,7 @@ class CatalogController extends Controller
             ->where('is_active', true)
             ->where('status', 'approved')
             ->where('deal_type', $validated['deal_type'])
+            ->inMarket(Market::fromRequest($request))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
@@ -182,6 +193,7 @@ class CatalogController extends Controller
         return response()->json(['data' => [
             'name' => $shop->name,
             'slug' => $shop->slug,
+            'market' => $shop->market,
             'logo_url' => $shop->logo_url,
             'banner_url' => $shop->banner_url,
             'description' => $shop->description,
@@ -270,6 +282,7 @@ class CatalogController extends Controller
         $prices = $product->variants->pluck('price_cents')->push($product->price_cents);
         $product->setAttribute('price_min_cents', (int) $prices->min());
         $product->setAttribute('price_max_cents', (int) $prices->max());
+        $product->setAttribute('currency', Market::currency($product->market));
 
         // storeInventory was only loaded to compute the above; don't ship it.
         $product->unsetRelation('storeInventory');

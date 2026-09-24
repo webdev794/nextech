@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\GiftCard;
+use App\Models\LabelRequest;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
@@ -17,6 +18,7 @@ use App\Models\SiteFeedback;
 use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\CustomerNames;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -25,30 +27,36 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class AdminController extends Controller
 {
-    public function metrics(): JsonResponse
+    public function metrics(Request $request): JsonResponse
     {
-        $ordersByStatus = Order::query()
+        // One market (currency) at a time — the admin's currency switch.
+        $market = Market::fromRequest($request);
+        $home = $market;
+        $ordersByStatus = Order::query()->where('market', $market)
             ->select('status', DB::raw('count(*) as total'))
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        $revenue = (int) Order::where('payment_status', 'paid')->sum('total_cents');
-        $paidOrders = (int) Order::where('payment_status', 'paid')->count();
+        // Money figures are home-market (USD) only — other markets' orders are
+        // in their own currency and can't be added in.
+        $revenue = (int) Order::where('market', $home)->where('payment_status', 'paid')->sum('total_cents');
+        $paidOrders = (int) Order::where('market', $market)->where('payment_status', 'paid')->count();
 
         // Total discount handed out: the frozen regular price minus the price
         // actually billed, across every order line that carries a snapshot.
         $discount = (int) OrderItem::query()
             ->whereNotNull('compare_at_price_cents')
+            ->whereHas('order', fn ($q) => $q->where('market', $market))
             ->whereColumn('compare_at_price_cents', '>', 'unit_price_cents')
             ->sum(DB::raw('(compare_at_price_cents - unit_price_cents) * quantity'));
 
         // "Refunded" covers everything actually given back to a customer —
         // a Stripe refund and store credit (gift card) both count.
-        $refunded = (int) Order::sum('refunded_amount_cents') + (int) GiftCard::sum('initial_cents');
+        $refunded = (int) Order::where('market', $home)->sum('refunded_amount_cents') + ($market === Market::home() ? (int) GiftCard::sum('initial_cents') : 0);
 
         // Every order where money was ever collected, refunded or not — the
         // whole pie the Payments-vs-refunds chart splits into kept vs given back.
-        $grossCollected = (int) Order::whereIn('payment_status', ['paid', 'partially_refunded', 'refunded', 'refund_pending'])->sum('total_cents');
+        $grossCollected = (int) Order::where('market', $home)->whereIn('payment_status', ['paid', 'partially_refunded', 'refunded', 'refund_pending'])->sum('total_cents');
 
         return response()->json([
             'data' => [
@@ -56,9 +64,11 @@ class AdminController extends Controller
                 'orders_total' => (int) $ordersByStatus->sum(),
                 'awaiting_fulfilment' => (int) $ordersByStatus->only(['confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery'])->sum(),
                 'revenue_cents' => $revenue,
+                'market' => $market,
+                'currency' => Market::currency($market),
                 'avg_order_cents' => $paidOrders ? intdiv($revenue, $paidOrders) : 0,
                 'discount_cents' => $discount,
-                'cod_orders' => (int) Order::where('payment_method', 'cod')->count(),
+                'cod_orders' => (int) Order::where('market', $market)->where('payment_method', 'cod')->count(),
                 'refunded_cents' => $refunded,
                 'gross_collected_cents' => $grossCollected,
                 'customers' => User::where('is_admin', false)->count(),
@@ -229,6 +239,19 @@ class AdminController extends Controller
                 'at' => $r->created_at,
             ]);
 
+        // Sellers waiting on a NexTech label to be uploaded.
+        $labelRequests = LabelRequest::query()
+            ->where('status', 'requested')
+            ->with('shop:id,name')
+            ->oldest()
+            ->get()
+            ->map(fn (LabelRequest $r) => [
+                'id' => $r->id,
+                'order_id' => $r->order_id,
+                'shop_name' => $r->shop?->name,
+                'at' => $r->created_at,
+            ]);
+
         $riderPayoutRequests = RiderPayoutRequest::query()
             ->where('status', 'pending')
             ->with('rider:id,name')
@@ -270,6 +293,7 @@ class AdminController extends Controller
             'seller_applications' => $sellerApplications,
             'awaiting_packing' => $awaitingPacking,
             'payout_requests' => $payoutRequests,
+            'label_requests' => $labelRequests,
             'rider_payout_requests' => $riderPayoutRequests,
             'rider_applications' => $riderApplications,
             'refused_cod' => $refusedCod,
@@ -331,6 +355,7 @@ class AdminController extends Controller
         $labelFor = fn (Carbon $d): string => $bucket === 'month' ? $d->format('M Y') : $d->format('M j');
 
         $orders = Order::query()
+            ->where('market', Market::fromRequest($request))
             ->whereBetween('created_at', [$from->copy()->utc(), $to->copy()->utc()])
             ->get(['created_at', 'status', 'payment_status', 'payment_method', 'total_cents']);
 
@@ -424,7 +449,7 @@ class AdminController extends Controller
         $curTotals = ['orders' => 0, 'paid_orders' => 0, 'revenue_cents' => 0];
         $prevTotals = $curTotals;
 
-        Order::query()
+        Order::query()->where('market', Market::fromRequest($request))
             ->where('created_at', '>=', $prevStart->copy()->utc())
             ->where('created_at', '<', $now->copy()->utc())
             ->get(['created_at', 'payment_status', 'total_cents'])
@@ -468,7 +493,7 @@ class AdminController extends Controller
         $matrix = array_fill(0, 7, array_fill(0, 24, 0));
         $peak = 0;
 
-        Order::query()
+        Order::query()->where('market', Market::fromRequest($request))
             ->where('created_at', '>=', $since->copy()->utc())
             ->get(['created_at'])
             ->each(function (Order $order) use (&$matrix, &$peak, $tz): void {

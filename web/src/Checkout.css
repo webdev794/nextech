@@ -89,3 +89,8 @@
 .star-picker .star:disabled{cursor:default}
 .chat-rating{margin:12px 0}
 .chat-msg.staff.seller{background:#fff7ef;border-color:#fbd1ad}
+
+.order-seller-ship{display:flex;flex-direction:column;gap:3px;margin:8px 0;padding:8px 10px;border-radius:8px;background:#f5f7f9;font-size:12px}
+.order-seller-ship strong{font-size:12px}
+.order-seller-ship a{color:inherit;text-decoration:underline}
+.order-seller-ship .text-button{margin-left:8px}

@@ -32,8 +32,8 @@ class Order extends Model
     ];
 
     protected $fillable = [
-        'user_id', 'store_id', 'status', 'delivery_method', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
-        'subtotal_cents', 'tax_cents', 'delivery_fee_cents', 'handling_fee_cents',
+        'user_id', 'market', 'currency', 'tax_included_cents', 'store_id', 'status', 'delivery_method', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
+        'subtotal_cents', 'tax_cents', 'delivery_fee_cents', 'seller_shipping_cents', 'handling_fee_cents',
         'small_cart_fee_cents', 'gift_card_discount_cents', 'total_cents', 'delivery_address', 'delivery_instructions',
         'stripe_payment_intent_id', 'stripe_refund_id', 'refunded_amount_cents',
         'delivery_partner_id',
@@ -203,6 +203,29 @@ class Order extends Model
     }
 
     /** True when this order is fulfilled by the online-courier path rather than an own rider. */
+    /** Packages seller(s) shipped themselves for their items on this order. */
+    public function packages(): HasMany
+    {
+        return $this->hasMany(OrderPackage::class);
+    }
+
+    /** Per-seller shipping charged + delivery promise, for self/label-shipping sellers. */
+    public function labelRequests(): HasMany
+    {
+        return $this->hasMany(LabelRequest::class)->latest('id');
+    }
+
+    public function shopShipping(): HasMany
+    {
+        return $this->hasMany(OrderShopShipping::class);
+    }
+
+    /** Every line ships from a seller — NexTech has nothing to pack or deliver. */
+    public function isSellerShippedOnly(): bool
+    {
+        return $this->delivery_method === 'seller';
+    }
+
     public function usesOnlineCourier(): bool
     {
         return $this->delivery_method === 'online_courier';

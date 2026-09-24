@@ -464,3 +464,23 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-up-picker-list button{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;font:14px 'Okra',sans-serif;color:var(--ink,#20291f);text-align:left;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .admin-up-picker-list button:hover,.admin-up-picker-list button:focus{background:#e2efdc;outline:0}
 .admin-seller-charges{display:flex;flex-direction:column;gap:6px;margin:10px 0;padding:10px 12px;border:1px solid #f5c98b;border-radius:8px;background:#fffaf0}
+
+.admin-seller-ship{margin:8px 0;padding:10px 12px;border:1px solid #e1e4e8;border-radius:8px;background:#fafbfc}
+.admin-seller-ship p{margin:4px 0}
+.pill-seller{background:#fff3e8;color:#b35900}
+
+.admin-label-panel{border-left:4px solid #fb7701}
+.admin-label-card{margin:10px 0;padding:12px;border:1px solid #e1e4e8;border-radius:8px;background:#fff}
+.admin-label-card p{margin:3px 0}
+.admin-label-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin-top:10px;align-items:end}
+.admin-label-form label{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.admin-label-actions{display:flex;gap:10px;align-items:center}
+.admin-label-optional{grid-column:1/-1}
+.admin-label-optional summary{cursor:pointer;font-size:12px;margin-bottom:6px}
+.admin-label-optional label{margin-bottom:6px}
+.admin-file-link{cursor:pointer;display:inline}
+.admin-currency-switch{border-left:4px solid #1f7a3d}
+.admin-currency-switch .admin-filters{margin:8px 0 0}
+.admin-market-select{height:32px;padding:0 10px;border:1px solid rgba(255,255,255,.35);border-radius:6px;background:#1c2a1c;color:#fff;font:600 12px 'Okra',sans-serif;cursor:pointer}
+.admin-market-select option{color:#000;background:#fff}
+.admin-currency-note{margin:0 0 4px;padding:8px 12px;border-radius:8px;background:#eef7ee}

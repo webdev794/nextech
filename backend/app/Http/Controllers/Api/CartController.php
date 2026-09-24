@@ -57,6 +57,13 @@ class CartController extends Controller
             $state = Purchasable::resolve($product, $variant, $storeId);
             $this->ensurePurchasable($state);
 
+            // A cart is one market (country + currency) at a time.
+            if ($cart->items()->whereHas('product', fn ($q) => $q->where('market', '!=', $product->market))->exists()) {
+                throw ValidationException::withMessages([
+                    'product_id' => ['Your cart has items from another country\'s store — check out or clear it first.'],
+                ]);
+            }
+
             $existing = $cart->items()
                 ->where('product_id', $product->id)
                 ->where('product_variant_id', $variant?->id)

@@ -7,6 +7,8 @@ use App\Models\RiderLedgerEntry;
 use App\Models\RiderPayoutRequest;
 use App\Models\User;
 use App\Support\Geo;
+use App\Support\Market;
+use App\Support\Money;
 use App\Support\RiderAttendance;
 use App\Support\RiderLedger;
 use Illuminate\Support\Facades\DB;
@@ -17,10 +19,13 @@ use Illuminate\Validation\ValidationException;
 
 class AdminRiderController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $market = Market::fromRequest($request);
         $riders = User::query()
             ->where('is_rider', true)
+            // Riders of this country's stores (and ones not linked to a store yet).
+            ->where(fn ($q) => $q->whereHas('stores', fn ($s) => $s->where('country', $market))->orWhereDoesntHave('stores'))
             ->with('stores:id,name,city')
             ->withCount(['deliveries as active_deliveries' => fn ($query) => $query
                 ->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])])
@@ -238,12 +243,13 @@ class AdminRiderController extends Controller
             $owed = RiderLedger::owedCents($user);
             if ($data['amount_cents'] > $owed) {
                 $held = $user->codHoldingCents();
-                abort(422, 'This rider is owed $'.number_format($owed / 100, 2)
-                    .($held > 0 ? ' (earnings minus $'.number_format($held / 100, 2).' cash they still hold).' : '.'));
+                $cur = Market::currency(RiderLedger::marketFor($user));
+                abort(422, 'This rider is owed '.Money::format($owed, $cur)
+                    .($held > 0 ? ' (earnings minus '.Money::format($held, $cur).' cash they still hold).' : '.'));
             }
 
-            $max = RiderLedger::maxPayoutCents();
-            abort_if($max > 0 && $data['amount_cents'] > $max, 422, 'A single rider payout can be at most $'.number_format($max / 100, 2).'.');
+            $max = RiderLedger::maxPayoutCents(RiderLedger::marketFor($user));
+            abort_if($max > 0 && $data['amount_cents'] > $max, 422, 'A single rider payout can be at most '.Money::format($max, Market::currency(RiderLedger::marketFor($user))).'.');
 
             $entry = RiderLedger::recordPayout($user, $data['amount_cents'], $data['note'] ?? null, $request->user());
 
@@ -284,8 +290,9 @@ class AdminRiderController extends Controller
             'balance_cents' => RiderLedger::balanceCents($rider),
             'cash_holding_cents' => $rider->codHoldingCents(),
             'owed_cents' => RiderLedger::owedCents($rider),
-            'min_payout_cents' => RiderLedger::minPayoutCents(),
-            'max_payout_cents' => RiderLedger::maxPayoutCents(),
+            'min_payout_cents' => RiderLedger::minPayoutCents(RiderLedger::marketFor($rider)),
+            'max_payout_cents' => RiderLedger::maxPayoutCents(RiderLedger::marketFor($rider)),
+            'currency' => Market::currency(RiderLedger::marketFor($rider)),
             'payout_method' => $rider->rider_payout_method,
             'payout_details' => $rider->rider_payout_details,
             'pending_payout_request' => RiderPayoutRequest::where('user_id', $rider->id)->where('status', 'pending')->first(),

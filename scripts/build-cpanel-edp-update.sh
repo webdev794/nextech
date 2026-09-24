@@ -156,12 +156,19 @@ zip - your live config and imported data are untouched. index.php clears
 stale compiled caches and resets OPcache on first hit after upload, no
 Terminal needed for that part.
 
-New migrations since the last deploy (need to run once — see step 4):
-  seller pickup address + per-product fee estimator, seller<->admin
-  messaging + "request changes" flow, admin Pages menu-placement groups,
-  product status/approval workflow, product image gallery, seller payout
-  fields, and system-generated product/variant SKUs (ADM.../SLR... — SKU
-  is no longer typed by hand anywhere).
+This release: seller shipping (templates, tracking, packages), built-in
+shipping labels (PDF from admin templates), India market (INR, GST, TCS/TDS,
+Indian states/carriers), admin currency switch ($ / Rs), country field on
+stores and NexTech products.
+
+DATABASE: you're importing the local database, which already has every
+migration applied — _migrate.php is then only a safety check (it reports
+"Nothing to migrate"). If you DON'T import the DB, run it to add the new
+tables/columns.
+
+AFTER IMPORT: check Admin > Stores - the two stores are in India but saved
+as country US; edit each and set Country = India. Fill in the India
+grievance officer under Admin > Settings (currency switch = INR).
 
 DEPLOY
   1. Back up: cPanel > File Manager, download  public_html/$SUBPATH/  first.

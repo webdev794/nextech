@@ -9,6 +9,8 @@ use App\Models\SupportMessage;
 use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\SellerLedger;
+use App\Support\Market;
+use App\Support\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -23,8 +25,14 @@ class AdminSellerController extends Controller
             'status' => ['sometimes', Rule::in(['pending', 'needs_changes', 'approved', 'rejected', 'suspended'])],
         ]);
 
+        $market = Market::fromRequest($request);
+        $others = array_values(array_diff(array_keys(config('markets', [])), [Market::home()]));
         $sellers = Seller::query()
-            ->with(['user:id,name,email', 'shop:id,seller_id,name,slug,is_active'])
+            ->with(['user:id,name,email', 'shop:id,seller_id,name,slug,is_active,market'])
+            ->where(fn ($q) => $q->whereHas('shop', fn ($shop) => $shop->where('market', $market))
+                ->orWhere(fn ($q) => $q->doesntHave('shop')->where(fn ($c) => $market === Market::home()
+                    ? $c->whereNotIn('country', $others)->orWhereNull('country')
+                    : $c->where('country', $market))))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
@@ -46,10 +54,10 @@ class AdminSellerController extends Controller
      * index()) so that payload stays product-picker-shaped (id + name only)
      * while index() stays KYC-application-shaped.
      */
-    public function shops(): JsonResponse
+    public function shops(Request $request): JsonResponse
     {
         return response()->json([
-            'data' => Shop::query()->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+            'data' => Shop::query()->where('is_active', true)->where('market', Market::fromRequest($request))->orderBy('name')->get(['id', 'name']),
         ]);
     }
 
@@ -124,33 +132,34 @@ class AdminSellerController extends Controller
         ]);
 
         // Only earnings past their return window can be paid out.
+        $cur = Market::currency($shop->market);
         $balance = max(0, SellerLedger::availableCents($shop));
         if ($data['amount_cents'] > $balance) {
             return response()->json([
-                'message' => "Payout can't exceed the seller's available balance of $".number_format($balance / 100, 2).' — the rest is still inside the return window.',
+                'message' => "Payout can't exceed the seller's available balance of ".Money::format($balance, $cur).' — the rest is still inside the return window.',
             ], 422);
         }
 
-        $minPayout = SellerLedger::minPayoutCents();
+        $minPayout = SellerLedger::minPayoutCents($shop->market);
         if ($balance < $minPayout) {
             return response()->json([
-                'message' => 'Balance must reach $'.number_format($minPayout / 100, 2)." before a payout can be recorded (currently $".number_format($balance / 100, 2).').',
+                'message' => 'Balance must reach '.Money::format($minPayout, $cur).' before a payout can be recorded (currently '.Money::format($balance, $cur).').',
             ], 422);
         }
 
-        $maxPayout = SellerLedger::maxPayoutCents();
+        $maxPayout = SellerLedger::maxPayoutCents($shop->market);
         if ($maxPayout > 0 && $data['amount_cents'] > $maxPayout) {
             return response()->json([
-                'message' => 'A single payout can be at most $'.number_format($maxPayout / 100, 2).' — pay the rest in another transfer.',
+                'message' => 'A single payout can be at most '.Money::format($maxPayout, $cur).' — pay the rest in another transfer.',
             ], 422);
         }
 
         // One payout at a time platform-wide, so two admins paying different
         // sellers can't both squeeze under the daily cap at the same moment.
-        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request): void {
-            $remaining = SellerLedger::dailyPayoutRemainingCents();
+        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request, $cur): void {
+            $remaining = SellerLedger::dailyPayoutRemainingCents($shop->market);
             if ($remaining !== null && $data['amount_cents'] > $remaining) {
-                abort(422, "That would go over today's payout cap across all sellers — $".number_format($remaining / 100, 2).' left today.');
+                abort(422, "That would go over today's payout cap across all sellers — ".Money::format($remaining, $cur).' left today.');
             }
 
             DB::transaction(function () use ($shop, $data, $request): void {
@@ -343,9 +352,10 @@ class AdminSellerController extends Controller
             $row['ledger_entries'] = $shop
                 ? $shop->ledgerEntries()->latest()->limit(20)->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at'])
                 : [];
-            $row['min_payout_cents'] = SellerLedger::minPayoutCents();
-            $row['max_payout_cents'] = SellerLedger::maxPayoutCents();
-            $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents();
+            $row['min_payout_cents'] = SellerLedger::minPayoutCents($shop?->market);
+            $row['max_payout_cents'] = SellerLedger::maxPayoutCents($shop?->market);
+            $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents($shop?->market);
+            $row['currency'] = Market::currency($shop?->market);
             $row['pending_payout_request'] = $shop?->payoutRequests()->where('status', 'pending')->first();
         }
 

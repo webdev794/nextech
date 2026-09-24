@@ -22,24 +22,49 @@ class RiderLedger
 {
     private const KM_PER_MILE = 1.609344;
 
-    public static function baseCents(): int
+    /** A rider pay setting in a market's currency (US: the original keys; others: "rider_pay_<CODE>"). */
+    public static function marketPay(string $key, ?string $market): int
     {
-        return (int) Setting::get('rider_base_pay_cents', config('rider_pay.base_cents'));
+        $market = $market === null ? Market::home() : strtoupper($market);
+        $defaults = Market::profile($market)['rider_pay'] ?? null;
+        if (is_array($defaults)) {
+            $override = Setting::get('rider_pay_'.$market, []);
+
+            return (int) ((is_array($override) ? $override : [])[$key] ?? $defaults[$key] ?? 0);
+        }
+
+        return (int) match ($key) {
+            'base_cents' => Setting::get('rider_base_pay_cents', config('rider_pay.base_cents')),
+            'per_mile_cents' => Setting::get('rider_per_mile_cents', config('rider_pay.per_mile_cents')),
+            'min_payout_cents' => Setting::get('rider_min_payout_cents', config('rider_pay.min_payout_cents')),
+            'max_payout_cents' => Setting::get('rider_max_payout_cents', config('rider_pay.max_payout_cents')),
+        };
     }
 
-    public static function perMileCents(): int
+    /** The market a rider works in: their (first) store's country. */
+    public static function marketFor(User $rider): string
     {
-        return (int) Setting::get('rider_per_mile_cents', config('rider_pay.per_mile_cents'));
+        return Market::forCountry($rider->stores()->value('country'));
     }
 
-    public static function minPayoutCents(): int
+    public static function baseCents(?string $market = null): int
     {
-        return (int) Setting::get('rider_min_payout_cents', config('rider_pay.min_payout_cents'));
+        return self::marketPay('base_cents', $market);
     }
 
-    public static function maxPayoutCents(): int
+    public static function perMileCents(?string $market = null): int
     {
-        return (int) Setting::get('rider_max_payout_cents', config('rider_pay.max_payout_cents'));
+        return self::marketPay('per_mile_cents', $market);
+    }
+
+    public static function minPayoutCents(?string $market = null): int
+    {
+        return self::marketPay('min_payout_cents', $market);
+    }
+
+    public static function maxPayoutCents(?string $market = null): int
+    {
+        return self::marketPay('max_payout_cents', $market);
     }
 
     public static function balanceCents(User $rider): int
@@ -56,7 +81,7 @@ class RiderLedger
     /** What a rider can request right now: what they're owed, capped at one payout's max. */
     public static function requestableCents(User $rider): int
     {
-        $max = self::maxPayoutCents();
+        $max = self::maxPayoutCents(self::marketFor($rider));
 
         return $max > 0 ? min(self::owedCents($rider), $max) : self::owedCents($rider);
     }
@@ -98,7 +123,7 @@ class RiderLedger
             }
 
             $miles = self::deliveryMiles($order);
-            $amount = self::baseCents() + (int) round(($miles ?? 0) * self::perMileCents());
+            $amount = self::baseCents($order->market) + (int) round(($miles ?? 0) * self::perMileCents($order->market));
 
             RiderLedgerEntry::create([
                 'user_id' => $order->delivery_partner_id,

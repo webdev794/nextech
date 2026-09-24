@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\AdminCategoryController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AdminGiftCardController;
 use App\Http\Controllers\Api\AdminHomeTileController;
+use App\Http\Controllers\Api\AdminLabelRequestController;
+use App\Http\Controllers\Api\AdminLabelTemplateController;
 use App\Http\Controllers\Api\AdminOrderController;
 use App\Http\Controllers\Api\AdminPageController;
 use App\Http\Controllers\Api\AdminProductController;
@@ -36,6 +38,9 @@ use App\Http\Controllers\Api\AdminRiderApplicationController;
 use App\Http\Controllers\Api\RiderApplicationController;
 use App\Http\Controllers\Api\RiderEarningsController;
 use App\Http\Controllers\Api\SellerCustomerChatController;
+use App\Http\Controllers\Api\SellerFulfillmentController;
+use App\Http\Controllers\Api\SellerShippingController;
+use App\Http\Controllers\Api\ShippingQuoteController;
 use App\Http\Controllers\Api\SellerProductController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
@@ -68,6 +73,8 @@ Route::get('/deals', [CatalogController::class, 'deals']);
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product:slug}', [CatalogController::class, 'product']);
 Route::get('/shops/{slug}', [CatalogController::class, 'shop']);
+// Checkout estimate for items shipped directly by sellers (fees + delivery dates).
+Route::post('/shipping/quote', [ShippingQuoteController::class, 'quote']);
 
 Route::get('/pages', [PageController::class, 'index']);
 Route::get('/pages/{slug}', [PageController::class, 'show']);
@@ -107,6 +114,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/support/threads/{thread}/rating', [SupportThreadController::class, 'rate']);
     Route::post('/support/threads/{thread}/end', [SupportThreadController::class, 'end']);
     Route::post('/support/attachments', [MediaController::class, 'storeSupportAttachment']);
+    Route::post('/orders/{order}/packages/{package}/received', [ShippingQuoteController::class, 'received']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
@@ -164,6 +172,18 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/support/threads/{thread}/messages', [AdminSupportController::class, 'message']);
     Route::patch('/support/threads/{thread}', [AdminSupportController::class, 'update']);
     Route::post('/support/threads/{thread}/seller', [AdminSupportController::class, 'addSeller']);
+    Route::patch('/packages/{package}', [AdminOrderController::class, 'updatePackage']);
+    Route::get('/packages/{package}/label', [AdminLabelRequestController::class, 'download']);
+    Route::get('/label-requests/{labelRequest}/label', [AdminLabelRequestController::class, 'downloadRequest']);
+    Route::get('/label-requests', [AdminLabelRequestController::class, 'index']);
+    Route::get('/label-templates', [AdminLabelTemplateController::class, 'index']);
+    Route::post('/label-templates', [AdminLabelTemplateController::class, 'store']);
+    Route::put('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'update']);
+    Route::delete('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'destroy']);
+    Route::get('/label-templates/{labelTemplate}/preview', [AdminLabelTemplateController::class, 'preview']);
+    Route::post('/label-requests/{labelRequest}/fulfil', [AdminLabelRequestController::class, 'fulfil']);
+    Route::post('/label-requests/{labelRequest}/cancel', [AdminLabelRequestController::class, 'cancel']);
+    Route::post('/label-requests/{labelRequest}/replace', [AdminLabelRequestController::class, 'replace']);
 
     Route::get('/products', [AdminProductController::class, 'index']);
     Route::post('/products', [AdminProductController::class, 'store']);
@@ -234,6 +254,28 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
     Route::get('/seller/stats', [SellerOrderController::class, 'stats']);
     Route::get('/seller/customer-chats', [SellerCustomerChatController::class, 'index']);
+    // Shipping settings (fulfillment mode, addresses, templates, working days).
+    Route::get('/seller/shipping', [SellerShippingController::class, 'show']);
+    Route::patch('/seller/shipping', [SellerShippingController::class, 'update']);
+    Route::post('/seller/shipping/addresses', [SellerShippingController::class, 'storeAddress']);
+    Route::patch('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'updateAddress']);
+    Route::delete('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'destroyAddress']);
+    Route::post('/seller/shipping/templates', [SellerShippingController::class, 'storeTemplate']);
+    Route::patch('/seller/shipping/templates/{template}', [SellerShippingController::class, 'updateTemplate']);
+    Route::delete('/seller/shipping/templates/{template}', [SellerShippingController::class, 'destroyTemplate']);
+    // Orders the seller ships themselves.
+    Route::get('/seller/fulfillment', [SellerFulfillmentController::class, 'index']);
+    Route::post('/seller/fulfillment/orders/{order}/ship', [SellerFulfillmentController::class, 'ship']);
+    Route::post('/seller/fulfillment/orders/{order}/label', [SellerFulfillmentController::class, 'buyLabel']);
+    Route::post('/seller/fulfillment/orders/{order}/label-request', [SellerFulfillmentController::class, 'requestLabel']);
+    Route::post('/seller/fulfillment/label-requests/{labelRequest}/cancel', [SellerFulfillmentController::class, 'cancelLabelRequest']);
+    Route::post('/seller/fulfillment/label-requests/{labelRequest}/template', [SellerFulfillmentController::class, 'changeLabelTemplate']);
+    Route::get('/seller/fulfillment/packages/{package}/label', [SellerFulfillmentController::class, 'downloadLabel']);
+    Route::get('/seller/fulfillment/label-requests/{labelRequest}/label', [SellerFulfillmentController::class, 'downloadRequestLabel']);
+    Route::patch('/seller/fulfillment/packages/{package}', [SellerFulfillmentController::class, 'updatePackage']);
+    Route::post('/seller/fulfillment/packages/bulk', [SellerFulfillmentController::class, 'bulkUpdate']);
+    Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
+    Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
     Route::post('/seller/customer-chats/{thread}/messages', [SellerCustomerChatController::class, 'message']);
 });

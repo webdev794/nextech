@@ -5,6 +5,7 @@ import { renderMarkdown } from './markdown'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { PageSection } from './PageSections'
+import { flag, setStoreCurrency, storeMoney } from './money'
 import './StorefrontBase.css'
 import './Storefront.css'
 import './Checkout.css'
@@ -65,7 +66,8 @@ const categoriesFallback = [
   { id: 3, name: 'Audio & Headphones', image_url: '/img/cat/audio-headphones.jpg' },
 ]
 
-function price(cents) { return `$${(cents / 100).toFixed(2)}` }
+// Amounts in the shopper's selected market's currency (or an order's own).
+function price(cents, currency) { return storeMoney(cents, currency) }
 
 // How to title a chosen option. If the variant label already carries the
 // product identity ("Large Spinach") show it alone; if it's just an attribute
@@ -502,8 +504,23 @@ export default function Storefront() {
   const [paymentMethod, setPaymentMethod] = useState('card')
   const [codEnabled, setCodEnabled] = useState(false)
   const [giftCard, setGiftCard] = useState({ code: '', pin: '', checked: null })
+  // Market = the country store being browsed (US / India …): its products,
+  // currency, fees and address format. Empty = the platform's home market.
+  // First visit: guess from the device time zone (India → India store); after
+  // that the delivery location decides, and the header picker overrides.
+  const [market, setMarket] = useState(() => {
+    try {
+      const saved = localStorage.getItem('nextech_market')
+      if (saved) return saved
+    } catch { /* private mode */ }
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? ''
+    return /^Asia\/(Kolkata|Calcutta)$/.test(tz) ? 'IN' : ''
+  })
+  const [markets, setMarkets] = useState([])
+  const [grievanceOfficer, setGrievanceOfficer] = useState(null)
   const [fees, setFees] = useState({ tax_rate_bps: 0, delivery_mode: 'fixed', delivery_fee_cents: 0, delivery_near_fee_cents: 0, delivery_far_fee_cents: 0, free_delivery_threshold_cents: 0, handling_fee_cents: 0, small_cart_fee_cents: 0, small_cart_min_cents: 0 })
   const [serviceable, setServiceable] = useState(null)
+  const [sellerQuote, setSellerQuote] = useState(null) // shipping for items sellers ship themselves
   const [order, setOrder] = useState(null)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -602,11 +619,11 @@ export default function Storefront() {
   }, [ordersOpen])
 
   useEffect(() => {
-    fetch(`${API_URL}/config`, { headers: { Accept: 'application/json' } })
+    fetch(`${API_URL}/config`, { headers: { Accept: 'application/json', ...(market ? { 'X-Market': market } : {}) } })
       .then(responseJson)
-      .then((data) => { setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? null); setFooter(data.data?.footer ?? null); if (data.data?.stripe_publishable_key) setStripeKey(data.data.stripe_publishable_key); if (data.data) setFees(data.data) })
+      .then((data) => { setMarkets(data.data?.markets ?? []); setGrievanceOfficer(data.data?.grievance_officer ?? null); setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? null); setFooter(data.data?.footer ?? null); if (data.data?.stripe_publishable_key) setStripeKey(data.data.stripe_publishable_key); if (data.data) setFees(data.data) })
       .catch(() => { setCodEnabled(false); setStores([]); setBanners([]); setHomeTiles([]) })
-  }, [])
+  }, [market])
 
   // Apply admin-configured branding: theme palette, accent colours, tab title
   // and favicon, all driven from GET /api/config.
@@ -638,6 +655,9 @@ export default function Storefront() {
   }, [branding])
 
   useEffect(() => { locationRef.current = location })
+  // The map's pin handler outlives renders — always call the current applyLocation.
+  const applyLocationRef = useRef(null)
+  useEffect(() => { applyLocationRef.current = applyLocation })
 
   // Prefill the checkout address text from the chosen location when the modal opens.
   useEffect(() => {
@@ -663,12 +683,12 @@ export default function Storefront() {
     const lng = location?.lon
     if (lat == null || lng == null) { setServiceable(null); return }
     let cancelled = false
-    fetch(`${API_URL}/delivery-eta?lat=${lat}&lng=${lng}`, { headers: { Accept: 'application/json' } })
+    fetch(`${API_URL}/delivery-eta?lat=${lat}&lng=${lng}${market ? `&market=${market}` : ''}`, { headers: { Accept: 'application/json' } })
       .then(responseJson)
       .then((data) => { if (!cancelled) setServiceable(data.data ?? null) })
       .catch(() => { if (!cancelled) setServiceable(null) })
     return () => { cancelled = true }
-  }, [location?.lat, location?.lon])
+  }, [location?.lat, location?.lon, market])
 
   useEffect(() => {
     const token = localStorage.getItem('gdp_token')
@@ -682,9 +702,11 @@ export default function Storefront() {
   // Pass the chosen location so the API can scope the catalog to the store that
   // serves this customer — a product that the nearest store doesn't stock is
   // left out. No location (or out of area) returns the full catalog.
-  const catalogQuery = location?.lat != null && location?.lon != null
-    ? `?lat=${location.lat}&lng=${location.lon}`
-    : ''
+  const catalogParams = new URLSearchParams({
+    ...(market ? { market } : {}),
+    ...(location?.lat != null && location?.lon != null ? { lat: location.lat, lng: location.lon } : {}),
+  }).toString()
+  const catalogQuery = catalogParams ? `?${catalogParams}` : ''
 
   // Categories are a small payload and feed the homepage tiles, so fetch them
   // on their own — don't make the homepage wait on the full product list.
@@ -1084,31 +1106,69 @@ export default function Storefront() {
   const cartRegularTotal = cartView.reduce((sum, line) => sum + line.lineReg, 0)
   const cartQty = useMemo(() => Object.fromEntries(cart.map((item) => [item.key, item.quantity])), [cart])
 
+  // Items from sellers who ship themselves are charged the seller's own
+  // shipping (template fee + delivery dates) instead of NexTech's delivery fee.
+  const shipState = checkoutForm.state || location?.state || defaultAddress?.state || ''
+  const quoteKey = JSON.stringify([market, shipState, cart.map((item) => [item.id, item.quantity, item.price_cents])])
+  useEffect(() => {
+    if (!cart.length) { Promise.resolve().then(() => setSellerQuote(null)); return undefined }
+    let cancelled = false
+    fetch(`${API_URL}/shipping/quote`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Market': activeMarket }, body: JSON.stringify({ state: shipState || null, lines: cart.map((item) => ({ product_id: item.id, quantity: item.quantity, price_cents: item.price_cents })) }) })
+      .then(responseJson)
+      .then((data) => { if (!cancelled) setSellerQuote(data.data ?? null) })
+      .catch(() => { if (!cancelled) setSellerQuote(null) })
+    return () => { cancelled = true }
+  }, [quoteKey, activeMarket]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sellerShippedIds = sellerQuote?.seller_shipped_product_ids ?? []
+  const hasSellerShipped = cart.some((item) => sellerShippedIds.includes(item.id))
+
   // Client-side estimate of the fee breakdown; the server total is authoritative.
   const est = useMemo(() => {
     const sub = cartTotal
+    const nextechSub = cart.filter((item) => !sellerShippedIds.includes(item.id)).reduce((sum, item) => sum + item.price_cents * item.quantity, 0)
+    const sellerShipping = sellerQuote?.total_cents ?? 0
     const tax = Math.round((sub * fees.tax_rate_bps) / 10000)
     // Distance mode: the fee for the current pin comes from /api/delivery-eta,
     // which re-fires as the pin moves. Otherwise the flat fee.
     const baseDelivery = fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents != null
       ? serviceable.delivery_fee_cents
       : fees.delivery_fee_cents
-    const delivery = sub >= fees.free_delivery_threshold_cents ? 0 : baseDelivery
+    const delivery = nextechSub === 0 || nextechSub >= fees.free_delivery_threshold_cents ? 0 : baseDelivery
     const handling = sub > 0 ? fees.handling_fee_cents : 0
     const smallCart = sub > 0 && sub < fees.small_cart_min_cents ? fees.small_cart_fee_cents : 0
     return {
-      sub, tax, delivery, handling, smallCart,
-      total: sub + tax + delivery + handling + smallCart,
-      toFreeDelivery: delivery > 0 ? fees.free_delivery_threshold_cents - sub : 0,
+      sub, tax, delivery, handling, smallCart, sellerShipping,
+      total: sub + tax + delivery + sellerShipping + handling + smallCart,
+      toFreeDelivery: delivery > 0 ? fees.free_delivery_threshold_cents - nextechSub : 0,
       toNoSmallCart: smallCart > 0 ? fees.small_cart_min_cents - sub : 0,
     }
-  }, [cartTotal, fees, serviceable])
+  }, [cartTotal, fees, serviceable, cart, sellerQuote]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const activeMarket = (market && (markets.length === 0 || markets.some((m) => m.code === market)) ? market : null) || fees.market || 'US'
+  const marketProfile = markets.find((m) => m.code === activeMarket) ?? null
+  const taxInclusive = marketProfile?.tax_mode === 'inclusive'
+  const marketName = (code) => markets.find((m) => m.code === code)?.name ?? code
+  setStoreCurrency(marketProfile?.currency ?? fees.currency ?? 'usd')
+
+  function switchMarket(code, { fromLocation = false } = {}) {
+    if (code === activeMarket || !markets.some((m) => m.code === code)) return
+    const why = fromLocation ? `Your delivery location is in ${marketName(code)}. Switch to the ${marketName(code)} store? ` : `Switching to ${marketName(code)} `
+    if (cart.length && !window.confirm(`${why}${fromLocation ? 'Your cart will be emptied' : 'empties your cart'} — items can't ship between countries.${fromLocation ? '' : ' Continue?'}`)) return
+    setCart([])
+    setMarket(code)
+    try { localStorage.setItem('nextech_market', code) } catch { /* private mode */ }
+  }
 
   function lineKey(productId, variantId) {
     return `${productId}:${variantId ?? ''}`
   }
 
   function add(product, variant) {
+    if (product.market && product.market !== activeMarket) {
+      window.alert(`This item is sold in the ${marketName(product.market)} store — switch country at the top of the page to buy it.`)
+      return
+    }
     const key = lineKey(product.id, variant?.id)
     setCart((current) => {
       const found = current.find((item) => item.key === key)
@@ -1340,6 +1400,8 @@ export default function Storefront() {
     // Pass the location so the cart's stock check reads the serving store's shelf.
     const here = location?.lat != null && location?.lon != null ? { lat: Number(location.lat), lng: Number(location.lon) } : {}
     try {
+      // The local cart is the source of truth — clear any leftovers server-side first.
+      await fetch(`${API_URL}/cart`, { method: 'DELETE', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
       for (const item of cart) {
         await fetch(`${API_URL}/cart/items`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ product_id: item.id, product_variant_id: item.variantId ?? null, quantity: item.quantity, ...here }) })
       }
@@ -1374,12 +1436,12 @@ export default function Storefront() {
         if (!addressResponse.ok) throw new Error(addressData.message ?? 'Address could not be saved.')
         checkoutBody = { address_id: addressData.data.id }
       }
-      const method = codEnabled ? paymentMethod : 'card'
+      const method = codEnabled && !hasSellerShipped ? paymentMethod : 'card'
       const trimmedPhone = phone.trim()
       const gc = giftCard.code.trim() && giftCard.pin.trim()
         ? { gift_card_code: giftCard.code.trim(), gift_card_pin: giftCard.pin.trim() }
         : {}
-      const response = await fetch(`${API_URL}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ ...checkoutBody, payment_method: method, delivery_instructions: deliveryNote.trim() || null, phone: trimmedPhone, ...gc }) })
+      const response = await fetch(`${API_URL}/checkout`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}`, 'X-Market': activeMarket }, body: JSON.stringify({ ...checkoutBody, payment_method: method, delivery_instructions: deliveryNote.trim() || null, phone: trimmedPhone, ...gc }) })
       const data = await responseJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Checkout could not be completed.')
       if (trimmedPhone && currentUser && currentUser.phone !== trimmedPhone) {
@@ -1424,6 +1486,18 @@ export default function Storefront() {
       }
       setOrder({ ...entry, clientSecret: data.data.client_secret })
       setOrdersOpen(false)
+    } catch (error) { setOrdersMessage(error.message) }
+  }
+
+  // A seller-shipped package arrived — the customer confirms it (the seller or
+  // NexTech can too); the order completes once every package is delivered.
+  async function confirmPackageReceived(order, pkg) {
+    if (!window.confirm('Confirm this package has arrived?')) return
+    try {
+      const response = await authPost(`/orders/${order.id}/packages/${pkg.id}/received`, {})
+      if (!response.ok) throw new Error((await responseJson(response)).message ?? 'Could not confirm.')
+      const data = await responseJson(await authGet('/orders'))
+      setOrders(data.data ?? [])
     } catch (error) { setOrdersMessage(error.message) }
   }
 
@@ -1703,6 +1777,8 @@ export default function Storefront() {
 
   function applyLocation(address, { close = true } = {}) {
     setLocation(address)
+    // The location's country picks the country store (the header picker can still override).
+    if (address?.country) switchMarket(address.country, { fromLocation: true })
     localStorage.setItem('gdp_location', JSON.stringify(address))
     // Seed the checkout address text. line1 falls back to the display name so it
     // is never blank; city/state/postcode are best-effort now.
@@ -1830,7 +1906,7 @@ export default function Storefront() {
       const pick = (latlng) => {
         marker.setLatLng(latlng)
         setLocationMsg('')
-        reverseGeocode(latlng.lat, latlng.lng).then((address) => applyLocation(address, { close: false }))
+        reverseGeocode(latlng.lat, latlng.lng).then((address) => applyLocationRef.current?.(address, { close: false }))
       }
       marker.on('dragend', () => pick(marker.getLatLng()))
       map.on('click', (event) => pick(event.latlng))
@@ -2057,6 +2133,12 @@ export default function Storefront() {
           <button type="button" className="searchbar-btn" aria-label="Search" onClick={scrollToProductGrid}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></button>
         </label>
         <div className="topbar-actions">
+          {markets.length > 1 && <label className="market-picker" title="Shopping in">
+            <span aria-hidden>{flag(activeMarket)}</span>
+            <select aria-label="Country" value={activeMarket} onChange={(event) => switchMarket(event.target.value)}>
+              {markets.map((m) => <option key={m.code} value={m.code}>{m.name} · {m.currency.toUpperCase()}</option>)}
+            </select>
+          </label>}
           {currentUser ? <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={menuLeave}>
             <button type="button" className="link-btn account-trigger" aria-haspopup="true">
               <span className="account-avatar" aria-hidden>{(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase()}</span>
@@ -2134,6 +2216,7 @@ export default function Storefront() {
                       <h1>{shopInfo.name}</h1>
                       <p>{[shopInfo.category, `${shopInfo.products_count} product${shopInfo.products_count === 1 ? '' : 's'}`, shopInfo.since ? `on NexTech since ${new Date(shopInfo.since).toLocaleDateString([], { month: 'short', year: 'numeric' })}` : null].filter(Boolean).join(' · ')}</p>
                       {shopInfo.description && <p className="shop-hero-desc">{shopInfo.description}</p>}
+                      {shopInfo.market && shopInfo.market !== activeMarket && <p className="shop-hero-market">This shop sells in {marketName(shopInfo.market)}. <button type="button" onClick={() => switchMarket(shopInfo.market)}>Shop in {marketName(shopInfo.market)}</button></p>}
                     </div>
                     <button type="button" className="shop-hero-share" onClick={copyShopLink}>{shopLinkCopied ? 'Link copied' : 'Share shop'}</button>
                   </div>
@@ -2239,6 +2322,8 @@ export default function Storefront() {
                 <dl>
                   <div><dt>Category</dt><dd>{product.category?.name ?? 'Uncategorized'}</dd></div>
                   {product.sku && <div><dt>SKU</dt><dd>{product.sku}</dd></div>}
+                  {product.country_of_origin && <div><dt>Country of origin</dt><dd>{product.country_of_origin}</dd></div>}
+                  {product.manufacturer_info && <div><dt>Manufacturer / importer</dt><dd>{product.manufacturer_info}</dd></div>}
                   <div><dt>Availability</dt><dd>{stock === 0 ? 'Out of stock' : 'In stock'}</dd></div>
                 </dl>
               </section>
@@ -2261,7 +2346,7 @@ export default function Storefront() {
                   {product.units_sold > 0 && product.rating_count > 0 && <span className="pcard-rating-sep">|</span>}
                   {product.rating_count > 0 && <span className="pcard-rating-single">{starIcons(Number(product.rating_avg), `pdpstar-${product.id}`)}<b>{Number(product.rating_avg).toFixed(1)}</b> ({product.rating_count})</span>}
                 </p>}
-                <div className="pm-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><s>{price(compareAt)}</s></> : <strong>{price(unitPrice)}</strong>}</div>
+                <div className="pm-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong>{taxInclusive ? <span className="pdp-mrp">MRP <s>{price(compareAt)}</s></span> : <s>{price(compareAt)}</s>}</> : <strong>{price(unitPrice)}</strong>}</div>{taxInclusive && <p className="pdp-tax-note">Inclusive of all taxes</p>}
                 {hasVariants && <div className="pdp-swatches" role="radiogroup" aria-label="Choose an option">{options.map((o) => <button type="button" key={o.id === '' ? 'base' : o.id} className={String(chosen?.id ?? '') === String(o.id) ? 'pdp-swatch active' : 'pdp-swatch'} onClick={() => pickVariant(o)} title={`${o.label} — ${price(o.price_cents)}`}>
                   <span className="pdp-swatch-img">{(o.image_url || product.image_url) && <img src={mediaUrl(o.image_url || product.image_url)} alt="" />}</span>
                   <span className="pdp-swatch-label">{o.label}</span>
@@ -2360,7 +2445,7 @@ export default function Storefront() {
       </>}
     </div></div>}
     {cartCount > 0 && <aside className={`cart-tray${trayDragging ? ' dragging' : ''}`} aria-live="polite" style={{ transform: `translateX(-50%) translateY(${trayLift}px)` }} onPointerDown={trayPointerDown} onPointerMove={trayPointerMove} onPointerUp={trayPointerUp} onPointerCancel={trayPointerUp}><div><strong>{cartCount} {cartCount === 1 ? 'item' : 'items'} in your cart</strong><span>{price(cartTotal)} subtotal</span></div><button type="button" onClick={() => setCartOpen(true)}>View cart <span>&rarr;</span></button></aside>}
-    {cartOpen && <div className="overlay" role="presentation" onClick={() => setCartOpen(false)}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><p className="eyebrow">Ready when you are</p><h2 id="cart-title">Your cart</h2></div><button className="close-button" type="button" onClick={() => setCartOpen(false)} aria-label="Close cart">x</button></div>{cart.length ? <><div className="drawer-items">{cartView.map((item) => <div className="drawer-item" key={item.key}><div className="mini-visual" aria-hidden>{imgPlaceholder()}{item.image_url && <img src={mediaUrl(item.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div className="drawer-item-copy"><strong>{variantTitle(item.name, item.variantLabel)}</strong><span>{item.onSale ? <><strong className="on-sale">{price(item.unit)}</strong> <s>{price(item.reg)}</s></> : price(item.unit)}{item.quantity > 1 && <> &middot; {item.quantity} pcs = {item.onSale ? <><strong className="on-sale">{price(item.unit * item.quantity)}</strong> <s>{price(item.lineReg)}</s></> : price(item.unit * item.quantity)}</>}</span></div><div className="quantity"><button type="button" onClick={() => updateQuantity(item.key, -1)}>-</button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)}>+</button></div></div>)}</div><div className="drawer-summary"><div><span>Subtotal</span><span>{cartRegularTotal > est.sub ? <><s className="on-sale">{price(cartRegularTotal)}</s> {price(est.sub)}</> : price(est.sub)}</span></div><div><span>Delivery</span><span>{est.delivery === 0 ? 'FREE' : price(est.delivery)}</span></div><div><span>Handling</span><span>{price(est.handling)}</span></div>{est.smallCart > 0 && <div><span>Small cart fee</span><span>{price(est.smallCart)}</span></div>}<div><span>Tax</span><span>{price(est.tax)}</span></div><div className="drawer-summary-total"><strong>Estimated total</strong><strong>{price(est.total)}</strong></div></div>{fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents == null && <p className="drawer-nudge">Delivery fee is based on distance — set your location for the exact amount.</p>}{est.toFreeDelivery > 0 && <p className="drawer-nudge">Add {price(est.toFreeDelivery)} more for free delivery.</p>}{est.toNoSmallCart > 0 && <p className="drawer-nudge">Add {price(est.toNoSmallCart)} more to drop the {price(est.smallCart)} small-cart fee.</p>}<button className="checkout-button" type="button" onClick={() => { setCartOpen(false); setCheckoutOpen(true); setCheckoutStep('address'); setCheckoutMessage('') }}>Continue to checkout <span>&rarr;</span></button></> : <div className="empty-cart"><div className="empty-cart-mark">+</div><h3>Your cart is empty</h3><p>Find something good in the essentials below.</p><button type="button" onClick={() => setCartOpen(false)}>Keep shopping</button></div>}</aside></div>}
+    {cartOpen && <div className="overlay" role="presentation" onClick={() => setCartOpen(false)}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><p className="eyebrow">Ready when you are</p><h2 id="cart-title">Your cart</h2></div><button className="close-button" type="button" onClick={() => setCartOpen(false)} aria-label="Close cart">x</button></div>{cart.length ? <><div className="drawer-items">{cartView.map((item) => <div className="drawer-item" key={item.key}><div className="mini-visual" aria-hidden>{imgPlaceholder()}{item.image_url && <img src={mediaUrl(item.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div className="drawer-item-copy"><strong>{variantTitle(item.name, item.variantLabel)}</strong><span>{item.onSale ? <><strong className="on-sale">{price(item.unit)}</strong> <s>{price(item.reg)}</s></> : price(item.unit)}{item.quantity > 1 && <> &middot; {item.quantity} pcs = {item.onSale ? <><strong className="on-sale">{price(item.unit * item.quantity)}</strong> <s>{price(item.lineReg)}</s></> : price(item.unit * item.quantity)}</>}</span></div><div className="quantity"><button type="button" onClick={() => updateQuantity(item.key, -1)}>-</button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)}>+</button></div></div>)}</div><div className="drawer-summary"><div><span>Subtotal</span><span>{cartRegularTotal > est.sub ? <><s className="on-sale">{price(cartRegularTotal)}</s> {price(est.sub)}</> : price(est.sub)}</span></div><div><span>Delivery</span><span>{est.delivery === 0 ? 'FREE' : price(est.delivery)}</span></div>{hasSellerShipped && <div><span>Shipping from sellers</span><span>{est.sellerShipping === 0 ? 'FREE' : price(est.sellerShipping)}</span></div>}<div><span>Handling</span><span>{price(est.handling)}</span></div>{est.smallCart > 0 && <div><span>Small cart fee</span><span>{price(est.smallCart)}</span></div>}{taxInclusive ? <div><span>{marketProfile?.tax_label ?? 'Tax'}</span><span>Included in prices</span></div> : <div><span>Tax</span><span>{price(est.tax)}</span></div>}<div className="drawer-summary-total"><strong>Estimated total</strong><strong>{price(est.total)}</strong></div></div>{fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents == null && <p className="drawer-nudge">Delivery fee is based on distance — set your location for the exact amount.</p>}{est.toFreeDelivery > 0 && <p className="drawer-nudge">Add {price(est.toFreeDelivery)} more for free delivery.</p>}{est.toNoSmallCart > 0 && <p className="drawer-nudge">Add {price(est.toNoSmallCart)} more to drop the {price(est.smallCart)} small-cart fee.</p>}{hasSellerShipped && (sellerQuote?.shops ?? []).map((q) => <p key={q.shop_id} className="drawer-nudge">Ships from {q.shop_name} · {q.free_shipping ? 'free shipping' : price(q.fee_cents)} · arrives {new Date(q.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–{new Date(q.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}{sellerQuote.state_known ? '' : ' (estimate — add your address for exact shipping)'}</p>)}{(sellerQuote?.unshippable ?? []).length > 0 && sellerQuote.state_known && <p className="drawer-nudge">The seller can&rsquo;t ship {sellerQuote.unshippable.join(', ')} to your state.</p>}<button className="checkout-button" type="button" onClick={() => { setCartOpen(false); setCheckoutOpen(true); setCheckoutStep('address'); setCheckoutMessage('') }}>Continue to checkout <span>&rarr;</span></button></> : <div className="empty-cart"><div className="empty-cart-mark">+</div><h3>Your cart is empty</h3><p>Find something good in the essentials below.</p><button type="button" onClick={() => setCartOpen(false)}>Keep shopping</button></div>}</aside></div>}
     {authMode && <div className="overlay" role="presentation" onClick={() => { setAuthMode(null); setOtpStage(null); setAuthTab('code'); setPwMode('signin') }}><div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setAuthMode(null); setOtpStage(null); setAuthTab('code'); setPwMode('signin') }} aria-label="Close authentication">x</button><p className="eyebrow">A better way to shop tech</p>{otpStage ? <><h2 id="auth-title">Enter your code</h2><p className="auth-intro">We emailed a 6-digit code to {otpStage.email}. It expires in 10 minutes.</p><form onSubmit={submitOtp}><input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength="8" placeholder="6-digit code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/[^0-9]/g, ''))} /><button className="checkout-button" type="submit">Verify <span>&rarr;</span></button></form>{authMessage && <p className="auth-message">{authMessage}</p>}<button className="switch-auth" type="button" onClick={resendOtp}>Resend code</button><button className="switch-auth" type="button" onClick={() => { setOtpStage(null); setAuthMessage('') }}>Use a different email</button></> : <><h2 id="auth-title">Sign in or sign up</h2><div className="auth-tabs" role="tablist"><button type="button" role="tab" aria-selected={authTab === 'code'} className={authTab === 'code' ? 'auth-tab active' : 'auth-tab'} onClick={() => { setAuthTab('code'); setAuthMessage('') }}>Email code</button><button type="button" role="tab" aria-selected={authTab === 'password'} className={authTab === 'password' ? 'auth-tab active' : 'auth-tab'} onClick={() => { setAuthTab('password'); setAuthMessage('') }}>Password</button></div>{authTab === 'password' ? (() => {
         const forgot = pwMode === 'forgot'
         const signup = pwMode === 'signup'
@@ -2380,9 +2465,9 @@ export default function Storefront() {
           <button className="switch-auth" type="button" onClick={() => { setPwMode(pwMode === 'signin' ? 'signup' : 'signin'); setResetSent(false); setAuthMessage('') }}>{signup ? 'Already have an account? Sign in' : forgot ? 'Back to sign in' : 'New here? Create an account'}</button>
         </>
       })() : <><p className="auth-intro">Enter your email and we&rsquo;ll send a 6-digit code. No password needed &mdash; if you&rsquo;re new, your account is created automatically.</p><form onSubmit={submitAuth}><input required type="email" autoComplete="email" placeholder="Email address" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} /><button className="checkout-button" type="submit">Continue <span>&rarr;</span></button></form></>}{authMessage && <p className="auth-message">{authMessage}</p>}</>}</div></div>}
-    {checkoutOpen && <div className="overlay" role="presentation" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }}><div className="auth-modal checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }} aria-label="Close checkout">x</button><p className="eyebrow">Almost there</p>{checkoutStep === 'address' ? <><h2 id="checkout-title">{deliveryMode === 'form' ? 'Where should we deliver?' : 'Confirm delivery address'}</h2><p className="auth-intro">Your total will be calculated and confirmed securely by the server.</p>{deliveryMode === 'location' ? <><div className="loc-current"><strong>Deliver to</strong> {location.full || location.label}</div><input placeholder="Flat / house / building &amp; street" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => setEditAddress(true)}>Edit full address</button></div></> : deliveryMode === 'saved' ? <><div className="loc-current"><strong>Deliver to</strong> {defaultAddress.line1}, {defaultAddress.city} {defaultAddress.state} {defaultAddress.postal_code}</div>{addresses.length > 1 && <label className="address-picker">Choose address<select value={selectedAddressId || String(defaultAddress.id)} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}</select></label>}<div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => { setSelectedAddressId(''); setEditAddress(true) }}>Enter a new address</button></div></> : <>{addresses.length > 0 && <label className="address-picker">Saved address<select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}<option value="">Use a new address</option></select></label>}<form onSubmit={(event) => { event.preventDefault(); if (!blockCheckout) setCheckoutStep('checkout') }}>{!selectedAddressId && <><input required placeholder="Full name" value={checkoutForm.name} onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })} /><input required placeholder="Street address" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="form-row"><input required placeholder="City" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /><input required maxLength="60" placeholder="State / region" value={checkoutForm.state} onChange={(event) => setCheckoutForm({ ...checkoutForm, state: event.target.value })} /></div><input required maxLength="12" placeholder="Postal / ZIP code" value={checkoutForm.postal_code} onChange={(event) => setCheckoutForm({ ...checkoutForm, postal_code: event.target.value })} /></>}</form></>}<label className="checkout-phone"><span>Phone number{currentUser?.phone ? '' : ' — the delivery rider may call you'}</span><input type="tel" required maxLength="32" placeholder="e.g. +1 555 987 6543" value={phone} onChange={(event) => setPhone(event.target.value)} /></label><textarea className="delivery-note" rows="2" maxLength="500" placeholder="Delivery instructions (optional) — e.g. leave at the gate, call on arrival" value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} /><button className="checkout-button" type="button" onClick={() => setCheckoutStep('checkout')} disabled={blockCheckout}>Continue to checkout <span>&rarr;</span></button>{blockCheckout && <p className="auth-message">{outOfArea && deliveryMode === 'location' ? UNSERVICEABLE_MSG : 'Add a phone number so your delivery rider can reach you.'}</p>}</> : <><h2 id="checkout-title">Checkout</h2><p className="auth-intro">Have a gift card, or want to pay another way? Do it here — then place your order.</p><div className="loc-current"><strong>Deliver to</strong> {deliveryAddressSummary}</div><button type="button" className="switch-auth" onClick={() => setCheckoutStep('address')}>&larr; Edit delivery address</button><details className="gift-card-field"><summary>Have a refund gift card?</summary><div className="form-row"><input placeholder="Gift card (GC-XXXX-XXXX)" value={giftCard.code} onChange={(event) => setGiftCard({ ...giftCard, code: event.target.value, checked: null })} /><input placeholder="Password" value={giftCard.pin} onChange={(event) => setGiftCard({ ...giftCard, pin: event.target.value, checked: null })} /></div><button type="button" className="switch-auth" onClick={checkGiftCard}>Check balance</button>{giftCard.checked?.error && <span className="auth-message">{giftCard.checked.error}</span>}{giftCard.checked?.balance_cents != null && <span className="gift-card-ok">Balance {price(giftCard.checked.balance_cents)} — applied at checkout (any remainder stays on the card).</span>}</details>{codEnabled && <><p className="pay-methods-label">How would you like to pay?</p><div className="pay-methods" role="radiogroup" aria-label="Payment method"><button type="button" role="radio" aria-checked={paymentMethod === 'card'} className={paymentMethod === 'card' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('card')}><strong>Pay online</strong><span>Card via Stripe</span></button><button type="button" role="radio" aria-checked={paymentMethod === 'cod'} className={paymentMethod === 'cod' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('cod')}><strong>Cash on delivery</strong><span>Pay when it arrives</span></button></div></>}<button className="checkout-button" type="button" onClick={submitCheckout} disabled={blockCheckout}>{codEnabled && paymentMethod === 'cod' ? 'Place order' : 'Review order'} <span>&rarr;</span></button>{checkoutMessage && <p className="auth-message">{checkoutMessage}</p>}</>}</div></div>}
-    {order?.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal checkout-modal payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrder(null)} aria-label="Close payment">x</button><p className="eyebrow">Secure payment</p><h2 id="payment-title">Finish your order.</h2><p className="auth-intro">Order #{order.id} · {price(order.total_cents)} USD</p><Elements stripe={stripePromise}><PaymentForm clientSecret={order.clientSecret} onComplete={finalizePayment} savedCards={cards ?? []} /></Elements>{codEnabled && <button className="switch-auth" type="button" onClick={switchToCashOnDelivery}>Pay with cash on delivery instead</button>}<button className="switch-auth" type="button" onClick={() => setOrder(null)}>Pay later from Order history</button>{order.switchError && <p className="auth-message">{order.switchError}</p>}</div></div>}
-    {order && !order.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(event) => event.stopPropagation()}><p className="eyebrow">{order.cod ? 'Order confirmed' : order.paid ? 'Payment submitted' : 'Payment setup needed'}</p><h2 id="order-title">{order.cod || order.paid ? 'You’re all set.' : 'Order created.'}</h2><p className="auth-intro">{order.cod ? `Order #${order.id} is confirmed. Pay with cash when your order arrives.` : `Order #${order.id} is ${order.paid ? 'being confirmed by Stripe.' : 'waiting for Stripe test keys.'}`}</p><div className="order-breakdown"><div><span>Subtotal</span><span>{price(order.subtotal_cents)}</span></div><div><span>Delivery</span><span>{order.delivery_fee_cents === 0 ? 'FREE' : price(order.delivery_fee_cents)}</span></div><div><span>Handling</span><span>{price(order.handling_fee_cents ?? 0)}</span></div>{order.small_cart_fee_cents > 0 && <div><span>Small cart fee</span><span>{price(order.small_cart_fee_cents)}</span></div>}<div><span>Tax</span><span>{price(order.tax_cents)}</span></div>{order.gift_card_discount_cents > 0 && <div><span>Gift card</span><span>&minus;{price(order.gift_card_discount_cents)}</span></div>}</div>{order.delivery_instructions && <p className="auth-intro" style={{ margin: '12px 0 0' }}>Note to courier: &ldquo;{order.delivery_instructions}&rdquo;</p>}<div className="order-total"><span>{order.paid ? 'Paid' : order.cod ? 'Pay on delivery' : 'Order total'}</span><strong>{price(order.total_cents)}</strong></div>{(order.cod || order.paid) && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(order.id)}>Download bill (PDF)</button>}<button className="checkout-button" type="button" onClick={() => setOrder(null)}>Keep shopping <span>&rarr;</span></button>{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
+    {checkoutOpen && <div className="overlay" role="presentation" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }}><div className="auth-modal checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }} aria-label="Close checkout">x</button><p className="eyebrow">Almost there</p>{checkoutStep === 'address' ? <><h2 id="checkout-title">{deliveryMode === 'form' ? 'Where should we deliver?' : 'Confirm delivery address'}</h2><p className="auth-intro">Your total will be calculated and confirmed securely by the server.</p>{deliveryMode === 'location' ? <><div className="loc-current"><strong>Deliver to</strong> {location.full || location.label}</div><input placeholder="Flat / house / building &amp; street" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => setEditAddress(true)}>Edit full address</button></div></> : deliveryMode === 'saved' ? <><div className="loc-current"><strong>Deliver to</strong> {defaultAddress.line1}, {defaultAddress.city} {defaultAddress.state} {defaultAddress.postal_code}</div>{addresses.length > 1 && <label className="address-picker">Choose address<select value={selectedAddressId || String(defaultAddress.id)} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}</select></label>}<div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => { setSelectedAddressId(''); setEditAddress(true) }}>Enter a new address</button></div></> : <>{addresses.length > 0 && <label className="address-picker">Saved address<select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}<option value="">Use a new address</option></select></label>}<form onSubmit={(event) => { event.preventDefault(); if (!blockCheckout) setCheckoutStep('checkout') }}>{!selectedAddressId && <><input required placeholder="Full name" value={checkoutForm.name} onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })} /><input required placeholder="Street address" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="form-row"><input required placeholder="City" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /><input required maxLength="60" list="market-states" placeholder="State" value={checkoutForm.state} onChange={(event) => setCheckoutForm({ ...checkoutForm, state: event.target.value })} /><datalist id="market-states">{Object.entries(marketProfile?.states ?? {}).map(([code, name]) => <option key={code} value={name} />)}</datalist></div><input required maxLength="12" placeholder={marketProfile?.postal_label ?? 'ZIP code'} value={checkoutForm.postal_code} onChange={(event) => setCheckoutForm({ ...checkoutForm, postal_code: event.target.value })} /></>}</form></>}<label className="checkout-phone"><span>Phone number{currentUser?.phone ? '' : ' — the delivery rider may call you'}</span><input type="tel" required maxLength="32" placeholder={activeMarket === 'IN' ? 'e.g. +91 98765 43210' : 'e.g. +1 555 987 6543'} value={phone} onChange={(event) => setPhone(event.target.value)} /></label><textarea className="delivery-note" rows="2" maxLength="500" placeholder="Delivery instructions (optional) — e.g. leave at the gate, call on arrival" value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} /><button className="checkout-button" type="button" onClick={() => setCheckoutStep('checkout')} disabled={blockCheckout}>Continue to checkout <span>&rarr;</span></button>{blockCheckout && <p className="auth-message">{outOfArea && deliveryMode === 'location' ? UNSERVICEABLE_MSG : 'Add a phone number so your delivery rider can reach you.'}</p>}</> : <><h2 id="checkout-title">Checkout</h2><p className="auth-intro">Have a gift card, or want to pay another way? Do it here — then place your order.</p><div className="loc-current"><strong>Deliver to</strong> {deliveryAddressSummary}</div><button type="button" className="switch-auth" onClick={() => setCheckoutStep('address')}>&larr; Edit delivery address</button><details className="gift-card-field"><summary>Have a refund gift card?</summary><div className="form-row"><input placeholder="Gift card (GC-XXXX-XXXX)" value={giftCard.code} onChange={(event) => setGiftCard({ ...giftCard, code: event.target.value, checked: null })} /><input placeholder="Password" value={giftCard.pin} onChange={(event) => setGiftCard({ ...giftCard, pin: event.target.value, checked: null })} /></div><button type="button" className="switch-auth" onClick={checkGiftCard}>Check balance</button>{giftCard.checked?.error && <span className="auth-message">{giftCard.checked.error}</span>}{giftCard.checked?.balance_cents != null && <span className="gift-card-ok">Balance {price(giftCard.checked.balance_cents)} — applied at checkout (any remainder stays on the card).</span>}</details>{codEnabled && hasSellerShipped && <p className="drawer-nudge">Cash on delivery isn&rsquo;t available for items shipped directly by sellers — you&rsquo;ll pay by card.</p>}{codEnabled && !hasSellerShipped && <><p className="pay-methods-label">How would you like to pay?</p><div className="pay-methods" role="radiogroup" aria-label="Payment method"><button type="button" role="radio" aria-checked={paymentMethod === 'card'} className={paymentMethod === 'card' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('card')}><strong>Pay online</strong><span>Card via Stripe</span></button><button type="button" role="radio" aria-checked={paymentMethod === 'cod'} className={paymentMethod === 'cod' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('cod')}><strong>Cash on delivery</strong><span>Pay when it arrives</span></button></div></>}<button className="checkout-button" type="button" onClick={submitCheckout} disabled={blockCheckout}>{codEnabled && paymentMethod === 'cod' && !hasSellerShipped ? 'Place order' : 'Review order'} <span>&rarr;</span></button>{checkoutMessage && <p className="auth-message">{checkoutMessage}</p>}</>}</div></div>}
+    {order?.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal checkout-modal payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrder(null)} aria-label="Close payment">x</button><p className="eyebrow">Secure payment</p><h2 id="payment-title">Finish your order.</h2><p className="auth-intro">Order #{order.id} · {price(order.total_cents, order.currency)} USD</p><Elements stripe={stripePromise}><PaymentForm clientSecret={order.clientSecret} onComplete={finalizePayment} savedCards={cards ?? []} /></Elements>{codEnabled && <button className="switch-auth" type="button" onClick={switchToCashOnDelivery}>Pay with cash on delivery instead</button>}<button className="switch-auth" type="button" onClick={() => setOrder(null)}>Pay later from Order history</button>{order.switchError && <p className="auth-message">{order.switchError}</p>}</div></div>}
+    {order && !order.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(event) => event.stopPropagation()}><p className="eyebrow">{order.cod ? 'Order confirmed' : order.paid ? 'Payment submitted' : 'Payment setup needed'}</p><h2 id="order-title">{order.cod || order.paid ? 'You’re all set.' : 'Order created.'}</h2><p className="auth-intro">{order.cod ? `Order #${order.id} is confirmed. Pay with cash when your order arrives.` : `Order #${order.id} is ${order.paid ? 'being confirmed by Stripe.' : 'waiting for Stripe test keys.'}`}</p><div className="order-breakdown"><div><span>Subtotal</span><span>{price(order.subtotal_cents, order.currency)}</span></div><div><span>Delivery</span><span>{order.delivery_fee_cents === 0 ? 'FREE' : price(order.delivery_fee_cents, order.currency)}</span></div><div><span>Handling</span><span>{price(order.handling_fee_cents ?? 0)}</span></div>{order.small_cart_fee_cents > 0 && <div><span>Small cart fee</span><span>{price(order.small_cart_fee_cents, order.currency)}</span></div>}{order.tax_included_cents > 0 ? <div><span>Includes GST</span><span>{price(order.tax_included_cents, order.currency)}</span></div> : <div><span>Tax</span><span>{price(order.tax_cents, order.currency)}</span></div>}{order.gift_card_discount_cents > 0 && <div><span>Gift card</span><span>&minus;{price(order.gift_card_discount_cents, order.currency)}</span></div>}</div>{order.delivery_instructions && <p className="auth-intro" style={{ margin: '12px 0 0' }}>Note to courier: &ldquo;{order.delivery_instructions}&rdquo;</p>}<div className="order-total"><span>{order.paid ? 'Paid' : order.cod ? 'Pay on delivery' : 'Order total'}</span><strong>{price(order.total_cents, order.currency)}</strong></div>{(order.cod || order.paid) && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(order.id)}>Download bill (PDF)</button>}<button className="checkout-button" type="button" onClick={() => setOrder(null)}>Keep shopping <span>&rarr;</span></button>{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
     {accountOpen && <div className="overlay" role="presentation" onClick={() => { setAccountOpen(false); setAddrForm(null) }}>
       <div className="auth-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title" onClick={(event) => event.stopPropagation()}>
         <button className="close-button" type="button" onClick={() => { setAccountOpen(false); setAddrForm(null) }} aria-label="Close account">x</button>
@@ -2477,7 +2562,7 @@ export default function Storefront() {
         {accountMsg && <p className="auth-message">{accountMsg}</p>}
       </div>
     </div>}
-    {ordersOpen && <div className="overlay" role="presentation" onClick={() => setOrdersOpen(false)}><div className="auth-modal orders-modal" role="dialog" aria-modal="true" aria-labelledby="orders-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrdersOpen(false)} aria-label="Close orders">x</button><p className="eyebrow">Your orders</p><h2 id="orders-title">Order history</h2>{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : orders.length === 0 ? <p className="auth-intro">No orders yet. Your completed checkouts will appear here.</p> : <ul className="orders-list">{orders.map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}<button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
+    {ordersOpen && <div className="overlay" role="presentation" onClick={() => setOrdersOpen(false)}><div className="auth-modal orders-modal" role="dialog" aria-modal="true" aria-labelledby="orders-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrdersOpen(false)} aria-label="Close orders">x</button><p className="eyebrow">Your orders</p><h2 id="orders-title">Order history</h2>{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : orders.length === 0 ? <p className="auth-intro">No orders yet. Your completed checkouts will appear here.</p> : <ul className="orders-list">{orders.map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents, entry.currency)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}{(entry.shop_shipping ?? []).map((ss) => { const pk = (entry.packages ?? []).filter((p) => p.shop_id === ss.shop_id); return <div key={ss.id} className="order-seller-ship"><strong>Shipped by {ss.shop?.name ?? 'the seller'}</strong>{pk.length === 0 ? <span>{entry.status === 'cancelled' ? 'Cancelled' : `Ships by ${new Date(ss.ship_by).toLocaleDateString()} · arrives ${new Date(ss.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–${new Date(ss.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}</span> : pk.map((p) => <span key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status === 'delivered' ? `delivered ${new Date(p.delivered_at).toLocaleDateString()}` : p.status.replace('_', ' ')}{p.status !== 'delivered' && ['shipped', 'in_transit'].includes(p.status) && <button type="button" className="text-button" onClick={() => confirmPackageReceived(entry, p)}>Confirm received</button>}</span>)}</div> })}<button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
     {locationOpen && <div className="overlay" role="presentation" onClick={() => { if (location) setLocationOpen(false) }}><div className="auth-modal location-modal" role="dialog" aria-modal="true" aria-labelledby="loc-title" onClick={(event) => event.stopPropagation()}>{location && <button className="close-button" type="button" onClick={() => setLocationOpen(false)} aria-label="Close location">x</button>}<p className="eyebrow">Deliver to</p><h2 id="loc-title">Where are you?</h2><p className="auth-intro">Drop the pin on your building — that&rsquo;s the location we deliver to. Search or &ldquo;detect&rdquo; just move the map near your area.</p>
       {outOfArea && <p className="loc-unserviceable">{UNSERVICEABLE_MSG}</p>}
       <div className="loc-tools">
@@ -2532,7 +2617,7 @@ export default function Storefront() {
         )}
         <ChatPhotoPicker photos={supportPhotos} onChange={setSupportPhotos} token={localStorage.getItem('gdp_token')} onError={setSupportMsg} disabled={supportBusy} />
         <div className="chat-send"><input placeholder={supportPhotos.length ? 'Add a note (optional)' : 'Type a message'} value={supportReply} onChange={(event) => setSupportReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendSupportReply() }} /><button type="button" disabled={supportBusy || (!supportReply.trim() && !supportPhotos.length)} onClick={sendSupportReply}>Send</button></div>
-        <button className="end-chat-button" type="button" disabled={supportBusy} onClick={endChat}>End Chat</button>
+        {supportView.status !== 'resolved' && <button className="end-chat-button" type="button" disabled={supportBusy} onClick={endChat}>End Chat</button>}
         <button className="switch-auth" type="button" onClick={() => { setSupportView('list'); loadThreads() }}>All conversations</button>
       </>}
       {supportMsg && <p className="auth-message">{supportMsg}</p>}
@@ -2597,6 +2682,7 @@ export default function Storefront() {
         </div>}
       </div>
     })()}
+    {activeMarket === 'IN' && grievanceOfficer?.name && <p className="site-footer-grievance">Grievance Officer: {grievanceOfficer.name}{grievanceOfficer.designation ? `, ${grievanceOfficer.designation}` : ''}{grievanceOfficer.email ? ` · ${grievanceOfficer.email}` : ''}{grievanceOfficer.phone ? ` · ${grievanceOfficer.phone}` : ''}{grievanceOfficer.address ? ` · ${grievanceOfficer.address}` : ''}</p>}
     <div className="site-footer-bottom">
       <span className="site-footer-copy">{(footer?.copyright || '© {year} NexTech').replace('{year}', String(new Date().getFullYear()))}</span>
       {pages.filter((p) => p.show_in_footer && p.footer_group === 'bottom').map((p) => (

@@ -8,6 +8,7 @@ use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
 use App\Support\Sku;
+use App\Support\Market;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,6 +33,7 @@ class AdminProductController extends Controller
         $sort = $validated['sort'] ?? 'newest';
 
         $products = Product::query()
+            ->inMarket(Market::fromRequest($request))
             ->with(['category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images'])
             // When filtering by store, `effective_stock` is that store's on-hand
             // count (its stocked row, else the product's single count); otherwise
@@ -71,6 +73,11 @@ class AdminProductController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        // NexTech's own product: the country picked in the form, else the one the admin is working in.
+        $data['market'] = ($data['shop_id'] ?? null) ? null : ($data['market'] ?? Market::fromRequest($request));
+        if ($data['market'] === null) {
+            unset($data['market']);
+        }
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
         $images = $this->pullImages($data);
@@ -101,6 +108,10 @@ class AdminProductController extends Controller
     public function update(Request $request, Product $product): JsonResponse
     {
         $data = $this->validated($request, $product);
+        // A seller product's country is always its shop's.
+        if (($data['shop_id'] ?? $product->shop_id) !== null) {
+            unset($data['market']);
+        }
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
         $images = $this->pullImages($data);
@@ -174,6 +185,9 @@ class AdminProductController extends Controller
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             // Days after delivery the item can be returned; null = platform default, 0 = non-returnable.
             'return_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.SellerLedger::maxReturnDays()],
+            'shipping_template_id' => ['sometimes', 'nullable', 'integer', 'exists:shipping_templates,id'],
+            ...Market::productRules(null, false),
+            'market' => ['sometimes', 'string', Rule::in(Market::codes())],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
             'image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'images' => ['sometimes', 'array', 'max:'.ProductImages::MAX_IMAGES],
