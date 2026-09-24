@@ -16,7 +16,7 @@ use Illuminate\Support\Carbon;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'phone', 'stripe_customer_id'])]
-#[Hidden(['password', 'remember_token'])]
+#[Hidden(['password', 'remember_token', 'rider_payout_details'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -195,6 +195,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'is_admin' => 'boolean',
             'is_rider' => 'boolean',
+            'rider_payout_details' => 'array',
             'rider_is_active' => 'boolean',
             'rider_rating_avg' => 'float',
             'rider_rating_count' => 'integer',

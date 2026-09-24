@@ -64,6 +64,7 @@ class AdminCategoryController extends Controller
             'image_url' => ['sometimes', 'nullable', 'string', 'max:2048'],
             'is_active' => ['sometimes', 'boolean'],
             'sort_order' => ['sometimes', 'integer', 'min:0'],
+            'show_on_home' => ['sometimes', 'boolean'],
         ]);
     }
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
+import RiderEarnings from './RiderEarnings'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const STORE_URL = import.meta.env.BASE_URL || '/'
@@ -397,6 +398,7 @@ export default function RiderConsole({ token, onSignOut }) {
   const [chat, setChat] = useState({ messages: [], thread_id: null })
   const [reply, setReply] = useState('')
   const [alertOpen, setAlertOpen] = useState(false)
+  const [payKey, setPayKey] = useState(0)
   const chatLogRef = useRef(null)
 
   const load = useCallback(async () => {
@@ -482,7 +484,7 @@ export default function RiderConsole({ token, onSignOut }) {
     } catch { setReply(text); setError('Message not sent.') }
   }
 
-  const refresh = () => { load(); loadStats() }
+  const refresh = () => { load(); loadStats(); setPayKey((k) => k + 1) }
 
   if (loading) return <div className="rider-shell"><div className="rider-loading">Loading your deliveries…</div></div>
 
@@ -510,6 +512,8 @@ export default function RiderConsole({ token, onSignOut }) {
       {error && <p className="rider-error">{error}</p>}
 
       {stats && <RiderStats stats={stats} />}
+
+      <RiderEarnings headers={headers} refreshKey={payKey} />
 
       {(data.pending_returns ?? []).length > 0 && (
         <div className="rider-returns">

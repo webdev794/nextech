@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import MapPicker from './MapPicker'
+import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
 import { renderMarkdown } from './markdown'
 import { SECTION_TYPES, blankSection } from './pageSectionTypes'
@@ -24,10 +25,13 @@ const BELL_ITEM_CAP = 5
 
 // The three selectable lines on the Orders trend chart, in the fixed order
 // they're always drawn (independent of toggle click order).
+// Revenue and refunds share one dollar axis so their heights compare directly;
+// orders (a count) get their own axis.
+const dollarTick = (cents) => `$${Math.round(cents / 100).toLocaleString()}`
 const CHART_LINES = [
-  { key: 'orders', label: 'Orders', color: '#3f7d43', format: (v) => v },
-  { key: 'revenue_cents', label: 'Revenue', color: '#1f5fae', format: money },
-  { key: 'refunded_cents', label: 'Refunds', color: '#a23b28', format: money },
+  { key: 'revenue_cents', label: 'Revenue', color: '#1f5fae', axis: 'usd', format: money, tickFormat: dollarTick },
+  { key: 'refunded_cents', label: 'Refunds', color: '#a23b28', axis: 'usd', format: money, tickFormat: dollarTick },
+  { key: 'orders', label: 'Orders', color: '#3f7d43', axis: 'count', format: (v) => v },
 ]
 
 // A rider still holding cash collected on a day other than today (not returned
@@ -95,6 +99,41 @@ function Pager({ page, pageCount, total, onPage, pageSize, onPageSize }) {
 }
 
 // A rotating ring of dots + label, for every "Loading…" placeholder.
+// A dropdown that opens *above* its button with its own scrollbar — for pickers
+// near the bottom of a drawer, where a native <select> list would drop off
+// the screen. options: [{ value, label }]
+function UpwardPicker({ placeholder, options, onPick }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setOpen(false) }
+    const onKey = (event) => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  return (
+    <div className="admin-up-picker" ref={wrapRef}>
+      <button type="button" className="admin-order-picker admin-up-picker-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span>{placeholder}</span><span aria-hidden>{open ? '▾' : '▴'}</span>
+      </button>
+      {open && (
+        <ul className="admin-up-picker-list" role="listbox">
+          {options.map((o) => (
+            <li key={o.value}>
+              <button type="button" role="option" aria-selected="false" onClick={() => { setOpen(false); onPick(o.value) }}>{o.label}</button>
+            </li>
+          ))}
+          {options.length === 0 && <li className="muted">Nothing to choose.</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function Loading({ children }) {
   return (
     <p className="admin-empty admin-loading" role="status">
@@ -112,19 +151,18 @@ const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', categories: 'Categories',
   customers: 'Customers', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
-  homepage: 'Homepage', support: 'Support', settings: 'Settings',
+  support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
   customers: '\u{1F465}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
-  homepage: '\u{1F5BC}️',
 }
 const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended']
 const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
 const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
 const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -137,10 +175,22 @@ const ISSUE_LABELS = {
 }
 const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
-const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
+const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
 
 // Build the per-store stock grid ({ [storeId]: { is_stocked, base, variants: { [variantIndex]: qty } } })
 // from a product's store_inventory rows.
+// A store's row in the Store stock grid. Anything not yet set for that store
+// falls back to the product's own Inventory / each variant's Stock, so the
+// grid starts pre-filled and saving an untouched store keeps those numbers.
+const storeStockRow = (form, storeId) => {
+  const saved = form.store_stock?.[storeId] ?? {}
+  const variants = {}
+  ;(form.variants ?? []).forEach((v, i) => { variants[i] = saved.variants?.[i] ?? String(v.stock ?? '') })
+  return { is_stocked: saved.is_stocked ?? true, base: saved.base ?? String(form.inventory_quantity ?? ''), variants }
+}
+
+const storeAddress = (store) => [store.line1, store.city, [store.state, store.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+
 const storeStockFrom = (product) => {
   const idxById = new Map((product.variants ?? []).map((v, i) => [v.id, i]))
   const map = {}
@@ -155,6 +205,10 @@ const storeStockFrom = (product) => {
   }
   return map
 }
+// Variant SKUs end in a single digit (-V1…-V9), so a product holds at most 9.
+const MAX_VARIANTS = 9
+// Mirrors App\Support\ProductImages::MAX_IMAGES.
+const MAX_IMAGES = 8
 const EMPTY_VARIANT = { label: '', sku: '', price: '', compare_at: '', stock: 0, image_url: '', is_active: true }
 const dollarsOrBlank = (cents) => (cents != null ? (cents / 100).toFixed(2) : '')
 
@@ -162,7 +216,7 @@ const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
   id: v.id, label: v.label, sku: v.sku, price: (v.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(v.compare_at_price_cents),
   stock: v.inventory_quantity, image_url: v.image_url ?? '', is_active: v.is_active,
 }))
-const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true }
+const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true, show_on_home: true }
 const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
 const riderFormFrom = (rider) => ({
   id: rider.id,
@@ -213,8 +267,6 @@ function riderStatusChip(rider) {
     </>
   )
 }
-const EMPTY_BANNER = { image_url: '', headline: '', category_slug: '', link_url: '', placement: 'strip', sort_order: 0, is_active: true }
-const EMPTY_TILE = { title: '', image_url: '', category_slug: '', link_url: '', sort_order: 0, is_active: true }
 const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', menu_placements: ['main_footer'], show_in_footer: true, is_published: true, sort_order: 0 }
 const FOOTER_GROUP_LABELS = { company: 'Company info', legal: 'Customer service', help: 'Help', bottom: 'Lower footer', blog: 'Blog (not shown in footer columns)' }
 const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
@@ -311,6 +363,15 @@ function feesToForm(s) {
     tax_rate_pct: ((s.tax_rate_bps ?? 0) / 100).toFixed(2),
     commission_rate_pct: ((s.commission_rate_bps ?? 0) / 100).toFixed(2),
     min_payout: dollars(s.min_payout_cents),
+    max_payout: dollars(s.max_payout_cents),
+    daily_payout_cap: dollars(s.daily_payout_cap_cents),
+    return_window_days: String(s.return_window_days ?? 30),
+    max_return_days: String(s.max_return_days ?? 90),
+    return_pickup_fee: dollars(s.return_pickup_fee_cents),
+    rider_base_pay: dollars(s.rider_base_pay_cents),
+    rider_per_mile: dollars(s.rider_per_mile_cents),
+    rider_min_payout: dollars(s.rider_min_payout_cents),
+    rider_max_payout: dollars(s.rider_max_payout_cents),
   }
 }
 
@@ -327,6 +388,15 @@ function formToFees(f) {
     tax_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.tax_rate_pct || 0) * 100))),
     commission_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.commission_rate_pct || 0) * 100))),
     min_payout_cents: toCents(f.min_payout),
+    max_payout_cents: toCents(f.max_payout),
+    daily_payout_cap_cents: toCents(f.daily_payout_cap),
+    return_window_days: Math.max(0, Math.min(365, Math.round(Number(f.return_window_days || 0)))),
+    max_return_days: Math.max(0, Math.min(365, Math.round(Number(f.max_return_days || 0)))),
+    return_pickup_fee_cents: toCents(f.return_pickup_fee),
+    rider_base_pay_cents: toCents(f.rider_base_pay),
+    rider_per_mile_cents: toCents(f.rider_per_mile),
+    rider_min_payout_cents: toCents(f.rider_min_payout),
+    rider_max_payout_cents: toCents(f.rider_max_payout),
   }
 }
 
@@ -409,10 +479,6 @@ export default function Admin({ token, onClose }) {
   const [categoryForm, setCategoryForm] = useState(null)
   const [stores, setStores] = useState([])
   const [storeForm, setStoreForm] = useState(null)
-  const [banners, setBanners] = useState([])
-  const [bannerForm, setBannerForm] = useState(null)
-  const [homeTiles, setHomeTiles] = useState([])
-  const [tileForm, setTileForm] = useState(null)
   const [pages, setPages] = useState([])
   const [pageForm, setPageForm] = useState(null)
   const [pagePreview, setPagePreview] = useState(false)
@@ -448,8 +514,9 @@ export default function Admin({ token, onClose }) {
   const [riderEmail, setRiderEmail] = useState('')
   const [riderHireStoreId, setRiderHireStoreId] = useState('')
   const [riderDetail, setRiderDetail] = useState(null)
+  const [riderApps, setRiderApps] = useState([])
   const [sellers, setSellers] = useState([])
-  const [sellerStatus, setSellerStatus] = useState('pending')
+  const [sellerStatus, setSellerStatus] = useState('all')
   const [sellerDetail, setSellerDetail] = useState(null)
   const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
@@ -470,8 +537,9 @@ export default function Admin({ token, onClose }) {
   const [threadStatus, setThreadStatus] = useState('open')
   const [thread, setThread] = useState(null)
   const [threadReply, setThreadReply] = useState('')
+  const [threadPhotos, setThreadPhotos] = useState([]) // photo URLs for the next admin reply
   const chatLogRef = useRef(null)
-  const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '' })
+  const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
   const [giftIssued, setGiftIssued] = useState(null)
   const [supportBadge, setSupportBadge] = useState(0)
   const [pendingThreads, setPendingThreads] = useState([])
@@ -607,16 +675,6 @@ export default function Admin({ token, onClose }) {
       .then((data) => setStores(data.data ?? [])).catch(() => setMessage('Could not load stores.')))
   }, [authHeaders, track])
 
-  const loadBanners = useCallback(() => {
-    fetch(`${API_URL}/admin/banners`, { headers: authHeaders() }).then(readJson)
-      .then((data) => setBanners(data.data ?? [])).catch(() => setMessage('Could not load banners.'))
-  }, [authHeaders])
-
-  const loadHomeTiles = useCallback(() => {
-    fetch(`${API_URL}/admin/home-tiles`, { headers: authHeaders() }).then(readJson)
-      .then((data) => setHomeTiles(data.data ?? [])).catch(() => setMessage('Could not load homepage tiles.'))
-  }, [authHeaders])
-
   const loadPages = useCallback(() => {
     fetch(`${API_URL}/admin/pages`, { headers: authHeaders() }).then(readJson)
       .then((data) => setPages(data.data ?? [])).catch(() => setMessage('Could not load pages.'))
@@ -648,10 +706,16 @@ export default function Admin({ token, onClose }) {
   useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
   useEffect(() => { if (tab === 'customers') loadCustomers() }, [tab, loadCustomers])
-  useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores() } }, [tab, loadRiders, loadStores])
+  const loadRiderApps = useCallback(() => {
+    fetch(`${API_URL}/admin/rider-applications`, { headers: authHeaders() })
+      .then(readJson)
+      .then((data) => setRiderApps(data?.data ?? []))
+      .catch(() => {})
+  }, [authHeaders])
+
+  useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores(); loadRiderApps() } }, [tab, loadRiders, loadStores, loadRiderApps])
   useEffect(() => { if (tab === 'sellers') loadSellers() }, [tab, loadSellers])
   useEffect(() => { if (tab === 'stores') loadStores() }, [tab, loadStores])
-  useEffect(() => { if (tab === 'homepage') { loadBanners(); loadHomeTiles(); loadCategories() } }, [tab, loadBanners, loadHomeTiles, loadCategories])
   useEffect(() => { if (tab === 'support') loadThreads() }, [tab, loadThreads])
   const threadId = thread?.id ?? null
   useEffect(() => {
@@ -879,67 +943,6 @@ export default function Admin({ token, onClose }) {
     } catch (error) { fail(error) }
   }
 
-  async function saveBanner(event) {
-    event.preventDefault()
-    setMessage('')
-    const { id, ...rest } = bannerForm
-    const payload = {
-      ...rest,
-      headline: rest.headline.trim() || null,
-      category_slug: rest.category_slug || null,
-      link_url: rest.link_url.trim() || null,
-      sort_order: Number(rest.sort_order) || 0,
-    }
-    try {
-      const response = await fetch(`${API_URL}/admin/banners${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the banner.')
-      setBannerForm(null)
-      loadBanners()
-    } catch (error) { fail(error) }
-  }
-
-  async function removeBanner(banner) {
-    if (!window.confirm('Delete this banner?')) return
-    setMessage('')
-    try {
-      const response = await fetch(`${API_URL}/admin/banners/${banner.id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!response.ok && response.status !== 204) throw new Error((await readJson(response)).message ?? 'Could not delete the banner.')
-      loadBanners()
-    } catch (error) { fail(error) }
-  }
-
-  async function saveTile(event) {
-    event.preventDefault()
-    setMessage('')
-    const { id, ...rest } = tileForm
-    const payload = {
-      ...rest,
-      title: rest.title.trim() || null,
-      image_url: rest.image_url.trim() || null,
-      category_slug: rest.category_slug || null,
-      link_url: rest.link_url.trim() || null,
-      sort_order: Number(rest.sort_order) || 0,
-    }
-    try {
-      const response = await fetch(`${API_URL}/admin/home-tiles${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the tile.')
-      setTileForm(null)
-      loadHomeTiles()
-    } catch (error) { fail(error) }
-  }
-
-  async function removeTile(tile) {
-    if (!window.confirm('Delete this homepage tile?')) return
-    setMessage('')
-    try {
-      const response = await fetch(`${API_URL}/admin/home-tiles/${tile.id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!response.ok && response.status !== 204) throw new Error((await readJson(response)).message ?? 'Could not delete the tile.')
-      loadHomeTiles()
-    } catch (error) { fail(error) }
-  }
-
   const scrollAdminTop = () => {
     requestAnimationFrame(() => {
       document.querySelector('.admin-main')?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -960,7 +963,7 @@ export default function Admin({ token, onClose }) {
     setPagePreview(false)
     setPageSettingsOpen(false)
     setPageForm({
-      id: page.id, title: page.title ?? '', slug: page.slug ?? '', banner_image: page.banner_image ?? '',
+      id: page.id, title: page.title ?? '', slug: page.slug ?? '', parent_slug: page.parent_slug ?? '', banner_image: page.banner_image ?? '',
       content: page.content ?? '',
       sections: Array.isArray(page.sections) ? page.sections : [],
       footer_group: page.footer_group ?? 'useful_links',
@@ -982,7 +985,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, ...rest } = pageForm
-    const payload = { ...rest, slug: rest.slug.trim(), sort_order: Number(rest.sort_order) || 0 }
+    const payload = { ...rest, slug: rest.slug.trim(), parent_slug: (rest.parent_slug ?? '').trim() || null, sort_order: Number(rest.sort_order) || 0 }
     try {
       const response = await fetch(`${API_URL}/admin/pages${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
       const data = await readJson(response)
@@ -1281,7 +1284,7 @@ export default function Admin({ token, onClose }) {
 
   async function openThread(id) {
     setMessage('')
-    setRefundForm({ items: [], amount: '', reason: '' })
+    setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
     setSupportToasts((cur) => cur.filter((t) => t.id !== id))
     try {
       const data = await readJson(await fetch(`${API_URL}/admin/support/threads/${id}`, { headers: authHeaders() }))
@@ -1292,12 +1295,13 @@ export default function Admin({ token, onClose }) {
 
   async function replyThread() {
     const body = threadReply.trim()
-    if (!body || !thread) return
+    if ((!body && !threadPhotos.length) || !thread) return
     try {
-      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/messages`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body }) })
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/messages`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body, ...(threadPhotos.length ? { attachments: threadPhotos } : {}) }) })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Message not sent.')
       setThreadReply('')
+      setThreadPhotos([])
       setThread(data.data)
     } catch (error) { fail(error) }
   }
@@ -1340,9 +1344,15 @@ export default function Admin({ token, onClose }) {
   // order/threadId: threadId is set when issuing from a Support conversation
   // (the code + password are posted into it); null when issuing straight from
   // the Orders tab's order-summary drawer.
+  // Return costs charged to the seller(s) on this refund — only sent when the
+  // order actually has seller items.
+  const sellerChargeFlags = (order) => ((order.items ?? []).some((i) => i.shop_id)
+    ? { charge_seller_pickup: !!refundForm.charge_pickup, charge_seller_delivery: !!refundForm.charge_delivery }
+    : {})
+
   async function issueRefund(order, threadId) {
     if (!order) return
-    const body = { reason: refundForm.reason.trim() || undefined }
+    const body = { reason: refundForm.reason.trim() || undefined, ...sellerChargeFlags(order) }
     if (threadId) body.support_thread_id = threadId
     if (refundForm.items.length) body.item_ids = refundForm.items
     else if (refundForm.amount) body.amount_cents = Math.round(Number(refundForm.amount) * 100)
@@ -1356,7 +1366,7 @@ export default function Admin({ token, onClose }) {
       const response = await fetch(`${API_URL}/admin/orders/${order.id}/refund`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Refund failed.')
-      setRefundForm({ items: [], amount: '', reason: '' })
+      setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
       if (threadId) openThread(threadId)
       refreshOrderInList(order.id)
       loadMetrics()
@@ -1369,7 +1379,7 @@ export default function Admin({ token, onClose }) {
   // the Orders drawer they're shown here for the admin to relay themselves.
   async function issueGiftCard(order, threadId) {
     if (!order) return
-    const body = { reason: refundForm.reason.trim() || undefined }
+    const body = { reason: refundForm.reason.trim() || undefined, ...sellerChargeFlags(order) }
     if (threadId) body.support_thread_id = threadId
     if (refundForm.items.length) body.item_ids = refundForm.items
     else if (refundForm.amount) body.amount_cents = Math.round(Number(refundForm.amount) * 100)
@@ -1385,7 +1395,7 @@ export default function Admin({ token, onClose }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not issue the gift card.')
       setGiftIssued(data.data)
-      setRefundForm({ items: [], amount: '', reason: '' })
+      setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
       if (threadId) openThread(threadId)
       refreshOrderInList(order.id)
       setMessage(`Gift card ${data.data.code} for ${money(data.data.amount_cents)} issued.`)
@@ -1449,6 +1459,14 @@ export default function Admin({ token, onClose }) {
               <label>Or amount ($)<input type="number" min="0" step="0.01" disabled={refundForm.items.length > 0} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
               <label>Reason<input value={refundForm.reason} onChange={(event) => setRefundForm({ ...refundForm, reason: event.target.value })} /></label>
             </div>
+            {(o.items ?? []).some((i) => i.shop_id) && (
+              <div className="admin-seller-charges">
+                <strong>Charge the seller</strong>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_pickup} onChange={(event) => setRefundForm({ ...refundForm, charge_pickup: event.target.checked })} /> Return pickup fee ({money(settings?.return_pickup_fee_cents ?? 499)} per seller)</label>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_delivery} onChange={(event) => setRefundForm({ ...refundForm, charge_delivery: event.target.checked })} /> Their share of the delivery fee ({money(o.delivery_fee_cents ?? 0)} on this order, charged once)</label>
+                <span className="muted">The refunded item value (less the commission they paid) is always taken back from the seller. Untick these for a NexTech fault, e.g. delivery damage.</span>
+              </div>
+            )}
             {refundForm.items.length > 0 && (
               <p className="muted">
                 {allItemsSelected
@@ -1483,8 +1501,8 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
-    delete rest.sku
-    const payload = { ...rest, category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, image_url: rest.image_url?.trim() || null, video_url: rest.video_url?.trim() || null }
+    rest.sku = rest.sku?.trim() || null
+    const payload = { ...rest, category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
     // sent as [] so the backend drops any rows. `rows` below (sent as
@@ -1493,7 +1511,8 @@ export default function Admin({ token, onClose }) {
     const rows = (variants ?? []).filter((row) => row.id || !row._delete)
     const liveVariants = rows.filter((v) => !v._delete && (v.label || '').trim())
     payload.store_stock = perStore
-      ? Object.entries(storeStockMap ?? {}).flatMap(([sid, row]) => {
+      ? (stores.length ? stores.map((store) => String(store.id)) : Object.keys(storeStockMap ?? {})).flatMap((sid) => {
+          const row = storeStockRow(productForm, sid)
           const stocked = row.is_stocked !== false
           const base = { store_id: Number(sid), variant_index: null, is_stocked: stocked, quantity: Number(row.base || 0) }
           const vRows = liveVariants.map((v) => {
@@ -1509,6 +1528,7 @@ export default function Admin({ token, onClose }) {
         ...(row.id ? { id: row.id } : {}),
         ...(row._delete ? { _delete: true } : {}),
         label: (row.label || '').trim(),
+        sku: row.sku?.trim() || null,
         price_cents: Math.round(Number(row.price || 0) * 100),
         compare_at_price_cents: String(row.compare_at ?? '').trim() ? Math.round(Number(row.compare_at) * 100) : null,
         inventory_quantity: Number(row.stock) || 0,
@@ -1618,6 +1638,9 @@ export default function Admin({ token, onClose }) {
       setSellers((cur) => cur.map((s) => (s.id === seller.id ? data.data : s)))
       setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, ...data.data } : cur))
       if (action === 'approve') loadShops()
+      if (action === 'payout' || action === 'payout-request/reject') {
+        setNotifications((cur) => ({ ...cur, payout_requests: (cur.payout_requests ?? []).filter((r) => r.seller_id !== seller.id) }))
+      }
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
@@ -1647,12 +1670,21 @@ export default function Admin({ token, onClose }) {
   }
 
   function recordSellerPayout(seller) {
-    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} ($) — balance ${money(seller.balance_cents ?? 0)}:`, '')
+    const balance = Math.max(0, seller.available_cents ?? seller.balance_cents ?? 0)
+    const max = seller.max_payout_cents ?? 0
+    const suggested = seller.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(balance, max) : balance)
+    const limits = [max > 0 ? `max ${money(max)} per payout` : null, seller.daily_payout_remaining_cents != null ? `${money(seller.daily_payout_remaining_cents)} left today` : null].filter(Boolean).join(', ')
+    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} ($) — available ${money(balance)}${limits ? ` (${limits})` : ''}:`, (suggested / 100).toFixed(2))
     if (!amountStr) return
     const amount_cents = toCents(amountStr)
     if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
     const note = window.prompt('Note (optional):', '') ?? ''
     sellerAction(seller, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  function rejectPayoutRequest(seller) {
+    const note = window.prompt('Reason for declining this payout request (the seller sees it):', '')
+    if (note?.trim()) sellerAction(seller, 'payout-request/reject', { note: note.trim() })
   }
 
   // Deliberately not routed through sellerAction() — that helper expects the
@@ -1688,6 +1720,65 @@ export default function Admin({ token, onClose }) {
       const blob = await response.blob()
       window.open(URL.createObjectURL(blob), '_blank')
     } catch (error) { fail(error) }
+  }
+
+  async function riderAppAction(app, action, body) {
+    setBusyId(`app-${app.id}`)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/rider-applications/${app.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the application.')
+      setRiderApps((cur) => cur.map((a) => (a.id === app.id ? data.data : a)))
+      setNotifications((cur) => ({ ...cur, rider_applications: (cur.rider_applications ?? []).filter((a) => a.id !== app.id) }))
+      if (action === 'approve') { loadRiders(); setMessage(`${app.user?.name ?? 'Rider'} hired at ${data.data.store?.name ?? 'their store'}.`) }
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Bring the order's seller into this customer chat (one-way — they stay in
+  // it until it's resolved).
+  async function bringInSeller(shopId) {
+    if (!thread) return
+    try {
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/seller`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ shop_id: shopId }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the chat.')
+      setThread(data.data)
+    } catch (error) { fail(error) }
+  }
+
+  function rejectRiderApp(app) {
+    const reason = window.prompt(`Reason for rejecting ${app.user?.name ?? 'this applicant'} (they see it):`, '')
+    if (reason?.trim()) riderAppAction(app, 'reject', { reason: reason.trim() })
+  }
+
+  async function riderPayAction(rider, path, body) {
+    setBusyId(rider.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/riders/${rider.id}/${path}`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update rider pay.')
+      setRiderDetail((cur) => (cur?.rider?.id === rider.id ? { ...cur, pay: data.data } : cur))
+      setRiders((cur) => cur.map((r) => (r.id === rider.id ? { ...r, earnings_balance_cents: data.data.balance_cents, payout_requested_cents: data.data.pending_payout_request?.amount_cents ?? null } : r)))
+      setNotifications((cur) => ({ ...cur, rider_payout_requests: (cur.rider_payout_requests ?? []).filter((r) => r.rider_id !== rider.id) }))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function recordRiderPayout(rider, pay) {
+    const max = pay.max_payout_cents ?? 0
+    const suggested = pay.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(pay.owed_cents, max) : pay.owed_cents)
+    const amountStr = window.prompt(`Payout to ${rider.name} ($) — owed ${money(pay.owed_cents)}${max > 0 ? `, max ${money(max)} per payout` : ''}:`, (suggested / 100).toFixed(2))
+    if (!amountStr) return
+    const amount_cents = toCents(amountStr)
+    if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
+    const note = window.prompt('Note (optional, e.g. transfer reference):', '') ?? ''
+    riderPayAction(rider, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  function declineRiderPayout(rider) {
+    const note = window.prompt('Reason for declining this payout request (the rider sees it):', '')
+    if (note?.trim()) riderPayAction(rider, 'payout-request/reject', { note: note.trim() })
   }
 
   async function openRiderDetail(id, view = 'full') {
@@ -1769,7 +1860,15 @@ export default function Admin({ token, onClose }) {
   const negativeFeedbackHidden = (notifications.negative_feedback ?? []).length - visibleNegativeFeedback.length
   const financialActivityHidden = (notifications.financial_activity ?? []).length - visibleFinancialActivity.length
 
-  const notificationCount = visibleRefusedCod.length
+  const payoutRequests = notifications.payout_requests ?? []
+  const riderPayoutRequests = notifications.rider_payout_requests ?? []
+  const riderApplications = notifications.rider_applications ?? []
+  const sellerApplications = notifications.seller_applications ?? []
+  const notificationCount = payoutRequests.length
+    + sellerApplications.length
+    + riderPayoutRequests.length
+    + riderApplications.length
+    + visibleRefusedCod.length
     + visibleCashOverdue.length
     + visibleNegativeFeedback.length
     + visibleFinancialActivity.length
@@ -1793,7 +1892,7 @@ export default function Admin({ token, onClose }) {
     setMessage('')
     // Any open edit form belongs to the tab you're leaving — close them all.
     setProductForm(null); setCategoryForm(null); setStoreForm(null); setRiderForm(null)
-    setBannerForm(null); setTileForm(null); setPageForm(null)
+    setPageForm(null)
     // On a narrow screen the sidebar overlays the content — close it after a pick.
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) {
       setNavOpen(false)
@@ -1820,6 +1919,66 @@ export default function Admin({ token, onClose }) {
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {payoutRequests.length > 0 && (
+                      <section>
+                        <h5>Seller payout requests</h5>
+                        {payoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`payout-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
+                              💸 {r.shop_name ?? 'Seller'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {payoutRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('sellers') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {riderPayoutRequests.length > 0 && (
+                      <section>
+                        <h5>Rider payout requests</h5>
+                        {riderPayoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`rpay-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('riders'); openRiderDetail(r.rider_id) }}>
+                              🛵 {r.rider_name ?? 'Rider'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {riderPayoutRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('riders') }}>+{riderPayoutRequests.length - BELL_ITEM_CAP} more — see Riders</button>
+                        )}
+                      </section>
+                    )}
+                    {sellerApplications.length > 0 && (
+                      <section>
+                        <h5>New seller applications</h5>
+                        {sellerApplications.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`sapp-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('sellers'); openSellerDetail(a.id) }}>
+                              🏪 {a.name ?? 'New seller'} · {new Date(a.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {sellerApplications.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('sellers') }}>+{sellerApplications.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {riderApplications.length > 0 && (
+                      <section>
+                        <h5>Rider applications</h5>
+                        {riderApplications.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`rapp-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('riders') }}>
+                              🙋 {a.name ?? 'Applicant'}{a.store_name ? ` — ${a.store_name}` : ''} · {new Date(a.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {riderApplications.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('riders') }}>+{riderApplications.length - BELL_ITEM_CAP} more — see Riders</button>
+                        )}
+                      </section>
+                    )}
                     {visibleRefusedCod.length > 0 && (
                       <section>
                         <h5>Customer refused C.O.D.</h5>
@@ -1977,7 +2136,7 @@ export default function Admin({ token, onClose }) {
             </button>
           ))}
 
-          {(() => { const inGroup = tab === 'pages' || tab === 'homepage' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
+          {(() => { const inGroup = tab === 'pages' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
           <button type="button" className={`nav-group-toggle${inGroup ? ' active' : ''}`} aria-expanded={open} onClick={() => setPagesExpanded((v) => !v)}>
             <span className="nav-ico" aria-hidden>{'\u{1F4C4}'}</span>
             <span className="nav-label">Pages</span>
@@ -1985,7 +2144,6 @@ export default function Admin({ token, onClose }) {
           </button>
           {open && (
             <div className="admin-nav-sub">
-              <button type="button" className={tab === 'homepage' ? 'active' : ''} onClick={() => goTab('homepage')}>Homepage</button>
               <button type="button" className={tab === 'footer' ? 'active' : ''} onClick={() => goTab('footer')}>Footer</button>
               <button type="button" className={tab === 'pages' && !pageForm && !pageGroupFilter ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null); setPageGroupFilter(null) }}>All pages</button>
 
@@ -2336,13 +2494,14 @@ export default function Admin({ token, onClose }) {
                   </select>
                 </label>
                 <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                <label>SKU<input disabled value={productForm.sku || 'Generated automatically on save'} /></label>
-                <label>Price (USD)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
-                <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="pre-sale price; blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                <label>SKU<input value={productForm.sku ?? ''} placeholder="Auto-generated if left blank" onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
+                <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                <label>Sale price ($)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
+                <label>Return window (days, max {feesForm?.max_return_days ?? 90})<input type="number" min="0" max={feesForm?.max_return_days ?? 90} placeholder={`default ${feesForm?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
                 {productForm.per_store_stock
                   ? <label>Inventory<input type="text" value="Per store — see below" disabled title="This product tracks stock per store; the counts are in the Store stock section." /></label>
                   : <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>}
-                <label className="admin-check"><input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} /> Active</label>
+                <label className={productForm.is_active ? 'admin-check admin-check-live on' : 'admin-check admin-check-live'}><input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} /> Active (visible in store)</label>
                 <label>Deal type
                   <select value={productForm.deal_type ?? ''} onChange={(event) => setProductForm({ ...productForm, deal_type: event.target.value })}>
                     <option value="">— none —</option>
@@ -2360,6 +2519,30 @@ export default function Admin({ token, onClose }) {
                   {productForm.image_url && <button type="button" className="act ghost" onClick={() => setProductForm({ ...productForm, image_url: '' })}>Clear</button>}
                 </div>
               </label>
+              <div className="admin-gallery-field">
+                <span>More photos <span className="muted">({(productForm.images ?? []).length}/{MAX_IMAGES}) — click a photo to make it the main image</span></span>
+                <div className="admin-gallery">
+                  {(productForm.images ?? []).map((url, index) => (
+                    <div key={url} className={url === productForm.image_url ? 'admin-gallery-item active' : 'admin-gallery-item'}>
+                      <button type="button" title="Use as main image" onClick={() => setProductForm({ ...productForm, image_url: url })}>
+                        <img src={mediaUrl(url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />
+                      </button>
+                      <button type="button" className="admin-gallery-remove" title="Remove photo" onClick={() => setProductForm((form) => ({ ...form, images: form.images.filter((_, i) => i !== index), image_url: form.image_url === url ? (form.images.find((u) => u !== url) ?? '') : form.image_url }))}>&times;</button>
+                    </div>
+                  ))}
+                  {(productForm.images ?? []).length < MAX_IMAGES && (
+                    <label className="admin-gallery-add">+ Add
+                      <input type="file" accept="image/*" multiple disabled={imgBusy} onChange={async (event) => {
+                        const files = [...(event.target.files ?? [])]
+                        event.target.value = ''
+                        for (const file of files) {
+                          await uploadImage(file, (url) => setProductForm((form) => (form.images ?? []).length >= MAX_IMAGES ? form : { ...form, images: [...(form.images ?? []), url], image_url: form.image_url || url }))
+                        }
+                      }} />
+                    </label>
+                  )}
+                </div>
+              </div>
               <label>Video <span className="muted">(optional — plays on hover over the product image)</span>
                 <div className="admin-image-field">
                   {productForm.video_url && <video src={mediaUrl(productForm.video_url)} className="admin-image-preview" muted loop onError={(event) => { event.currentTarget.style.display = 'none' }} />}
@@ -2371,13 +2554,13 @@ export default function Admin({ token, onClose }) {
 
               <fieldset className="admin-fieldset">
                 <legend>Options / variants</legend>
-                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock and image; its SKU is generated automatically on save.</p>
+                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock and image; its SKU is generated automatically if left blank.</p>
                 {(productForm.variants ?? []).map((row, index) => row._delete ? null : (
                   <div className="admin-variant-row" key={row.id ?? `new-${index}`}>
                     <input placeholder="Label (1 kg, Red / Large…)" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
-                    <input disabled placeholder="SKU" value={row.sku || 'Auto on save'} />
-                    <input type="number" min="0" step="0.01" placeholder="Price $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
-                    <input type="number" min="0" step="0.01" placeholder="Reg. $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
+                    <input placeholder="SKU (auto if blank)" value={row.sku ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, sku: event.target.value } : r) })} />
+                    <input type="number" min="0" step="0.01" placeholder="Regular $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
+                    <input type="number" min="0" step="0.01" placeholder="Sale $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
                     <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />
                     <span className="admin-variant-img">
                       <input placeholder="Image URL" value={row.image_url} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, image_url: event.target.value } : r) })} />
@@ -2389,7 +2572,7 @@ export default function Admin({ token, onClose }) {
                       : productForm.variants.filter((_, i) => i !== index) })}>Remove</button>
                   </div>
                 ))}
-                <button type="button" className="act" onClick={() => setProductForm({ ...productForm, variants: [...(productForm.variants ?? []), { ...EMPTY_VARIANT }] })}>Add variant</button>
+                <button type="button" className="act" disabled={(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS} onClick={() => setProductForm({ ...productForm, variants: [...(productForm.variants ?? []), { ...EMPTY_VARIANT }] })}>Add variant{(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS ? ` (max ${MAX_VARIANTS})` : ''}</button>
               </fieldset>
 
               <fieldset className="admin-fieldset">
@@ -2413,13 +2596,11 @@ export default function Admin({ token, onClose }) {
                             </tr></thead>
                             <tbody>
                               {stores.map((store) => {
-                                // Pre-fill a store's count from the product's single Inventory
-                                // value until it's edited, so the grid isn't all blanks.
-                                const row = productForm.store_stock?.[store.id] ?? { is_stocked: true, base: String(productForm.inventory_quantity ?? ''), variants: {} }
+                                const row = storeStockRow(productForm, store.id)
                                 const setRow = (patch) => setProductForm((form) => ({ ...form, store_stock: { ...form.store_stock, [store.id]: { ...row, ...patch } } }))
                                 return (
                                   <tr key={store.id}>
-                                    <td>{store.name || `#${store.id}`}{store.city ? ` — ${store.city}` : ''}</td>
+                                    <td><strong>{store.name || `#${store.id}`}</strong>{storeAddress(store) && <small className="muted admin-store-addr">{storeAddress(store)}</small>}</td>
                                     <td><input type="checkbox" checked={row.is_stocked !== false} onChange={(event) => setRow({ is_stocked: event.target.checked })} /></td>
                                     <td><input type="number" min="0" value={row.base ?? ''} disabled={row.is_stocked === false} onChange={(event) => setRow({ base: event.target.value })} /></td>
                                     {(productForm.variants ?? []).map((v, i) => v._delete ? null : (
@@ -2431,6 +2612,7 @@ export default function Admin({ token, onClose }) {
                             </tbody>
                           </table>
                         </div>
+                        <p className="muted">New stores show up here automatically. <button type="button" className="act ghost" onClick={() => setTab('stores')}>Add a store</button></p>
                       </>}
               </fieldset>
 
@@ -2459,7 +2641,7 @@ export default function Admin({ token, onClose }) {
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '' }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
                       {product.shop_id && product.status === 'pending' && <>
                         <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>
                         <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
@@ -2501,7 +2683,9 @@ export default function Admin({ token, onClose }) {
                 <label>Slug (optional)<input value={categoryForm.slug ?? ''} onChange={(event) => setCategoryForm({ ...categoryForm, slug: event.target.value })} /></label>
                 <label>Sort order<input type="number" min="0" value={categoryForm.sort_order} onChange={(event) => setCategoryForm({ ...categoryForm, sort_order: event.target.value })} /></label>
                 <label className="admin-check"><input type="checkbox" checked={categoryForm.is_active} onChange={(event) => setCategoryForm({ ...categoryForm, is_active: event.target.checked })} /> Active</label>
+                <label className="admin-check"><input type="checkbox" checked={categoryForm.show_on_home !== false} onChange={(event) => setCategoryForm({ ...categoryForm, show_on_home: event.target.checked })} /> Show on homepage</label>
               </div>
+              <p className="muted">Homepage category tiles use this category&rsquo;s name, image and sort order.</p>
               <div className="admin-form-actions">
                 <button className="act" type="submit">Save</button>
                 <button className="act ghost" type="button" onClick={() => setCategoryForm(null)}>Cancel</button>
@@ -2511,7 +2695,7 @@ export default function Admin({ token, onClose }) {
 
           {listBusy.categories && categories.length === 0 ? <Loading>Loading categories…</Loading> : categories.length === 0 ? <p className="admin-empty">No categories.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Image</th><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Image</th><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(categories, categoriesPage).map((category) => (
                   <tr key={category.id}>
@@ -2521,8 +2705,9 @@ export default function Admin({ token, onClose }) {
                     <td>{category.products_count ?? 0}</td>
                     <td>{category.sort_order}</td>
                     <td>{category.is_active ? 'Yes' : 'No'}</td>
+                    <td>{category.show_on_home !== false ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active }); scrollFormIntoView('admin-category-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active, show_on_home: category.show_on_home !== false }); scrollFormIntoView('admin-category-form') }}>Edit</button>
                       <button className="act danger" type="button" onClick={() => removeCategory(category)}>Delete</button>
                     </td>
                   </tr>
@@ -2625,9 +2810,41 @@ export default function Admin({ token, onClose }) {
             </form>
           )}
 
+          {riderApps.length > 0 && (
+            <>
+              <h3 className="admin-subhead">Rider applications{riderApps.filter((a) => a.status === 'pending').length ? ` (${riderApps.filter((a) => a.status === 'pending').length} waiting)` : ''}</h3>
+              <p className="muted">People apply at /rider, choosing a store near them. Approving makes them a rider for that store.</p>
+              <table className="admin-table">
+                <thead><tr><th>Applicant</th><th>Store</th><th>Vehicle</th><th>Home</th><th>Licence</th><th>Status</th><th>Applied</th><th></th></tr></thead>
+                <tbody>
+                  {riderApps.map((app) => (
+                    <tr key={app.id}>
+                      <td>{app.user?.name}<br /><span className="muted">{app.user?.email} · {app.phone}</span></td>
+                      <td>{app.store?.name ?? <span className="muted">—</span>}</td>
+                      <td>{app.vehicle_type}</td>
+                      <td>{app.home_address}</td>
+                      <td>{app.license_number || <span className="muted">—</span>}{app.license_document_path && <> <button type="button" className="act ghost" onClick={() => viewKycDocument(app.license_document_path)}>View</button></>}</td>
+                      <td>{app.status === 'pending' ? <span className="admin-status-chip pending">Pending</span> : app.status === 'approved' ? <span className="admin-status-chip ok">Approved</span> : <span className="admin-status-chip bad" title={app.rejection_reason ?? ''}>Rejected</span>}</td>
+                      <td>{new Date(app.created_at).toLocaleDateString()}</td>
+                      <td className="admin-actions">
+                        {app.status === 'pending' && (
+                          <>
+                            <button className="act" type="button" disabled={busyId === `app-${app.id}`} onClick={() => riderAppAction(app, 'approve')}>Approve</button>
+                            <button className="act danger" type="button" disabled={busyId === `app-${app.id}`} onClick={() => rejectRiderApp(app)}>Reject</button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <h3 className="admin-subhead">Riders</h3>
+            </>
+          )}
+
           {listBusy.riders && riders.length === 0 ? <Loading>Loading riders…</Loading> : riders.length === 0 ? <p className="admin-empty">No riders yet. Add one by email above.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stores</th><th>Location</th><th>Rating</th><th>Active jobs</th><th>On shift</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stores</th><th>Location</th><th>Rating</th><th>Active jobs</th><th>Earnings</th><th>On shift</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(riders, ridersPage).map((rider) => (
                   <tr key={rider.id}>
@@ -2647,6 +2864,7 @@ export default function Admin({ token, onClose }) {
                       : <span className="muted">no base set</span>}</td>
                     <td><button className="act ghost" type="button" onClick={() => openRiderDetail(rider.id, 'reviews')}>{rider.rating_count ? `★ ${(rider.rating_avg ?? 0).toFixed(1)} (${rider.rating_count})` : 'Reviews'}</button></td>
                     <td className={rider.active_deliveries > 0 ? 'low' : ''}>{rider.active_deliveries}</td>
+                    <td>{money(rider.earnings_balance_cents ?? 0)}{rider.payout_requested_cents != null && <span className="admin-note admin-cash-note">💸 {money(rider.payout_requested_cents)} requested</span>}</td>
                     <td>{rider.rider_is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => openRiderDetail(rider.id)}>Attendance &amp; stats</button>
@@ -2764,113 +2982,6 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
-      {tab === 'homepage' && (
-        <section className="admin-panel">
-          <h3 className="admin-subhead">Promo banners</h3>
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => { setBannerForm({ ...EMPTY_BANNER }); scrollFormIntoView('admin-banner-form') }}>New banner</button>
-            <span className="muted">Set each banner&rsquo;s <strong>Placement</strong>: <strong>Hero</strong> = full-width image at the top, <strong>Strip</strong> = the 3-up row below. Add as many as you like with &ldquo;New banner&rdquo;; &ldquo;Order&rdquo; sorts them within each row.</span>
-          </div>
-
-          {bannerForm && (
-            <form id="admin-banner-form" className="admin-form" onSubmit={saveBanner}>
-              <h3>{bannerForm.id ? `Edit banner #${bannerForm.id}` : 'New banner'}</h3>
-              <div className="admin-image-field">
-                {bannerForm.image_url
-                  ? <img className="admin-banner-preview" src={mediaUrl(bannerForm.image_url)} alt="" />
-                  : <div className="admin-banner-preview placeholder">No image</div>}
-                <div>
-                  <label>Image URL<input value={bannerForm.image_url} onChange={(event) => setBannerForm({ ...bannerForm, image_url: event.target.value })} placeholder="https://…" /></label>
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBannerForm((form) => ({ ...form, image_url: url })), 'banners')} />
-                  {imgBusy && <span className="muted"> uploading…</span>}
-                </div>
-              </div>
-              <div className="admin-form-grid">
-                <label>Headline (optional)<input maxLength="120" value={bannerForm.headline} onChange={(event) => setBannerForm({ ...bannerForm, headline: event.target.value })} placeholder="Fresh fruits & veg, in minutes" /></label>
-                <label>Links to category<select value={bannerForm.category_slug} onChange={(event) => setBannerForm({ ...bannerForm, category_slug: event.target.value })}><option value="">— none —</option>{categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}</select></label>
-                <label>Or link URL<input value={bannerForm.link_url} onChange={(event) => setBannerForm({ ...bannerForm, link_url: event.target.value })} placeholder="https://… (used only if no category)" /></label>
-                <label>Placement<select value={bannerForm.placement} onChange={(event) => setBannerForm({ ...bannerForm, placement: event.target.value })}><option value="hero">Hero — full-width top</option><option value="strip">Strip — 3-up row</option></select></label>
-                <label>Sort order<input type="number" min="0" max="9999" value={bannerForm.sort_order} onChange={(event) => setBannerForm({ ...bannerForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={bannerForm.is_active} onChange={(event) => setBannerForm({ ...bannerForm, is_active: event.target.checked })} /> Active</label>
-              </div>
-              <div className="admin-form-actions">
-                <button className="act" type="submit" disabled={!bannerForm.image_url}>Save</button>
-                <button className="act ghost" type="button" onClick={() => setBannerForm(null)}>Cancel</button>
-              </div>
-            </form>
-          )}
-
-          {banners.length === 0 ? <p className="admin-empty">No banners yet. Add one to fill the homepage promo area.</p> : (
-            <table className="admin-table">
-              <thead><tr><th>Preview</th><th>Headline</th><th>Placement</th><th>Target</th><th>Order</th><th>Active</th><th></th></tr></thead>
-              <tbody>
-                {banners.map((banner) => (
-                  <tr key={banner.id}>
-                    <td><img className="admin-banner-thumb" src={mediaUrl(banner.image_url)} alt="" /></td>
-                    <td>{banner.headline || <span className="muted">—</span>}</td>
-                    <td>{banner.placement === 'strip' ? 'Strip' : 'Hero'}</td>
-                    <td>{banner.category_slug ? `#${banner.category_slug}` : (banner.link_url || <span className="muted">—</span>)}</td>
-                    <td>{banner.sort_order}</td>
-                    <td>{banner.is_active ? 'Yes' : 'No'}</td>
-                    <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setBannerForm({ id: banner.id, image_url: banner.image_url ?? '', headline: banner.headline ?? '', category_slug: banner.category_slug ?? '', link_url: banner.link_url ?? '', placement: banner.placement ?? 'strip', sort_order: banner.sort_order ?? 0, is_active: banner.is_active }); scrollFormIntoView('admin-banner-form') }}>Edit</button>
-                      <button className="act danger" type="button" onClick={() => removeBanner(banner)}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <h3 className="admin-subhead">Category tiles</h3>
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => { setTileForm({ ...EMPTY_TILE }); scrollFormIntoView('admin-tile-form') }}>New tile</button>
-            <span className="muted">The homepage shows these in order — first three as large cards, the rest as a grid. Leave the title blank to use the category&rsquo;s own; edit category images in the Categories tab. With no active tiles the homepage lists every category.</span>
-          </div>
-
-          {tileForm && (
-            <form id="admin-tile-form" className="admin-form" onSubmit={saveTile}>
-              <h3>{tileForm.id ? `Edit tile #${tileForm.id}` : 'New tile'}</h3>
-              <div className="admin-form-grid">
-                <label>Category<select value={tileForm.category_slug} onChange={(event) => setTileForm({ ...tileForm, category_slug: event.target.value })}><option value="">— none (use link) —</option>{categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}</select></label>
-                <label>Custom title (optional)<input maxLength="120" value={tileForm.title} onChange={(event) => setTileForm({ ...tileForm, title: event.target.value })} placeholder="blank = category name" /></label>
-                <label>Or link URL<input value={tileForm.link_url} onChange={(event) => setTileForm({ ...tileForm, link_url: event.target.value })} placeholder="used only if no category" /></label>
-                <label>Sort order<input type="number" min="0" max="9999" value={tileForm.sort_order} onChange={(event) => setTileForm({ ...tileForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={tileForm.is_active} onChange={(event) => setTileForm({ ...tileForm, is_active: event.target.checked })} /> Active</label>
-              </div>
-              <div className="admin-form-actions">
-                <button className="act" type="submit" disabled={!tileForm.category_slug && !tileForm.link_url.trim()}>Save</button>
-                <button className="act ghost" type="button" onClick={() => setTileForm(null)}>Cancel</button>
-              </div>
-            </form>
-          )}
-
-          {homeTiles.length === 0 ? <p className="admin-empty">No tiles — the homepage is listing every category.</p> : (
-            <table className="admin-table">
-              <thead><tr><th>Image</th><th>Title</th><th>Target</th><th>Order</th><th>Active</th><th></th></tr></thead>
-              <tbody>
-                {homeTiles.map((tile) => {
-                  const tileImage = tile.image_url || categories.find((c) => c.slug === tile.category_slug)?.image_url
-                  return (
-                  <tr key={tile.id}>
-                    <td>{tileImage ? <img className="admin-banner-thumb" src={mediaUrl(tileImage)} alt="" /> : <span className="muted">—</span>}</td>
-                    <td>{tile.title || <span className="muted">category name</span>}</td>
-                    <td>{tile.category_slug ? `#${tile.category_slug}` : (tile.link_url || <span className="muted">—</span>)}</td>
-                    <td>{tile.sort_order}</td>
-                    <td>{tile.is_active ? 'Yes' : 'No'}</td>
-                    <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setTileForm({ id: tile.id, title: tile.title ?? '', image_url: tile.image_url ?? '', category_slug: tile.category_slug ?? '', link_url: tile.link_url ?? '', sort_order: tile.sort_order ?? 0, is_active: tile.is_active }); scrollFormIntoView('admin-tile-form') }}>Edit</button>
-                      <button className="act danger" type="button" onClick={() => removeTile(tile)}>Delete</button>
-                    </td>
-                  </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
       {tab === 'pages' && (() => {
         const visiblePages = pageGroupFilter
           ? pages.filter((p) => (pageGroupFilter === 'unassigned'
@@ -2918,6 +3029,10 @@ export default function Admin({ token, onClose }) {
                   <div className="admin-collapsible-body">
                     <div className="admin-form-grid">
                       <label>Slug (optional)<input value={pageForm.slug} placeholder="auto from title" onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })} /></label>
+                      <label>Parent page (optional)
+                        <input list="admin-page-slugs" value={pageForm.parent_slug ?? ''} placeholder="e.g. seller-services-agreement" onChange={(event) => setPageForm({ ...pageForm, parent_slug: event.target.value })} />
+                        <datalist id="admin-page-slugs">{pages.filter((p) => p.slug !== pageForm.slug).map((p) => <option key={p.slug} value={p.slug}>{p.title}</option>)}</datalist>
+                      </label>
                       <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
                       <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
                       <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
@@ -3429,8 +3544,22 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-form-grid">
                   <label>Commission rate (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
                   <label>Minimum payout ($)<input type="number" min="0" step="0.01" value={feesForm.min_payout} onChange={(event) => setFeesForm({ ...feesForm, min_payout: event.target.value })} /></label>
+                  <label>Maximum per payout ($)<input type="number" min="0" step="0.01" value={feesForm.max_payout} onChange={(event) => setFeesForm({ ...feesForm, max_payout: event.target.value })} /></label>
+                  <label>Daily payout cap, all sellers ($)<input type="number" min="0" step="0.01" placeholder="0 = no cap" value={feesForm.daily_payout_cap} onChange={(event) => setFeesForm({ ...feesForm, daily_payout_cap: event.target.value })} /></label>
+                  <label>Default return window (days)<input type="number" min="0" max={feesForm.max_return_days || 365} value={feesForm.return_window_days} onChange={(event) => setFeesForm({ ...feesForm, return_window_days: event.target.value })} /></label>
+                  <label>Maximum return window (days)<input type="number" min="0" max="365" value={feesForm.max_return_days} onChange={(event) => setFeesForm({ ...feesForm, max_return_days: event.target.value })} /></label>
+                  <label>Return pickup fee charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.return_pickup_fee} onChange={(event) => setFeesForm({ ...feesForm, return_pickup_fee: event.target.value })} /></label>
                 </div>
-                <p className="muted">A seller's balance must reach this amount before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces).</p>
+                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap.</p>
+
+                <h3>Rider pay</h3>
+                <div className="admin-form-grid">
+                  <label>Base pay per delivery ($)<input type="number" min="0" step="0.01" value={feesForm.rider_base_pay} onChange={(event) => setFeesForm({ ...feesForm, rider_base_pay: event.target.value })} /></label>
+                  <label>Per mile ($)<input type="number" min="0" step="0.01" value={feesForm.rider_per_mile} onChange={(event) => setFeesForm({ ...feesForm, rider_per_mile: event.target.value })} /></label>
+                  <label>Minimum rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_min_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_min_payout: event.target.value })} /></label>
+                  <label>Maximum per rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_max_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_max_payout: event.target.value })} /></label>
+                </div>
+                <p className="muted">Each completed delivery credits the rider the base pay plus the per-mile rate for the straight-line distance from the store to the customer. Riders can request a payout once they&rsquo;re owed the minimum — COD cash they still hold is deducted first.</p>
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
 
@@ -3509,14 +3638,25 @@ export default function Admin({ token, onClose }) {
               </p>
             )}
             <div className="chat-log" ref={chatLogRef}>{(thread.messages ?? []).map((m) => (
-              <div key={m.id} className={`chat-msg ${m.internal ? 'internal' : m.is_staff && m.user_id ? 'staff' : m.user_id ? 'customer' : 'system'}`}>
-                <span>{m.internal && '🔒 '}{m.body}</span>
-                <em>{m.internal ? 'Internal note — not visible to customer · ' : ''}{new Date(m.created_at).toLocaleString()}</em>
+              <div key={m.id} className={`chat-msg ${m.internal ? 'internal' : m.from_seller ? 'seller' : m.is_staff && m.user_id ? 'staff' : m.user_id ? 'customer' : 'system'}`}>
+                {(m.internal || m.body) && <span>{m.internal && '🔒 '}{m.body}</span>}
+                <ChatPhotos urls={m.attachments} />
+                <em>{m.internal ? 'Internal note — not visible to customer · ' : ''}{m.from_seller ? `${thread.seller_shop?.name ?? 'Seller'} (seller) · ` : ''}{new Date(m.created_at).toLocaleString()}</em>
               </div>
             ))}</div>
+            {thread.order_id && !String(thread.issue_type).startsWith('seller_') && (
+              thread.seller_shop
+                ? <p className="muted">Seller in this chat: <b>{thread.seller_shop.name}</b></p>
+                : (thread.seller_options ?? []).length > 0 && (
+                  <p className="muted">Needs the seller?{' '}
+                    {thread.seller_options.map((shop) => <button key={shop.id} className="act ghost" type="button" style={{ marginLeft: 6 }} onClick={() => bringInSeller(shop.id)}>Bring in {shop.name}</button>)}
+                  </p>
+                )
+            )}
+            <ChatPhotoPicker photos={threadPhotos} onChange={setThreadPhotos} token={token} onError={setMessage} />
             <div className="chat-send">
               <input placeholder="Reply to the customer" value={threadReply} onChange={(event) => setThreadReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') replyThread() }} />
-              <button type="button" disabled={!threadReply.trim()} onClick={replyThread}>Send</button>
+              <button type="button" disabled={!threadReply.trim() && !threadPhotos.length} onClick={replyThread}>Send</button>
             </div>
 
             {thread.order && thread.order.payment_status === 'pending' && (thread.user?.gift_cards ?? []).length > 0 && (
@@ -3535,12 +3675,11 @@ export default function Admin({ token, onClose }) {
               <div className="admin-form" style={{ marginTop: 16 }}>
                 <h4>Attach an order</h4>
                 <p className="muted">This chat wasn&rsquo;t opened against a specific order — pick one of {thread.user?.email ?? 'this customer'}&rsquo;s orders to unlock refunds &amp; gift cards.</p>
-                <select className="admin-order-picker" defaultValue="" onChange={(event) => { if (event.target.value) linkThreadOrder(event.target.value) }}>
-                  <option value="" disabled>Choose an order…</option>
-                  {thread.user.orders.map((o) => (
-                    <option key={o.id} value={o.id}>#{o.id} — {money(o.total_cents)} — {STATUS_LABELS[o.status] ?? o.status} — {new Date(o.created_at).toLocaleDateString()}</option>
-                  ))}
-                </select>
+                <UpwardPicker
+                  placeholder="Choose an order…"
+                  options={thread.user.orders.map((o) => ({ value: o.id, label: `#${o.id} — ${money(o.total_cents)} — ${STATUS_LABELS[o.status] ?? o.status} — ${new Date(o.created_at).toLocaleDateString()}` }))}
+                  onPick={(id) => linkThreadOrder(id)}
+                />
               </div>
             )}
 
@@ -3617,7 +3756,14 @@ export default function Admin({ token, onClose }) {
                 {sellerDetail.shop && (
                   <>
                     <h4>Payouts</h4>
-                    <p className="muted">Balance: <strong>{money(sellerDetail.balance_cents ?? 0)}</strong> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0)}</p>
+                    <p className="muted">Available: <strong>{money(Math.max(0, sellerDetail.available_cents ?? 0))}</strong> · Held for returns: <strong>{money(sellerDetail.pending_cents ?? 0)}</strong> · Total balance: {money(sellerDetail.balance_cents ?? 0)}</p>
+                    {(sellerDetail.pending_orders ?? []).length > 0 && (
+                      <p className="muted">Held: {sellerDetail.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>
+                    )}
+                    <p className="muted"> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0)}{sellerDetail.max_payout_cents > 0 ? ` · Max per payout: ${money(sellerDetail.max_payout_cents)}` : ''}{sellerDetail.daily_payout_remaining_cents != null ? ` · ${money(sellerDetail.daily_payout_remaining_cents)} left today (all sellers)` : ''}</p>
+                    {sellerDetail.pending_payout_request && (
+                      <p className="admin-payout-request">💸 Seller requested <strong>{money(sellerDetail.pending_payout_request.amount_cents)}</strong> on {new Date(sellerDetail.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
+                    )}
                     {sellerDetail.payout_method ? (
                       <p className="muted">
                         {sellerDetail.payout_method === 'bank' ? <>Bank transfer — {sellerDetail.payout_details?.holder_name}, {sellerDetail.payout_details?.bank_name}, acct {sellerDetail.payout_details?.account_number} · routing {sellerDetail.payout_details?.routing_number}</>
@@ -3633,8 +3779,12 @@ export default function Admin({ token, onClose }) {
                     )}
                     {sellerDetail.status === 'approved' && (
                       <div className="admin-form-actions">
-                        <button className="act" type="button" disabled={busyId === sellerDetail.id || (sellerDetail.balance_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0)} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
-                        {(sellerDetail.balance_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Below the {money(sellerDetail.min_payout_cents ?? 0)} minimum — payout unlocks once the balance reaches it.</p>}
+                        {/* Only offered once the cleared (past-return-window) balance reaches the minimum. */}
+                        {(sellerDetail.available_cents ?? 0) >= (sellerDetail.min_payout_cents ?? 0) && (sellerDetail.available_cents ?? 0) > 0 && (
+                          <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
+                        )}
+                        {sellerDetail.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectPayoutRequest(sellerDetail)}>Decline request</button>}
+                        {(sellerDetail.available_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Available balance is below the {money(sellerDetail.min_payout_cents ?? 0)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</p>}
                       </div>
                     )}
                   </>
@@ -3831,6 +3981,35 @@ export default function Admin({ token, onClose }) {
                         Holding <b>{money(riderDetail.rider.cash_holding_cents)}</b> in cash{riderDetail.rider.cash_holding_since ? ` from ${new Date(riderDetail.rider.cash_holding_since).toLocaleDateString()}` : ''} on COD deliveries.
                         <button type="button" className="act" disabled={busyId === riderDetail.rider.id} onClick={() => settleRiderCash(riderDetail.rider)}>Confirm cash returned</button>
                       </p>
+                    )}
+
+                    {riderDetail.pay && (
+                      <>
+                        <h4>Pay</h4>
+                        <div className="admin-rider-stats">
+                          <span><strong>{money(riderDetail.pay.balance_cents)}</strong> earned, unpaid</span>
+                          <span><strong>{money(riderDetail.pay.cash_holding_cents)}</strong> cash held</span>
+                          <span><strong>{money(riderDetail.pay.owed_cents)}</strong> owed</span>
+                          <span><strong>{money(riderDetail.pay.paid_total_cents)}</strong> paid to date</span>
+                        </div>
+                        <p className="muted">{riderDetail.pay.payout_method === 'bank'
+                          ? `Bank — ${riderDetail.pay.payout_details?.holder_name}, ${riderDetail.pay.payout_details?.bank_name}, acct ${riderDetail.pay.payout_details?.account_number} · routing ${riderDetail.pay.payout_details?.routing_number}`
+                          : riderDetail.pay.payout_method === 'paypal' ? `PayPal — ${riderDetail.pay.payout_details?.email}` : 'No payout method on file yet.'}</p>
+                        {riderDetail.pay.pending_payout_request && (
+                          <p className="admin-payout-request">🛵 Rider requested <strong>{money(riderDetail.pay.pending_payout_request.amount_cents)}</strong> on {new Date(riderDetail.pay.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
+                        )}
+                        <div className="admin-form-actions">
+                          <button className="act" type="button" disabled={busyId === riderDetail.rider.id || riderDetail.pay.owed_cents <= 0} onClick={() => recordRiderPayout(riderDetail.rider, riderDetail.pay)}>Record payout</button>
+                          {riderDetail.pay.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === riderDetail.rider.id} onClick={() => declineRiderPayout(riderDetail.rider)}>Decline request</button>}
+                        </div>
+                        {(riderDetail.pay.entries ?? []).length > 0 && (
+                          <div className="admin-gift-issued">
+                            {riderDetail.pay.entries.map((e) => (
+                              <p key={e.id}>{e.type === 'payout_debit' ? 'Payout' : `Delivery #${e.order_id ?? '—'}`} <b>{e.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(e.amount_cents))}</b>{e.distance_miles != null ? ` · ${e.distance_miles} mi` : ''}{e.note ? ` — ${e.note}` : ''} · {new Date(e.created_at).toLocaleDateString()}</p>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <h4>Attendance</h4>

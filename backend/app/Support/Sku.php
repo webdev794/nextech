@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Shop;
 
 /**
@@ -10,7 +11,7 @@ use App\Models\Shop;
  * ever types one in. Format:
  *   - Admin-added product:  ADM######            (product's own id, zero-padded)
  *   - Seller-added product: SLR{shopCode}####     (shop's 4-char code + a per-shop sequence)
- *   - Variant:               {productSku}-V#      (a per-product sequence)
+ *   - Variant:               {productSku}-V#      (lowest free digit 1–9; max 9 variants)
  *
  * Callers must already be inside a DB transaction — nextForShop() and
  * nextVariantSku() lock a row to hand out a sequence number safely under
@@ -71,12 +72,24 @@ class Sku
         return sprintf('ADM%06d', $productId);
     }
 
+    public const MAX_VARIANTS = 9;
+
+    /**
+     * Hands out the lowest variant number (1–9) not already in use, so the
+     * suffix always stays one digit — numbers freed by a deleted variant get
+     * reused.
+     */
     public static function nextVariantSku(Product $product): string
     {
         $locked = Product::whereKey($product->id)->lockForUpdate()->first();
-        $seq = $locked->next_variant_seq;
-        $locked->increment('next_variant_seq');
 
-        return "{$locked->sku}-V{$seq}";
+        for ($n = 1; $n <= self::MAX_VARIANTS; $n++) {
+            $sku = "{$locked->sku}-V{$n}";
+            if (! ProductVariant::where('sku', $sku)->exists()) {
+                return $sku;
+            }
+        }
+
+        abort(422, 'A product can have at most '.self::MAX_VARIANTS.' variants.');
     }
 }

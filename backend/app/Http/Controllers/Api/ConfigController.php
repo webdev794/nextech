@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Banner;
 use App\Models\Category;
-use App\Models\HomeTile;
 use App\Models\Setting;
 use App\Models\Store;
 use App\Support\Branding;
@@ -38,6 +37,8 @@ class ConfigController extends Controller
                 // out from their own ledger entries, so surfacing it directly
                 // lets the Seller Center price estimator use the real rate.
                 'commission_rate_bps' => SellerLedger::rate(),
+                'return_window_days' => SellerLedger::returnWindowDays(),
+                'max_return_days' => SellerLedger::maxReturnDays(),
                 ...CheckoutFees::current(),
                 'stores' => Store::query()->where('is_active', true)
                     ->whereNotNull('latitude')->whereNotNull('longitude')
@@ -55,24 +56,26 @@ class ConfigController extends Controller
      *
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
+    /**
+     * The homepage category carousel: every active category ticked "Show on
+     * homepage", in the categories' own sort order. (Replaces the separate
+     * admin-managed home_tiles list, which only ever mirrored categories.)
+     */
     private function homeTiles()
     {
-        $categories = Category::query()->where('is_active', true)
-            ->get(['name', 'slug', 'image_url'])->keyBy('slug');
-
-        return HomeTile::query()->active()->ordered()->get()
-            ->map(function (HomeTile $tile) use ($categories) {
-                $category = $tile->category_slug ? $categories->get($tile->category_slug) : null;
-
-                return [
-                    'id' => $tile->id,
-                    'title' => $tile->title ?: ($category->name ?? null),
-                    'image_url' => $tile->image_url ?: ($category->image_url ?? null),
-                    'category_slug' => $category?->slug,
-                    'link_url' => $tile->link_url,
-                ];
-            })
-            ->filter(fn (array $tile) => $tile['category_slug'] || $tile['link_url'])
+        return Category::query()
+            ->where('is_active', true)
+            ->where('show_on_home', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'slug', 'image_url'])
+            ->map(fn (Category $category) => [
+                'id' => 'cat-'.$category->id,
+                'title' => $category->name,
+                'image_url' => $category->image_url,
+                'category_slug' => $category->slug,
+                'link_url' => null,
+            ])
             ->values();
     }
 }

@@ -3,8 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\OrderItem;
+use App\Models\Shop;
 use App\Models\SupportThread;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
@@ -29,6 +32,7 @@ class AdminSupportController extends Controller
             ->withCount('messages')
             ->when($validated['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
             ->when($issueTypes, fn ($q) => $q->whereIn('issue_type', $issueTypes))
+            ->with('sellerShop:id,name')
             ->orderByRaw("status = 'open' desc")
             ->orderByDesc('last_message_at')
             ->paginate(30);
@@ -53,7 +57,7 @@ class AdminSupportController extends Controller
     private function threadRelations(): array
     {
         return [
-            'messages', 'user:id,name,email',
+            'messages', 'user:id,name,email', 'sellerShop:id,name',
             'user.giftCards' => fn ($q) => $q->where('is_active', true)->where('balance_cents', '>', 0),
             // Recent orders for this customer, so a thread opened without one
             // attached (e.g. from general support) can still be linked to the
@@ -67,16 +71,66 @@ class AdminSupportController extends Controller
     {
         $thread->load($this->threadRelations());
 
-        return response()->json(['data' => $thread]);
+        return response()->json(['data' => $this->withSellerOptions($thread)]);
+    }
+
+    /**
+     * Bring a seller into this customer's order chat — a three-way
+     * conversation, NexTech stays in it. Only a shop with items on the
+     * thread's order qualifies; with just one such shop, it's picked for you.
+     * Deliberately one-way: once in, the seller stays part of the conversation
+     * (and its record) until it's resolved — nobody can drop them from a
+     * dispute that has no easy answer.
+     */
+    public function addSeller(Request $request, SupportThread $thread): JsonResponse
+    {
+        abort_if(str_starts_with((string) $thread->issue_type, 'seller_'), 422, 'This is already a seller conversation.');
+        abort_unless($thread->order_id, 422, 'Attach an order to this chat first — the seller is picked from that order.');
+
+        $data = $request->validate(['shop_id' => ['sometimes', 'nullable', 'integer']]);
+        $options = $this->sellerOptions($thread);
+        abort_if($options->isEmpty(), 422, 'No seller items on this order — it was sold by NexTech.');
+
+        $shop = isset($data['shop_id'])
+            ? $options->firstWhere('id', (int) $data['shop_id'])
+            : ($options->count() === 1 ? $options->first() : null);
+        abort_unless($shop, 422, 'Pick which seller to bring in.');
+
+        $thread->forceFill(['seller_shop_id' => $shop->id, 'seller_joined_at' => now()])->save();
+        $thread->post(null, "{$shop->name} (the seller) has joined this chat to help with your order.", system: true);
+
+        return response()->json(['data' => $this->withSellerOptions($thread->fresh($this->threadRelations()))]);
+    }
+
+    /** Seller shops with items on the thread's order. */
+    private function sellerOptions(SupportThread $thread): Collection
+    {
+        if (! $thread->order_id) {
+            return collect();
+        }
+
+        $shopIds = OrderItem::query()->where('order_id', $thread->order_id)->whereNotNull('shop_id')->distinct()->pluck('shop_id');
+
+        return Shop::query()->whereIn('id', $shopIds)->get(['id', 'name']);
+    }
+
+    private function withSellerOptions(SupportThread $thread): SupportThread
+    {
+        return $thread->setAttribute('seller_options', $this->sellerOptions($thread));
     }
 
     public function message(Request $request, SupportThread $thread): JsonResponse
     {
-        $validated = $request->validate(['body' => ['required', 'string', 'max:2000']]);
+        $validated = $request->validate([
+            'body' => ['required_without:attachments', 'nullable', 'string', 'max:2000'],
+            // Photos uploaded first via POST /support/attachments.
+            'attachments' => ['sometimes', 'array', 'max:4'],
+            'attachments.*' => ['string', 'max:500', 'starts_with:/api/media/file/support/'],
+        ]);
 
-        $thread->post($request->user(), $validated['body'], isStaff: true);
+        $thread->post($request->user(), trim((string) ($validated['body'] ?? '')), isStaff: true, attachments: $validated['attachments'] ?? []);
 
-        return response()->json(['data' => $thread->fresh($this->threadRelations())]);
+        return response()->json(['data' => $this->withSellerOptions($thread->fresh($this->threadRelations()))]);
     }
 
     public function update(Request $request, SupportThread $thread): JsonResponse

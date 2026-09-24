@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
@@ -122,10 +123,11 @@ class AdminSellerController extends Controller
             'note' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
-        $balance = $shop->balanceCents();
+        // Only earnings past their return window can be paid out.
+        $balance = max(0, SellerLedger::availableCents($shop));
         if ($data['amount_cents'] > $balance) {
             return response()->json([
-                'message' => "Payout can't exceed the seller's balance of $".number_format($balance / 100, 2).'.',
+                'message' => "Payout can't exceed the seller's available balance of $".number_format($balance / 100, 2).' — the rest is still inside the return window.',
             ], 422);
         }
 
@@ -136,7 +138,53 @@ class AdminSellerController extends Controller
             ], 422);
         }
 
-        SellerLedger::recordPayout($shop, $data['amount_cents'], $data['note'] ?? null, $request->user());
+        $maxPayout = SellerLedger::maxPayoutCents();
+        if ($maxPayout > 0 && $data['amount_cents'] > $maxPayout) {
+            return response()->json([
+                'message' => 'A single payout can be at most $'.number_format($maxPayout / 100, 2).' — pay the rest in another transfer.',
+            ], 422);
+        }
+
+        // One payout at a time platform-wide, so two admins paying different
+        // sellers can't both squeeze under the daily cap at the same moment.
+        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request): void {
+            $remaining = SellerLedger::dailyPayoutRemainingCents();
+            if ($remaining !== null && $data['amount_cents'] > $remaining) {
+                abort(422, "That would go over today's payout cap across all sellers — $".number_format($remaining / 100, 2).' left today.');
+            }
+
+            DB::transaction(function () use ($shop, $data, $request): void {
+                $entry = SellerLedger::recordPayout($shop, $data['amount_cents'], $data['note'] ?? null, $request->user());
+
+                // Paying out settles the seller's open request, if any.
+                $shop->payoutRequests()->where('status', 'pending')->update([
+                    'status' => 'paid',
+                    'ledger_entry_id' => $entry->id,
+                    'processed_by' => $request->user()->id,
+                    'processed_at' => now(),
+                ]);
+            });
+        });
+
+        return response()->json([
+            'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
+        ]);
+    }
+
+    /** Decline a seller's open payout request (e.g. refunds still pending), with a reason they'll see. */
+    public function rejectPayoutRequest(Request $request, Seller $seller): JsonResponse
+    {
+        $data = $request->validate(['note' => ['required', 'string', 'max:500']]);
+
+        $payoutRequest = $seller->shop?->payoutRequests()->where('status', 'pending')->first();
+        abort_unless($payoutRequest, 404, 'No open payout request.');
+
+        $payoutRequest->update([
+            'status' => 'rejected',
+            'admin_note' => $data['note'],
+            'processed_by' => $request->user()->id,
+            'processed_at' => now(),
+        ]);
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
@@ -286,10 +334,19 @@ class AdminSellerController extends Controller
 
             $shop = $seller->relationLoaded('shop') ? $seller->shop : null;
             $row['balance_cents'] = $shop ? $shop->balanceCents() : null;
+            if ($shop) {
+                $split = SellerLedger::breakdown($shop);
+                $row['available_cents'] = $split['available_cents'];
+                $row['pending_cents'] = $split['pending_cents'];
+                $row['pending_orders'] = $split['pending'];
+            }
             $row['ledger_entries'] = $shop
                 ? $shop->ledgerEntries()->latest()->limit(20)->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at'])
                 : [];
             $row['min_payout_cents'] = SellerLedger::minPayoutCents();
+            $row['max_payout_cents'] = SellerLedger::maxPayoutCents();
+            $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents();
+            $row['pending_payout_request'] = $shop?->payoutRequests()->where('status', 'pending')->first();
         }
 
         return $row;

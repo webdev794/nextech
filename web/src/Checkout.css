@@ -88,3 +88,4 @@
 .star-picker .star.on{color:#f5a623}
 .star-picker .star:disabled{cursor:default}
 .chat-rating{margin:12px 0}
+.chat-msg.staff.seller{background:#fff7ef;border-color:#fbd1ad}

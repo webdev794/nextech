@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\PayoutRequest;
 use App\Models\Seller;
 use App\Models\Shop;
 use App\Support\SellerLedger;
@@ -151,6 +152,12 @@ class SellerController extends Controller
 
         if ($seller?->shop) {
             $seller->balance_cents = $seller->shop->balanceCents();
+            // Earnings are held until the order's return window has passed.
+            $split = SellerLedger::breakdown($seller->shop);
+            $seller->available_cents = $split['available_cents'];
+            $seller->pending_cents = $split['pending_cents'];
+            $seller->pending_orders = $split['pending'];
+            $seller->return_window_days = SellerLedger::returnWindowDays();
             $seller->ledger_entries = $seller->shop->ledgerEntries()
                 ->latest()
                 ->limit(20)
@@ -160,9 +167,39 @@ class SellerController extends Controller
             // file, so this checks ledger history, not the current balance.
             $seller->has_sales = $seller->shop->ledgerEntries()->exists();
             $seller->min_payout_cents = SellerLedger::minPayoutCents();
+            $seller->max_payout_cents = SellerLedger::maxPayoutCents();
+            $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }
 
         return response()->json(['data' => $seller]);
+    }
+
+    /**
+     * Ask admin to be paid out. One open request at a time; the amount is the
+     * current balance capped at the per-transfer maximum (a larger balance is
+     * paid over several requests). Admin sees it in the notification bell.
+     */
+    public function requestPayout(Request $request): JsonResponse
+    {
+        $seller = $request->user()->seller()->with('shop')->first();
+        abort_unless($seller?->status === 'approved' && $seller->shop, 403, 'Approved seller access required.');
+        abort_unless($seller->payout_method, 422, 'Add your payout method (bank or PayPal) first.');
+
+        $payoutRequest = DB::transaction(function () use ($seller): PayoutRequest {
+            // Lock the shop row so a double-click can't open two requests.
+            $shop = Shop::whereKey($seller->shop->id)->lockForUpdate()->first();
+            abort_if($shop->payoutRequests()->where('status', 'pending')->exists(), 422, 'You already have a payout request waiting.');
+
+            $min = SellerLedger::minPayoutCents();
+            abort_if(SellerLedger::availableCents($shop) < $min, 422, 'Your available balance (past the return window) needs to reach $'.number_format($min / 100, 2).' first.');
+
+            return $shop->payoutRequests()->create([
+                'amount_cents' => SellerLedger::requestableCents($shop),
+                'status' => 'pending',
+            ]);
+        });
+
+        return response()->json(['data' => $payoutRequest], 201);
     }
 
     /**

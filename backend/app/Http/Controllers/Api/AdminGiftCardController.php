@@ -27,6 +27,9 @@ class AdminGiftCardController extends Controller
             'amount_cents' => ['sometimes', 'integer', 'min:1'],
             'support_thread_id' => ['sometimes', 'nullable', 'integer', 'exists:support_threads,id'],
             'reason' => ['sometimes', 'nullable', 'string', 'max:200'],
+            // Charge the seller(s) the costs of this return (see SellerLedger::chargeReturnCosts).
+            'charge_seller_pickup' => ['sometimes', 'boolean'],
+            'charge_seller_delivery' => ['sometimes', 'boolean'],
         ]);
 
         if (! in_array($order->payment_status, ['paid', 'partially_refunded'], true)) {
@@ -90,6 +93,8 @@ class AdminGiftCardController extends Controller
                     .'Enter both at checkout on your next order to use the balance.',
                 isStaff: true,
                 system: true,
+                // The code + password are spendable — never show them to a seller in the chat.
+                hiddenFromSeller: true,
             );
             // The admin's own typed reason (distinct from the auto-derived
             // missing-item list above) is for staff reference only.
@@ -97,6 +102,12 @@ class AdminGiftCardController extends Controller
                 $thread?->post(null, "Reason: {$data['reason']}", isStaff: true, system: true, internal: true);
             }
         }
+
+        // Store credit is a refund too: take it back from the seller(s) whose
+        // items it covers, plus any return costs the admin chose to charge.
+        $refundedItemIds = $allItemsSelected ? [] : $items->pluck('id')->map(fn ($id) => (int) $id)->all();
+        SellerLedger::debitForRefund($order, $amount, $refundedItemIds);
+        SellerLedger::chargeReturnCosts($order, $refundedItemIds, (bool) ($data['charge_seller_pickup'] ?? false), (bool) ($data['charge_seller_delivery'] ?? false));
 
         return response()->json(['data' => [
             'code' => $card->code,

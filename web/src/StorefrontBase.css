@@ -466,3 +466,15 @@ a.psec-feature.is-link img{width:100%;height:150px;object-fit:cover;border-radiu
 .pdp-images img{width:100%;border-radius:12px;background:#fff;border:1px solid var(--line)}
 
 @media (max-width:860px){.pdp-columns{display:block}.pdp-right{position:static;width:auto}}
+.shop-hero{width:calc(100% + 40px);margin:0 -20px 20px;background:#1b2418 center/cover no-repeat;color:#fff}
+.shop-hero-inner{display:flex;flex-wrap:wrap;align-items:center;gap:16px;padding:28px 20px;background:linear-gradient(90deg,rgba(0,0,0,.65),rgba(0,0,0,.25))}
+.shop-hero-logo{width:72px;height:72px;border-radius:16px;object-fit:cover;background:#fff;flex:0 0 auto}
+.shop-hero-logo.placeholder{display:grid;place-items:center;color:#1b2418;font-size:32px;font-weight:600}
+.shop-hero-text{flex:1 1 240px;min-width:0}
+.shop-hero-text h1{margin:0 0 4px;font-size:24px;font-weight:600}
+.shop-hero-text p{margin:0;font-size:14px;opacity:.9}
+.shop-hero-desc{margin-top:6px!important;max-width:640px;line-height:1.5}
+.shop-hero-share{padding:10px 16px;border:1px solid rgba(255,255,255,.7);border-radius:999px;background:transparent;color:#fff;font:600 14px 'Okra',sans-serif;cursor:pointer}
+.shop-hero-share:hover{background:rgba(255,255,255,.15)}
+.pdp-sold-by{margin:0;font-size:12px;color:var(--muted)}
+.pdp-sold-by button{padding:0;border:0;background:0;color:inherit;font:600 12px 'Okra',sans-serif;text-decoration:underline;cursor:pointer}

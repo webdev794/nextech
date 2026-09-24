@@ -23,6 +23,7 @@ class Product extends Model
         'next_variant_seq',
         'price_cents',
         'compare_at_price_cents',
+        'return_days',
         'inventory_quantity',
         'image_url',
         'video_url',

@@ -3,15 +3,16 @@
 namespace App\Support;
 
 use App\Models\Product;
+use App\Models\ProductVariant;
 use Illuminate\Database\QueryException;
 
 /**
  * Shared variant sync — incremental upsert-by-id, used by both the admin
  * product form and the seller product form: a row with `id` updates, a row
  * without one creates, and `_delete: true` deletes (blocked with a friendly
- * 422 if it's on an existing order). SKUs are always system-generated
- * (App\Support\Sku) — never taken from the request, and never changed once
- * assigned.
+ * 422 if it's on an existing order). SKUs are system-generated
+ * (App\Support\Sku); only the admin form may pass `allowSkuOverride` to set
+ * or change one by hand — sellers never can.
  */
 class ProductVariants
 {
@@ -22,7 +23,7 @@ class ProductVariants
      *                          stock sync) that need to reference "the 2nd
      *                          variant row" use this instead of a client SKU.
      */
-    public static function sync(Product $product, ?array $rows): array
+    public static function sync(Product $product, ?array $rows, bool $allowSkuOverride = false): array
     {
         if ($rows === null) {
             return [];
@@ -59,15 +60,27 @@ class ProductVariants
                 'is_active' => (bool) ($row['is_active'] ?? true),
             ];
 
+            $customSku = $allowSkuOverride ? (trim((string) ($row['sku'] ?? '')) ?: null) : null;
+            if ($customSku !== null && $customSku !== $existing?->sku) {
+                abort_if(ProductVariant::where('sku', $customSku)->exists(), 422, "Variant SKU \"{$customSku}\" is already in use.");
+                $attributes['sku'] = $customSku;
+            }
+
             if ($existing) {
                 $existing->update($attributes);
                 $indexToId[$index] = $existing->id;
             } else {
-                $attributes['sku'] = Sku::nextVariantSku($product);
+                $attributes['sku'] ??= Sku::nextVariantSku($product);
                 $variant = $product->variants()->create($attributes);
                 $indexToId[$index] = $variant->id;
             }
         }
+
+        abort_if(
+            $product->variants()->count() > Sku::MAX_VARIANTS,
+            422,
+            'A product can have at most '.Sku::MAX_VARIANTS.' variants.'
+        );
 
         return $indexToId;
     }

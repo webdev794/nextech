@@ -32,6 +32,10 @@ use App\Http\Controllers\Api\RiderController;
 use App\Http\Controllers\Api\SellerController;
 use App\Http\Controllers\Api\SellerKycController;
 use App\Http\Controllers\Api\SellerOrderController;
+use App\Http\Controllers\Api\AdminRiderApplicationController;
+use App\Http\Controllers\Api\RiderApplicationController;
+use App\Http\Controllers\Api\RiderEarningsController;
+use App\Http\Controllers\Api\SellerCustomerChatController;
 use App\Http\Controllers\Api\SellerProductController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
@@ -63,6 +67,7 @@ Route::get('/categories', [CatalogController::class, 'categories']);
 Route::get('/deals', [CatalogController::class, 'deals']);
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product:slug}', [CatalogController::class, 'product']);
+Route::get('/shops/{slug}', [CatalogController::class, 'shop']);
 
 Route::get('/pages', [PageController::class, 'index']);
 Route::get('/pages/{slug}', [PageController::class, 'show']);
@@ -100,6 +105,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/support/threads/{thread}', [SupportThreadController::class, 'show']);
     Route::post('/support/threads/{thread}/messages', [SupportThreadController::class, 'message']);
     Route::post('/support/threads/{thread}/rating', [SupportThreadController::class, 'rate']);
+    Route::post('/support/threads/{thread}/end', [SupportThreadController::class, 'end']);
+    Route::post('/support/attachments', [MediaController::class, 'storeSupportAttachment']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
@@ -124,6 +131,11 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::patch('/riders/{user}', [AdminRiderController::class, 'update']);
     Route::delete('/riders/{user}', [AdminRiderController::class, 'destroy']);
     Route::post('/riders/{user}/cash-settle', [AdminRiderController::class, 'settleCash']);
+    Route::post('/riders/{user}/payout', [AdminRiderController::class, 'payout']);
+    Route::post('/riders/{user}/payout-request/reject', [AdminRiderController::class, 'rejectPayoutRequest']);
+    Route::get('/rider-applications', [AdminRiderApplicationController::class, 'index']);
+    Route::post('/rider-applications/{application}/approve', [AdminRiderApplicationController::class, 'approve']);
+    Route::post('/rider-applications/{application}/reject', [AdminRiderApplicationController::class, 'reject']);
 
     // Static path before the {seller} binding, so "shops" isn't swallowed by it.
     Route::get('/sellers/shops', [AdminSellerController::class, 'shops']);
@@ -134,6 +146,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
+    Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
     Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
 
@@ -150,6 +163,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/support/threads/{thread}', [AdminSupportController::class, 'show']);
     Route::post('/support/threads/{thread}/messages', [AdminSupportController::class, 'message']);
     Route::patch('/support/threads/{thread}', [AdminSupportController::class, 'update']);
+    Route::post('/support/threads/{thread}/seller', [AdminSupportController::class, 'addSeller']);
 
     Route::get('/products', [AdminProductController::class, 'index']);
     Route::post('/products', [AdminProductController::class, 'store']);
@@ -197,11 +211,17 @@ Route::middleware('auth:sanctum')->group(function () {
     // can't be `seller`-gated. storeShopAsset() forces folder=shops so this
     // relaxed auth can't reach the admin-only folders store() also serves.
     Route::post('/seller/media', [MediaController::class, 'storeShopAsset']);
+
+    // Rider applications — any signed-in user can apply (they're not a rider yet).
+    Route::get('/rider-application', [RiderApplicationController::class, 'show']);
+    Route::get('/rider-application/stores', [RiderApplicationController::class, 'stores']);
+    Route::post('/rider-application', [RiderApplicationController::class, 'apply']);
 });
 
 Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
     Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
+    Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
 
     // The `seller` middleware only requires having applied at all; the real
     // "must be approved" gate for managing products is SellerProductController's
@@ -212,11 +232,18 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
+    Route::get('/seller/stats', [SellerOrderController::class, 'stats']);
+    Route::get('/seller/customer-chats', [SellerCustomerChatController::class, 'index']);
+    Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
+    Route::post('/seller/customer-chats/{thread}/messages', [SellerCustomerChatController::class, 'message']);
 });
 
 Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function () {
     Route::get('/orders', [RiderController::class, 'orders']);
     Route::get('/stats', [RiderController::class, 'stats']);
+    Route::get('/earnings', [RiderEarningsController::class, 'show']);
+    Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
+    Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);
     Route::post('/shift', [RiderController::class, 'shift']);
     Route::post('/location', [RiderController::class, 'location']);
     Route::post('/orders/{order}/claim', [RiderController::class, 'claim']);

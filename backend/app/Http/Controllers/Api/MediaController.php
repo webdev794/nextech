@@ -42,7 +42,7 @@ class MediaController extends Controller
                 ['required', 'file'],
                 $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', 'max:4096']
             ),
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages'],
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';
@@ -89,6 +89,18 @@ class MediaController extends Controller
     public function storeShopAsset(Request $request): JsonResponse
     {
         $request->merge(['folder' => 'shops']);
+
+        return $this->store($request);
+    }
+
+    /**
+     * Photos attached to a support chat (e.g. a damaged item), by any signed-in
+     * customer, seller or admin. Forces folder=support, same reasoning as
+     * storeShopAsset().
+     */
+    public function storeSupportAttachment(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'support']);
 
         return $this->store($request);
     }

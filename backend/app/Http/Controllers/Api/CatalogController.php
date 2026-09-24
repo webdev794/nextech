@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\Shop;
 use App\Support\StoreLocator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,10 +60,12 @@ class CatalogController extends Controller
             'deal_type' => ['sometimes', Rule::in(['lightning', 'unbeatable'])],
             'exclusive' => ['sometimes', 'boolean'],
             'sort' => ['sometimes', Rule::in(['best_selling', 'top_rated', 'newest'])],
+            'shop' => ['sometimes', 'string', 'max:180'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
         ]);
 
         $storeId = $this->servingStoreId($request);
+        $shopId = isset($validated['shop']) ? (self::publicShop($validated['shop'])?->id ?? 0) : null;
 
         $products = Product::query()
             ->with([
@@ -92,6 +95,7 @@ class CatalogController extends Controller
                 'category',
                 fn ($categoryQuery) => $categoryQuery->where('slug', $validated['category'])
             ))
+            ->when($shopId !== null, fn ($query) => $query->where('shop_id', $shopId))
             ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5))
@@ -146,11 +150,63 @@ class CatalogController extends Controller
         return response()->json(['data' => $products]);
     }
 
+    /**
+     * A seller's public shop page: name, logo/banner, description and product
+     * count — the storefront lists its products via GET /products?shop=<slug>.
+     * Only live shops (active, seller approved) are visible.
+     */
+    public function shop(string $slug): JsonResponse
+    {
+        $shop = self::publicShop($slug);
+        abort_unless($shop, 404, 'Shop not found.');
+
+        // Only the categories this shop actually sells in, for the shop
+        // page's category strip.
+        $live = $shop->products()
+            ->where('is_active', true)
+            ->where('status', 'approved')
+            ->whereHas('category', fn ($q) => $q->where('is_active', true));
+        $categories = Category::query()
+            ->whereIn('id', (clone $live)->select('category_id'))
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'slug', 'image_url'])
+            ->map(fn (Category $c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'slug' => $c->slug,
+                'image_url' => $c->image_url,
+                'count' => (clone $live)->where('category_id', $c->id)->count(),
+            ]);
+
+        return response()->json(['data' => [
+            'name' => $shop->name,
+            'slug' => $shop->slug,
+            'logo_url' => $shop->logo_url,
+            'banner_url' => $shop->banner_url,
+            'description' => $shop->description,
+            'category' => $shop->category?->name,
+            'since' => $shop->created_at?->toDateString(),
+            'products_count' => (clone $live)->count(),
+            'categories' => $categories,
+        ]]);
+    }
+
+    private static function publicShop(string $slug): ?Shop
+    {
+        return Shop::query()
+            ->where('slug', $slug)
+            ->where('is_active', true)
+            ->whereHas('seller', fn ($q) => $q->where('status', 'approved'))
+            ->first();
+    }
+
     public function product(Request $request, Product $product): JsonResponse
     {
         $storeId = $this->servingStoreId($request);
 
         $product->load([
+            'shop:id,name,slug,is_active',
             'category',
             'variants' => fn ($query) => $query->where('is_active', true),
             'storeInventory',

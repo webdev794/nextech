@@ -101,6 +101,9 @@ class PaymentController extends Controller
             'item_ids.*' => ['integer'],
             'support_thread_id' => ['sometimes', 'nullable', 'integer', 'exists:support_threads,id'],
             'reason' => ['sometimes', 'nullable', 'string', 'max:200'],
+            // Charge the seller(s) the costs of this return (see SellerLedger::chargeReturnCosts).
+            'charge_seller_pickup' => ['sometimes', 'boolean'],
+            'charge_seller_delivery' => ['sometimes', 'boolean'],
         ]);
 
         if (! in_array($order->payment_status, ['refund_pending', 'paid', 'partially_refunded'], true)) {
@@ -167,7 +170,9 @@ class PaymentController extends Controller
             'stripe_refund_id' => $refund->id,
         ]);
 
-        SellerLedger::debitForRefund($order, $amount);
+        $refundedItemIds = $allItemsSelected ? [] : array_map('intval', $validated['item_ids'] ?? []);
+        SellerLedger::debitForRefund($order, $amount, $refundedItemIds);
+        SellerLedger::chargeReturnCosts($order, $refundedItemIds, (bool) ($validated['charge_seller_pickup'] ?? false), (bool) ($validated['charge_seller_delivery'] ?? false));
 
         $order->update([
             'refunded_amount_cents' => $refundedTotal,

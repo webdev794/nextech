@@ -54,6 +54,8 @@ class AdminPageController extends Controller
             'title' => [$required, 'string', 'max:160'],
             'banner_image' => ['sometimes', 'nullable', 'string', 'max:1000'],
             'slug' => ['sometimes', 'nullable', 'string', 'max:160', 'regex:/^[a-z0-9-]+$/'],
+            // Shown nested under this page (e.g. a policy that's part of an agreement).
+            'parent_slug' => ['sometimes', 'nullable', 'string', 'max:160', 'regex:/^[a-z0-9-]+$/'],
             'content' => ['sometimes', 'nullable', 'string', 'max:60000'],
             'is_published' => ['sometimes', 'boolean'],
             'show_in_footer' => ['sometimes', 'boolean'],

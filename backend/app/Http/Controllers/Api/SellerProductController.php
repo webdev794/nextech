@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Shop;
+use App\Support\ProductImages;
 use App\Support\ProductVariants;
+use App\Support\SellerLedger;
 use App\Support\Sku;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -53,7 +55,7 @@ class SellerProductController extends Controller
             $data['sku'] = Sku::nextForShop($shop);
             $product = Product::create($data);
             ProductVariants::sync($product, $variants);
-            $this->syncImages($product, $images);
+            ProductImages::sync($product, $images);
 
             return $product;
         });
@@ -78,7 +80,7 @@ class SellerProductController extends Controller
         DB::transaction(function () use ($product, $data, $variants, $images): void {
             $product->update($data);
             ProductVariants::sync($product, $variants);
-            $this->syncImages($product, $images);
+            ProductImages::sync($product, $images);
         });
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'variants', 'images')]);
@@ -127,6 +129,8 @@ class SellerProductController extends Controller
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'price_cents' => [$product ? 'sometimes' : 'required', 'integer', 'min:0'],
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            // Days after delivery the item can be returned; null = platform default, 0 = non-returnable.
+            'return_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.SellerLedger::maxReturnDays()],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
             'image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_active' => ['sometimes', 'boolean'],
@@ -134,11 +138,11 @@ class SellerProductController extends Controller
             // manually; never becomes a real category on its own.
             'suggested_category_name' => ['sometimes', 'nullable', 'string', 'max:160'],
 
-            // Full-replace gallery — see syncImages().
-            'images' => ['sometimes', 'array', 'max:8'],
+            // Full-replace gallery — see ProductImages::sync().
+            'images' => ['sometimes', 'array', 'max:'.ProductImages::MAX_IMAGES],
             'images.*' => ['string', 'max:500'],
 
-            'variants' => ['sometimes', 'array'],
+            'variants' => ['sometimes', 'array', 'max:'.(Sku::MAX_VARIANTS * 2)], // live + _delete rows; the real cap of 9 is enforced in ProductVariants::sync
             'variants.*.id' => ['sometimes', 'nullable', 'integer'],
             'variants.*._delete' => ['sometimes', 'boolean'],
             'variants.*.label' => ['required_with:variants', 'string', 'max:80'],
@@ -181,30 +185,6 @@ class SellerProductController extends Controller
         unset($data['images']);
 
         return $images;
-    }
-
-    /**
-     * Full-replace this product's gallery — unlike variants/stock, a photo set
-     * has no existing-order integrity concern, so every save simply deletes
-     * and recreates rather than upserting by id.
-     *
-     * @param  array<int, string>|null  $urls
-     */
-    private function syncImages(Product $product, ?array $urls): void
-    {
-        if ($urls === null) {
-            return;
-        }
-
-        $product->images()->delete();
-
-        foreach (array_values($urls) as $index => $url) {
-            if (! $url) {
-                continue;
-            }
-
-            $product->images()->create(['url' => $url, 'sort_order' => $index]);
-        }
     }
 
     private function uniqueSlug(string $name): string

@@ -11,6 +11,7 @@ use App\Support\Country;
 use App\Support\CourierCredentials;
 use App\Support\FooterConfig;
 use App\Support\Payments;
+use App\Support\RiderLedger;
 use App\Support\SellerLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -184,6 +185,15 @@ class AdminSettingController extends Controller
                 'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
                 'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
                 'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
+                'return_window_days' => ['sometimes', 'integer', 'min:0', 'max:365', 'lte:max_return_days'],
+                'max_return_days' => ['sometimes', 'integer', 'min:0', 'max:365'],
+                'return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_base_pay_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_per_mile_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'rider_max_payout_cents' => ['sometimes', 'integer', 'min:0'],
             ]
             + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
@@ -204,8 +214,10 @@ class AdminSettingController extends Controller
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
         }
 
-        if (array_key_exists('min_payout_cents', $validated)) {
-            Setting::put('min_payout_cents', (int) $validated['min_payout_cents']);
+        foreach (['min_payout_cents', 'max_payout_cents', 'daily_payout_cap_cents', 'return_window_days', 'max_return_days', 'return_pickup_fee_cents', 'rider_base_pay_cents', 'rider_per_mile_cents', 'rider_min_payout_cents', 'rider_max_payout_cents'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, (int) $validated[$key]);
+            }
         }
 
         $this->mergeInto('checkout_fees', array_intersect_key($validated, self::FEE_RULES));
@@ -275,6 +287,15 @@ class AdminSettingController extends Controller
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
             'commission_rate_bps' => SellerLedger::rate(),
             'min_payout_cents' => SellerLedger::minPayoutCents(),
+            'max_payout_cents' => SellerLedger::maxPayoutCents(),
+            'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents(),
+            'return_window_days' => SellerLedger::returnWindowDays(),
+            'max_return_days' => SellerLedger::maxReturnDays(),
+            'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents(),
+            'rider_base_pay_cents' => RiderLedger::baseCents(),
+            'rider_per_mile_cents' => RiderLedger::perMileCents(),
+            'rider_min_payout_cents' => RiderLedger::minPayoutCents(),
+            'rider_max_payout_cents' => RiderLedger::maxPayoutCents(),
             ...CheckoutFees::current(),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),

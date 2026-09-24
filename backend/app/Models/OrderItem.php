@@ -12,7 +12,7 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id', 'product_id', 'product_variant_id', 'shop_id', 'product_name', 'sku',
-        'variant_label', 'quantity', 'unit_price_cents', 'compare_at_price_cents', 'line_total_cents',
+        'variant_label', 'quantity', 'unit_price_cents', 'compare_at_price_cents', 'return_days', 'line_total_cents',
     ];
 
     protected function casts(): array

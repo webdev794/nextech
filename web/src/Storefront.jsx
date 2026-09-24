@@ -3,6 +3,7 @@ import { CardElement, Elements, useElements, useStripe } from '@stripe/react-str
 import { loadStripe } from '@stripe/stripe-js'
 import { renderMarkdown } from './markdown'
 import { mediaUrl } from './mediaUrl'
+import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { PageSection } from './PageSections'
 import './StorefrontBase.css'
 import './Storefront.css'
@@ -45,7 +46,11 @@ function generateReviews(product) {
     }
   })
 }
-const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY) : null
+// The publishable key comes from GET /api/config (backend .env or admin
+// Settings → Payments); VITE_STRIPE_PUBLISHABLE_KEY is only a local fallback.
+// loadStripe must run once per key, so promises are cached.
+const stripePromises = {}
+const stripeFor = (key) => (key ? (stripePromises[key] ??= loadStripe(key)) : null)
 const fallbackProducts = [
   { id: 1, name: 'Apple iPhone 15 Pro', price_cents: 99900, category: { name: 'Mobiles & Smartphones' }, image_url: '/img/products/1.webp' },
   { id: 2, name: 'Samsung Galaxy S24', price_cents: 79900, category: { name: 'Mobiles & Smartphones' }, image_url: '/img/products/2.webp' },
@@ -371,6 +376,8 @@ function AddCardForm({ onDone, onCancel }) {
 }
 
 export default function Storefront() {
+  const [stripeKey, setStripeKey] = useState(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '')
+  const stripePromise = stripeFor(stripeKey)
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
   const [query, setQuery] = useState('')
@@ -448,6 +455,9 @@ export default function Storefront() {
   const [dealsCategory, setDealsCategory] = useState(null)
   const [dealsExclusive, setDealsExclusive] = useState([])
   const [dealsProducts, setDealsProducts] = useState([])
+  const [shopSlug, setShopSlug] = useState(null)
+  const [shopInfo, setShopInfo] = useState(null) // null | 'loading' | { name, … } | { missing: true }
+  const [shopLinkCopied, setShopLinkCopied] = useState(false)
   const [dealsProductPage, setDealsProductPage] = useState(0)
   const [dealsHasMore, setDealsHasMore] = useState(false)
   const [dealsLoading, setDealsLoading] = useState(true)
@@ -521,6 +531,7 @@ export default function Storefront() {
   const [threads, setThreads] = useState([])
   const [supportForm, setSupportForm] = useState({ about_order: false, order_id: '', issue_type: 'item_missing', message: '' })
   const [supportReply, setSupportReply] = useState('')
+  const [supportPhotos, setSupportPhotos] = useState([]) // photo URLs waiting to be sent (reply or new request)
   const [supportBusy, setSupportBusy] = useState(false)
   const [supportMsg, setSupportMsg] = useState('')
   const [supportUnread, setSupportUnread] = useState(0)
@@ -593,7 +604,7 @@ export default function Storefront() {
   useEffect(() => {
     fetch(`${API_URL}/config`, { headers: { Accept: 'application/json' } })
       .then(responseJson)
-      .then((data) => { setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? null); setFooter(data.data?.footer ?? null); if (data.data) setFees(data.data) })
+      .then((data) => { setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? null); setFooter(data.data?.footer ?? null); if (data.data?.stripe_publishable_key) setStripeKey(data.data.stripe_publishable_key); if (data.data) setFees(data.data) })
       .catch(() => { setCodEnabled(false); setStores([]); setBanners([]); setHomeTiles([]) })
   }, [])
 
@@ -722,6 +733,7 @@ export default function Storefront() {
     const params = new URLSearchParams()
     if (dealsPage === 'exclusive') params.set('exclusive', '1')
     else if (SORT_CHANNELS.includes(dealsPage)) params.set('sort', dealsPage)
+    else if (dealsPage === 'shop') params.set('shop', shopSlug ?? '')
     else if (dealsPage !== 'category') params.set('deal_type', dealsPage)
     if (dealsCategorySlug) params.set('category', dealsCategorySlug)
     params.set('per_page', String(Math.min(50, Math.max(itemsPerRow * 8, 8))))
@@ -750,7 +762,7 @@ export default function Storefront() {
       .catch(() => { if (!cancelled) setDealsProducts([]) })
       .finally(() => { if (!cancelled) setDealsLoading(false) })
     return () => { cancelled = true }
-  }, [dealsPage, dealsCategorySlug, catalogQuery]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dealsPage, dealsCategorySlug, catalogQuery, shopSlug]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function loadMoreDealsProducts() {
     if (dealsLoadingMore || !dealsHasMore) return
@@ -866,6 +878,14 @@ export default function Storefront() {
   // the name once it's populated.
   useEffect(() => {
     const sync = () => {
+      const shopMatch = window.location.hash.match(/^#\/shop\/([a-z0-9-]+)$/)
+      if (shopMatch) {
+        setDealsPageState('shop')
+        setShopSlug(shopMatch[1])
+        setDealsCategory(null)
+        return
+      }
+      setShopSlug(null)
       const categoryMatch = window.location.hash.match(/^#\/deals\/category\/([a-z0-9-]+)$/)
       if (categoryMatch) {
         setDealsPageState('category')
@@ -908,6 +928,29 @@ export default function Storefront() {
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
+
+  // A seller's own shop page (#/shop/<slug>) — its header info; products load
+  // through the deals-page fetch above with ?shop=<slug>.
+  useEffect(() => {
+    if (!shopSlug) { Promise.resolve().then(() => setShopInfo(null)); return }
+    let cancelled = false
+    Promise.resolve().then(() => { if (!cancelled) setShopInfo('loading') })
+    fetch(`${API_URL}/shops/${shopSlug}`, { headers: { Accept: 'application/json' } })
+      .then((response) => (response.ok ? responseJson(response) : Promise.reject(new Error('missing'))))
+      .then((data) => { if (!cancelled) setShopInfo(data.data ?? { missing: true }) })
+      .catch(() => { if (!cancelled) setShopInfo({ missing: true }) })
+    return () => { cancelled = true }
+  }, [shopSlug])
+
+  function openShop(slug) {
+    window.location.hash = `#/shop/${slug}`
+    window.scrollTo({ top: 0 })
+  }
+
+  function copyShopLink() {
+    const url = `${window.location.origin}${window.location.pathname}#/shop/${shopSlug}`
+    navigator.clipboard?.writeText(url).then(() => { setShopLinkCopied(true); setTimeout(() => setShopLinkCopied(false), 2000) }).catch(() => {})
+  }
 
   function openDeals(type) {
     window.location.hash = `#/deals/${type}`
@@ -1351,7 +1394,7 @@ export default function Storefront() {
       } else if (method === 'cod') {
         setOrder({ ...data.data, cod: true })
       } else {
-        if (!stripePromise) throw new Error('Add VITE_STRIPE_PUBLISHABLE_KEY to the web environment before paying.')
+        if (!stripePromise) throw new Error('Card payments aren’t set up yet — add the Stripe publishable key in admin Settings → Payments.')
         const paymentResponse = await fetch(`${API_URL}/orders/${data.data.id}/payment-intent`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
         const paymentData = await responseJson(paymentResponse)
         if (!paymentResponse.ok) throw new Error(paymentData.message ?? 'Payment setup could not be completed.')
@@ -1371,7 +1414,7 @@ export default function Storefront() {
     const token = localStorage.getItem('gdp_token')
     if (!token) { setOrdersMessage('Please sign in first.'); return }
     try {
-      if (!stripePromise) throw new Error('Add VITE_STRIPE_PUBLISHABLE_KEY to the web environment before paying.')
+      if (!stripePromise) throw new Error('Card payments aren’t set up yet — add the Stripe publishable key in admin Settings → Payments.')
       const response = await fetch(`${API_URL}/orders/${entry.id}/payment-intent`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
       const data = await responseJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Payment could not be started.')
@@ -1544,10 +1587,12 @@ export default function Storefront() {
     try {
       const body = { issue_type: supportForm.issue_type, message: supportForm.message.trim() }
       if (supportForm.about_order && supportForm.order_id) body.order_id = Number(supportForm.order_id)
+      if (supportPhotos.length) body.attachments = supportPhotos
       const response = await authPost('/support/threads', body)
       const data = await responseJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not send your request.')
       setSupportForm({ about_order: false, order_id: '', issue_type: 'item_missing', message: '' })
+      setSupportPhotos([])
       setSupportView(data.data)
       loadThreads()
     } catch (error) { setSupportMsg(error.message) } finally { setSupportBusy(false) }
@@ -1555,13 +1600,14 @@ export default function Storefront() {
 
   async function sendSupportReply() {
     const body = supportReply.trim()
-    if (!body || typeof supportView !== 'object' || !supportView) return
+    if ((!body && !supportPhotos.length) || typeof supportView !== 'object' || !supportView) return
     setSupportBusy(true)
     try {
-      const response = await authPost(`/support/threads/${supportView.id}/messages`, { body })
+      const response = await authPost(`/support/threads/${supportView.id}/messages`, { body, ...(supportPhotos.length ? { attachments: supportPhotos } : {}) })
       const data = await responseJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Message not sent.')
       setSupportReply('')
+      setSupportPhotos([])
       setSupportView(data.data)
     } catch (error) { setSupportMsg(error.message) } finally { setSupportBusy(false) }
   }
@@ -1572,7 +1618,7 @@ export default function Storefront() {
     if (typeof supportView !== 'object' || !supportView) return
     setSupportBusy(true)
     try {
-      const response = await authPost(`/support/threads/${supportView.id}/messages`, { body: 'Client ended chat.' })
+      const response = await authPost(`/support/threads/${supportView.id}/end`, {})
       const data = await responseJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not end the chat.')
       loadThreads()
@@ -1818,12 +1864,12 @@ export default function Storefront() {
   const catBySlug = Object.fromEntries(categories.map((c) => [c.slug, c]))
   const homeTileList = homeTiles.length
     ? homeTiles
-    : categories.map((c) => ({ id: `cat-${c.id}`, title: c.name, image_url: c.image_url, category_slug: c.slug, link_url: null }))
+    : categories.filter((c) => c.show_on_home !== false).map((c) => ({ id: `cat-${c.id}`, title: c.name, image_url: c.image_url, category_slug: c.slug, link_url: null }))
   const tileMeta = (tile) => {
     const name = tile.category_slug ? catBySlug[tile.category_slug]?.name : null
     return {
       label: tile.title || name || 'Shop',
-      count: name ? (categoryCounts[name] ?? 0) : null,
+      count: tile.count ?? (name ? (categoryCounts[name] ?? 0) : null),
       samples: name ? (categorySamples[name] ?? []) : [],
     }
   }
@@ -1905,8 +1951,14 @@ export default function Storefront() {
     {!hasMorePages && visibleProducts.length > 0 && <p className="no-more-items"><i /><span>No more items.</span><i /></p>}
   </>
 
-  function categoryCarousel(scrollRef, dragRef, wrapRef, activeLabel, onSelect, showRecommended, pillStyle) {
-    return homeTileList.length > 0 && <section className={pillStyle ? 'home-cats-wrap home-cats-wrap-pill' : 'home-cats-wrap'} aria-label="Shop by category" ref={wrapRef}>
+  // A shop page's strip lists only the categories that shop sells in (with
+  // the shop's own counts), not the homepage selection.
+  const shopTiles = shopInfo && shopInfo !== 'loading' && !shopInfo.missing
+    ? (shopInfo.categories ?? []).map((c) => ({ id: `shop-cat-${c.id}`, title: c.name, image_url: c.image_url, category_slug: c.slug, link_url: null, count: c.count }))
+    : []
+
+  function categoryCarousel(scrollRef, dragRef, wrapRef, activeLabel, onSelect, showRecommended, pillStyle, tiles = homeTileList) {
+    return tiles.length > 0 && <section className={pillStyle ? 'home-cats-wrap home-cats-wrap-pill' : 'home-cats-wrap'} aria-label="Shop by category" ref={wrapRef}>
       <button type="button" className="home-cats-arrow home-cats-arrow-left" aria-label="Scroll categories left" onClick={() => scrollRef.current?.scrollBy({ left: -400, behavior: 'smooth' })}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 6 9 12 15 18" /></svg></button>
       <div className="home-cats" ref={scrollRef}
         onMouseDown={(event) => { dragRef.current = { down: true, moved: false, startX: event.pageX, scrollLeft: scrollRef.current.scrollLeft } }}
@@ -1926,7 +1978,7 @@ export default function Storefront() {
           <span className="home-cat-img" aria-hidden><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></svg></span>
           <span className="home-cat-label">Recommended</span>
         </button>)}
-        {homeTileList.map((tile) => {
+        {tiles.map((tile) => {
           const meta = tileMeta(tile)
           const isActive = !!activeLabel && meta.label === activeLabel
           if (pillStyle) return <button className={isActive ? 'home-cat-pill active' : 'home-cat-pill'} type="button" key={tile.id} onClick={() => onSelect(isActive ? null : tile)}>{meta.label}</button>
@@ -1942,9 +1994,15 @@ export default function Storefront() {
 
   const chevronDown = <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
   const chevronRight = <svg aria-hidden width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg>
-  const activeGroupCategories = (CATEGORY_GROUPS.find(([group]) => group === categoriesMenuGroup)?.[1] ?? [])
-    .map((name) => categories.find((c) => c.name === name))
+  // Categories unticked "Show on homepage" in admin are hidden from the home
+  // page's browsing (Categories menu, category rail) — still reachable by
+  // search and direct links.
+  const homeCategories = categories.filter((c) => c.show_on_home !== false)
+  const groupCategories = (group) => (CATEGORY_GROUPS.find(([g]) => g === group)?.[1] ?? [])
+    .map((name) => homeCategories.find((c) => c.name === name))
     .filter(Boolean)
+  const menuGroups = CATEGORY_GROUPS.filter(([group]) => groupCategories(group).length > 0)
+  const activeGroupCategories = groupCategories(menuGroups.some(([g]) => g === categoriesMenuGroup) ? categoriesMenuGroup : menuGroups[0]?.[0])
   const starGlyph = <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.4 7 .8-5.2 4.8 1.4 6.9L12 17.6 5.9 20.9l1.4-6.9L2.1 9.2l7-.8z" /></svg>
   const flameGlyph = <svg aria-hidden width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" /></svg>
 
@@ -1980,10 +2038,10 @@ export default function Storefront() {
           <div className="nav-dropdown-panel categories-panel" role="menu">
             <div className="nav-dropdown-panel-inner categories-panel-inner">
               <div className="categories-panel-left">
-                {CATEGORY_GROUPS.map(([group]) => <button type="button" key={group} className={categoriesMenuGroup === group ? 'categories-group active' : 'categories-group'} onMouseEnter={() => setCategoriesMenuGroup(group)} onFocus={() => setCategoriesMenuGroup(group)}>{group}{chevronRight}</button>)}
+                {menuGroups.map(([group]) => <button type="button" key={group} className={(menuGroups.some(([g]) => g === categoriesMenuGroup) ? categoriesMenuGroup : menuGroups[0]?.[0]) === group ? 'categories-group active' : 'categories-group'} onMouseEnter={() => setCategoriesMenuGroup(group)} onFocus={() => setCategoriesMenuGroup(group)}>{group}{chevronRight}</button>)}
               </div>
               <div className="categories-panel-right">
-                <div className="categories-panel-right-head">All {categoriesMenuGroup} {chevronRight}</div>
+                <div className="categories-panel-right-head">All {menuGroups.some(([g]) => g === categoriesMenuGroup) ? categoriesMenuGroup : menuGroups[0]?.[0]} {chevronRight}</div>
                 <div className="categories-panel-grid">
                   {activeGroupCategories.map((cat) => <button type="button" role="menuitem" key={cat.id} className="categories-panel-item" onClick={menuAction('categories', () => selectCategoryFromMenu(cat))}>
                     <span className="categories-panel-item-img" aria-hidden>{categoryEmoji(cat.name)}{cat.image_url && <img src={mediaUrl(cat.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</span>
@@ -2059,13 +2117,28 @@ export default function Storefront() {
           : dealsPage === 'best_selling' ? 'Best-Selling'
           : dealsPage === 'top_rated' ? '5-Star Rated'
           : dealsPage === 'newest' ? 'New In'
+          : dealsPage === 'shop' ? (shopInfo && shopInfo !== 'loading' && !shopInfo.missing ? shopInfo.name : 'Shop')
           : dealsCategory || 'Category'
         return <article className={`deals-page deals-page-${dealsPage}`}>
           <button type="button" className="page-back" onClick={closeDeals}>&larr; Back to shopping</button>
           <nav className="deals-breadcrumb" aria-label="Breadcrumb">
             <a href={import.meta.env.BASE_URL || '/'}>Home</a> <span aria-hidden>&rsaquo;</span> <span>{dealsLabel}</span>
           </nav>
-          <div className="deals-page-titlebar"><h1>{dealsLabel}</h1></div>
+          {dealsPage === 'shop' ? (
+            shopInfo === 'loading' || !shopInfo ? <div className="empty-state">Loading…</div>
+              : shopInfo.missing ? <div className="empty-state">This shop isn&rsquo;t open right now.</div>
+              : <header className="shop-hero" style={shopInfo.banner_url ? { backgroundImage: `url(${mediaUrl(shopInfo.banner_url)})` } : undefined}>
+                  <div className="shop-hero-inner">
+                    {shopInfo.logo_url ? <img className="shop-hero-logo" src={mediaUrl(shopInfo.logo_url)} alt="" /> : <span className="shop-hero-logo placeholder" aria-hidden>{shopInfo.name.slice(0, 1).toUpperCase()}</span>}
+                    <div className="shop-hero-text">
+                      <h1>{shopInfo.name}</h1>
+                      <p>{[shopInfo.category, `${shopInfo.products_count} product${shopInfo.products_count === 1 ? '' : 's'}`, shopInfo.since ? `on NexTech since ${new Date(shopInfo.since).toLocaleDateString([], { month: 'short', year: 'numeric' })}` : null].filter(Boolean).join(' · ')}</p>
+                      {shopInfo.description && <p className="shop-hero-desc">{shopInfo.description}</p>}
+                    </div>
+                    <button type="button" className="shop-hero-share" onClick={copyShopLink}>{shopLinkCopied ? 'Link copied' : 'Share shop'}</button>
+                  </div>
+                </header>
+          ) : <div className="deals-page-titlebar"><h1>{dealsLabel}</h1></div>}
 
           {dealsPage === 'lightning' && dealsExclusive.length > 0 && <section className="deals-exclusive" aria-label="Exclusive offers">
             <div className="deals-exclusive-head"><h2>Exclusive Offer{dealsExclusiveCapCents != null && <span className="deals-exclusive-cap">All under {price(dealsExclusiveCapCents)}</span>}</h2><button type="button" className="deals-see-all" onClick={() => openDeals('exclusive')}>See all <svg aria-hidden width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg></button></div>
@@ -2101,7 +2174,7 @@ export default function Storefront() {
             </div>
           </section>}
 
-          {dealsPage !== 'exclusive' && categoryCarousel(dealsCatsRef, dealsCatsDrag, dealsCatsWrapRef, dealsCategory, (tile) => setDealsCategory(tile ? tileMeta(tile).label : null), true)}
+          {dealsPage !== 'exclusive' && (dealsPage !== 'shop' || shopTiles.length > 1) && categoryCarousel(dealsCatsRef, dealsCatsDrag, dealsCatsWrapRef, dealsCategory, (tile) => setDealsCategory(tile ? tileMeta(tile).label : null), true, false, dealsPage === 'shop' ? shopTiles : homeTileList)}
 
           {dealsLoading ? <div className="empty-state">Loading…</div> : <>
             <div className="catalog-head"><h2>{dealsCategory || ''}</h2><span>{dealsProducts.length} items</span></div>
@@ -2177,6 +2250,11 @@ export default function Storefront() {
             <div className="pdp-right">
               <div className="pdp-buybox">
                 <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}</p>
+                {(() => {
+                  const days = product.return_days ?? fees.return_window_days
+                  return days != null && <p className="pdp-sold-by">{Number(days) === 0 ? 'Non-returnable item' : `Returns accepted within ${days} days of delivery`}</p>
+                })()}
+                {product.shop?.slug && product.shop.is_active && <p className="pdp-sold-by">Sold by <button type="button" onClick={() => openShop(product.shop.slug)}>{product.shop.name}</button></p>}
                 <h1 id="pdp-title">{variantTitle(product.name, variant?.label)}</h1>
                 {(product.units_sold > 0 || product.rating_count > 0) && <p className="pcard-rating pdp-rating">
                   {product.units_sold > 0 && <span className="pcard-sold">{product.units_sold} sold</span>}
@@ -2239,7 +2317,7 @@ export default function Storefront() {
         <>
           <nav className="cat-rail" aria-label="Product categories">
             <button className="cat-tile" type="button" onClick={() => { setActiveCategory(null); setQuery('') }}><span className="cat-ico" aria-hidden>&#8592;</span>All</button>
-            {categories.map((category) => <button className={activeCategory === category.name ? 'cat-tile active' : 'cat-tile'} type="button" key={category.id} onClick={() => { setActiveCategory(category.name); setQuery('') }}><span className="cat-ico" aria-hidden>{categoryEmoji(category.name)}{category.image_url && <img src={mediaUrl(category.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</span>{category.name}</button>)}
+            {homeCategories.map((category) => <button className={activeCategory === category.name ? 'cat-tile active' : 'cat-tile'} type="button" key={category.id} onClick={() => { setActiveCategory(category.name); setQuery('') }}><span className="cat-ico" aria-hidden>{categoryEmoji(category.name)}{category.image_url && <img src={mediaUrl(category.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</span>{category.name}</button>)}
           </nav>
           <div className="catalog-head"><h2>{`Results for “${query.trim()}”`}</h2><span>{visibleProducts.length} items</span></div>
           {productGrid}
@@ -2373,7 +2451,7 @@ export default function Storefront() {
         ))}
 
         {accountTab === 'cards' && (!stripePromise ? (
-          <p className="auth-intro">Card management needs Stripe keys (<code>VITE_STRIPE_PUBLISHABLE_KEY</code>).</p>
+          <p className="auth-intro">Card management needs Stripe keys — set them in admin Settings → Payments.</p>
         ) : addingCard ? (
           <Elements stripe={stripePromise}>
             <AddCardForm onDone={() => { setAddingCard(false); loadCards() }} onCancel={() => setAddingCard(false)} />
@@ -2436,6 +2514,7 @@ export default function Storefront() {
             </label>)}
         {supportForm.about_order && orders.length > 0 && <div className="issue-chips" role="radiogroup" aria-label="Issue type">{ISSUE_TYPES.map(([type, label]) => <button key={type} type="button" role="radio" aria-checked={supportForm.issue_type === type} className={supportForm.issue_type === type ? 'issue-chip active' : 'issue-chip'} onClick={() => setSupportForm({ ...supportForm, issue_type: type })}>{label}</button>)}</div>}
         <textarea className="delivery-note" rows="3" maxLength="2000" placeholder="Tell us what happened" value={supportForm.message} onChange={(event) => setSupportForm({ ...supportForm, message: event.target.value })} />
+        <ChatPhotoPicker photos={supportPhotos} onChange={setSupportPhotos} token={localStorage.getItem('gdp_token')} onError={setSupportMsg} disabled={supportBusy} />
         <button className="checkout-button" type="button" disabled={supportBusy} onClick={submitSupport}>Send <span>&rarr;</span></button>
         <button className="switch-auth" type="button" onClick={() => setSupportView('list')}>Back</button>
       </> : <>
@@ -2447,11 +2526,12 @@ export default function Storefront() {
             ? <RiderRating orderId={chatOrder.id} existing={chatOrder.rider_review} source="chat" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === chatOrder.id ? { ...row, rider_review: rv } : row))} />
             : null
         })()}
-        <div className="chat-log">{(supportView.messages ?? []).map((m) => <div key={m.id} className={`chat-msg ${m.is_staff ? 'staff' : m.user_id ? 'me' : 'system'}`}><span>{m.body}</span><em>{new Date(m.created_at).toLocaleString()}</em></div>)}</div>
+        <div className="chat-log">{(supportView.messages ?? []).map((m) => <div key={m.id} className={`chat-msg ${m.from_seller ? 'staff seller' : m.is_staff ? 'staff' : m.user_id ? 'me' : 'system'}`}>{m.body && <span>{m.body}</span>}<ChatPhotos urls={m.attachments} /><em>{m.from_seller ? `${supportView.seller_shop?.name ?? 'Seller'} (seller) · ` : ''}{new Date(m.created_at).toLocaleString()}</em></div>)}</div>
         {supportView.issue_type !== 'delivery' && (supportView.rating != null || (supportView.messages ?? []).some((m) => m.is_staff)) && (
           <ChatRating key={supportView.id} thread={supportView} onSaved={(t) => { setSupportView(t); loadThreads() }} />
         )}
-        <div className="chat-send"><input placeholder="Type a message" value={supportReply} onChange={(event) => setSupportReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendSupportReply() }} /><button type="button" disabled={supportBusy || !supportReply.trim()} onClick={sendSupportReply}>Send</button></div>
+        <ChatPhotoPicker photos={supportPhotos} onChange={setSupportPhotos} token={localStorage.getItem('gdp_token')} onError={setSupportMsg} disabled={supportBusy} />
+        <div className="chat-send"><input placeholder={supportPhotos.length ? 'Add a note (optional)' : 'Type a message'} value={supportReply} onChange={(event) => setSupportReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') sendSupportReply() }} /><button type="button" disabled={supportBusy || (!supportReply.trim() && !supportPhotos.length)} onClick={sendSupportReply}>Send</button></div>
         <button className="end-chat-button" type="button" disabled={supportBusy} onClick={endChat}>End Chat</button>
         <button className="switch-auth" type="button" onClick={() => { setSupportView('list'); loadThreads() }}>All conversations</button>
       </>}

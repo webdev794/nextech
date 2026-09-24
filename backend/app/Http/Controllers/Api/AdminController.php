@@ -7,7 +7,11 @@ use App\Models\GiftCard;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Models\PayoutRequest;
 use App\Models\Product;
+use App\Models\RiderApplication;
+use App\Models\RiderPayoutRequest;
+use App\Models\Seller;
 use App\Models\RiderReview;
 use App\Models\SiteFeedback;
 use App\Models\SupportThread;
@@ -212,8 +216,62 @@ class AdminController extends Controller
 
         $financialActivity = $giftCardsIssued->concat($refundsIssued)->sortByDesc('at')->take($sampleSize)->values();
 
+        $payoutRequests = PayoutRequest::query()
+            ->where('status', 'pending')
+            ->with('shop:id,name,seller_id')
+            ->oldest()
+            ->get()
+            ->map(fn (PayoutRequest $r) => [
+                'id' => $r->id,
+                'seller_id' => $r->shop?->seller_id,
+                'shop_name' => $r->shop?->name,
+                'amount_cents' => $r->amount_cents,
+                'at' => $r->created_at,
+            ]);
+
+        $riderPayoutRequests = RiderPayoutRequest::query()
+            ->where('status', 'pending')
+            ->with('rider:id,name')
+            ->oldest()
+            ->get()
+            ->map(fn (RiderPayoutRequest $r) => [
+                'id' => $r->id,
+                'rider_id' => $r->user_id,
+                'rider_name' => $r->rider?->name,
+                'amount_cents' => $r->amount_cents,
+                'at' => $r->created_at,
+            ]);
+
+        $riderApplications = RiderApplication::query()
+            ->where('status', 'pending')
+            ->with(['user:id,name', 'store:id,name'])
+            ->oldest()
+            ->get()
+            ->map(fn (RiderApplication $a) => [
+                'id' => $a->id,
+                'name' => $a->user?->name,
+                'store_name' => $a->store?->name,
+                'at' => $a->created_at,
+            ]);
+
+        // New (or resubmitted) seller applications waiting for review.
+        $sellerApplications = Seller::query()
+            ->where('status', 'pending')
+            ->with(['shop:id,seller_id,name', 'user:id,name'])
+            ->orderBy('submitted_at')
+            ->get()
+            ->map(fn (Seller $s) => [
+                'id' => $s->id,
+                'name' => $s->shop?->name ?? $s->company_name ?? $s->user?->name,
+                'at' => $s->submitted_at ?? $s->created_at,
+            ]);
+
         return response()->json(['data' => [
+            'seller_applications' => $sellerApplications,
             'awaiting_packing' => $awaitingPacking,
+            'payout_requests' => $payoutRequests,
+            'rider_payout_requests' => $riderPayoutRequests,
+            'rider_applications' => $riderApplications,
             'refused_cod' => $refusedCod,
             'cash_overdue' => $cashOverdue,
             'negative_feedback' => $negativeFeedback,

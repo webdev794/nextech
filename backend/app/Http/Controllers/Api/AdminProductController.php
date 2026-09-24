@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Support\ProductImages;
 use App\Support\ProductVariants;
+use App\Support\SellerLedger;
 use App\Support\Sku;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
@@ -71,19 +73,23 @@ class AdminProductController extends Controller
         $data = $this->validated($request);
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
+        $images = $this->pullImages($data);
         $data['slug'] ??= $this->uniqueSlug($data['name']);
+        $customSku = trim((string) ($data['sku'] ?? '')) ?: null;
+        unset($data['sku']);
         // Admin-created products are never seller-moderated — always approved,
         // regardless of anything the payload sends.
         $data['status'] = 'approved';
 
-        $product = DB::transaction(function () use ($data, $variants, $storeStock): Product {
+        $product = DB::transaction(function () use ($data, $customSku, $variants, $storeStock, $images): Product {
             // sku is NOT NULL+unique and depends on the row's own id, which
             // only exists after insert — create with a throwaway placeholder,
             // then immediately overwrite it, all inside this transaction so
             // the placeholder is never visible outside it.
             $product = Product::create($data + ['sku' => 'TMP-'.Str::random(20)]);
-            $product->update(['sku' => Sku::forAdminProduct($product->id)]);
-            $variantIndexToId = ProductVariants::sync($product, $variants);
+            $product->update(['sku' => $customSku ?? Sku::forAdminProduct($product->id)]);
+            ProductImages::sync($product, $images, firstIsMain: false);
+            $variantIndexToId = ProductVariants::sync($product, $variants, allowSkuOverride: true);
             $this->syncStoreStock($product, $storeStock, $variantIndexToId);
 
             return $product;
@@ -97,11 +103,16 @@ class AdminProductController extends Controller
         $data = $this->validated($request, $product);
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
+        $images = $this->pullImages($data);
         $data['status'] = 'approved';
+        if (trim((string) ($data['sku'] ?? '')) === '') {
+            unset($data['sku']);
+        }
 
-        DB::transaction(function () use ($product, $data, $variants, $storeStock): void {
+        DB::transaction(function () use ($product, $data, $variants, $storeStock, $images): void {
             $product->update($data);
-            $variantIndexToId = ProductVariants::sync($product, $variants);
+            ProductImages::sync($product, $images, firstIsMain: false);
+            $variantIndexToId = ProductVariants::sync($product, $variants, allowSkuOverride: true);
             $this->syncStoreStock($product, $storeStock, $variantIndexToId);
         });
 
@@ -155,11 +166,18 @@ class AdminProductController extends Controller
             'shop_id' => ['sometimes', 'nullable', 'integer', 'exists:shops,id'],
             'name' => [$product ? 'sometimes' : 'required', 'string', 'max:160'],
             'slug' => ['sometimes', 'nullable', 'string', 'max:180', 'alpha_dash', $unique],
+            // Optional admin override — blank means "auto-generate" (on create)
+            // or "keep the current one" (on update).
+            'sku' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/', Rule::unique('products', 'sku')->ignore($product?->id)],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'price_cents' => [$product ? 'sometimes' : 'required', 'integer', 'min:0'],
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            // Days after delivery the item can be returned; null = platform default, 0 = non-returnable.
+            'return_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.SellerLedger::maxReturnDays()],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
             'image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
+            'images' => ['sometimes', 'array', 'max:'.ProductImages::MAX_IMAGES],
+            'images.*' => ['string', 'max:500'],
             'video_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'is_active' => ['sometimes', 'boolean'],
             'deal_type' => ['sometimes', 'nullable', Rule::in(['lightning', 'unbeatable'])],
@@ -178,10 +196,11 @@ class AdminProductController extends Controller
             'store_stock.*.is_stocked' => ['sometimes', 'boolean'],
             'store_stock.*.quantity' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
 
-            'variants' => ['sometimes', 'array'],
+            'variants' => ['sometimes', 'array', 'max:'.(Sku::MAX_VARIANTS * 2)], // live + _delete rows; the real cap of 9 is enforced in ProductVariants::sync
             'variants.*.id' => ['sometimes', 'nullable', 'integer'],
             'variants.*._delete' => ['sometimes', 'boolean'],
             'variants.*.label' => ['required_with:variants', 'string', 'max:80'],
+            'variants.*.sku' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9_-]+$/'],
             'variants.*.price_cents' => ['required_with:variants', 'integer', 'min:0'],
             'variants.*.compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             'variants.*.inventory_quantity' => ['sometimes', 'integer', 'min:0'],
@@ -189,6 +208,22 @@ class AdminProductController extends Controller
             'variants.*.sort_order' => ['sometimes', 'integer', 'min:0'],
             'variants.*.is_active' => ['sometimes', 'boolean'],
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<int, string>|null
+     */
+    private function pullImages(array &$data): ?array
+    {
+        if (! array_key_exists('images', $data)) {
+            return null;
+        }
+
+        $images = $data['images'];
+        unset($data['images']);
+
+        return $images;
     }
 
     /**

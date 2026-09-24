@@ -159,6 +159,9 @@ class CheckoutController extends Controller
                     // Freeze the "regular" price onto the line so the receipt can
                     // show the discount even if the product is repriced later.
                     'compare_at_price_cents' => $state['compare_at_price_cents'],
+                    // Frozen too: the return window this item was sold under,
+                    // which decides when the seller's earnings can be paid out.
+                    'return_days' => $product->return_days ?? SellerLedger::returnWindowDays(),
                     'line_total_cents' => $lineTotal,
                 ];
 

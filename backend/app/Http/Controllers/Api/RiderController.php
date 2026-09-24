@@ -12,6 +12,7 @@ use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
 use App\Support\RiderAttendance;
 use App\Support\SellerLedger;
+use App\Support\RiderLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -401,6 +402,9 @@ class RiderController extends Controller
 
         // Paid + delivered: send the customer their summary email with the PDF bill.
         $order->sendDeliveredReceiptIfReady();
+
+        // Base + per-mile pay for this delivery (idempotent).
+        RiderLedger::creditForDelivery($order);
 
         return response()->json(['data' => $this->row($order->fresh(['items', 'user:id,name,phone']))]);
     }

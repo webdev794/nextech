@@ -18,6 +18,7 @@ class Category extends Model
         'image_url',
         'is_active',
         'sort_order',
+        'show_on_home',
     ];
 
     protected function casts(): array
@@ -25,6 +26,7 @@ class Category extends Model
         return [
             'is_active' => 'boolean',
             'sort_order' => 'integer',
+            'show_on_home' => 'boolean',
         ];
     }
 

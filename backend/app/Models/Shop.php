@@ -50,6 +50,11 @@ class Shop extends Model
         return $this->hasMany(SellerLedgerEntry::class);
     }
 
+    public function payoutRequests(): HasMany
+    {
+        return $this->hasMany(PayoutRequest::class);
+    }
+
     /** Running balance owed to this shop — always summed from the ledger, never a stored column. */
     public function balanceCents(): int
     {
