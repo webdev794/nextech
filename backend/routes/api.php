@@ -50,6 +50,8 @@ use App\Http\Controllers\Api\SellerTrademarkController;
 use App\Http\Controllers\Api\AdminCatalogReviewController;
 use App\Http\Controllers\Api\SellerDecorationController;
 use App\Http\Controllers\Api\AdminDecorationController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\AdminReviewController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
 use Illuminate\Http\Request;
@@ -81,6 +83,9 @@ Route::get('/deals', [CatalogController::class, 'deals']);
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product:slug}', [CatalogController::class, 'product']);
 Route::get('/shops/{slug}', [CatalogController::class, 'shop']);
+// Buyer reviews (approved only) for a product, and a reviewer's public profile.
+Route::get('/products/{product}/reviews', [ReviewController::class, 'forProduct'])->whereNumber('product');
+Route::get('/reviewers/{user}/reviews', [ReviewController::class, 'forReviewer'])->whereNumber('user');
 // Checkout estimate for items shipped directly by sellers (fees + delivery dates).
 Route::post('/shipping/quote', [ShippingQuoteController::class, 'quote']);
 
@@ -124,10 +129,18 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/support/threads/{thread}/rating', [SupportThreadController::class, 'rate']);
     Route::post('/support/threads/{thread}/end', [SupportThreadController::class, 'end']);
     Route::post('/support/attachments', [MediaController::class, 'storeSupportAttachment']);
+    // Writing reviews (with photos) and marking others' reviews helpful.
+    Route::post('/review-images', [MediaController::class, 'storeReviewImage']);
+    Route::post('/orders/{order}/items/{item}/review', [ReviewController::class, 'store']);
+    Route::post('/reviews/{review}/helpful', [ReviewController::class, 'helpful']);
     Route::post('/orders/{order}/packages/{package}/received', [ShippingQuoteController::class, 'received']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/reviews', [AdminReviewController::class, 'index']);
+    Route::post('/reviews/{review}/approve', [AdminReviewController::class, 'approve']);
+    Route::post('/reviews/{review}/reject', [AdminReviewController::class, 'reject']);
+    Route::delete('/reviews/{review}', [AdminReviewController::class, 'destroy']);
     Route::get('/metrics', [AdminController::class, 'metrics']);
     Route::get('/metrics/timeseries', [AdminController::class, 'ordersTimeseries']);
     Route::get('/metrics/compare', [AdminController::class, 'ordersCompare']);

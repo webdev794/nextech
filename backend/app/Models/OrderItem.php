@@ -30,4 +30,6 @@ class OrderItem extends Model
     public function productVariant(): BelongsTo { return $this->belongsTo(ProductVariant::class); }
     public function packageItems(): \Illuminate\Database\Eloquent\Relations\HasMany { return $this->hasMany(OrderPackageItem::class); }
     public function shop(): BelongsTo { return $this->belongsTo(Shop::class); }
+    /** The buyer's review of this item, if they wrote one. */
+    public function review(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ProductReview::class); }
 }

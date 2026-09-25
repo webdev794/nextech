@@ -41,7 +41,7 @@ class MediaController extends Controller
                 ['required', 'file'],
                 $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', 'max:4096']
             ),
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support'],
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support,reviews'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';
@@ -111,6 +111,14 @@ class MediaController extends Controller
      * customer, seller or admin. Forces folder=support, same reasoning as
      * storeShopAsset().
      */
+    /** Photos buyers add to a product review. Forces folder=reviews, like storeSupportAttachment(). */
+    public function storeReviewImage(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'reviews']);
+
+        return $this->store($request);
+    }
+
     public function storeSupportAttachment(Request $request): JsonResponse
     {
         $request->merge(['folder' => 'support']);

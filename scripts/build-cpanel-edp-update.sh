@@ -35,6 +35,8 @@ echo "==> building React storefront for /$SUBPATH/ (web/.env.production is alrea
 cd "$SRC/web"
 NODE_OPTIONS="--max-old-space-size=4096" npm --cache D:/edp/.tmp/npm-cache run build
 cp -r "$SRC/web/dist/." "$DEST/"
+# PHP upload limits for product videos (100 MB) — the web root is this folder.
+cp "$SRC/backend/public/.user.ini" "$DEST/.user.ini"
 
 echo "==> front controller (self-healing: cache clear + OPcache reset on first hit)"
 DEPLOY_TAG=$(date +%Y%m%d%H%M%S)
@@ -156,10 +158,17 @@ zip - your live config and imported data are untouched. index.php clears
 stale compiled caches and resets OPcache on first hit after upload, no
 Terminal needed for that part.
 
-This release: seller shipping (templates, tracking, packages), built-in
-shipping labels (PDF from admin templates), India market (INR, GST, TCS/TDS,
-Indian states/carriers), admin currency switch ($ / Rs), country field on
-stores and NexTech products.
+This release (25 Sep 2026): seller onboarding tasks (tax info, compliance
+info, bank verification), Temu-style Manage orders (pending / unshipped /
+shipped / cancelled, search by up to 100 IDs, buyer address changes), buyer
+privacy for sellers, step-by-step Add product wizard, Excel bulk upload,
+sales boost / pricing health, product compliance, trademarks, store
+decoration (desktop + mobile), shop category carousel, admin label postage.
+
+UPLOADED FILES: product photos, videos, store designs and seller documents
+live in storage/app/, which this zip never touches. If you import the local
+database, also upload  edp-storage.zip  (made next to this zip) into
+public_html/  and extract it, so the files the database points to exist.
 
 DATABASE: you're importing the local database, which already has every
 migration applied — _migrate.php is then only a safety check (it reports
@@ -196,6 +205,20 @@ Rollback: re-upload your  public_html/$SUBPATH/  backup from step 1. If you
 already ran _migrate.php, the new columns are additive (nothing dropped), so
 rolling back the code is safe even if you don't also roll back the DB.
 TXT
+
+echo "==> storage bundle (uploads that the local database refers to)"
+STORAGE_OUT=/d/edp/.tmp/deploy/edp-storage.zip
+rm -f "$STORAGE_OUT"
+( cd "$SRC/backend" && /d/xampp/php84/php.exe -r '
+    $out = $argv[1]; $zip = new ZipArchive();
+    if ($zip->open($out, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) { fwrite(STDERR, "cannot open storage zip\n"); exit(1); }
+    $n = 0;
+    foreach (["storage/app/public", "storage/app/private"] as $dir) {
+        if (!is_dir($dir)) continue;
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) { if ($f->getFilename() === ".gitignore") continue; $zip->addFile($f->getPathname(), "edp/".str_replace("\\", "/", $f->getPathname())); $n++; }
+    }
+    $zip->close(); echo "   $n files -> $out\n";' "$STORAGE_OUT" )
 
 echo "==> zipping"
 cd "$STAGE"
