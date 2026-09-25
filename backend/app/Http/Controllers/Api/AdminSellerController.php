@@ -9,6 +9,7 @@ use App\Models\SupportMessage;
 use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\SellerLedger;
+use App\Support\SellerOnboarding;
 use App\Support\Market;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
@@ -243,6 +244,36 @@ class AdminSellerController extends Controller
     }
 
     /**
+     * Approve or send back an onboarding task (tax information, compliance
+     * information, bank account). A rejection needs a reason, which the
+     * seller sees on the task and gets as a message.
+     */
+    public function reviewOnboarding(Request $request, Seller $seller, string $task): JsonResponse
+    {
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'reject'])],
+            'note' => ['required_if:decision,reject', 'nullable', 'string', 'max:500'],
+        ], ['note.required_if' => 'Say what the seller needs to fix.']);
+
+        $current = $seller->{$task.'_status'};
+        abort_unless(in_array($current, $task === 'bank' ? ['processing', 'linked', 'failed'] : ['pending', 'approved', 'rejected'], true), 422, 'The seller hasn’t submitted this yet.');
+
+        $approve = $data['decision'] === 'approve';
+        $status = $task === 'bank' ? ($approve ? 'linked' : 'failed') : ($approve ? 'approved' : 'rejected');
+        $seller->forceFill([
+            $task.'_status' => $status,
+            $task.'_note' => $approve ? null : $data['note'],
+        ] + ($task === 'bank' ? ['bank_verified_at' => $approve ? now() : null] : []))->save();
+
+        if (! $approve) {
+            $label = ['tax' => 'tax information', 'compliance' => 'additional compliance information', 'bank' => 'bank account'][$task];
+            $this->postToSellerThread($seller, $request->user(), "Your $label needs another look: {$data['note']} Update it from the Seller Center homepage.");
+        }
+
+        return response()->json(['data' => $this->row($seller->fresh()->load(['user:id,name,email,phone', 'shop', 'reviewer:id,name']), detailed: true)]);
+    }
+
+    /**
      * Finds or creates an open seller<->admin thread for this seller and
      * posts a staff message into it — mirrors RiderController::threadFor().
      */
@@ -304,6 +335,11 @@ class AdminSellerController extends Controller
             'rejection_reason' => $seller->rejection_reason,
             'submitted_at' => $seller->submitted_at,
             'reviewed_at' => $seller->reviewed_at,
+            'tax_status' => $seller->tax_status,
+            'compliance_status' => $seller->compliance_status,
+            'bank_status' => $seller->bank_status,
+            // Onboarding tasks waiting for NexTech's review.
+            'reviews_pending' => (int) ($seller->tax_status === 'pending') + (int) ($seller->compliance_status === 'pending') + (int) ($seller->bank_status === 'processing'),
             'last_message' => $this->lastMessage($seller),
             'shop' => $seller->relationLoaded('shop') && $seller->shop ? [
                 'id' => $seller->shop->id,
@@ -339,6 +375,17 @@ class AdminSellerController extends Controller
                 'reviewer' => $seller->reviewer ? ['id' => $seller->reviewer->id, 'name' => $seller->reviewer->name] : null,
                 'payout_method' => $seller->payout_method,
                 'payout_details' => $seller->payout_details,
+                'tax_info' => $seller->tax_info,
+                'tax_note' => $seller->tax_note,
+                'tax_submitted_at' => $seller->tax_submitted_at,
+                'tax_codes' => SellerOnboarding::config($seller)['tax_codes'] ?? [],
+                'corporate_document_types' => SellerOnboarding::config($seller)['corporate_documents'] ?? [],
+                'compliance' => $seller->compliance,
+                'compliance_note' => $seller->compliance_note,
+                'compliance_submitted_at' => $seller->compliance_submitted_at,
+                'bank_note' => $seller->bank_note,
+                'bank_submitted_at' => $seller->bank_submitted_at,
+                'bank_verified_at' => $seller->bank_verified_at,
             ];
 
             $shop = $seller->relationLoaded('shop') ? $seller->shop : null;

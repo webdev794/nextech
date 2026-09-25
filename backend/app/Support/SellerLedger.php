@@ -251,6 +251,12 @@ class SellerLedger
         return self::marketLimit('return_pickup_fee_cents', $market);
     }
 
+    /** Postage for a NexTech-bought label when no real courier quotes one. */
+    public static function labelPostageCents(?string $market = null): int
+    {
+        return self::marketLimit('label_postage_cents', $market);
+    }
+
     /**
      * Take a refund back out of the seller(s) whose items were refunded — the
      * item value only, less the commission they'd paid on it (tax, delivery

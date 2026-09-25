@@ -4,17 +4,17 @@ namespace App\Support\Courier;
 
 use App\Models\Order;
 use App\Models\Shipment;
+use App\Support\Market;
+use App\Support\SellerLedger;
 use Illuminate\Support\Str;
 
 /**
- * Always-serviceable stand-in for a real carrier — flat quote, a fake
- * tracking number, and a status that advances deterministically with elapsed
+ * Always-serviceable stand-in for a real carrier — a flat quote (the admin's
+ * label postage for the address's country), a fake tracking number, and a status that advances deterministically with elapsed
  * time since booking so admin testing never needs a manual state flip.
  */
 class MockCourierProvider implements CourierProvider
 {
-    private const QUOTE_COST_CENTS = 999;
-
     private const QUOTE_ETA_DAYS = 4;
 
     private const IN_TRANSIT_AFTER_MINUTES = 1;
@@ -28,8 +28,10 @@ class MockCourierProvider implements CourierProvider
 
     public function quote(array $address): array
     {
+        $country = strtoupper((string) ($address['country'] ?? ''));
+
         return [
-            'cost_cents' => self::QUOTE_COST_CENTS,
+            'cost_cents' => SellerLedger::labelPostageCents(in_array($country, Market::codes(), true) ? $country : null),
             'eta_days' => self::QUOTE_ETA_DAYS,
         ];
     }

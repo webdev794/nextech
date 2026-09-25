@@ -23,6 +23,9 @@ class ShippingQuoteController extends Controller
     {
         $data = $request->validate([
             'state' => ['sometimes', 'nullable', 'string', 'max:60'],
+            'line1' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'line2' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'city' => ['sometimes', 'nullable', 'string', 'max:100'],
             'lines' => ['required', 'array', 'max:100'],
             'lines.*.product_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
@@ -41,7 +44,7 @@ class ShippingQuoteController extends Controller
             $lines[] = ['product' => $product, 'quantity' => $line['quantity'], 'line_total_cents' => $line['price_cents'] * $line['quantity']];
         }
 
-        $quote = SellerShipping::quote($lines, $data['state'] ?? null);
+        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data));
 
         return response()->json(['data' => $quote + [
             'seller_shipped_product_ids' => array_values(array_unique($sellerShipped)),

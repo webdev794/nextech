@@ -52,6 +52,12 @@ class Seller extends Model
             'submitted_at' => 'datetime',
             'payout_details' => 'array',
             'pickup_same_as_registered' => 'boolean',
+            'tax_info' => 'array',
+            'tax_submitted_at' => 'datetime',
+            'compliance' => 'array',
+            'compliance_submitted_at' => 'datetime',
+            'bank_submitted_at' => 'datetime',
+            'bank_verified_at' => 'datetime',
         ];
     }
 

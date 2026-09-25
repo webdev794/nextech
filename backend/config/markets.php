@@ -20,6 +20,27 @@ return [
         'payouts' => null,
         'rider_pay' => null,
         'withholding' => [],
+        // Seller Center onboarding (App\Support\SellerOnboarding).
+        'onboarding' => [
+            'tax_number_label' => 'EIN / Business Number',
+            // An IRS EIN confirmation letter (CP 575 / 147C) is optional in the US.
+            'tax_certificate_required' => false,
+            'tax_certificate_label' => 'EIN confirmation letter (IRS CP 575 or 147C)',
+            'tax_codes' => [
+                'general' => 'General tangible goods',
+                'electronics' => 'Consumer electronics',
+                'computers' => 'Computers & peripherals',
+                'phones' => 'Mobile phones & accessories',
+                'software_physical' => 'Prewritten software on physical media',
+            ],
+            'bank' => ['code_label' => 'Routing number (ABA)', 'code_regex' => '^\d{9}$', 'account_label' => 'Account number', 'account_regex' => '^\d{4,17}$'],
+            'corporate_documents' => [
+                'articles' => 'Articles of incorporation / organization',
+                'certificate_good_standing' => 'Certificate of good standing',
+                'business_license' => 'Business license',
+                'ein_letter' => 'IRS EIN letter',
+            ],
+        ],
         'states' => [
             'AL' => 'Alabama', 'AK' => 'Alaska', 'AZ' => 'Arizona', 'AR' => 'Arkansas', 'CA' => 'California',
             'CO' => 'Colorado', 'CT' => 'Connecticut', 'DE' => 'Delaware', 'DC' => 'District of Columbia', 'FL' => 'Florida',
@@ -77,6 +98,7 @@ return [
             'max_payout_cents' => 50000000,
             'daily_payout_cap_cents' => 0,
             'return_pickup_fee_cents' => 7900,
+            'label_postage_cents' => 9900,
         ],
         // NexTech's own riders in India (per mile of straight-line distance).
         'rider_pay' => [
@@ -94,6 +116,27 @@ return [
         'withholding' => [
             'tcs_gst' => ['label' => 'TCS (GST sec. 52)', 'rate_bps' => 50, 'base' => 'taxable'],
             'tds_194o' => ['label' => 'TDS (sec. 194-O)', 'rate_bps' => 10, 'base' => 'taxable'],
+        ],
+        'onboarding' => [
+            'tax_number_label' => 'GSTIN',
+            // GST registration certificate (Form GST REG-06) is required in India.
+            'tax_certificate_required' => true,
+            'tax_certificate_label' => 'GST registration certificate (Form GST REG-06)',
+            // Default HSN (all 18% GST) for items that don't set their own.
+            'tax_codes' => [
+                '8517' => 'HSN 8517 — Mobile phones & communication devices',
+                '8471' => 'HSN 8471 — Computers & laptops',
+                '8518' => 'HSN 8518 — Headphones, earphones & speakers',
+                '8528' => 'HSN 8528 — Monitors & televisions',
+                '8504' => 'HSN 8504 — Chargers & power adapters',
+            ],
+            'bank' => ['code_label' => 'IFSC', 'code_regex' => '^[A-Z]{4}0[A-Z0-9]{6}$', 'account_label' => 'Account number', 'account_regex' => '^\d{9,18}$'],
+            'corporate_documents' => [
+                'incorporation' => 'Certificate of incorporation',
+                'gst_certificate' => 'GST registration certificate',
+                'udyam' => 'Udyam registration certificate',
+                'shop_establishment' => 'Shop & establishment licence',
+            ],
         ],
         'states' => [
             'AN' => 'Andaman and Nicobar Islands', 'AP' => 'Andhra Pradesh', 'AR' => 'Arunachal Pradesh', 'AS' => 'Assam',

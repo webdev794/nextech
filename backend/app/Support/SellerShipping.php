@@ -144,6 +144,38 @@ class SellerShipping
 
     // ------------------------------------------------------------------ quotes
 
+    /** Address types a shipping group can cover; military (APO/FPO/DPO) is US-only. */
+    public static function addressTypes(?string $market = null): array
+    {
+        return strtoupper((string) ($market ?? 'US')) === 'US'
+            ? ['standard' => 'Street address', 'po_box' => 'PO box', 'military' => 'Military (APO/FPO/DPO)']
+            : ['standard' => 'Street address', 'po_box' => 'PO box'];
+    }
+
+    /**
+     * What kind of address a delivery address is: a military APO/FPO/DPO
+     * address (that city, or the armed-forces "states" AA/AE/AP in the US),
+     * a PO box, or a standard street address. Null when there is no street
+     * line to judge by.
+     *
+     * @param  array<string, mixed>  $address
+     */
+    public static function addressType(array $address): ?string
+    {
+        $lines = trim(($address['line1'] ?? '').' '.($address['line2'] ?? ''));
+        $city = strtoupper(trim((string) ($address['city'] ?? '')));
+        $state = strtoupper(trim((string) ($address['state'] ?? '')));
+        if ($lines === '') {
+            return null;
+        }
+        if (in_array($city, ['APO', 'FPO', 'DPO'], true) || (in_array($state, ['AA', 'AE', 'AP'], true) && strtoupper((string) ($address['country'] ?? 'US')) === 'US')) {
+            return 'military';
+        }
+
+        return preg_match('/\b(p\.?\s*o\.?\s*box|post\s+office\s+box)\b/i', $lines) ? 'po_box' : 'standard';
+    }
+
+
     /** The template a product ships under: its own, else the shop's default. */
     public static function templateFor(Product $product, Shop $shop): ?ShippingTemplate
     {
@@ -162,9 +194,10 @@ class SellerShipping
      * promises the slowest transit among them.
      *
      * @param  list<array{product: Product, quantity: int, line_total_cents: int}>  $lines
+     * @param  ?string  $addressType  standard | po_box | military (see addressType()); null = not known yet
      * @return array{shops: list<array<string, mixed>>, total_cents: int, unshippable: list<string>}
      */
-    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null): array
+    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null, ?string $addressType = null): array
     {
         $orderedAt ??= now();
         $byShop = [];
@@ -179,6 +212,10 @@ class SellerShipping
 
             $template = self::templateFor($product, $shop);
             $group = $template?->groupFor(self::stateCode($state, $shop->market));
+            // A group limited to some address types can't ship to the others (e.g. a PO box).
+            if ($group && $addressType && $group->address_types && ! in_array($addressType, $group->address_types, true)) {
+                $group = null;
+            }
             if (! $group) {
                 $unshippable[] = $product->name;
 

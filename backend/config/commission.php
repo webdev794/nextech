@@ -37,4 +37,9 @@ return [
     // when an admin refunds with "charge seller return pickup" ticked.
     // Admin-overridable (settings -> return_pickup_fee_cents).
     'return_pickup_fee_cents' => (int) env('RETURN_PICKUP_FEE_CENTS', 499),
+
+    // Postage charged to a seller for a NexTech-bought shipping label while
+    // the built-in test courier is in use (a real courier quotes its own
+    // rate). Admin-overridable (settings -> label_postage_cents).
+    'label_postage_cents' => (int) env('LABEL_POSTAGE_CENTS', 999),
 ];

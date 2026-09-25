@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RiderController;
 use App\Http\Controllers\Api\SellerController;
+use App\Http\Controllers\Api\SellerOnboardingController;
 use App\Http\Controllers\Api\SellerKycController;
 use App\Http\Controllers\Api\SellerOrderController;
 use App\Http\Controllers\Api\AdminRiderApplicationController;
@@ -168,6 +169,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
     Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
+    Route::post('/sellers/{seller}/onboarding/{task}', [AdminSellerController::class, 'reviewOnboarding'])->whereIn('task', ['tax', 'compliance', 'bank']);
 
     Route::get('/orders', [AdminOrderController::class, 'index']);
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
@@ -251,7 +253,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
 Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
-    Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
+    // Onboarding tasks: tax information, compliance information, bank account.
+    Route::get('/seller/onboarding', [SellerOnboardingController::class, 'show']);
+    Route::post('/seller/onboarding/tax-number', [SellerOnboardingController::class, 'saveTaxNumber']);
+    Route::post('/seller/onboarding/tax-settings', [SellerOnboardingController::class, 'saveTaxSettings']);
+    Route::post('/seller/onboarding/compliance', [SellerOnboardingController::class, 'saveCompliance']);
+    Route::post('/seller/onboarding/bank', [SellerOnboardingController::class, 'saveBank']);
     Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
 
     // The `seller` middleware only requires having applied at all; the real

@@ -9,6 +9,7 @@ use App\Models\Shop;
 use App\Support\Market;
 use App\Support\Money;
 use App\Support\SellerLedger;
+use App\Support\SellerOnboarding;
 use App\Support\Sku;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -182,6 +183,7 @@ class SellerController extends Controller
             $seller->tax_inclusive = Market::taxInclusive($market);
             $seller->gst_rates_bps = Market::profile($market)['gst_rates_bps'] ?? [];
             $seller->withholding = collect(Market::profile($market)['withholding'] ?? [])->map(fn ($r) => $r['label'].' '.($r['rate_bps'] / 100).'%')->values();
+            $seller->onboarding_tasks = SellerOnboarding::tasks($seller);
         }
 
         return response()->json(['data' => $seller]);
@@ -196,7 +198,9 @@ class SellerController extends Controller
     {
         $seller = $request->user()->seller()->with('shop')->first();
         abort_unless($seller?->status === 'approved' && $seller->shop, 403, 'Approved seller access required.');
-        abort_unless($seller->payout_method, 422, 'Add your payout method (bank or PayPal) first.');
+        abort_unless($seller->payout_method && $seller->bank_status === 'linked', 422, $seller->bank_status === 'processing'
+            ? 'Your bank account is still being verified (usually 1–2 business days).'
+            : 'Add and verify your bank account first.');
 
         $payoutRequest = DB::transaction(function () use ($seller): PayoutRequest {
             // Lock the shop row so a double-click can't open two requests.
@@ -213,41 +217,6 @@ class SellerController extends Controller
         });
 
         return response()->json(['data' => $payoutRequest], 201);
-    }
-
-    /**
-     * Where admin should manually send this seller's payouts — gated to an
-     * approved seller like the product endpoints, not just "has applied".
-     */
-    public function payoutMethod(Request $request): JsonResponse
-    {
-        $seller = $request->user()->seller;
-        abort_unless($seller?->status === 'approved', 403, 'Approved seller access required.');
-
-        $data = $request->validate([
-            'payout_method' => ['required', Rule::in(['bank', 'paypal'])],
-            'holder_name' => ['required_if:payout_method,bank', 'string', 'max:160'],
-            'account_number' => ['required_if:payout_method,bank', 'string', 'max:60'],
-            'routing_number' => ['required_if:payout_method,bank', 'string', 'max:60'],
-            'bank_name' => ['required_if:payout_method,bank', 'string', 'max:160'],
-            'email' => ['required_if:payout_method,paypal', 'email', 'max:160'],
-        ]);
-
-        $details = $data['payout_method'] === 'bank'
-            ? [
-                'holder_name' => $data['holder_name'],
-                'account_number' => $data['account_number'],
-                'routing_number' => $data['routing_number'],
-                'bank_name' => $data['bank_name'],
-            ]
-            : ['email' => $data['email']];
-
-        $seller->forceFill([
-            'payout_method' => $data['payout_method'],
-            'payout_details' => $details,
-        ])->save();
-
-        return response()->json(['data' => $seller->fresh()]);
     }
 
     /**

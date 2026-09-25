@@ -376,6 +376,7 @@ function feesToForm(s) {
     return_window_days: String(s.return_window_days ?? 30),
     max_return_days: String(s.max_return_days ?? 90),
     return_pickup_fee: dollars(s.return_pickup_fee_cents),
+    label_postage: dollars(s.label_postage_cents),
     rider_base_pay: dollars(s.rider_base_pay_cents),
     rider_per_mile: dollars(s.rider_per_mile_cents),
     rider_min_payout: dollars(s.rider_min_payout_cents),
@@ -401,6 +402,7 @@ function formToFees(f) {
     return_window_days: Math.max(0, Math.min(365, Math.round(Number(f.return_window_days || 0)))),
     max_return_days: Math.max(0, Math.min(365, Math.round(Number(f.max_return_days || 0)))),
     return_pickup_fee_cents: toCents(f.return_pickup_fee),
+    label_postage_cents: toCents(f.label_postage),
     rider_base_pay_cents: toCents(f.rider_base_pay),
     rider_per_mile_cents: toCents(f.rider_per_mile),
     rider_min_payout_cents: toCents(f.rider_min_payout),
@@ -1681,6 +1683,13 @@ export default function Admin({ token, onClose }) {
         setNotifications((cur) => ({ ...cur, payout_requests: (cur.payout_requests ?? []).filter((r) => r.seller_id !== seller.id) }))
       }
     } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Seller Center onboarding tasks (tax information, compliance information, bank account).
+  function reviewOnboarding(seller, task, decision) {
+    const note = decision === 'reject' ? window.prompt('What does the seller need to fix? They see this on the task and get it as a message.', '') : null
+    if (decision === 'reject' && !note) return
+    sellerAction(seller, `onboarding/${task}`, { decision, note })
   }
 
   function rejectSeller(seller) {
@@ -2998,7 +3007,7 @@ export default function Admin({ token, onClose }) {
                     <td>{seller.user?.name}<br /><span className="muted">{seller.user?.email}</span></td>
                     <td>{seller.country}</td>
                     <td>{seller.business_type}</td>
-                    <td><span className={`pill pill-${seller.status}`}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</span></td>
+                    <td><span className={`pill pill-${seller.status}`}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</span>{seller.reviews_pending > 0 && <span className="pill pill-pending" title="Onboarding tasks (tax, compliance, bank) waiting for review">{seller.reviews_pending} to review</span>}</td>
                     <td>{seller.last_message ? <span className="muted">{seller.last_message.is_staff ? 'You: ' : ''}{seller.last_message.body.length > 60 ? `${seller.last_message.body.slice(0, 60)}…` : seller.last_message.body}</span> : <span className="muted">—</span>}</td>
                     <td>{seller.submitted_at ? new Date(seller.submitted_at).toLocaleDateString() : '—'}</td>
                     <td className="admin-actions">
@@ -3674,8 +3683,9 @@ export default function Admin({ token, onClose }) {
                   <label>Default return window (days)<input type="number" min="0" max={feesForm.max_return_days || 365} value={feesForm.return_window_days} onChange={(event) => setFeesForm({ ...feesForm, return_window_days: event.target.value })} /></label>
                   <label>Maximum return window (days)<input type="number" min="0" max="365" value={feesForm.max_return_days} onChange={(event) => setFeesForm({ ...feesForm, max_return_days: event.target.value })} /></label>
                   <label>Return pickup fee charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.return_pickup_fee} onChange={(event) => setFeesForm({ ...feesForm, return_pickup_fee: event.target.value })} /></label>
+                  <label>NexTech label postage charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.label_postage} onChange={(event) => setFeesForm({ ...feesForm, label_postage: event.target.value })} /></label>
                 </div>
-                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap.</p>
+                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per NexTech-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
 
                 <h3>Rider pay</h3>
                 <div className="admin-form-grid">
@@ -3860,6 +3870,42 @@ export default function Admin({ token, onClose }) {
                   <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.id_document_path)}>View ID document</button>
                   <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.business_document_path)}>View business document</button>
                 </div>
+
+                {sellerDetail.status === 'approved' && (() => {
+                  const d = sellerDetail
+                  const STATUS_TEXT = { pending: 'Waiting for review', approved: 'Approved', rejected: 'Sent back', processing: 'Waiting for verification', linked: 'Linked', failed: 'Verification failed' }
+                  const reviewButtons = (task, status, waiting) => status && (
+                    <div className="admin-form-actions">
+                      {status !== (task === 'bank' ? 'linked' : 'approved') && <button className="act" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'approve')}>{task === 'bank' ? 'Verify & link' : 'Approve'}</button>}
+                      {status !== (task === 'bank' ? 'failed' : 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'reject')}>{waiting ? 'Send back' : 'Revoke'}</button>}
+                    </div>
+                  )
+                  const people = d.compliance?.people ?? []
+                  const roleNames = { ubo: 'beneficial owner', director: 'director', executive: 'executive' }
+                  return (
+                    <>
+                      <h4>Onboarding tasks</h4>
+                      <p className="muted"><b>1. Tax information</b> — {d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}{d.tax_note ? ` · “${d.tax_note}”` : ''}</p>
+                      {d.tax_info?.tax_number && <p className="muted">Tax number {d.tax_info.tax_number} (registered: {d.tax_id}){d.tax_info.tax_code ? ` · default item tax code: ${d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}` : ''}{d.tax_info.certificate_path && <> · <button className="link" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>View certificate</button></>}</p>}
+                      {reviewButtons('tax', d.tax_status, d.tax_status === 'pending')}
+
+                      <p className="muted"><b>2. Compliance information</b> — {d.compliance_status ? STATUS_TEXT[d.compliance_status] : 'Not started'}{d.compliance_submitted_at ? ` · submitted ${new Date(d.compliance_submitted_at).toLocaleDateString()}` : ''}{d.compliance_note ? ` · “${d.compliance_note}”` : ''}</p>
+                      {people.map((p) => (
+                        <p className="muted" key={p.id}>{p.legal_name}{p.is_primary ? ' (primary contact)' : ''} — {p.roles.map((r) => roleNames[r]).join(', ')}{p.ownership_pct != null ? ` · ${p.ownership_pct}% owned` : ''} · born {p.date_of_birth} in {p.place_of_birth} · citizen of {p.citizenship} · {p.id_type} {p.id_number} ({p.id_country}, expires {p.id_expiry}) · {[p.address?.line1, p.address?.line2, p.address?.city, p.address?.state, p.address?.postal_code, p.address?.country].filter(Boolean).join(', ')}</p>
+                      ))}
+                      {(d.compliance?.documents ?? []).length > 0 && (
+                        <div className="admin-form-actions">
+                          {d.compliance.documents.map((doc) => <button key={doc.path} className="act ghost" type="button" onClick={() => viewKycDocument(doc.path)}>{d.corporate_document_types?.[doc.type] ?? doc.type}</button>)}
+                        </div>
+                      )}
+                      {reviewButtons('compliance', d.compliance_status, d.compliance_status === 'pending')}
+
+                      <p className="muted"><b>3. Bank account</b> — {d.bank_status ? STATUS_TEXT[d.bank_status] : 'Not started'}{d.bank_submitted_at ? ` · submitted ${new Date(d.bank_submitted_at).toLocaleDateString()}` : ''}{d.bank_note ? ` · “${d.bank_note}”` : ''}</p>
+                      {d.payout_details?.document_path && <p className="muted">Check the bank document matches: holder, {d.payout_details.bank_code_label ?? 'routing number'} and account number, issued {d.payout_details.document_issued_on} (must be within 180 days). <button className="link" type="button" onClick={() => viewKycDocument(d.payout_details.document_path)}>View bank document</button></p>}
+                      {reviewButtons('bank', d.bank_status, d.bank_status === 'processing')}
+                    </>
+                  )
+                })()}
 
                 <h4>Shop</h4>
                 <p className="muted">{sellerDetail.shop?.name} {sellerDetail.shop?.is_active ? '(live)' : '(hidden)'}</p>

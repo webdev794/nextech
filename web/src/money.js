@@ -11,9 +11,6 @@ export function formatMoney(cents, currency = 'usd') {
   return formatters[code].format((Number(cents) || 0) / 100)
 }
 
-export function currencySymbol(currency = 'usd') {
-  return formatMoney(0, currency).replace(/[\d.,\s]/g, '')
-}
 
 // Flag emoji for an ISO country code ("IN" -> 🇮🇳).
 export function flag(code = '') {
@@ -24,3 +21,7 @@ export function flag(code = '') {
 let storeCurrency = 'usd'
 export function setStoreCurrency(currency) { storeCurrency = currency || 'usd' }
 export function storeMoney(cents, currency) { return formatMoney(cents, currency || storeCurrency) }
+// No currency given = the one the current surface is showing.
+export function currencySymbol(currency) {
+  return formatMoney(0, currency || storeCurrency).replace(/[\d.,\s]/g, '')
+}

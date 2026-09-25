@@ -1250,11 +1250,11 @@ export default function Storefront() {
   // Items from sellers who ship themselves are charged the seller's own
   // shipping (template fee + delivery dates) instead of NexTech's delivery fee.
   const shipState = checkoutForm.state || location?.state || defaultAddress?.state || ''
-  const quoteKey = JSON.stringify([market, shipState, cart.map((item) => [item.id, item.quantity, item.price_cents])])
+  const quoteKey = JSON.stringify([market, shipState, checkoutForm.line1, checkoutForm.line2, checkoutForm.city, cart.map((item) => [item.id, item.quantity, item.price_cents])])
   useEffect(() => {
     if (!cart.length) { Promise.resolve().then(() => setSellerQuote(null)); return undefined }
     let cancelled = false
-    fetch(`${API_URL}/shipping/quote`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Market': activeMarket }, body: JSON.stringify({ state: shipState || null, lines: cart.map((item) => ({ product_id: item.id, quantity: item.quantity, price_cents: item.price_cents })) }) })
+    fetch(`${API_URL}/shipping/quote`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Market': activeMarket }, body: JSON.stringify({ state: shipState || null, line1: checkoutForm.line1 || null, line2: checkoutForm.line2 || null, city: checkoutForm.city || null, lines: cart.map((item) => ({ product_id: item.id, quantity: item.quantity, price_cents: item.price_cents })) }) })
       .then(responseJson)
       .then((data) => { if (!cancelled) setSellerQuote(data.data ?? null) })
       .catch(() => { if (!cancelled) setSellerQuote(null) })

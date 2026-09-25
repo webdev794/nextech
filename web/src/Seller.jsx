@@ -6,6 +6,7 @@ import { renderMarkdown } from './markdown'
 import { PageSection } from './PageSections'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
+import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './Seller.css'
 
@@ -167,7 +168,6 @@ const SUPPORT_ISSUE_LABELS = {
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other', delivery: 'Delivery message',
   seller_product_issue: 'Product issue', seller_other: 'Other',
 }
-const EMPTY_PAYOUT_FORM = { payout_method: 'bank', holder_name: '', account_number: '', routing_number: '', bank_name: '', email: '' }
 const dollarsOrBlank = (cents) => (cents != null ? (cents / 100).toFixed(2) : '')
 // Variant SKUs end in a single digit (-V1…-V9), so a product holds at most 9.
 const MAX_VARIANTS = 9
@@ -203,8 +203,6 @@ export default function Seller({ token, onSignOut }) {
   const [orderSummary, setOrderSummary] = useState(null)
   const [orders, setOrders] = useState([])
   const [orderMsg, setOrderMsg] = useState('')
-  const [payoutForm, setPayoutForm] = useState(null)
-  const [payoutMsg, setPayoutMsg] = useState('')
   const [payoutReqMsg, setPayoutReqMsg] = useState('')
   const [shopLinkMsg, setShopLinkMsg] = useState('')
   const [payoutReqBusy, setPayoutReqBusy] = useState(false)
@@ -314,29 +312,6 @@ export default function Seller({ token, onSignOut }) {
       setPayoutReqMsg(error.message)
     } finally {
       setPayoutReqBusy(false)
-    }
-  }
-
-  async function savePayoutMethod(event) {
-    event.preventDefault()
-    setPayoutMsg('')
-    try {
-      const payload = { payout_method: payoutForm.payout_method }
-      if (payoutForm.payout_method === 'bank') {
-        payload.holder_name = payoutForm.holder_name.trim()
-        payload.account_number = payoutForm.account_number.trim()
-        payload.routing_number = payoutForm.routing_number.trim()
-        payload.bank_name = payoutForm.bank_name.trim()
-      } else {
-        payload.email = payoutForm.email.trim()
-      }
-      const response = await fetch(`${API_URL}/seller/payout-method`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save your payout details.')
-      setMe((m) => ({ ...m, payout_method: data.data.payout_method, payout_details: data.data.payout_details }))
-      setPayoutMsg('Saved.')
-    } catch (error) {
-      setPayoutMsg(error.message)
     }
   }
 
@@ -902,7 +877,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -968,27 +943,7 @@ export default function Seller({ token, onSignOut }) {
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
                 {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact NexTech via Messages if you think this is a mistake.</div>}
-                {(() => {
-                  const steps = [
-                    ['Add your first product', products.length > 0, () => newProduct()],
-                    ['Choose how orders ship', shopMode !== 'nextech' || !!me.shop?.free_shipping_accepted_at, () => go('shipping')],
-                    ['Add your payout method', !!me.payout_method, () => go('finances')],
-                  ]
-                  const left = steps.filter(([, done]) => !done).length
-                  return left > 0 && (
-                    <div className="sc-card">
-                      <h2 className="sc-h2">Get your shop ready <span className="sc-muted">{steps.length - left}/{steps.length} done</span></h2>
-                      <ul className="ss-checklist">
-                        {steps.map(([label, done, onGo]) => (
-                          <li key={label} className={done ? 'done' : ''}>
-                            <span>{done ? '✓' : '○'} {label}</span>
-                            {!done && <button type="button" className="sc-primary" onClick={onGo}>Set up</button>}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )
-                })()}
+                <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />
                 <div className="sc-card">
                   <h2 className="sc-h2">Action needed</h2>
                   <div className="sc-action-grid">
@@ -1232,7 +1187,7 @@ export default function Seller({ token, onSignOut }) {
                         ))}
                       </ul>
                     )}
-                    <p className="seller-earnings-note">Payouts are settled by NexTech outside the app (bank transfer/PayPal); this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
+                    <p className="seller-earnings-note">Payouts are sent by NexTech to your verified bank account; this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
                     {(() => {
                       const req = me.last_payout_request
                       const balance = Math.max(0, me.available_cents ?? 0)
@@ -1246,8 +1201,8 @@ export default function Seller({ token, onSignOut }) {
                           {req?.status === 'rejected' && <p className="seller-payout-status rejected">Your last payout request wasn&rsquo;t approved{req.admin_note ? `: ${req.admin_note}` : '.'}</p>}
                           {balance >= (me.min_payout_cents ?? 0) && balance > 0 && (
                             <div className="seller-payout-request">
-                              <button type="button" className="seller-btn" disabled={payoutReqBusy || !me.payout_method} onClick={requestPayout}>Request payout of {money(requestable)}</button>
-                              {!me.payout_method && <span className="seller-earnings-note">Add your payout method below first.</span>}
+                              <button type="button" className="seller-btn" disabled={payoutReqBusy || me.bank_status !== 'linked'} onClick={requestPayout}>Request payout of {money(requestable)}</button>
+                              {me.bank_status !== 'linked' && <span className="seller-earnings-note">{me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.'}</span>}
                               {max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — the rest can be requested after this one is paid.</span>}
                             </div>
                           )}
@@ -1265,46 +1220,15 @@ export default function Seller({ token, onSignOut }) {
                       {(me.ledger_entries ?? []).length === 0 && <li className="seller-earnings-empty">No activity yet.</li>}
                     </ul>
 
-                    {me.has_sales ? (
-                      payoutForm ? (
-                        <form className="seller-shop-form seller-payout-form" onSubmit={savePayoutMethod}>
-                          <p className="seller-field-label">Payout method</p>
-                          <div className="seller-payout-radios">
-                            <label><input type="radio" name="payout_method" value="bank" checked={payoutForm.payout_method === 'bank'} onChange={() => setPayoutForm({ ...payoutForm, payout_method: 'bank' })} /> Bank account</label>
-                            <label><input type="radio" name="payout_method" value="paypal" checked={payoutForm.payout_method === 'paypal'} onChange={() => setPayoutForm({ ...payoutForm, payout_method: 'paypal' })} /> PayPal</label>
-                          </div>
-                          {payoutForm.payout_method === 'bank' ? (
-                            <>
-                              <label>Account holder name<input required value={payoutForm.holder_name} onChange={(event) => setPayoutForm({ ...payoutForm, holder_name: event.target.value })} /></label>
-                              <label>Bank name<input required value={payoutForm.bank_name} onChange={(event) => setPayoutForm({ ...payoutForm, bank_name: event.target.value })} /></label>
-                              <label>Account number<input required value={payoutForm.account_number} onChange={(event) => setPayoutForm({ ...payoutForm, account_number: event.target.value })} /></label>
-                              <label>Routing number<input required value={payoutForm.routing_number} onChange={(event) => setPayoutForm({ ...payoutForm, routing_number: event.target.value })} /></label>
-                            </>
-                          ) : (
-                            <label>PayPal email<input required type="email" value={payoutForm.email} onChange={(event) => setPayoutForm({ ...payoutForm, email: event.target.value })} /></label>
-                          )}
-                          <div className="seller-wizard-actions">
-                            <button type="submit" className="seller-btn">Save payout details</button>
-                            <button type="button" className="seller-btn ghost" onClick={() => setPayoutForm(null)}>Cancel</button>
-                          </div>
-                          {payoutMsg && <p className="seller-inline-error">{payoutMsg}</p>}
-                        </form>
-                      ) : (
-                        <div className="seller-payout-form">
-                          {me.payout_method && (
-                            <p className="seller-earnings-note">
-                              On file: {me.payout_method === 'bank'
-                                ? <>Bank transfer — {me.payout_details?.bank_name}, acct ending {String(me.payout_details?.account_number ?? '').slice(-4)}</>
-                                : <>PayPal — {me.payout_details?.email}</>}
-                            </p>
-                          )}
-                          <button type="button" className="seller-btn ghost" onClick={() => setPayoutForm({ ...EMPTY_PAYOUT_FORM, payout_method: me.payout_method || 'bank', ...(me.payout_details ?? {}) })}>{me.payout_method ? 'Edit payout details' : 'Add payout details'}</button>
-                          {payoutMsg && <p className="seller-inline-error">{payoutMsg}</p>}
-                        </div>
-                      )
-                    ) : (
-                      <p className="seller-earnings-note">Add your payout details once you&rsquo;ve made your first sale — you&rsquo;ll see this unlock here.</p>
-                    )}
+                    <div className="seller-payout-form">
+                      <p className="seller-earnings-note">
+                        {me.bank_status === 'linked' ? <>Bank account: {me.payout_details?.bank_name}, account ending {String(me.payout_details?.account_number ?? '').slice(-4)} — successfully linked.</>
+                          : me.bank_status === 'processing' ? <>Your bank account is being verified — usually 1–2 business days.</>
+                            : me.bank_status === 'failed' ? <>Your bank account failed verification{me.bank_note ? `: ${me.bank_note}` : '.'}</>
+                              : <>Add your bank account to request payment.</>}
+                      </p>
+                      <button type="button" className="seller-btn ghost" onClick={() => go('bank')}>{me.bank_status === 'failed' ? 'Verify my bank account' : me.bank_status ? 'Manage bank account' : 'Add bank account'}</button>
+                    </div>
                   </div>
                 </div>
               </>
@@ -1478,6 +1402,12 @@ export default function Seller({ token, onSignOut }) {
                 </div>
                 )}
               </>
+            ) : section === 'tax' ? (
+              <TaxInformation headers={authHeaders} onSupport={() => go('messages')} />
+            ) : section === 'compliance' ? (
+              <ComplianceInformation headers={authHeaders} onSupport={() => go('messages')} go={go} />
+            ) : section === 'bank' ? (
+              <BankAccount headers={authHeaders} onSupport={() => go('messages')} go={go} onChanged={(bankStatus) => setMe((m) => ({ ...m, bank_status: bankStatus }))} />
             ) : section === 'shipping' ? (
               <ShippingSettings headers={authHeaders} onChanged={(settings) => setMe((m) => (m?.shop ? { ...m, shop: { ...m.shop, fulfillment_mode: settings.fulfillment_mode } } : m))} />
             ) : section === 'policies' ? (

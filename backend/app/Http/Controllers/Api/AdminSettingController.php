@@ -195,6 +195,7 @@ class AdminSettingController extends Controller
                 'return_window_days' => ['sometimes', 'integer', 'min:0', 'max:365', 'lte:max_return_days'],
                 'max_return_days' => ['sometimes', 'integer', 'min:0', 'max:365'],
                 'return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'label_postage_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
                 'rider_base_pay_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
                 'rider_per_mile_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
                 'rider_min_payout_cents' => ['sometimes', 'integer', 'min:0'],
@@ -207,6 +208,7 @@ class AdminSettingController extends Controller
                 'market_payouts.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'market_payouts.daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
                 'market_payouts.return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:10000000'],
+                'market_payouts.label_postage_cents' => ['sometimes', 'integer', 'min:0', 'max:10000000'],
                 'market_payouts.commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
                 'home_market' => ['sometimes', 'string', Rule::in(array_keys(config('markets', [])))],
                 'market_rider_pay' => ['sometimes', 'array'],
@@ -249,7 +251,7 @@ class AdminSettingController extends Controller
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
         }
 
-        foreach (['min_payout_cents', 'max_payout_cents', 'daily_payout_cap_cents', 'return_window_days', 'max_return_days', 'return_pickup_fee_cents', 'rider_base_pay_cents', 'rider_per_mile_cents', 'rider_min_payout_cents', 'rider_max_payout_cents'] as $key) {
+        foreach (['min_payout_cents', 'max_payout_cents', 'daily_payout_cap_cents', 'return_window_days', 'max_return_days', 'return_pickup_fee_cents', 'label_postage_cents', 'rider_base_pay_cents', 'rider_per_mile_cents', 'rider_min_payout_cents', 'rider_max_payout_cents'] as $key) {
             if (array_key_exists($key, $validated)) {
                 Setting::put($key, (int) $validated[$key]);
             }
@@ -346,6 +348,7 @@ class AdminSettingController extends Controller
             'return_window_days' => SellerLedger::returnWindowDays(),
             'max_return_days' => SellerLedger::maxReturnDays(),
             'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents('US'),
+            'label_postage_cents' => SellerLedger::labelPostageCents('US'),
             'rider_base_pay_cents' => RiderLedger::baseCents('US'),
             'rider_per_mile_cents' => RiderLedger::perMileCents('US'),
             'rider_min_payout_cents' => RiderLedger::minPayoutCents('US'),
@@ -368,6 +371,7 @@ class AdminSettingController extends Controller
                     'max_payout_cents' => SellerLedger::maxPayoutCents($code),
                     'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents($code),
                     'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents($code),
+                    'label_postage_cents' => SellerLedger::labelPostageCents($code),
                     'commission_rate_bps' => SellerLedger::rate($code),
                 ],
                 'rider_pay' => [

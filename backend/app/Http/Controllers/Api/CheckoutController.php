@@ -230,10 +230,12 @@ class CheckoutController extends Controller
 
             // Seller-shipped lines: each seller's template fee for this state
             // (waived over the free-shipping threshold, which the seller covers).
-            $sellerQuote = SellerShipping::quote($sellerQuoteLines, $address['state'] ?? null);
+            $addressType = SellerShipping::addressType((array) $address);
+            $sellerQuote = SellerShipping::quote($sellerQuoteLines, $address['state'] ?? null, null, $addressType);
             if ($sellerQuote['unshippable']) {
+                $where = ['po_box' => 'a PO box', 'military' => 'a military (APO/FPO/DPO) address'][$addressType] ?? 'this state';
                 throw ValidationException::withMessages([
-                    'address' => ['The seller can\'t ship '.implode(', ', $sellerQuote['unshippable']).' to this state yet — remove it or use another address.'],
+                    'address' => ['The seller can\'t ship '.implode(', ', $sellerQuote['unshippable']).' to '.$where.' yet — remove it or use another address.'],
                 ]);
             }
             if (! $isHome && $sellerLines->isNotEmpty() && SellerShipping::stateCode($address['state'] ?? null, $market) === null) {

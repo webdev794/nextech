@@ -33,7 +33,7 @@ const MODES = [
   ['label', 'I ship, NexTech label', 'You pack and ship, but get the shipping label from NexTech’s courier account — download it, print it and stick it on the package. Postage is deducted from your earnings.'],
 ]
 const EMPTY_ADDRESS = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', phone: '', contact_name: '', is_default: false }
-const EMPTY_GROUP = { regions: [], transit_min_days: 2, transit_max_days: 5, fee: '' }
+const EMPTY_GROUP = { regions: [], address_types: ['standard'], transit_min_days: 2, transit_max_days: 5, fee: '' }
 
 // ---------------------------------------------------------------------------
 // Shipping settings
@@ -87,17 +87,18 @@ export function ShippingSettings({ headers, onChanged }) {
   }
 
   function editTemplate(t) {
-    setTemplateForm({ id: t.id, name: t.name, product_type: t.product_type, shop_address_id: t.shop_address_id, handling_days: t.handling_days, is_default: t.is_default, groups: t.groups.map((g) => ({ regions: g.regions, transit_min_days: g.transit_min_days, transit_max_days: g.transit_max_days, fee: (g.fee_cents / 100).toFixed(2) })) })
+    setTemplateForm({ id: t.id, name: t.name, product_type: t.product_type, shop_address_id: t.shop_address_id, handling_days: t.handling_days, is_default: t.is_default, groups: t.groups.map((g) => ({ regions: g.regions, address_types: g.address_types ?? Object.keys(data.address_types ?? { standard: 1 }), transit_min_days: g.transit_min_days, transit_max_days: g.transit_max_days, fee: (g.fee_cents / 100).toFixed(2) })) })
   }
 
   async function saveTemplate(event) {
     event.preventDefault()
     setMsg('')
     const { id, groups, ...rest } = templateForm
-    const body = { ...rest, handling_days: Number(rest.handling_days) || 1, groups: groups.map((g) => ({ regions: g.regions, transit_min_days: Number(g.transit_min_days), transit_max_days: Number(g.transit_max_days), fee_cents: Math.round(Number(g.fee || 0) * 100) })) }
+    const body = { ...rest, handling_days: Number(rest.handling_days) || 1, groups: groups.map((g) => ({ regions: g.regions, address_types: g.address_types, transit_min_days: Number(g.transit_min_days), transit_max_days: Number(g.transit_max_days), fee_cents: Math.round(Number(g.fee || 0) * 100) })) }
     try {
       await send(headers, id ? `/seller/shipping/templates/${id}` : '/seller/shipping/templates', id ? 'PATCH' : 'POST', body)
       setTemplateForm(null)
+      if (!id && !data.templates.length) setMsg('Thank you for completing the shipping templates setup. You can view your templates here on the Shipping settings page.')
       load()
     } catch (e) { setMsg(e.message) }
   }
@@ -128,16 +129,18 @@ export function ShippingSettings({ headers, onChanged }) {
             <h2 className="sc-h2">How your orders ship</h2>
             <div className="ss-modes">
               {MODES.filter(([value]) => value !== 'nextech' || data.nextech_pickup !== 'hidden' || data.fulfillment_mode === 'nextech').map(([value, title, text]) => {
-                const locked = value === 'nextech' && data.nextech_pickup !== 'available' && data.fulfillment_mode !== 'nextech'
+                // A phased-out NexTech pickup is never shown as picked — the seller must choose one of the other modes.
+                const locked = value === 'nextech' && data.nextech_pickup !== 'available'
+                const checked = wantMode ? wantMode === value : data.fulfillment_mode === value && !locked
                 return (
-                  <label key={value} className={`ss-mode${data.fulfillment_mode === value ? ' active' : ''}${locked ? ' disabled' : ''}`}>
-                    <input type="radio" name="fulfillment_mode" disabled={locked} checked={data.fulfillment_mode === value || (wantMode === value && !data.setup_complete)} onChange={() => {
+                  <label key={value} className={`ss-mode${checked ? ' active' : ''}${locked ? ' disabled' : ''}`}>
+                    <input type="radio" name="fulfillment_mode" disabled={locked} checked={checked} onChange={() => {
                       // Shipping yourself needs setup first — show the steps instead of a refused save.
                       if (value !== 'nextech' && !data.setup_complete) { setWantMode(value); return }
                       setWantMode(null)
                       patch({ fulfillment_mode: value }, 'Saved — new orders use this.')
                     }} />
-                    <strong>{title}{locked && ' — not available'}{value !== 'nextech' && !data.setup_complete && <small className="ss-needs-setup">Set up first</small>}</strong>
+                    <strong>{title}{locked && (data.fulfillment_mode === 'nextech' ? ' — being phased out' : ' — not available')}{value !== 'nextech' && !data.setup_complete && <small className="ss-needs-setup">Set up first</small>}</strong>
                     <span>{text}</span>
                   </label>
                 )
@@ -219,14 +222,14 @@ export function ShippingSettings({ headers, onChanged }) {
             <div className="sc-head"><h2 className="sc-h2">Shipping templates</h2><button type="button" className="sc-primary" onClick={newTemplate}>+ Add template</button></div>
             {data.templates.length === 0 ? <p className="sc-muted">No templates yet. A template sets which states you ship to, the transit time and the fee for each.</p> : (
               <table className="sc-table">
-                <thead><tr><th>Template</th><th>Ships from</th><th>Handling</th><th>Regions · transit · fee</th><th></th></tr></thead>
+                <thead><tr><th>Template</th><th>Ships from</th><th>Handling</th><th>Regions · address type · transit · fee</th><th></th></tr></thead>
                 <tbody>
                   {data.templates.map((t) => (
                     <tr key={t.id}>
                       <td><b>{t.name}</b>{t.is_default && <span className="sc-pill approved">Default</span>}<small className="sc-muted">{t.product_type}</small></td>
                       <td>{t.address?.name ?? '—'}</td>
                       <td>{t.handling_days} working day{t.handling_days === 1 ? '' : 's'}</td>
-                      <td>{t.groups.map((g) => <div key={g.id}>{g.regions.includes('ALL') ? 'All other states' : g.regions.join(', ')} · {g.transit_min_days}–{g.transit_max_days} days · {g.fee_cents ? money(g.fee_cents) : 'Free'}</div>)}</td>
+                      <td>{t.groups.map((g) => <div key={g.id}>{g.regions.includes('ALL') ? 'All other states' : g.regions.join(', ')} · {(g.address_types ?? Object.keys(data.address_types ?? {})).map((a) => data.address_types?.[a] ?? a).join(' / ')} · {g.transit_min_days}–{g.transit_max_days} days · {g.fee_cents ? money(g.fee_cents) : 'Free'}</div>)}</td>
                       <td className="sc-actions"><button type="button" onClick={() => editTemplate(t)}>Edit</button><button type="button" className="danger" onClick={() => removeTemplate(t)}>Delete</button></td>
                     </tr>
                   ))}
@@ -243,8 +246,9 @@ export function ShippingSettings({ headers, onChanged }) {
           <form className="ss-modal" onSubmit={saveAddress} onClick={(e) => e.stopPropagation()}>
             <h2 className="sc-h2">{addressForm.id ? 'Edit address' : 'Add a new address'}</h2>
             <label>Address name<input required value={addressForm.name} placeholder="e.g. Main warehouse" onChange={(e) => setAddressForm({ ...addressForm, name: e.target.value })} /></label>
+            <label>Country / region<input value={data.country_name ?? data.market} disabled /></label>
             <label>Address line 1<input required value={addressForm.line1} onChange={(e) => setAddressForm({ ...addressForm, line1: e.target.value })} /></label>
-            <label>Address line 2<input value={addressForm.line2} onChange={(e) => setAddressForm({ ...addressForm, line2: e.target.value })} /></label>
+            <label>Address line 2 (optional)<input value={addressForm.line2} onChange={(e) => setAddressForm({ ...addressForm, line2: e.target.value })} /></label>
             <div className="ss-row">
               <label>City<input required value={addressForm.city} onChange={(e) => setAddressForm({ ...addressForm, city: e.target.value })} /></label>
               <label>State<select required value={addressForm.state} onChange={(e) => setAddressForm({ ...addressForm, state: e.target.value })}><option value="">Select…</option>{states.map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label>
@@ -291,6 +295,12 @@ export function ShippingSettings({ headers, onChanged }) {
                       ))}
                     </div>
                   )}
+                  <div className="ss-addr-types">
+                    <span>Address type</span>
+                    {Object.entries(data.address_types ?? {}).map(([type, label]) => (
+                      <label key={type} className="sc-check"><input type="checkbox" checked={g.address_types.includes(type)} onChange={(e) => setGroup(gi, { address_types: e.target.checked ? [...g.address_types, type] : g.address_types.filter((a) => a !== type) })} /> {label}</label>
+                    ))}
+                  </div>
                   <div className="ss-row">
                     <label>Transit time from (days)<input type="number" min="1" max="30" required value={g.transit_min_days} onChange={(e) => setGroup(gi, { transit_min_days: e.target.value })} /></label>
                     <label>to (days)<input type="number" min="1" max="30" required value={g.transit_max_days} onChange={(e) => setGroup(gi, { transit_max_days: e.target.value })} /></label>

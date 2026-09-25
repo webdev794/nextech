@@ -18,6 +18,7 @@ const PAYOUT_FIELDS = [
   ['max_payout_cents', 'Maximum per payout'],
   ['daily_payout_cap_cents', 'Daily payout cap (0 = none)'],
   ['return_pickup_fee_cents', 'Return pickup fee charged to seller'],
+  ['label_postage_cents', 'NexTech label postage charged to seller'],
 ]
 const RIDER_FIELDS = [
   ['base_cents', 'Rider base pay per delivery'],

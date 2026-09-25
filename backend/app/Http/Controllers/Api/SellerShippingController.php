@@ -165,6 +165,7 @@ class SellerShippingController extends Controller
             foreach (array_values($data['groups']) as $i => $group) {
                 $template->groups()->create([
                     'regions' => array_values(array_unique($group['regions'])),
+                    'address_types' => array_values(array_unique($group['address_types'] ?? ['standard'])),
                     'transit_min_days' => $group['transit_min_days'],
                     'transit_max_days' => $group['transit_max_days'],
                     'fee_cents' => $group['fee_cents'],
@@ -190,6 +191,8 @@ class SellerShippingController extends Controller
             'groups' => ['required', 'array', 'min:1', 'max:20'],
             'groups.*.regions' => ['required', 'array', 'min:1'],
             'groups.*.regions.*' => ['string', Rule::in($regions)],
+            'groups.*.address_types' => ['sometimes', 'array', 'min:1'],
+            'groups.*.address_types.*' => ['string', Rule::in(array_keys(SellerShipping::addressTypes($shop->market)))],
             'groups.*.transit_min_days' => ['required', 'integer', 'min:1', 'max:30'],
             'groups.*.transit_max_days' => ['required', 'integer', 'min:1', 'max:30'],
             'groups.*.fee_cents' => ['required', 'integer', 'min:0', 'max:100000'],
@@ -252,8 +255,10 @@ class SellerShippingController extends Controller
             'free_shipping_accepted_at' => $shop->free_shipping_accepted_at,
             'free_shipping_threshold_cents' => SellerShipping::freeShippingThresholdCents($shop->market),
             'market' => $shop->market,
+            'country_name' => Country::find($shop->market)['name'] ?? $shop->market,
             'currency' => Market::currency($shop->market),
             'postal_label' => Country::find($shop->market)['address']['postal_label'] ?? 'ZIP code',
+            'address_types' => SellerShipping::addressTypes($shop->market),
             'setup_complete' => SellerShipping::setupComplete($shop),
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'label_mode' => SellerFulfillment::labelMode(),

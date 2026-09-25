@@ -80,8 +80,11 @@ class Courier
      */
     public static function buyLabel(Order $order, array $origin): array
     {
-        [$booking] = self::withFallback(fn (CourierProvider $provider) => $provider->book($order, $origin));
-        $cost = self::quote((array) $order->delivery_address)['cost_cents'];
+        [$booking, $providerName] = self::withFallback(fn (CourierProvider $provider) => $provider->book($order, $origin));
+        // The test courier charges the admin's label postage for the order's market.
+        $cost = $providerName === 'mock'
+            ? SellerLedger::labelPostageCents($order->market)
+            : self::quote((array) $order->delivery_address)['cost_cents'];
 
         return [
             'tracking_number' => $booking['tracking_number'],
