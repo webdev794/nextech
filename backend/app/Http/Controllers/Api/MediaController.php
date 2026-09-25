@@ -15,14 +15,13 @@ class MediaController extends Controller
 {
     /**
      * Product photos (folder=products, both the admin and seller upload paths
-     * land here) get a stricter bar than other image folders: square, small
-     * enough the storefront isn't loading multi-megabyte photos, JPEG/PNG
-     * only. Other folders (categories/stores/banners/shops) have their own
+     * land here) get a stricter bar than other image folders: square (1:1,
+     * like Temu's non-apparel image standard), at most 3 MB, JPEG/PNG only. Other folders (categories/stores/banners/shops) have their own
      * natural aspect ratios and are unaffected.
      */
     private const PRODUCT_IMAGE_RULES = [
         'mimes:jpg,jpeg,png',
-        'max:800',
+        'max:3072',
         'dimensions:min_width=400,min_height=400,ratio=1/1',
     ];
 
@@ -86,6 +85,20 @@ class MediaController extends Controller
      * sent, so this relaxed auth can't be used to write into the admin-only
      * folders store() otherwise allows.
      */
+    /**
+     * Seller product videos (shown at the top of the product page) and detail
+     * videos (in the details section): MP4 / WebM / MOV up to 100 MB. Length
+     * (3 minutes) and resolution (720p) are checked in the browser before upload.
+     */
+    public function storeSellerProductVideo(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimetypes:video/mp4,video/webm,video/quicktime', 'max:102400']]);
+        $path = $request->file('file')->store('product-videos', 'public');
+        abort_unless($path && Storage::disk('public')->exists($path), 500, 'Could not save the video.');
+
+        return response()->json(['data' => ['url' => '/api/media/file/'.$path, 'path' => $path]], 201);
+    }
+
     public function storeShopAsset(Request $request): JsonResponse
     {
         $request->merge(['folder' => 'shops']);

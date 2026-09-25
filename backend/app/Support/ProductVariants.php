@@ -59,6 +59,12 @@ class ProductVariants
                 'sort_order' => (int) ($row['sort_order'] ?? $index),
                 'is_active' => (bool) ($row['is_active'] ?? true),
             ];
+            // Seller listing extras: option values per variation type, own code, weight and size.
+            foreach (['options', 'seller_code', 'weight_grams', 'length_mm', 'width_mm', 'height_mm'] as $key) {
+                if (array_key_exists($key, $row)) {
+                    $attributes[$key] = $row[$key];
+                }
+            }
 
             $customSku = $allowSkuOverride ? (trim((string) ($row['sku'] ?? '')) ?: null) : null;
             if ($customSku !== null && $customSku !== $existing?->sku) {

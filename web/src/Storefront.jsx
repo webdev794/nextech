@@ -2562,12 +2562,19 @@ export default function Storefront() {
                 <h2>Product details</h2>
                 <dl>
                   <div><dt>Category</dt><dd>{product.category?.name ?? 'Uncategorized'}</dd></div>
+                  {product.trademark?.name && <div><dt>Brand</dt><dd>{product.trademark.name}</dd></div>}
                   {product.sku && <div><dt>SKU</dt><dd>{product.sku}</dd></div>}
+                  {(product.specifications ?? []).map((spec) => <div key={spec.label}><dt>{spec.label}</dt><dd>{spec.value}</dd></div>)}
                   {product.country_of_origin && <div><dt>Country of origin</dt><dd>{product.country_of_origin}</dd></div>}
                   {product.manufacturer_info && <div><dt>Manufacturer / importer</dt><dd>{product.manufacturer_info}</dd></div>}
                   <div><dt>Availability</dt><dd>{stock === 0 ? 'Out of stock' : 'In stock'}</dd></div>
                 </dl>
               </section>
+
+              {product.detail_video_url && <section className="pdp-detail-video"><video src={mediaUrl(product.detail_video_url)} controls playsInline preload="metadata" /></section>}
+              {(product.detail_images ?? []).length > 0 && <section className="pdp-images">
+                {product.detail_images.map((url) => <img key={url} src={mediaUrl(url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />)}
+              </section>}
 
               {images.length > 0 && <section className="pdp-images">
                 {images.map((url) => <img key={url} src={mediaUrl(url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />)}
@@ -2592,6 +2599,7 @@ export default function Storefront() {
                   <span className="pdp-swatch-img">{(o.image_url || product.image_url) && <img src={mediaUrl(o.image_url || product.image_url)} alt="" />}</span>
                   <span className="pdp-swatch-label">{o.label}</span>
                 </button>)}</div>}
+                {(product.bullet_points ?? []).length > 0 && <ul className="pdp-bullets">{product.bullet_points.map((b) => <li key={b}>{b}</li>)}</ul>}
                 <p className="pm-desc">{product.description || 'No description available yet.'}</p>
                 {qty === 0
                   ? <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0} onClick={() => add(product, variant)}>{stock === 0 ? 'OUT OF STOCK' : 'ADD TO CART'}</button>

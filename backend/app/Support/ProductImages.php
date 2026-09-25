@@ -11,7 +11,7 @@ use App\Models\Product;
  */
 class ProductImages
 {
-    public const MAX_IMAGES = 8;
+    public const MAX_IMAGES = 10;
 
     /**
      * @param  array<int, string>|null  $urls  null = leave the gallery alone

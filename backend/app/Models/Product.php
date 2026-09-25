@@ -43,6 +43,9 @@ class Product extends Model
         'status',
         'rejection_reason',
         'suggested_category_name',
+        // Seller listing (Temu-style Add product; see App\Support\ProductCatalog).
+        'seller_code', 'trademark_id', 'bullet_points', 'detail_images', 'detail_video_url', 'product_details',
+        'variation_theme', 'size_chart', 'handling_days', 'compliance', 'price_references',
     ];
 
     protected function casts(): array
@@ -58,6 +61,14 @@ class Product extends Model
             'rating_avg' => 'float',
             'rating_count' => 'integer',
             'units_sold' => 'integer',
+            'bullet_points' => 'array',
+            'detail_images' => 'array',
+            'product_details' => 'array',
+            'variation_theme' => 'array',
+            'size_chart' => 'array',
+            'handling_days' => 'integer',
+            'compliance' => 'array',
+            'price_references' => 'array',
         ];
     }
 
@@ -101,6 +112,18 @@ class Product extends Model
     public function activeVariants(): HasMany
     {
         return $this->variants()->where('is_active', true);
+    }
+
+    /** The brand a seller listed it under (an approved trademark). */
+    public function trademark(): BelongsTo
+    {
+        return $this->belongsTo(Trademark::class);
+    }
+
+    /** Recommended prices NexTech offered while the product is "Low traffic". */
+    public function salesBoostOffers(): HasMany
+    {
+        return $this->hasMany(SalesBoostOffer::class);
     }
 
     /** The product's multi-image gallery, in display order. */

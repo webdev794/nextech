@@ -67,6 +67,12 @@ class Shop extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /** Trademarks the shop registered (Account health). */
+    public function trademarks(): HasMany
+    {
+        return $this->hasMany(Trademark::class);
+    }
+
     public function products(): HasMany
     {
         return $this->hasMany(Product::class);

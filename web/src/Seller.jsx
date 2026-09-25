@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
-import { checkProductImage } from './productImageCheck'
 import { renderMarkdown } from './markdown'
 import { PageSection } from './PageSections'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
 import { ManageOrders } from './SellerOrders'
+import { ProductWizard } from './SellerProductWizard'
+import { AccountHealth, BulkUpload, PricingHealth, ProductCompliance, SalesBoostPopup } from './SellerCatalogTools'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './Seller.css'
 
@@ -59,26 +60,6 @@ const SELLER_CHART_LINES = [
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
 const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
-
-// A commission-only estimate, shown while a seller is pricing a product —
-// not a quote: the real payout is computed server-side at order time.
-function estimateSellerFees(priceDollars, config) {
-  const priceCents = Math.round(Number(priceDollars) * 100)
-  if (!config || !priceCents || Number.isNaN(priceCents) || priceCents <= 0) return null
-
-  const commissionBps = config.commission_rate_bps ?? 0
-  const taxBps = config.tax_rate_bps ?? 0
-  const freeThreshold = config.free_delivery_threshold_cents ?? 0
-  const deliveryFee = config.delivery_fee_cents ?? config.delivery_far_fee_cents ?? 0
-
-  const commissionCents = Math.round((priceCents * commissionBps) / 10000)
-  const netCents = priceCents - commissionCents
-  const taxCents = Math.round((priceCents * taxBps) / 10000)
-  const belowFreeThreshold = priceCents < freeThreshold
-  const customerTotalCents = priceCents + taxCents + (belowFreeThreshold ? deliveryFee : 0)
-
-  return { priceCents, commissionBps, commissionCents, netCents, taxCents, belowFreeThreshold, customerTotalCents }
-}
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -163,21 +144,12 @@ const formFromSeller = (seller) => ({
   shop_description: seller.shop?.description ?? '',
 })
 
-const PRODUCT_STATUS_LABELS = { pending: 'Pending review', approved: 'Live', rejected: 'Rejected' }
+const PRODUCT_STATUS_LABELS = { pending: 'Pending review', approved: 'Live', rejected: 'Rejected', draft: 'Incomplete' }
 const SUPPORT_ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other', delivery: 'Delivery message',
   seller_product_issue: 'Product issue', seller_other: 'Other',
 }
-const dollarsOrBlank = (cents) => (cents != null ? (cents / 100).toFixed(2) : '')
-// Variant SKUs end in a single digit (-V1…-V9), so a product holds at most 9.
-const MAX_VARIANTS = 9
-const EMPTY_SELLER_VARIANT = { label: '', sku: '', price: '', compare_at: '', stock: 0, image_url: '', is_active: true }
-const EMPTY_SELLER_PRODUCT = { category_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', suggested_category_name: '', images: [], variants: [] }
-const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
-  id: v.id, label: v.label, sku: v.sku, price: (v.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(v.compare_at_price_cents),
-  stock: v.inventory_quantity, image_url: v.image_url ?? '', is_active: v.is_active,
-}))
 
 export default function Seller({ token, onSignOut }) {
   const [countries, setCountries] = useState([])
@@ -185,7 +157,6 @@ export default function Seller({ token, onSignOut }) {
   const [categories, setCategories] = useState([])
   const [me, setMe] = useState(undefined) // undefined = loading, null = no application yet
   setStoreCurrency(me?.currency ?? 'usd')
-  const sym = currencySymbol()
   const inclusive = !!me?.tax_inclusive
   const [loadError, setLoadError] = useState('')
   const [step, setStep] = useState(1)
@@ -200,7 +171,6 @@ export default function Seller({ token, onSignOut }) {
   const [products, setProducts] = useState([])
   const [productForm, setProductForm] = useState(null)
   const [productMsg, setProductMsg] = useState('')
-  const [productImgBusy, setProductImgBusy] = useState(false)
   const [orderSummary, setOrderSummary] = useState(null)
   const [payoutReqMsg, setPayoutReqMsg] = useState('')
   const [shopLinkMsg, setShopLinkMsg] = useState('')
@@ -719,94 +689,14 @@ export default function Seller({ token, onSignOut }) {
     setEditingApplication(true)
   }
 
-  async function uploadProductImage(file, apply) {
-    if (!file) return
-    setProductMsg('')
-    const problem = await checkProductImage(file)
-    if (problem) { setProductMsg(problem); return }
-    setProductImgBusy(true)
-    try {
-      const body = new FormData()
-      body.append('file', file)
-      const response = await fetch(`${API_URL}/seller/product-media`, { method: 'POST', headers: authHeaders(), body })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? 'Could not upload the image.')
-      apply(data.data.url)
-    } catch (error) {
-      setProductMsg(error.message)
-    } finally {
-      setProductImgBusy(false)
-    }
-  }
-
+  // Opens the Add product wizard on an existing listing (or a draft to finish).
   function editProduct(product) {
     setProductMsg('')
-    setProductForm({
-      id: product.id,
-      category_id: product.category_id ?? '',
-      name: product.name,
-      sku: product.sku,
-      price: (product.price_cents / 100).toFixed(2),
-      compare_at: dollarsOrBlank(product.compare_at_price_cents),
-      return_days: product.return_days ?? '',
-      shipping_template_id: product.shipping_template_id ?? '',
-      hsn_code: product.hsn_code ?? '',
-      gst_rate_bps: product.gst_rate_bps ?? '',
-      country_of_origin: product.country_of_origin ?? '',
-      manufacturer_info: product.manufacturer_info ?? '',
-      inventory_quantity: product.inventory_quantity,
-      description: product.description ?? '',
-      suggested_category_name: product.suggested_category_name ?? '',
-      images: (product.images ?? []).map((i) => i.url),
-      variants: variantRowsFrom(product),
-      rejection_reason: product.status === 'rejected' ? product.rejection_reason : null,
-    })
+    setProductForm({ source: product })
     setSection('add-product')
     window.scrollTo({ top: 0 })
   }
 
-  async function saveProduct(event) {
-    event.preventDefault()
-    setProductMsg('')
-    const { id, price, compare_at: compareAt, variants, images, ...rest } = productForm
-    delete rest.sku
-    delete rest.rejection_reason
-    const payload = {
-      ...rest,
-      category_id: Number(rest.category_id),
-      inventory_quantity: Number(rest.inventory_quantity),
-      price_cents: Math.round(Number(price) * 100),
-      compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null,
-      return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days),
-      shipping_template_id: rest.shipping_template_id ? Number(rest.shipping_template_id) : null,
-      ...(inclusive ? { hsn_code: rest.hsn_code || null, gst_rate_bps: rest.gst_rate_bps === '' || rest.gst_rate_bps == null ? null : Number(rest.gst_rate_bps), country_of_origin: rest.country_of_origin || null, manufacturer_info: rest.manufacturer_info || null } : { hsn_code: undefined, gst_rate_bps: undefined, country_of_origin: undefined, manufacturer_info: undefined }),
-      suggested_category_name: rest.suggested_category_name?.trim() || null,
-      images: (images ?? []).filter(Boolean),
-    }
-    const rows = (variants ?? []).filter((row) => row.id || !row._delete)
-    if (id || rows.length) {
-      payload.variants = rows.map((row) => ({
-        ...(row.id ? { id: row.id } : {}),
-        ...(row._delete ? { _delete: true } : {}),
-        label: (row.label || '').trim(),
-        price_cents: Math.round(Number(row.price || 0) * 100),
-        compare_at_price_cents: String(row.compare_at ?? '').trim() ? Math.round(Number(row.compare_at) * 100) : null,
-        inventory_quantity: Number(row.stock) || 0,
-        image_url: row.image_url?.trim() || null,
-        is_active: !!row.is_active,
-      }))
-    }
-    try {
-      const response = await fetch(`${API_URL}/seller/products${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the product.')
-      setProductForm(null)
-      setSection('products')
-      loadProducts()
-    } catch (error) {
-      setProductMsg(error.message)
-    }
-  }
 
   async function removeProduct(product) {
     if (!window.confirm(`Delete ${product.name}?`)) return
@@ -834,7 +724,7 @@ export default function Seller({ token, onSignOut }) {
   // ---------------------------------------------------------------------------
   if (me && me.status === 'approved' && !editingApplication) {
     const productStatus = (product) => (!product.is_active && product.status === 'approved' ? 'hidden' : product.status)
-    const PRODUCT_TABS = [['all', 'All'], ['approved', 'Live'], ['pending', 'Pending review'], ['rejected', 'Rejected'], ['hidden', 'Hidden']]
+    const PRODUCT_TABS = [['all', 'All'], ['approved', 'Live'], ['pending', 'Pending review'], ['draft', 'Incomplete'], ['rejected', 'Rejected'], ['hidden', 'Hidden']]
     const tabCount = (tab) => (tab === 'all' ? products.length : products.filter((p) => productStatus(p) === tab).length)
     const needle = productSearch.trim().toLowerCase()
     const visibleProducts = products
@@ -853,8 +743,9 @@ export default function Seller({ token, onSignOut }) {
     const payoutReady = balance >= (me.min_payout_cents ?? 0) && balance > 0 && me.last_payout_request?.status !== 'pending'
     const shopUrl = me.shop?.slug ? `${window.location.origin}${import.meta.env.BASE_URL || '/'}#/shop/${me.shop.slug}` : null
 
-    const go = (next) => { setSection(next); setProductForm(null); if (window.location.hash) closePage(); window.scrollTo({ top: 0 }) }
-    const newProduct = () => { setProductMsg(''); setProductForm({ ...EMPTY_SELLER_PRODUCT, category_id: categories[0]?.id ?? '' }); setSection('add-product'); window.scrollTo({ top: 0 }) }
+    const go = (next, tab) => { setSection(next); setProductForm(null); if (tab) setProductTab(tab); if (window.location.hash) closePage(); window.scrollTo({ top: 0 }) }
+    const newProduct = () => { setProductMsg(''); setProductForm({ source: null }); setSection('add-product'); window.scrollTo({ top: 0 }) }
+    const openProductById = (id) => { const found = products.find((p) => p.id === id); if (found) editProduct(found); else loadProducts() }
     const priceText = (p) => {
       const prices = [p.price_cents, ...(p.variants ?? []).map((v) => v.price_cents)].filter((c) => c != null)
       const lo = Math.min(...prices); const hi = Math.max(...prices)
@@ -864,7 +755,8 @@ export default function Seller({ token, onSignOut }) {
 
     const NAV = [
       { key: 'home', label: 'Homepage', icon: '⌂' },
-      { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products']] },
+      { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Add products via upload'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
+      { key: 'performance', label: 'Performance', icon: '♡', children: [['account-health', 'Account health']] },
       { key: 'orders', label: 'Orders', icon: '☰', children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
@@ -896,6 +788,7 @@ export default function Seller({ token, onSignOut }) {
           </div>
         </header>
 
+        <SalesBoostPopup headers={authHeaders} shopId={me.shop?.id} go={go} />
         <div className="sc-body">
           <nav className="sc-nav" aria-label="Seller Center">
             {NAV.map((item) => item.children ? (
@@ -987,6 +880,8 @@ export default function Seller({ token, onSignOut }) {
                             <tr key={product.id}>
                               <td>
                                 <span className={`sc-pill ${st}`}>{st === 'hidden' ? 'Hidden' : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
+                                {st === 'draft' && Object.keys(product.listing_errors ?? {}).length > 0 && <span className="sc-reason" title={Object.values(product.listing_errors).join('\n')}>ⓘ {Object.keys(product.listing_errors).length} thing{Object.keys(product.listing_errors).length === 1 ? '' : 's'} to finish</span>}
+                                {(product.missing_compliance ?? []).length > 0 && st !== 'draft' && <button type="button" className="sc-reason sc-link" title={product.missing_compliance.join('\n')} onClick={() => go('compliance-products')}>ⓘ Compliance documents missing</button>}
                                 {product.status === 'rejected' && product.rejection_reason && <span className="sc-reason" title={product.rejection_reason}>ⓘ {product.rejection_reason}</span>}
                                 <small className="sc-muted">{new Date(product.updated_at ?? product.created_at).toLocaleDateString()}</small>
                               </td>
@@ -998,9 +893,9 @@ export default function Seller({ token, onSignOut }) {
                               </td>
                               <td><code>{product.sku}</code>{(product.variants ?? []).length > 0 && <small className="sc-muted">{product.variants.map((v) => v.sku).join(', ')}</small>}</td>
                               <td className={qtyOf(product) <= 0 ? 'sc-low' : ''}>{qtyOf(product)}</td>
-                              <td>{priceText(product)}{product.compare_at_price_cents > product.price_cents && <s className="sc-muted"> {money(product.compare_at_price_cents)}</s>}</td>
+                              <td>{priceText(product)}{product.compare_at_price_cents > product.price_cents && <s className="sc-muted"> {money(product.compare_at_price_cents)}</s>}{product.low_traffic && <button type="button" className="sc-pill rejected sc-lowtraffic" title="A sales boost offer is waiting — click to view" onClick={() => go('pricing')}>Low traffic</button>}</td>
                               <td className="sc-actions">
-                                <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : 'Edit'}</button>
+                                <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>
                                 {st === 'approved' && shopUrl && <a href={`${import.meta.env.BASE_URL || '/'}#/product/${product.slug}`} target="_blank" rel="noreferrer">View</a>}
                                 <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>
                               </td>
@@ -1016,106 +911,29 @@ export default function Seller({ token, onSignOut }) {
               </>
             ) : section === 'add-product' ? (
               <>
-                <div className="sc-head"><h1 className="sc-title">{productForm?.id ? 'Edit product' : 'Add new product'}</h1><button type="button" className="sc-link" onClick={() => go('products')}>&larr; Back to products</button></div>
-                {productForm?.id && productForm.rejection_reason && <div className="sc-alert danger">Rejected: {productForm.rejection_reason}</div>}
-                <div className="sc-card">
-                  {productForm ? (
-                    <form className="seller-product-form" onSubmit={saveProduct}>
-                                                        <div className="seller-product-grid">
-                                        <label>Category
-                                          <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
-                                            <option value="" disabled>Choose…</option>
-                                            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                          </select>
-                                        </label>
-                                        <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                                        <label>SKU<input disabled value={productForm.sku || 'Generated automatically on save'} /></label>
-                                        <label>{inclusive ? `MRP (${sym}, incl. GST)` : `Regular price (${sym})`}<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
-                                        <label>{inclusive ? `Selling price (${sym}, incl. GST)` : `Sale price (${sym})`}<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
-                                        <label>Return window (days, max {siteConfig?.max_return_days ?? 90})<input type="number" min="0" max={siteConfig?.max_return_days ?? 90} placeholder={`default ${siteConfig?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
-                                        {inclusive && (
-                                          <>
-                                            <label>HSN code<input required inputMode="numeric" pattern="\d{4}(\d{2})?(\d{2})?" placeholder="e.g. 85171300" value={productForm.hsn_code ?? ''} onChange={(event) => setProductForm({ ...productForm, hsn_code: event.target.value.trim() })} /></label>
-                                            <label>GST rate<select required value={productForm.gst_rate_bps ?? ''} onChange={(event) => setProductForm({ ...productForm, gst_rate_bps: event.target.value })}><option value="">Select…</option>{(me?.gst_rates_bps ?? []).map((r) => <option key={r} value={r}>{r / 100}%</option>)}</select></label>
-                                            <label>Country of origin<input required maxLength="60" placeholder="e.g. India" value={productForm.country_of_origin ?? ''} onChange={(event) => setProductForm({ ...productForm, country_of_origin: event.target.value })} /></label>
-                                            <label>Manufacturer / packer / importer (name &amp; address)<input required maxLength="500" value={productForm.manufacturer_info ?? ''} onChange={(event) => setProductForm({ ...productForm, manufacturer_info: event.target.value })} /></label>
-                                          </>
-                                        )}
-                                        {shopMode !== 'nextech' && (
-                                          <label>Ships under template<select value={productForm.shipping_template_id ?? ''} onChange={(event) => setProductForm({ ...productForm, shipping_template_id: event.target.value })}>
-                                            <option value="">Default template</option>
-                                            {shipTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>)}
-                                          </select></label>
-                                        )}
-                                        <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>
-                                      </div>
-
-                                      {(() => {
-                                        const est = estimateSellerFees(productForm.price, siteConfig)
-                                        if (!est) return null
-                                        const lowMargin = est.netCents > 0 && est.netCents < 300
-                                        return (
-                                          <div className="seller-fee-estimate">
-                                            <p className="seller-fee-row"><span>Platform commission ({(est.commissionBps / 100).toFixed(1)}%)</span><span>&minus;{money(est.commissionCents)}</span></p>
-                                            <p className="seller-fee-row total"><span>You receive per sale</span><span>{money(est.netCents)}</span></p>
-                                            <p className="seller-fee-row muted"><span>Customer pays (approx., with tax{est.belowFreeThreshold ? ' + delivery' : ''})</span><span>~{money(est.customerTotalCents)}</span></p>
-                                            <p className="seller-field-hint">Commission also covers NexTech&rsquo;s delivery/logistics cost — nothing else is deducted from your payout.</p>
-                                            {lowMargin && <p className="seller-inline-error">Only {money(est.netCents)} per sale at this price — card processing and packaging eat into margins this thin. Consider pricing this item a bit higher.</p>}
-                                          </div>
-                                        )
-                                      })()}
-
-                                      <label>Description<textarea rows="3" value={productForm.description} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} /></label>
-
-                                      <label>Suggest a category <span className="seller-field-hint">(nothing above fits? tell us and we&rsquo;ll review it — this doesn&rsquo;t create a category on its own)</span>
-                                        <input value={productForm.suggested_category_name} onChange={(event) => setProductForm({ ...productForm, suggested_category_name: event.target.value })} placeholder="e.g. Drone accessories" />
-                                      </label>
-
-                                      <p className="seller-field-label">Photos</p>
-                                      <div className="seller-gallery">
-                                        {(productForm.images ?? []).map((url, index) => (
-                                          <div className="seller-gallery-item" key={index}>
-                                            <img src={mediaUrl(url)} alt="" />
-                                            <button type="button" onClick={() => setProductForm({ ...productForm, images: productForm.images.filter((_, i) => i !== index) })}>&times;</button>
-                                          </div>
-                                        ))}
-                                        <label className="seller-gallery-add">
-                                          {productImgBusy ? '…' : '+ Add'}
-                                          <input type="file" accept="image/*" disabled={productImgBusy} onChange={(event) => uploadProductImage(event.target.files?.[0], (url) => setProductForm((form) => ({ ...form, images: [...(form.images ?? []), url] })))} />
-                                        </label>
-                                      </div>
-
-                                      <fieldset className="seller-fieldset">
-                                        <legend>Options / variants</legend>
-                                        <p className="seller-field-hint">Leave empty for a single-price product. Add a row per variant — colour, size, storage, etc.</p>
-                                        {(productForm.variants ?? []).map((row, index) => row._delete ? null : (
-                                          <div className="seller-variant-row" key={row.id ?? `new-${index}`}>
-                                            <input placeholder="Label" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
-                                            <input disabled placeholder="SKU" value={row.sku || 'Auto on save'} />
-                                            <input type="number" min="0" step="0.01" placeholder={inclusive ? `MRP ${sym}` : `Regular ${sym}`} value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
-                                            <input type="number" min="0" step="0.01" placeholder={inclusive ? `Price ${sym}` : `Sale ${sym}`} value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
-                                            <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />
-                                            <span className="seller-variant-img">
-                                              <input placeholder="Image URL" value={row.image_url} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, image_url: event.target.value } : r) })} />
-                                              <input type="file" accept="image/*" disabled={productImgBusy} onChange={(event) => uploadProductImage(event.target.files?.[0], (url) => setProductForm((form) => ({ ...form, variants: form.variants.map((r, i) => i === index ? { ...r, image_url: url } : r) })))} />
-                                            </span>
-                                            <button type="button" className="seller-btn ghost" onClick={() => setProductForm({ ...productForm, variants: row.id
-                                              ? productForm.variants.map((r, i) => i === index ? { ...r, _delete: true } : r)
-                                              : productForm.variants.filter((_, i) => i !== index) })}>Remove</button>
-                                          </div>
-                                        ))}
-                                        <button type="button" className="seller-btn ghost" disabled={(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS} onClick={() => setProductForm({ ...productForm, variants: [...(productForm.variants ?? []), { ...EMPTY_SELLER_VARIANT }] })}>Add variant{(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS ? ` (max ${MAX_VARIANTS})` : ''}</button>
-                                      </fieldset>
-
-                                      <div className="seller-wizard-actions">
-                                        <button type="submit" className="seller-btn">Save</button>
-                                        <button type="button" className="seller-btn ghost" onClick={() => setProductForm(null)}>Cancel</button>
-                                      </div>
-                                      {productMsg && <p className="seller-inline-error">{productMsg}</p>}
-                                    </form>
-                  ) : <p className="sc-muted">Nothing open. <button type="button" className="sc-link" onClick={newProduct}>Add a product</button></p>}
-                </div>
+                <div className="sc-head"><h1 className="sc-title">{productForm?.source?.id ? (productForm.source.status === 'draft' ? 'Finish product' : 'Edit product') : 'Add new product'}</h1><button type="button" className="sc-link" onClick={() => go('products')}>&larr; Back to products</button></div>
+                <ProductWizard
+                  key={productForm?.source?.id ?? 'new'}
+                  headers={authHeaders}
+                  product={productForm?.source ?? null}
+                  onSaved={loadProducts}
+                  onCancel={() => go('products')}
+                  go={go}
+                  inclusive={inclusive}
+                  gstRates={me?.gst_rates_bps}
+                  shipTemplates={shipTemplates}
+                  maxReturnDays={siteConfig?.max_return_days ?? 90}
+                  defaultReturnDays={siteConfig?.return_window_days ?? 30}
+                />
               </>
+            ) : section === 'bulk-upload' ? (
+              <BulkUpload headers={authHeaders} go={go} openProduct={openProductById} />
+            ) : section === 'compliance-products' ? (
+              <ProductCompliance headers={authHeaders} products={products} reload={loadProducts} />
+            ) : section === 'pricing' ? (
+              <PricingHealth headers={authHeaders} onChanged={loadProducts} />
+            ) : section === 'account-health' ? (
+              <AccountHealth headers={authHeaders} country={me.country} />
             ) : section === 'orders' ? (
               <ManageOrders headers={authHeaders} go={go} shipsItself={shopMode !== 'nextech'} onSummary={setOrderSummary} />
             ) : section === 'ship-orders' ? (

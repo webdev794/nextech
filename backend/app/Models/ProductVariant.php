@@ -14,6 +14,7 @@ class ProductVariant extends Model
     protected $fillable = [
         'product_id', 'label', 'sku', 'price_cents', 'compare_at_price_cents',
         'inventory_quantity', 'image_url', 'sort_order', 'is_active',
+        'options', 'seller_code', 'weight_grams', 'length_mm', 'width_mm', 'height_mm',
     ];
 
     protected function casts(): array
@@ -24,6 +25,11 @@ class ProductVariant extends Model
             'inventory_quantity' => 'integer',
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'options' => 'array',
+            'weight_grams' => 'integer',
+            'length_mm' => 'integer',
+            'width_mm' => 'integer',
+            'height_mm' => 'integer',
         ];
     }
 

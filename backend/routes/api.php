@@ -44,6 +44,10 @@ use App\Http\Controllers\Api\SellerFulfillmentController;
 use App\Http\Controllers\Api\SellerShippingController;
 use App\Http\Controllers\Api\ShippingQuoteController;
 use App\Http\Controllers\Api\SellerProductController;
+use App\Http\Controllers\Api\SellerProductUploadController;
+use App\Http\Controllers\Api\SellerPricingController;
+use App\Http\Controllers\Api\SellerTrademarkController;
+use App\Http\Controllers\Api\AdminCatalogReviewController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
 use Illuminate\Http\Request;
@@ -204,6 +208,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);
     Route::post('/products/{product}/approve', [AdminProductController::class, 'approve']);
+    Route::get('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'salesBoost']);
+    Route::post('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'createSalesBoost']);
+    Route::get('/trademarks', [AdminCatalogReviewController::class, 'trademarks']);
+    Route::post('/trademarks/{trademark}/review', [AdminCatalogReviewController::class, 'reviewTrademark']);
     Route::post('/products/{product}/reject', [AdminProductController::class, 'reject']);
     Route::delete('/products/{product}', [AdminProductController::class, 'destroy']);
 
@@ -271,6 +279,23 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
+    Route::post('/seller/product-video', [MediaController::class, 'storeSellerProductVideo']);
+    // Temu-style listing: categories / details / compliance config, drafts, compliance, bulk upload.
+    Route::get('/seller/catalog-config', [SellerProductController::class, 'catalogConfig']);
+    Route::patch('/seller/products/{product}/compliance', [SellerProductController::class, 'updateCompliance']);
+    Route::post('/seller/products/drafts-from-images', [SellerProductController::class, 'draftsFromImages']);
+    Route::get('/seller/product-uploads', [SellerProductUploadController::class, 'index']);
+    Route::post('/seller/product-uploads', [SellerProductUploadController::class, 'store']);
+    Route::get('/seller/product-uploads/{task}', [SellerProductUploadController::class, 'show']);
+    Route::get('/seller/product-uploads/{task}/file', [SellerProductUploadController::class, 'file']);
+    // Pricing health: sales boost offers and pricing records.
+    Route::get('/seller/sales-boost', [SellerPricingController::class, 'salesBoost']);
+    Route::post('/seller/sales-boost/decide', [SellerPricingController::class, 'decide']);
+    Route::get('/seller/pricing-records', [SellerPricingController::class, 'records']);
+    // Account health: trademarks.
+    Route::get('/seller/trademarks', [SellerTrademarkController::class, 'index']);
+    Route::post('/seller/trademarks', [SellerTrademarkController::class, 'store']);
+    Route::patch('/seller/trademarks/{trademark}', [SellerTrademarkController::class, 'update']);
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
     Route::post('/seller/orders/{order}/address-change/{change}', [SellerOrderController::class, 'decideAddressChange']);
     Route::get('/seller/stats', [SellerOrderController::class, 'stats']);

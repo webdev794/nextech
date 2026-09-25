@@ -72,12 +72,11 @@ class Sku
         return sprintf('ADM%06d', $productId);
     }
 
-    public const MAX_VARIANTS = 9;
+    public const MAX_VARIANTS = 30;
 
     /**
-     * Hands out the lowest variant number (1–9) not already in use, so the
-     * suffix always stays one digit — numbers freed by a deleted variant get
-     * reused.
+     * Hands out the lowest variant number (1–30) not already in use —
+     * numbers freed by a deleted variant get reused, so suffixes stay short.
      */
     public static function nextVariantSku(Product $product): string
     {

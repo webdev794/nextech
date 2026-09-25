@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Support\ProductCatalog;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
@@ -24,7 +25,7 @@ class AdminProductController extends Controller
             'search' => ['sometimes', 'string', 'max:100'],
             'category_id' => ['sometimes', 'integer', 'exists:categories,id'],
             'store_id' => ['sometimes', 'integer', 'exists:stores,id'],
-            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected'])],
+            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft'])],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
         ]);
@@ -34,7 +35,8 @@ class AdminProductController extends Controller
 
         $products = Product::query()
             ->inMarket(Market::fromRequest($request))
-            ->with(['category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images'])
+            ->with(['category:id,name,slug', 'shop:id,name', 'variants', 'storeInventory', 'images', 'trademark:id,name'])
+            ->withCount(['salesBoostOffers as low_traffic_offers' => fn ($q) => $q->where('status', 'pending')])
             // When filtering by store, `effective_stock` is that store's on-hand
             // count (its stocked row, else the product's single count); otherwise
             // it's just the single count. Used by the stock sorts.
@@ -51,13 +53,19 @@ class AdminProductController extends Controller
                 fn ($inner) => $inner->where('products.name', 'like', "%{$search}%")->orWhere('products.sku', 'like', "%{$search}%")
             ))
             ->when($validated['category_id'] ?? null, fn ($query, $id) => $query->where('products.category_id', $id))
-            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('products.status', $status))
+            // Sellers' unfinished drafts (Manage products -> Incomplete) stay out of the review list.
+            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('products.status', $status), fn ($query) => $query->where('products.status', '!=', 'draft'))
             ->when($sort === 'newest', fn ($query) => $query->orderByDesc('products.created_at')->orderByDesc('products.id'))
             ->when($sort === 'oldest', fn ($query) => $query->orderBy('products.created_at')->orderBy('products.id'))
             ->when($sort === 'name', fn ($query) => $query->orderBy('products.name'))
             ->when($sort === 'stock_low', fn ($query) => $query->orderBy('effective_stock')->orderBy('products.name'))
             ->when($sort === 'stock_high', fn ($query) => $query->orderByDesc('effective_stock')->orderBy('products.name'))
             ->paginate($validated['per_page'] ?? 10);
+
+        // Required compliance documents a seller product still lacks — it can't be approved until they're in.
+        foreach ($products->items() as $item) {
+            $item->setAttribute('missing_compliance', $item->shop_id ? ProductCatalog::missingCompliance($item) : []);
+        }
 
         return response()->json([
             'data' => $products->items(),
@@ -138,6 +146,9 @@ class AdminProductController extends Controller
     public function approve(Product $product): JsonResponse
     {
         abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
+        abort_if($product->status === 'draft', 422, 'The seller hasn’t submitted this product yet.');
+        $missing = ProductCatalog::missingCompliance($product);
+        abort_if($missing !== [], 422, 'Compliance documents missing: '.implode(', ', $missing).'. Ask the seller to upload them under Products -> Product compliance.');
 
         $product->forceFill(['status' => 'approved', 'rejection_reason' => null])->save();
 
@@ -210,7 +221,7 @@ class AdminProductController extends Controller
             'store_stock.*.is_stocked' => ['sometimes', 'boolean'],
             'store_stock.*.quantity' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
 
-            'variants' => ['sometimes', 'array', 'max:'.(Sku::MAX_VARIANTS * 2)], // live + _delete rows; the real cap of 9 is enforced in ProductVariants::sync
+            'variants' => ['sometimes', 'array', 'max:'.(Sku::MAX_VARIANTS * 2)], // live + _delete rows; the real cap is enforced in ProductVariants::sync
             'variants.*.id' => ['sometimes', 'nullable', 'integer'],
             'variants.*._delete' => ['sometimes', 'boolean'],
             'variants.*.label' => ['required_with:variants', 'string', 'max:80'],

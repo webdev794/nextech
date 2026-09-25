@@ -28,7 +28,7 @@ class SellerKycController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:8192'],
-            'kind' => ['required', 'string', 'in:id_document,business_document,license_document,tax_certificate,corporate_document,bank_document'],
+            'kind' => ['required', 'string', 'in:id_document,business_document,license_document,tax_certificate,corporate_document,bank_document,product_document,trademark_certificate'],
         ]);
 
         $folder = 'kyc/'.$request->user()->id;

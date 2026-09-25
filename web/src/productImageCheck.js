@@ -1,8 +1,8 @@
 // Client-side pre-check for product photos, mirroring the server-side rule in
-// MediaController::store() (folder=products): JPEG/PNG, max 800 KB, at least
+// MediaController::store() (folder=products): JPEG/PNG, max 3 MB, at least
 // 400x400px, square (1:1). Catches the common mistake instantly instead of
 // waiting on a round trip; the server rule is still the real, authoritative gate.
-const MAX_BYTES = 800 * 1024
+const MAX_BYTES = 3 * 1024 * 1024
 const MIN_DIMENSION = 400
 
 export function checkProductImage(file) {
@@ -12,7 +12,7 @@ export function checkProductImage(file) {
       return
     }
     if (file.size > MAX_BYTES) {
-      resolve(`Product photos must be 800 KB or smaller (this one is ${Math.round(file.size / 1024)} KB).`)
+      resolve(`Product photos must be 3 MB or smaller (this one is ${(file.size / 1048576).toFixed(1)} MB).`)
       return
     }
 

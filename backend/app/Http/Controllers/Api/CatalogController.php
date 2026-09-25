@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
+use App\Support\ProductCatalog;
 use App\Models\ProductVariant;
 use App\Models\Shop;
 use App\Support\Market;
@@ -109,6 +110,8 @@ class CatalogController extends Controller
             ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5))
+            // "Low traffic" products (a sales boost offer still pending) rank below the rest.
+            ->orderByRaw("EXISTS (SELECT 1 FROM sales_boost_offers sbo WHERE sbo.product_id = products.id AND sbo.status = 'pending')")
             ->when(
                 $validated['sort'] ?? null,
                 fn ($query, $sort) => match ($sort) {
@@ -223,6 +226,7 @@ class CatalogController extends Controller
             'variants' => fn ($query) => $query->where('is_active', true),
             'storeInventory',
             'images',
+            'trademark:id,name,logo_url',
         ]);
 
         abort_unless(
@@ -286,6 +290,17 @@ class CatalogController extends Controller
 
         // storeInventory was only loaded to compute the above; don't ship it.
         $product->unsetRelation('storeInventory');
+
+        // Seller-only listing data never reaches shoppers.
+        $product->makeHidden(['compliance', 'price_references', 'seller_code', 'rejection_reason', 'suggested_category_name']);
+        if ($product->relationLoaded('category') && $product->product_details) {
+            // Product details as labelled specifications for the product page.
+            $fields = collect(ProductCatalog::attributesFor($product->category))->keyBy('key');
+            $product->setAttribute('specifications', collect($product->product_details)
+                ->filter(fn ($v, $k) => $fields->has($k) && $v !== null && $v !== '' && $v !== [] && ProductCatalog::applies($fields[$k], $product->product_details))
+                ->map(fn ($v, $k) => ['label' => $fields[$k]['label'], 'value' => implode(', ', (array) $v).(isset($fields[$k]['unit']) ? ' '.$fields[$k]['unit'] : '')])
+                ->values());
+        }
 
         return $product;
     }

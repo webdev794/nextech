@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { ListingReview, TrademarkReview } from './AdminListingReview'
 import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
@@ -213,8 +214,8 @@ const storeStockFrom = (product) => {
   }
   return map
 }
-// Variant SKUs end in a single digit (-V1…-V9), so a product holds at most 9.
-const MAX_VARIANTS = 9
+// Variant SKUs are numbered -V1…-V30 (App\Support\Sku::MAX_VARIANTS).
+const MAX_VARIANTS = 30
 // Mirrors App\Support\ProductImages::MAX_IMAGES.
 const MAX_IMAGES = 8
 const EMPTY_VARIANT = { label: '', sku: '', price: '', compare_at: '', stock: 0, image_url: '', is_active: true }
@@ -453,6 +454,7 @@ export default function Admin({ token, onClose }) {
   const [customerDetail, setCustomerDetail] = useState(null)
   const [customerQuery, setCustomerQuery] = useState('') // Customers search
   const [orderDetail, setOrderDetail] = useState(null)
+  const [listingReview, setListingReview] = useState(null) // a seller product being reviewed
   const [statusFilter, setStatusFilter] = useState('all')
   const [productSearch, setProductSearch] = useState('')
   const [productSort, setProductSort] = useState('newest')
@@ -1704,7 +1706,8 @@ export default function Admin({ token, onClose }) {
       const response = await fetch(`${API_URL}/admin/products/${product.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the product.')
-      setProducts((cur) => cur.map((p) => (p.id === product.id ? data.data : p)))
+      setProducts((cur) => cur.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
+      setListingReview((cur) => (cur?.id === product.id ? { ...cur, ...data.data } : cur))
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
@@ -2732,15 +2735,16 @@ export default function Admin({ token, onClose }) {
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
-                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}</td>
+                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.low_traffic_offers > 0 && <span className="pill pill-rejected" title="A sales boost offer is waiting for the seller">Low traffic</span>}{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}{(product.missing_compliance ?? []).length > 0 && <p className="admin-note">Docs missing: {product.missing_compliance.join(', ')}</p>}</td>
                     <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
                       {product.shop_id && product.status === 'pending' && <>
-                        <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>
+                        <button className="act" type="button" disabled={busyId === product.id || (product.missing_compliance ?? []).length > 0} title={(product.missing_compliance ?? []).length ? 'Compliance documents missing' : undefined} onClick={() => productAction(product, 'approve')}>Approve</button>
                         <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
                       </>}
                       {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
@@ -2996,6 +3000,7 @@ export default function Admin({ token, onClose }) {
             </label>
             <span className="muted">Applications sellers submit at /seller. Approving flips the shop live on the storefront.</span>
           </div>
+          <TrademarkReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} viewDocument={viewKycDocument} fail={fail} />
 
           {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications.</p> : (
             <table className="admin-table">
@@ -3973,6 +3978,20 @@ export default function Admin({ token, onClose }) {
             )}
           </aside>
         </div>
+      )}
+
+      {listingReview && (
+        <ListingReview
+          product={listingReview}
+          currency={MARKET_CURRENCY[listingReview.market]}
+          authHeaders={authHeaders}
+          jsonHeaders={jsonHeaders}
+          viewDocument={viewKycDocument}
+          busy={busyId === listingReview.id}
+          fail={fail}
+          onClose={() => setListingReview(null)}
+          onAction={(action) => (action === 'approve' ? productAction(listingReview, 'approve') : rejectProduct(listingReview))}
+        />
       )}
 
       {orderDetail && (() => {
