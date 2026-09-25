@@ -43,6 +43,12 @@ class User extends Authenticatable
         return $this->hasMany(Order::class);
     }
 
+    /** Every email sent to this customer (CRM log). */
+    public function customerEmails(): HasMany
+    {
+        return $this->hasMany(CustomerEmail::class);
+    }
+
     public function supportThreads(): HasMany
     {
         return $this->hasMany(SupportThread::class);

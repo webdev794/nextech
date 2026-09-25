@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\SpaController;
+use App\Models\User;
+use App\Support\Branding;
 use Illuminate\Support\Facades\Route;
 
 // The React storefront is served from public/index.html; the API lives under
@@ -42,5 +44,13 @@ Route::get('/storage/{path}', function (string $path) {
         'Cache-Control' => 'public, max-age=31536000, immutable',
     ]);
 })->where('path', '.*');
+
+// One-click unsubscribe from promotional emails (signed link in the email footer).
+Route::get('/unsubscribe/{user}', function (User $user) {
+    $user->forceFill(['marketing_opt_out' => true])->save();
+    $brand = Branding::current()['store_name'] ?: config('app.name');
+
+    return response('<!doctype html><meta charset="utf-8"><title>Unsubscribed</title><body style="font-family:sans-serif;max-width:480px;margin:60px auto;text-align:center"><h2>You&rsquo;re unsubscribed</h2><p>'.e($brand).' won&rsquo;t send you promotional emails any more. You&rsquo;ll still get emails about your orders.</p></body>');
+})->name('unsubscribe')->middleware('signed');
 
 Route::fallback(SpaController::class);

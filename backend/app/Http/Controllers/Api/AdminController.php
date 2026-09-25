@@ -587,11 +587,17 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
+            'search' => ['sometimes', 'string', 'max:100'],
         ]);
 
         $customers = User::query()
             ->where('is_admin', false)
-            ->withCount('orders')
+            ->when($validated['search'] ?? null, fn ($query, $term) => $query->where(fn ($q) => $q
+                ->where('name', 'like', "%{$term}%")
+                ->orWhere('email', 'like', "%{$term}%")
+                ->orWhere('phone', 'like', "%{$term}%")))
+            ->withCount(['orders', 'customerEmails as emails_count'])
+            ->withMax('orders as last_order_at', 'created_at')
             ->withSum(['orders as spent_cents' => fn ($query) => $query->where('payment_status', 'paid')], 'total_cents')
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
@@ -607,6 +613,8 @@ class AdminController extends Controller
                 'phone' => $user->phone,
                 'is_rider' => (bool) $user->is_rider,
                 'orders_count' => $user->orders_count,
+                'emails_count' => (int) ($user->emails_count ?? 0),
+                'last_order_at' => $user->last_order_at,
                 'spent_cents' => (int) ($user->spent_cents ?? 0),
                 'joined_at' => $user->created_at,
             ])->items(),

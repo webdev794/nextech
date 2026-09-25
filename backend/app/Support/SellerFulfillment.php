@@ -9,6 +9,7 @@ use App\Models\OrderPackage;
 use App\Models\SellerLedgerEntry;
 use App\Models\Setting;
 use App\Models\Shop;
+use App\Notifications\OrderShipped;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -85,6 +86,9 @@ class SellerFulfillment
                 $package->items()->create(['order_item_id' => $row['order_item_id'], 'quantity' => $row['quantity']]);
             }
             self::sync($order);
+
+            // Tell the customer, with carrier + tracking link (after commit).
+            DB::afterCommit(fn () => $order->fresh()?->emailCustomer(new OrderShipped($order->fresh(), $package->fresh())));
 
             return $package->load('items');
         });

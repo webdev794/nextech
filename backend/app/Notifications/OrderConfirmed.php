@@ -5,16 +5,12 @@ namespace App\Notifications;
 use App\Models\Order;
 use App\Support\Branding;
 use App\Support\Money;
-use App\Support\OrderReceipt;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-/**
- * Sent to the customer once their order is both paid and delivered: a short
- * summary in the body, with the full itemised bill attached as a PDF.
- */
-class OrderDelivered extends Notification
+/** Sent when an order is placed and confirmed (paid by card, cash on delivery, or covered by store credit). */
+class OrderConfirmed extends Notification
 {
     use Queueable;
 
@@ -28,18 +24,15 @@ class OrderDelivered extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $order = $this->order->loadMissing('items');
-        $money = fn ($cents) => Money::format((int) $cents, $order->currency);
-
         $brand = Branding::current();
         $brandName = ($brand['store_name'] ?? '') !== '' ? $brand['store_name'] : config('app.name');
-        $when = $order->delivered_at?->format('j M Y, g:i a');
+        $money = fn ($cents) => Money::format((int) $cents, $order->currency);
+        $address = (array) $order->delivery_address;
 
         $mail = (new MailMessage)
-            ->subject("Your {$brandName} order #{$order->id} was delivered")
+            ->subject("Order #{$order->id} confirmed — {$brandName}")
             ->greeting('Thanks for your order!')
-            ->line($when
-                ? "Order #{$order->id} was delivered on {$when}."
-                : "Order #{$order->id} has been delivered.")
+            ->line("We've received order #{$order->id}".($order->payment_method === 'cod' ? ' — you\'ll pay cash on delivery.' : '.'))
             ->line('**Order summary**');
 
         foreach ($order->items as $item) {
@@ -47,16 +40,14 @@ class OrderDelivered extends Notification
             $mail->line("{$item->quantity} × {$label} — ".$money($item->line_total_cents));
         }
 
-        $mail->line('**Total paid: '.$money($order->total_cents).'**')
-            ->line('Your full itemised bill is attached as a PDF.')
+        $mail->line('**Total: '.$money($order->total_cents).'**');
+
+        $to = implode(', ', array_filter([$address['line1'] ?? null, $address['city'] ?? null, $address['state'] ?? null, $address['postal_code'] ?? null]));
+        if ($to !== '') {
+            $mail->line("Delivering to: {$to}");
+        }
+
+        return $mail->line('We\'ll email you again when it\'s on its way. You can track it any time under Your orders.')
             ->salutation("— {$brandName}");
-
-        $mail->attachData(
-            OrderReceipt::pdf($order)->output(),
-            OrderReceipt::filename($order),
-            ['mime' => 'application/pdf'],
-        );
-
-        return $mail;
     }
 }

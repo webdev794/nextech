@@ -2,8 +2,13 @@
 
 namespace App\Models;
 
+use App\Notifications\OrderConfirmed;
 use App\Notifications\OrderDelivered;
+use App\Notifications\OrderShipped;
+use App\Support\CustomerMail;
 use App\Support\Geo;
+use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -72,6 +77,41 @@ class Order extends Model
             'delivery_code_expires_at' => 'datetime',
             'receipt_emailed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Order emails. Sent after the surrounding transaction commits, so a
+        // rolled-back checkout never emails, and the order's items exist by then.
+        static::created(function (Order $order): void {
+            if ($order->status === 'confirmed') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+            }
+        });
+        static::updated(function (Order $order): void {
+            if (! $order->wasChanged('status')) {
+                return;
+            }
+            if ($order->status === 'confirmed' && $order->getOriginal('status') === 'pending_payment') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+            }
+            // Seller-shipped orders email per package instead (SellerFulfillment::createPackage).
+            if ($order->status === 'out_for_delivery' && $order->delivery_method !== 'seller') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderShipped($order->fresh())));
+            }
+        });
+    }
+
+    /** Send an order email to the customer (logged in the CRM; a failure never breaks the caller). */
+    public function emailCustomer(Notification $notification): void
+    {
+        if (! CustomerMail::orderEmailsEnabled()) {
+            return;
+        }
+        $this->loadMissing('user');
+        if ($this->user?->email) {
+            CustomerMail::send($this->user, $notification);
+        }
     }
 
     /**

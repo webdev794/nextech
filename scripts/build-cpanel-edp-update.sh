@@ -170,6 +170,13 @@ AFTER IMPORT: check Admin > Stores - the two stores are in India but saved
 as country US; edit each and set Country = India. Fill in the India
 grievance officer under Admin > Settings (currency switch = INR).
 
+SCHEDULED EMAILS (Admin > Emails, Customers > View > Schedule email): add ONE
+cron job in cPanel > Cron Jobs, every minute:
+  * * * * * /usr/local/bin/php /home/<cpanel-user>/public_html/$SUBPATH/artisan schedule:run >/dev/null 2>&1
+(check the PHP path in cPanel > MultiPHP; without this cron, "Send now" still
+works but scheduled/repeating emails never go out). Emails are sent with the
+MAIL_* settings in .env - set a real mailer there (not MAIL_MAILER=log).
+
 DEPLOY
   1. Back up: cPanel > File Manager, download  public_html/$SUBPATH/  first.
   2. Upload this zip into  public_html/  and Extract, overwrite when asked.

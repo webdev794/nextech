@@ -5,7 +5,7 @@ import { renderMarkdown } from './markdown'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { PageSection } from './PageSections'
-import { flag, setStoreCurrency, storeMoney } from './money'
+import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './StorefrontBase.css'
 import './Storefront.css'
 import './Checkout.css'
@@ -65,6 +65,98 @@ const categoriesFallback = [
   { id: 2, name: 'Laptops & Computers', image_url: '/img/cat/laptops-computers.webp' },
   { id: 3, name: 'Audio & Headphones', image_url: '/img/cat/audio-headphones.jpg' },
 ]
+
+// Browsing history (kept on this device, like Temu's): newest first, max 50.
+const HISTORY_KEY = 'nextech_history'
+function loadHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) ?? '[]')
+    return Array.isArray(saved) ? saved.filter((h) => h && h.id != null) : []
+  } catch { return [] }
+}
+function pushHistory(current, product) {
+  const entry = {
+    id: product.id,
+    slug: product.slug,
+    name: product.name,
+    image_url: product.image_url,
+    price_cents: product.price_min_cents ?? product.price_cents,
+    compare_at_price_cents: product.compare_at_price_cents ?? null,
+    has_variants: (product.variants ?? []).length > 0,
+    market: product.market ?? null,
+    currency: product.currency ?? null,
+    at: Date.now(),
+  }
+  const next = [entry, ...current.filter((h) => h.id !== product.id)].slice(0, 50)
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(next)) } catch { /* storage full / private mode */ }
+  return next
+}
+
+// Line icons for the Orders & Account / Support menus.
+const MENU_ICON_PATHS = {
+  orders: <><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></>,
+  profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></>,
+  address: <><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" /><circle cx="12" cy="9.5" r="2.5" /></>,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18z" /></>,
+  card: <><rect x="3" y="5" width="18" height="14" rx="2" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="7" y1="15" x2="11" y2="15" /></>,
+  shield: <><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><polyline points="9 12 11 14 15 10" /></>,
+  gear: <><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1" /></>,
+  truck: <><rect x="1" y="7" width="14" height="10" rx="1" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="17" cy="19" r="2" /></>,
+  signout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
+  support: <><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5a8.4 8.4 0 0 1-1-3A8.5 8.5 0 0 1 11.5 3 8.4 8.4 0 0 1 21 11.5z" /><path d="M8.5 12.5a4 4 0 0 0 7 0" /></>,
+  reviews: <><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M12 7.5l1.3 2.7 3 .4-2.2 2.1.5 3-2.6-1.4-2.6 1.4.5-3-2.2-2.1 3-.4z" /></>,
+  coupon: <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><line x1="9" y1="9" x2="9" y2="15" strokeDasharray="2 2" /></>,
+  wallet: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="16.5" cy="14.5" r="1.2" /></>,
+  store: <><path d="M4 9l1-5h14l1 5" /><path d="M4 9a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0" /><path d="M5 11v9h14v-9" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></>,
+  key: <><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><circle cx="12" cy="10.5" r="2" /><line x1="12" y1="12.5" x2="12" y2="16" /></>,
+  bell: <><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20a2 2 0 0 0 4 0" /></>,
+  swap: <><circle cx="9" cy="8" r="3.5" /><path d="M3 20c0-3.3 2.7-6 6-6" /><polyline points="15 13 18 10 21 13" /><polyline points="21 17 18 20 15 17" /><line x1="18" y1="10" x2="18" y2="20" /></>,
+  cartplus: <><circle cx="9" cy="20" r="1.4" /><circle cx="18" cy="20" r="1.4" /><path d="M2 3h3l2.2 11.2a1.5 1.5 0 0 0 1.5 1.3h8.8a1.5 1.5 0 0 0 1.5-1.2L20.5 8H6" /><line x1="13" y1="6" x2="13" y2="12" /><line x1="10" y1="9" x2="16" y2="9" /></>,
+}
+
+// Your orders sub-pages (Temu's order tabs).
+const ORDER_FILTERS = [['all', 'All orders'], ['processing', 'Processing'], ['shipped', 'Shipped'], ['delivered', 'Delivered'], ['returns', 'Returns']]
+function orderInFilter(order, filter) {
+  switch (filter) {
+    case 'processing': return ['pending_payment', 'confirmed', 'packing', 'ready_for_delivery'].includes(order.status)
+    case 'shipped': return order.status === 'out_for_delivery'
+    case 'delivered': return order.status === 'completed'
+    case 'returns': return (order.refunded_amount_cents ?? 0) > 0 || ['refunded', 'partially_refunded', 'refund_pending'].includes(order.payment_status)
+    default: return true
+  }
+}
+
+// The buyer account (Temu's "Orders & Account"): [key, label, icon, guests allowed].
+const ACCOUNT_SECTIONS = [
+  ['orders', 'Your orders', 'orders', false],
+  ['reviews', 'Your reviews', 'reviews', false],
+  ['profile', 'Your profile', 'profile', false],
+  ['coupons', 'Coupons & offers', 'coupon', false],
+  ['credit', 'Credit balance', 'wallet', false],
+  ['following', 'Followed stores', 'store', false],
+  ['history', 'Browsing history', 'clock', true],
+  ['addresses', 'Addresses', 'address', false],
+  ['region', 'Country/Region & Language', 'globe', true],
+  ['cards', 'Your payment methods', 'card', false],
+  ['security', 'Account security', 'shield', false],
+  ['permissions', 'Permissions', 'key', true],
+  ['notifications', 'Notifications', 'bell', false],
+]
+function MenuIcon({ name, size = 16 }) {
+  return <svg aria-hidden width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{MENU_ICON_PATHS[name]}</svg>
+}
+
+// Small drawn flags (Windows shows flag emoji as plain letters).
+function FlagIcon({ code }) {
+  if (code === 'IN') {
+    return <svg className="flag-icon" viewBox="0 0 30 20" aria-hidden><rect width="30" height="20" fill="#fff" /><rect width="30" height="6.67" fill="#f93" /><rect y="13.33" width="30" height="6.67" fill="#128807" /><circle cx="15" cy="10" r="2.6" fill="none" stroke="#008" strokeWidth=".7" /></svg>
+  }
+  if (code === 'US') {
+    return <svg className="flag-icon" viewBox="0 0 30 20" aria-hidden><rect width="30" height="20" fill="#b22234" />{[1, 3, 5, 7, 9, 11].map((i) => <rect key={i} y={(i * 20) / 13} width="30" height={20 / 13} fill="#fff" />)}<rect width="12" height={(7 * 20) / 13} fill="#3c3b6e" /></svg>
+  }
+  return <span className="flag-icon flag-code">{code}</span>
+}
 
 // Amounts in the shopper's selected market's currency (or an order's own).
 function price(cents, currency) { return storeMoney(cents, currency) }
@@ -388,7 +480,7 @@ export default function Storefront() {
   // Dropdown panels open on CSS :hover, which a click can't dismiss (the mouse
   // hasn't moved) — this force-closes one after a menu action, and clears
   // automatically once the cursor actually leaves the trigger.
-  const [closedMenu, setClosedMenu] = useState(null) // null | 'categories' | 'support' | 'account'
+  const [closedMenu, setClosedMenu] = useState(null) // null | 'categories' | 'support' | 'account' | 'region'
   // Force-closing the panel on click (via pointer-events/visibility) pulls it out
   // from under the still-stationary cursor, which makes the browser immediately
   // fire a real mouseleave on the wrapper — so the panel would already be hidden
@@ -427,6 +519,8 @@ export default function Storefront() {
         .map((item) => ({ variantId: null, name: '', price_cents: 0, compare_at_price_cents: null, quantity: 1, ...item, key: item.key ?? `${item.id}:${item.variantId ?? ''}` }))
     } catch { return [] }
   })
+  const [history, setHistory] = useState(loadHistory) // browsing history (this device)
+  const [credit, setCredit] = useState(null) // { cards, total_cents } for Account → Credit balance
   const [pickedVariant, setPickedVariant] = useState({})
   const [productView, setProductView] = useState(null) // product | 'loading' | null
   const [galleryIndex, setGalleryIndex] = useState(0)
@@ -547,6 +641,8 @@ export default function Storefront() {
   const [cardsBusy, setCardsBusy] = useState(false)
   const [addingCard, setAddingCard] = useState(false)
   const [ordersOpen, setOrdersOpen] = useState(false)
+  const [ordersFilter, setOrdersFilter] = useState('all') // Your orders: all | processing | shipped | delivered | returns
+  const [ordersQuery, setOrdersQuery] = useState('') // Your orders search: item name / order ID / tracking no.
   const [orders, setOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [ordersMessage, setOrdersMessage] = useState('')
@@ -607,6 +703,17 @@ export default function Storefront() {
     loadCards()
   }, [accountOpen, accountTab]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Account → Credit balance: the customer's gift cards (store credit).
+  useEffect(() => {
+    if (!accountOpen || accountTab !== 'credit' || !currentUser) return undefined
+    let cancelled = false
+    fetch(`${API_URL}/gift-cards`, { headers: { Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` } })
+      .then(responseJson)
+      .then((data) => { if (!cancelled) setCredit(data.data ?? { cards: [], total_cents: 0 }) })
+      .catch(() => { if (!cancelled) setCredit({ cards: [], total_cents: 0 }) })
+    return () => { cancelled = true }
+  }, [accountOpen, accountTab, currentUser])
+
   // Have the shopper's saved cards ready when the payment step opens.
   useEffect(() => {
     if (!order?.clientSecret || !stripePromise || cards !== null) return
@@ -617,6 +724,7 @@ export default function Storefront() {
     if (!ordersOpen) return
     const token = localStorage.getItem('gdp_token')
     if (!token) return
+    Promise.resolve().then(() => setOrdersLoading(true))
     fetch(`${API_URL}/orders`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
       .then(responseJson)
       .then((data) => setOrders(data.data ?? []))
@@ -941,8 +1049,35 @@ export default function Storefront() {
       setReviewsExpanded(false)
       fetch(`${API_URL}/products/${slug}`, { headers: { Accept: 'application/json' } })
         .then(responseJson)
-        .then((data) => setProductView(data.data ?? null))
+        .then((data) => {
+          setProductView(data.data ?? null)
+          if (data.data) setHistory((current) => pushHistory(current, data.data))
+        })
         .catch(() => setProductView(null))
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
+  // Buyer account pages: #/account/<section>[/<orders filter>].
+  useEffect(() => {
+    const sync = () => {
+      const match = window.location.hash.match(/^#\/account\/([a-z]+)(?:\/([a-z]+))?$/)
+      const section = match && ACCOUNT_SECTIONS.find(([key]) => key === match[1])
+      if (!section) { setAccountOpen(false); setOrdersOpen(false); return }
+      if (!section[3] && !localStorage.getItem('gdp_token')) {
+        setAccountOpen(false)
+        setAuthMode('login')
+        setAuthMessage('Sign in to manage your account.')
+        return
+      }
+      setAccountTab(section[0])
+      setOrdersFilter(match[2] && ORDER_FILTERS.some(([key]) => key === match[2]) ? match[2] : 'all')
+      setAddrForm(null)
+      setAccountMsg('')
+      setAccountOpen(true)
+      setOrdersOpen(section[0] === 'orders')
     }
     sync()
     window.addEventListener('hashchange', sync)
@@ -1540,11 +1675,51 @@ export default function Storefront() {
   const authPost = (path, body) => fetch(`${API_URL}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` }, body: JSON.stringify(body) })
   const authSend = (path, method, body) => fetch(`${API_URL}${path}`, { method, headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` }, body: body ? JSON.stringify(body) : undefined })
 
+  // Account pages live at #/account/<section> (orders: #/account/orders/<filter>),
+  // like Temu's own account pages. A few sections work for guests too.
   function openAccount(tab = 'profile') {
-    if (!localStorage.getItem('gdp_token')) { setAuthMode('login'); setAuthMessage('Sign in to manage your account.'); return }
-    setAccountTab(tab)
-    setAddrForm(null)
-    setAccountOpen(true)
+    const guestOk = ACCOUNT_SECTIONS.some(([key, , , guest]) => key === tab && guest)
+    if (!guestOk && !localStorage.getItem('gdp_token')) { setAuthMode('login'); setAuthMessage(tab === 'orders' ? 'Sign in to see your orders.' : 'Sign in to manage your account.'); return }
+    window.location.hash = `#/account/${tab}`
+    window.scrollTo({ top: 0 })
+  }
+
+  function openOrders(filter = 'all') {
+    if (!localStorage.getItem('gdp_token')) { setAuthMode('login'); setAuthMessage('Sign in to see your orders.'); return }
+    window.location.hash = filter === 'all' ? '#/account/orders' : `#/account/orders/${filter}`
+    window.scrollTo({ top: 0 })
+  }
+
+  // Your orders: this country's orders, in the chosen tab, matching the search.
+  function visibleOrders() {
+    const q = ordersQuery.trim().toLowerCase().replace(/^#/, '')
+    return orders.filter((o) => (!o.market || o.market === activeMarket)
+      && orderInFilter(o, ordersFilter)
+      && (!q || String(o.id) === q
+        || (o.items ?? []).some((i) => (i.product_name ?? '').toLowerCase().includes(q))
+        || (o.packages ?? []).some((p) => (p.tracking_number ?? '').toLowerCase().includes(q))))
+  }
+  // Another country the customer has orders in (for "Switch countries to view orders in …").
+  function otherOrdersMarket() {
+    return orders.find((o) => o.market && o.market !== activeMarket && markets.some((m) => m.code === o.market))?.market ?? null
+  }
+
+  function closeAccount() {
+    if (window.location.hash) window.location.hash = ''
+    else setAccountOpen(false)
+  }
+
+  // Temu's "Switch accounts": sign out and go straight to sign-in.
+  async function switchAccounts() {
+    await logout()
+    setAuthMode('login')
+    setAuthMessage('Sign in with another account.')
+  }
+
+  // Add straight from browsing history (products with options open instead).
+  function addFromHistory(entry) {
+    if (entry.has_variants) { setAccountOpen(false); openProduct(entry); return }
+    add(entry)
   }
 
   async function saveProfile(event) {
@@ -2134,41 +2309,82 @@ export default function Storefront() {
           <button type="button" className="searchbar-btn" aria-label="Search" onClick={scrollToProductGrid}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg></button>
         </label>
         <div className="topbar-actions">
-          {markets.length > 1 && <label className="market-picker" title="Shopping in">
-            <span aria-hidden>{flag(activeMarket)}</span>
-            <select aria-label="Country" value={activeMarket} onChange={(event) => switchMarket(event.target.value)}>
-              {markets.map((m) => <option key={m.code} value={m.code}>{m.name} · {m.currency.toUpperCase()}</option>)}
-            </select>
-          </label>}
-          {currentUser ? <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={menuLeave}>
+          {/* Orders & Account (Temu-style): shown to guests too — they get a
+              Sign in / Register button and each item asks them to sign in. */}
+          <div className={closedMenu === 'account' ? 'nav-dropdown account-dropdown menu-closed' : 'nav-dropdown account-dropdown'} onMouseLeave={menuLeave}>
             <button type="button" className="link-btn account-trigger" aria-haspopup="true">
-              <span className="account-avatar" aria-hidden>{(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase()}</span>
-              <span className="account-trigger-copy"><small>Hello, {(currentUser.name || currentUser.email || 'there').split(' ')[0]}</small><b>Orders &amp; Account</b></span>
+              {currentUser
+                ? <span className="account-avatar" aria-hidden>{(currentUser.name || currentUser.email || '?').trim().charAt(0).toUpperCase()}</span>
+                : <span className="account-avatar guest" aria-hidden><MenuIcon name="profile" size={18} /></span>}
+              <span className="account-trigger-copy"><b>Orders &amp;</b><b>Account</b></span>
             </button>
             <div className="nav-dropdown-panel account-panel" role="menu">
-              <div className="nav-dropdown-panel-inner">
-                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => { setOrdersOpen(true); setOrdersLoading(true); setOrders([]); setOrdersMessage('') })}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>Orders</button>
-                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => openAccount('profile'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" /></svg>Account</button>
-                {currentUser.is_admin && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}admin` }}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>Admin</button>}
-                {currentUser.is_rider && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}rider` }}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="7" width="14" height="10" rx="1" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="17" cy="19" r="2" /></svg>Deliveries</button>}
-                <button type="button" role="menuitem" className="menu-icon-item" onClick={logout}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>Log out</button>
+              <div className="nav-dropdown-panel-inner temu-menu temu-account-menu">
+                {/* Left: browsing history (this device), with quick add-to-cart. */}
+                <div className="temu-history">
+                  <button type="button" className="temu-history-h" onClick={menuAction('account', () => openAccount('history'))}>Browsing history <span aria-hidden>&rsaquo;</span></button>
+                  {history.filter((h) => !h.market || h.market === activeMarket).length === 0
+                    ? <p className="temu-history-empty">Products you view will show up here.</p>
+                    : <ul>
+                      {history.filter((h) => !h.market || h.market === activeMarket).slice(0, 20).map((h) => (
+                        <li key={h.id}>
+                          <button type="button" className="temu-history-item" onClick={menuAction('account', () => openProduct(h))}>
+                            {h.image_url ? <img src={mediaUrl(h.image_url)} alt="" /> : <span className="history-noimg" />}
+                            <span className="temu-history-copy"><span className="temu-history-name">{h.name}</span><b>{price(h.price_cents)}</b></span>
+                          </button>
+                          <button type="button" className="temu-history-add" aria-label={`Add ${h.name} to cart`} onClick={menuAction('account', () => addFromHistory(h))}><MenuIcon name="cartplus" size={22} /></button>
+                        </li>
+                      ))}
+                    </ul>}
+                </div>
+                {/* Right: the account menu. */}
+                <div className="temu-account-list">
+                  {currentUser
+                    ? <p className="temu-menu-hello">Hello, {(currentUser.name || currentUser.email || 'there').split(' ')[0]}</p>
+                    : <button type="button" className="temu-signin" onClick={menuAction('account', () => { setAuthMode('login'); setAuthMessage('') })}>Sign in / Register</button>}
+                  {ACCOUNT_SECTIONS.filter(([key]) => key !== 'region' && key !== 'cards').map(([key, label, icon]) => (
+                    <button key={key} type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => openAccount(key))}><MenuIcon name={icon} />{label}</button>
+                  ))}
+                  {currentUser?.is_admin && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}admin` }}><MenuIcon name="gear" />Admin console</button>}
+                  {currentUser?.is_rider && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}rider` }}><MenuIcon name="truck" />Deliveries</button>}
+                  {currentUser && <>
+                    <button type="button" role="menuitem" className="menu-icon-item temu-menu-signout" onClick={menuAction('account', switchAccounts)}><MenuIcon name="swap" />Switch accounts</button>
+                    <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', logout)}><MenuIcon name="signout" />Sign out</button>
+                  </>}
+                </div>
               </div>
             </div>
-          </div> : <button className="link-btn" type="button" onClick={() => { setAuthMode('login'); setAuthMessage('') }}>Sign in</button>}
+          </div>
           <div className={closedMenu === 'support' ? 'nav-dropdown support-dropdown menu-closed' : 'nav-dropdown support-dropdown'} onMouseLeave={menuLeave}>
-            <button type="button" className={supportUnread ? 'link-btn has-dot' : 'link-btn'} aria-haspopup="true">Support{supportUnread ? <span className="link-dot" aria-label={`${supportUnread} new message${supportUnread === 1 ? '' : 's'}`} /> : null}</button>
+            <button type="button" className={supportUnread ? 'link-btn support-trigger has-dot' : 'link-btn support-trigger'} aria-haspopup="true"><MenuIcon name="support" size={22} />Support{supportUnread ? <span className="link-dot" aria-label={`${supportUnread} new message${supportUnread === 1 ? '' : 's'}`} /> : null}</button>
             <div className="nav-dropdown-panel support-panel" role="menu">
-              <div className="nav-dropdown-panel-inner">
+              <div className="nav-dropdown-panel-inner temu-menu">
                 <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('support-center'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M3 12v5a2 2 0 0 0 2 2h1v-7H4a1 1 0 0 0-1 1z" /><path d="M21 12v5a2 2 0 0 1-2 2h-1v-7h2a1 1 0 0 1 1 1z" /></svg>Support center</button>
                 <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('safety-center'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /></svg>Safety center</button>
-                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openSupport())}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5A8.38 8.38 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3 8.38 8.38 0 0 1 21 11.5z" /></svg>Chat with us</button>
-                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('purchase-protection'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><polyline points="9 12 11 14 15 10" /></svg>Purchase protection</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openSupport())}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5A8.38 8.38 0 0 1 3 11.5 8.5 8.5 0 0 1 11.5 3 8.38 8.38 0 0 1 21 11.5z" /></svg>Chat with {branding?.store_name || 'NexTech'}</button>
+                <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('purchase-protection'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z" /><polyline points="9 12 11 14 15 10" /></svg>{branding?.store_name || 'NexTech'} purchase protection</button>
                 <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('privacy'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="10" width="16" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Privacy policy</button>
                 <button type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('support', () => openPage('terms'))}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M14 3v5h5" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>Terms of use</button>
               </div>
             </div>
           </div>
-          <div className="region-pill" aria-hidden="true"><span>&#127482;&#127480;</span> English</div>
+          {/* Language / currency / country (Temu-style): the flag opens a panel;
+              "Change country/region" opens the Country/Region & Language page. */}
+          <div className={closedMenu === 'region' ? 'nav-dropdown region-dropdown menu-closed' : 'nav-dropdown region-dropdown'} onMouseLeave={menuLeave}>
+            <button type="button" className="region-pill" aria-haspopup="true"><FlagIcon code={activeMarket} /><span className="region-trigger-copy">English</span></button>
+            <div className="nav-dropdown-panel region-panel" role="menu">
+              <div className="nav-dropdown-panel-inner region-panel-inner">
+                <p className="region-h">Language</p>
+                <label className="region-radio"><input type="radio" name="region-language" checked readOnly /> English</label>
+                <hr className="region-rule" />
+                <p className="region-h">Currency</p>
+                <p className="region-cur">{(marketProfile?.currency ?? 'usd').toUpperCase()}: <b>{currencySymbol(marketProfile?.currency ?? 'usd')}</b></p>
+                <hr className="region-rule" />
+                <p className="region-note"><FlagIcon code={activeMarket} /> You are shopping on {branding?.store_name || 'NexTech'} {marketName(activeMarket)}.</p>
+                {markets.length > 1 && <button type="button" className="region-change" onClick={menuAction('region', () => openAccount('region'))}>Change country/region</button>}
+              </div>
+            </div>
+          </div>
           <button className="cart-pill" type="button" onClick={() => setCartOpen(true)} aria-label={`Cart with ${cartCount} items`}>
             <svg aria-hidden width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" /></svg>
             {cartCount > 0 && <b>{cartCount}</b>}
@@ -2177,7 +2393,7 @@ export default function Storefront() {
       </div>
     </header>
     <div className="menu-scrim" aria-hidden="true" />
-    <main className="catalog" ref={mainRef}>
+    <main className="catalog" ref={mainRef} style={accountOpen ? { display: 'none' } : undefined}>
       {pageView ? (() => {
         const withSections = pageView !== 'loading' && Array.isArray(pageView.sections) && pageView.sections.length > 0
         const hasBanner = pageView !== 'loading' && !!pageView.banner_image
@@ -2469,16 +2685,106 @@ export default function Storefront() {
     {checkoutOpen && <div className="overlay" role="presentation" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }}><div className="auth-modal checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }} aria-label="Close checkout">x</button><p className="eyebrow">Almost there</p>{checkoutStep === 'address' ? <><h2 id="checkout-title">{deliveryMode === 'form' ? 'Where should we deliver?' : 'Confirm delivery address'}</h2><p className="auth-intro">Your total will be calculated and confirmed securely by the server.</p>{deliveryMode === 'location' ? <><div className="loc-current"><strong>Deliver to</strong> {location.full || location.label}</div><input placeholder="Flat / house / building &amp; street" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => setEditAddress(true)}>Edit full address</button></div></> : deliveryMode === 'saved' ? <><div className="loc-current"><strong>Deliver to</strong> {defaultAddress.line1}, {defaultAddress.city} {defaultAddress.state} {defaultAddress.postal_code}</div>{addresses.length > 1 && <label className="address-picker">Choose address<select value={selectedAddressId || String(defaultAddress.id)} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}</select></label>}<div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => { setSelectedAddressId(''); setEditAddress(true) }}>Enter a new address</button></div></> : <>{addresses.length > 0 && <label className="address-picker">Saved address<select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}<option value="">Use a new address</option></select></label>}<form onSubmit={(event) => { event.preventDefault(); if (!blockCheckout) setCheckoutStep('checkout') }}>{!selectedAddressId && <><input required placeholder="Full name" value={checkoutForm.name} onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })} /><input required placeholder="Street address" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="form-row"><input required placeholder="City" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /><input required maxLength="60" list="market-states" placeholder="State" value={checkoutForm.state} onChange={(event) => setCheckoutForm({ ...checkoutForm, state: event.target.value })} /><datalist id="market-states">{Object.entries(marketProfile?.states ?? {}).map(([code, name]) => <option key={code} value={name} />)}</datalist></div><input required maxLength="12" placeholder={marketProfile?.postal_label ?? 'ZIP code'} value={checkoutForm.postal_code} onChange={(event) => setCheckoutForm({ ...checkoutForm, postal_code: event.target.value })} /></>}</form></>}<label className="checkout-phone"><span>Phone number{currentUser?.phone ? '' : ' — the delivery rider may call you'}</span><input type="tel" required maxLength="32" placeholder={activeMarket === 'IN' ? 'e.g. +91 98765 43210' : 'e.g. +1 555 987 6543'} value={phone} onChange={(event) => setPhone(event.target.value)} /></label><textarea className="delivery-note" rows="2" maxLength="500" placeholder="Delivery instructions (optional) — e.g. leave at the gate, call on arrival" value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} /><button className="checkout-button" type="button" onClick={() => setCheckoutStep('checkout')} disabled={blockCheckout}>Continue to checkout <span>&rarr;</span></button>{blockCheckout && <p className="auth-message">{outOfArea && deliveryMode === 'location' ? UNSERVICEABLE_MSG : 'Add a phone number so your delivery rider can reach you.'}</p>}</> : <><h2 id="checkout-title">Checkout</h2><p className="auth-intro">Have a gift card, or want to pay another way? Do it here — then place your order.</p><div className="loc-current"><strong>Deliver to</strong> {deliveryAddressSummary}</div><button type="button" className="switch-auth" onClick={() => setCheckoutStep('address')}>&larr; Edit delivery address</button><details className="gift-card-field"><summary>Have a refund gift card?</summary><div className="form-row"><input placeholder="Gift card (GC-XXXX-XXXX)" value={giftCard.code} onChange={(event) => setGiftCard({ ...giftCard, code: event.target.value, checked: null })} /><input placeholder="Password" value={giftCard.pin} onChange={(event) => setGiftCard({ ...giftCard, pin: event.target.value, checked: null })} /></div><button type="button" className="switch-auth" onClick={checkGiftCard}>Check balance</button>{giftCard.checked?.error && <span className="auth-message">{giftCard.checked.error}</span>}{giftCard.checked?.balance_cents != null && <span className="gift-card-ok">Balance {price(giftCard.checked.balance_cents)} — applied at checkout (any remainder stays on the card).</span>}</details>{codEnabled && hasSellerShipped && <p className="drawer-nudge">Cash on delivery isn&rsquo;t available for items shipped directly by sellers — you&rsquo;ll pay by card.</p>}{codEnabled && !hasSellerShipped && <><p className="pay-methods-label">How would you like to pay?</p><div className="pay-methods" role="radiogroup" aria-label="Payment method"><button type="button" role="radio" aria-checked={paymentMethod === 'card'} className={paymentMethod === 'card' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('card')}><strong>Pay online</strong><span>Card via Stripe</span></button><button type="button" role="radio" aria-checked={paymentMethod === 'cod'} className={paymentMethod === 'cod' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('cod')}><strong>Cash on delivery</strong><span>Pay when it arrives</span></button></div></>}<button className="checkout-button" type="button" onClick={submitCheckout} disabled={blockCheckout}>{codEnabled && paymentMethod === 'cod' && !hasSellerShipped ? 'Place order' : 'Review order'} <span>&rarr;</span></button>{checkoutMessage && <p className="auth-message">{checkoutMessage}</p>}</>}</div></div>}
     {order?.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal checkout-modal payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrder(null)} aria-label="Close payment">x</button><p className="eyebrow">Secure payment</p><h2 id="payment-title">Finish your order.</h2><p className="auth-intro">Order #{order.id} · {price(order.total_cents, order.currency)} USD</p><Elements stripe={stripePromise}><PaymentForm clientSecret={order.clientSecret} onComplete={finalizePayment} savedCards={cards ?? []} /></Elements>{codEnabled && <button className="switch-auth" type="button" onClick={switchToCashOnDelivery}>Pay with cash on delivery instead</button>}<button className="switch-auth" type="button" onClick={() => setOrder(null)}>Pay later from Order history</button>{order.switchError && <p className="auth-message">{order.switchError}</p>}</div></div>}
     {order && !order.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(event) => event.stopPropagation()}><p className="eyebrow">{order.cod ? 'Order confirmed' : order.paid ? 'Payment submitted' : 'Payment setup needed'}</p><h2 id="order-title">{order.cod || order.paid ? 'You’re all set.' : 'Order created.'}</h2><p className="auth-intro">{order.cod ? `Order #${order.id} is confirmed. Pay with cash when your order arrives.` : `Order #${order.id} is ${order.paid ? 'being confirmed by Stripe.' : 'waiting for Stripe test keys.'}`}</p><div className="order-breakdown"><div><span>Subtotal</span><span>{price(order.subtotal_cents, order.currency)}</span></div><div><span>Delivery</span><span>{order.delivery_fee_cents === 0 ? 'FREE' : price(order.delivery_fee_cents, order.currency)}</span></div><div><span>Handling</span><span>{price(order.handling_fee_cents ?? 0)}</span></div>{order.small_cart_fee_cents > 0 && <div><span>Small cart fee</span><span>{price(order.small_cart_fee_cents, order.currency)}</span></div>}{order.tax_included_cents > 0 ? <div><span>Includes GST</span><span>{price(order.tax_included_cents, order.currency)}</span></div> : <div><span>Tax</span><span>{price(order.tax_cents, order.currency)}</span></div>}{order.gift_card_discount_cents > 0 && <div><span>Gift card</span><span>&minus;{price(order.gift_card_discount_cents, order.currency)}</span></div>}</div>{order.delivery_instructions && <p className="auth-intro" style={{ margin: '12px 0 0' }}>Note to courier: &ldquo;{order.delivery_instructions}&rdquo;</p>}<div className="order-total"><span>{order.paid ? 'Paid' : order.cod ? 'Pay on delivery' : 'Order total'}</span><strong>{price(order.total_cents, order.currency)}</strong></div>{(order.cod || order.paid) && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(order.id)}>Download bill (PDF)</button>}<button className="checkout-button" type="button" onClick={() => setOrder(null)}>Keep shopping <span>&rarr;</span></button>{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
-    {accountOpen && <div className="overlay" role="presentation" onClick={() => { setAccountOpen(false); setAddrForm(null) }}>
-      <div className="auth-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title" onClick={(event) => event.stopPropagation()}>
-        <button className="close-button" type="button" onClick={() => { setAccountOpen(false); setAddrForm(null) }} aria-label="Close account">x</button>
-        <p className="eyebrow">Signed in as {currentUser?.email}</p>
-        <h2 id="account-title">Your account</h2>
-        <div className="auth-tabs" role="tablist">
-          {[['profile', 'Profile'], ['addresses', 'Addresses'], ['cards', 'Payment methods']].map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={accountTab === key} className={accountTab === key ? 'auth-tab active' : 'auth-tab'} onClick={() => { setAccountTab(key); setAccountMsg(''); setAddrForm(null) }}>{label}</button>
+    {accountOpen && <section className="account-page" aria-labelledby="account-title">
+        <nav className="account-crumbs" aria-label="Breadcrumb">
+          <button type="button" onClick={closeAccount}>Home</button>
+          <span aria-hidden>&rsaquo;</span>
+          <span>{ACCOUNT_SECTIONS.find(([key]) => key === accountTab)?.[1] ?? 'Your account'}</span>
+        </nav>
+        <div className="account-layout">
+        <nav className="account-side" aria-label="Your account">
+          {ACCOUNT_SECTIONS.filter(([, , , guest]) => currentUser || guest).map(([key, label, icon]) => (
+            <div key={key} className="account-side-group">
+              <button type="button" className={accountTab === key && (key !== 'orders') ? 'active' : ''} onClick={() => openAccount(key)}>
+                <MenuIcon name={icon} size={18} />{label}
+                {key === 'orders' && <span className={accountTab === 'orders' ? 'account-side-caret open' : 'account-side-caret'} aria-hidden>&#8964;</span>}
+              </button>
+              {key === 'orders' && accountTab === 'orders' && ORDER_FILTERS.map(([fkey, flabel]) => (
+                <button key={fkey} type="button" className={ordersFilter === fkey ? 'account-side-sub active' : 'account-side-sub'} onClick={() => openOrders(fkey)}>{flabel}</button>
+              ))}
+            </div>
           ))}
-        </div>
+        </nav>
+        <div className="account-main">
+        {accountTab !== 'orders' && <h2 id="account-title">{ACCOUNT_SECTIONS.find(([key]) => key === accountTab)?.[1] ?? 'Your account'}</h2>}
+
+        {accountTab === 'history' && (
+          <div className="account-history">
+            {history.length === 0 ? <p className="account-hint">Products you look at will show up here.</p> : <>
+              <ul className="history-grid">
+                {history.filter((h) => !h.market || h.market === activeMarket).map((h) => (
+                  <li key={h.id}>
+                    <button type="button" className="history-open" onClick={() => { setAccountOpen(false); openProduct(h) }}>
+                      {h.image_url ? <img src={mediaUrl(h.image_url)} alt="" /> : <span className="history-noimg" />}
+                      <span className="history-name">{h.name}</span>
+                    </button>
+                    <span className="history-price">{price(h.price_cents)}</span>
+                    <button type="button" className="history-add" aria-label={`Add ${h.name} to cart`} onClick={() => addFromHistory(h)}><MenuIcon name="cartplus" size={20} /></button>
+                  </li>
+                ))}
+              </ul>
+              <button type="button" className="text-button" onClick={() => { setHistory([]); try { localStorage.removeItem(HISTORY_KEY) } catch { /* ignore */ } }}>Clear browsing history</button>
+            </>}
+          </div>
+        )}
+
+        {accountTab === 'credit' && (
+          <div className="account-form">
+            {credit === null ? <p className="account-hint">Loading…</p> : <>
+              <p className="credit-total">Available credit <b>{price(credit.total_cents)}</b></p>
+              {credit.cards.length === 0 ? <p className="account-hint">No store credit yet. When support refunds an order as store credit, the gift card and its balance show up here — use it at checkout with its code and password.</p> : (
+                <ul className="account-list">
+                  {credit.cards.map((c) => (
+                    <li key={c.id}>
+                      <div><strong>{c.code}</strong><span>{c.order_id ? `From order #${c.order_id} · ` : ''}{new Date(c.created_at).toLocaleDateString()}</span></div>
+                      <div className="account-row-actions"><span>{c.spendable ? `${price(c.balance_cents)} left of ${price(c.initial_cents)}` : 'Used up'}</span></div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>}
+          </div>
+        )}
+
+        {accountTab === 'reviews' && <p className="account-hint">Your product reviews will appear here. For now, you can rate each delivery from <button type="button" className="text-button" onClick={() => openOrders()}>Your orders</button> once it arrives.</p>}
+        {accountTab === 'coupons' && <p className="account-hint">No coupons or offers right now. Sale prices and deals are applied automatically — look for the Lightning deals and Unbeatable deals on the homepage.</p>}
+        {accountTab === 'following' && <p className="account-hint">You aren&rsquo;t following any stores yet. Following stores is coming soon — until then, open a seller&rsquo;s shop from any product&rsquo;s &ldquo;Sold by&rdquo; link.</p>}
+
+        {accountTab === 'permissions' && (
+          <div className="account-form">
+            <p className="account-hint">What this site may use on this device. Your browser asks before allowing either.</p>
+            <div className="perm-row"><div><strong>Location</strong><span>Used to check delivery to your address and show delivery times.</span></div><button type="button" className="text-button" onClick={() => setLocationOpen(true)}>Set location</button></div>
+            <div className="perm-row"><div><strong>Notifications</strong><span>{typeof Notification === 'undefined' ? 'Not supported by this browser.' : Notification.permission === 'granted' ? 'Allowed.' : Notification.permission === 'denied' ? 'Blocked — change it in your browser’s site settings.' : 'Not set.'}</span></div>{typeof Notification !== 'undefined' && Notification.permission === 'default' && <button type="button" className="text-button" onClick={() => Notification.requestPermission().then(() => setAccountMsg('Notification permission updated.'))}>Allow</button>}</div>
+          </div>
+        )}
+
+        {accountTab === 'notifications' && (
+          <div className="account-form">
+            <p className="account-hint">We email <b>{currentUser?.email}</b> when your order is confirmed, when it ships (with tracking), your delivery code when the rider arrives, messages from your rider, and your bill once it&rsquo;s delivered. Messages from support show up under Support → Chat with us.</p>
+          </div>
+        )}
+
+        {accountTab === 'region' && (
+          <div className="account-form region-settings">
+            <label>Country/Region
+              <span className="region-select">
+                <FlagIcon code={activeMarket} />
+                <select value={activeMarket} onChange={(event) => switchMarket(event.target.value)}>
+                  {markets.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}
+                </select>
+              </span>
+            </label>
+            <p className="account-hint">&#9432; If you change the country/region you shop from, item availability, prices, shipping fees and taxes may change (including items in your cart).</p>
+            <label>Language
+              <select value="en" onChange={() => {}}>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label>Currency
+              <input readOnly value={`${(marketProfile?.currency ?? 'usd').toUpperCase()} : ${currencySymbol(marketProfile?.currency ?? 'usd')}`} />
+            </label>
+          </div>
+        )}
 
         {accountTab === 'profile' && (
           <form className="account-form" onSubmit={saveProfile}>
@@ -2489,8 +2795,8 @@ export default function Storefront() {
           </form>
         )}
 
-        {accountTab === 'profile' && (
-          <form className="account-form" onSubmit={changePassword} style={{ marginTop: 18, borderTop: '1px solid var(--line)', paddingTop: 16 }}>
+        {accountTab === 'security' && (
+          <form className="account-form" onSubmit={changePassword}>
             <h3 className="account-sub">Change password</h3>
             <label>Current password<input required type="password" autoComplete="current-password" value={pwForm.current} onChange={(event) => setPwForm({ ...pwForm, current: event.target.value })} /></label>
             <label>New password<input required type="password" autoComplete="new-password" minLength={8} placeholder="min 8 characters" value={pwForm.next} onChange={(event) => setPwForm({ ...pwForm, next: event.target.value })} /></label>
@@ -2561,9 +2867,10 @@ export default function Storefront() {
         ))}
 
         {accountMsg && <p className="auth-message">{accountMsg}</p>}
-      </div>
-    </div>}
-    {ordersOpen && <div className="overlay" role="presentation" onClick={() => setOrdersOpen(false)}><div className="auth-modal orders-modal" role="dialog" aria-modal="true" aria-labelledby="orders-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrdersOpen(false)} aria-label="Close orders">x</button><p className="eyebrow">Your orders</p><h2 id="orders-title">Order history</h2>{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : orders.length === 0 ? <p className="auth-intro">No orders yet. Your completed checkouts will appear here.</p> : <ul className="orders-list">{orders.map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents, entry.currency)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}{(entry.shop_shipping ?? []).map((ss) => { const pk = (entry.packages ?? []).filter((p) => p.shop_id === ss.shop_id); return <div key={ss.id} className="order-seller-ship"><strong>Shipped by {ss.shop?.name ?? 'the seller'}</strong>{pk.length === 0 ? <span>{entry.status === 'cancelled' ? 'Cancelled' : `Ships by ${new Date(ss.ship_by).toLocaleDateString()} · arrives ${new Date(ss.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–${new Date(ss.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}</span> : pk.map((p) => <span key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status === 'delivered' ? `delivered ${new Date(p.delivered_at).toLocaleDateString()}` : p.status.replace('_', ' ')}{p.status !== 'delivered' && ['shipped', 'in_transit'].includes(p.status) && <button type="button" className="text-button" onClick={() => confirmPackageReceived(entry, p)}>Confirm received</button>}</span>)}</div> })}<button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
+    {accountTab === 'orders' && <div className="account-orders"><h2 id="account-title" className="visually-hidden">Your orders</h2><div className="orders-toolbar"><div className="orders-tabs" role="tablist">{ORDER_FILTERS.map(([fkey, flabel]) => <button key={fkey} type="button" role="tab" aria-selected={ordersFilter === fkey} className={ordersFilter === fkey ? 'active' : ''} onClick={() => openOrders(fkey)}>{flabel}</button>)}</div><label className="orders-search"><input type="search" placeholder="Item name / Order ID / Tracking No." value={ordersQuery} onChange={(event) => setOrdersQuery(event.target.value)} /><svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></svg></label></div>{ordersFilter === 'all' && !ordersQuery.trim() && <p className="orders-guarantee"><b>Order guarantee</b> | Return if item damaged · Refund if it never arrives · Delivery updates by email</p>}{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : visibleOrders().length === 0 ? <><div className="orders-empty"><svg aria-hidden width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"><path d="M3 10h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="M6 10V4h12v6" strokeDasharray="2 1.5" /><path d="M10 5.5l4 3M14 5.5l-4 3" /></svg><p>{ordersQuery.trim() ? 'No orders match your search' : ordersFilter === 'all' ? 'You don’t have any orders' : `You don’t have any ${ORDER_FILTERS.find(([k]) => k === ordersFilter)?.[1].toLowerCase()} orders`}</p></div><h3 className="orders-help-h">Can&rsquo;t find your order?</h3><div className="orders-help"><button type="button" onClick={switchAccounts}><span>Try signing in with another account</span><span aria-hidden>&rsaquo;</span></button><button type="button" onClick={() => openSupport()}><span>Self-service to find order</span><span aria-hidden>&rsaquo;</span></button>{otherOrdersMarket() && <button type="button" onClick={() => switchMarket(otherOrdersMarket())}><span>Switch countries to view orders in {marketName(otherOrdersMarket())}</span><span aria-hidden>&rsaquo;</span></button>}</div></> : <ul className="orders-list">{visibleOrders().map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents, entry.currency)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}{(entry.shop_shipping ?? []).map((ss) => { const pk = (entry.packages ?? []).filter((p) => p.shop_id === ss.shop_id); return <div key={ss.id} className="order-seller-ship"><strong>Shipped by {ss.shop?.name ?? 'the seller'}</strong>{pk.length === 0 ? <span>{entry.status === 'cancelled' ? 'Cancelled' : `Ships by ${new Date(ss.ship_by).toLocaleDateString()} · arrives ${new Date(ss.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–${new Date(ss.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}</span> : pk.map((p) => <span key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status === 'delivered' ? `delivered ${new Date(p.delivered_at).toLocaleDateString()}` : p.status.replace('_', ' ')}{p.status !== 'delivered' && ['shipped', 'in_transit'].includes(p.status) && <button type="button" className="text-button" onClick={() => confirmPackageReceived(entry, p)}>Confirm received</button>}</span>)}</div> })}<button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div>}
+        </div>
+        </div>
+    </section>}
     {locationOpen && <div className="overlay" role="presentation" onClick={() => { if (location) setLocationOpen(false) }}><div className="auth-modal location-modal" role="dialog" aria-modal="true" aria-labelledby="loc-title" onClick={(event) => event.stopPropagation()}>{location && <button className="close-button" type="button" onClick={() => setLocationOpen(false)} aria-label="Close location">x</button>}<p className="eyebrow">Deliver to</p><h2 id="loc-title">Where are you?</h2><p className="auth-intro">Drop the pin on your building — that&rsquo;s the location we deliver to. Search or &ldquo;detect&rdquo; just move the map near your area.</p>
       {outOfArea && <p className="loc-unserviceable">{UNSERVICEABLE_MSG}</p>}
       <div className="loc-tools">

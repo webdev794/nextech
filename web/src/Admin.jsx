@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { CustomerCrm } from './AdminCustomer'
+import { EmailsPanel } from './AdminEmails'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { MarketSettings } from './AdminMarkets'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
@@ -152,16 +154,16 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'riders', 'sellers', 'stores', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'emails', 'riders', 'sellers', 'stores', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', categories: 'Categories',
-  customers: 'Customers', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
+  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
   support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
+  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
 const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended']
 const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
@@ -447,6 +449,7 @@ export default function Admin({ token, onClose }) {
   const [categories, setCategories] = useState([])
   const [customers, setCustomers] = useState([])
   const [customerDetail, setCustomerDetail] = useState(null)
+  const [customerQuery, setCustomerQuery] = useState('') // Customers search
   const [orderDetail, setOrderDetail] = useState(null)
   const [statusFilter, setStatusFilter] = useState('all')
   const [productSearch, setProductSearch] = useState('')
@@ -637,10 +640,10 @@ export default function Admin({ token, onClose }) {
   }, [authHeaders, track])
 
   const loadCustomers = useCallback(() => {
-    const qs = new URLSearchParams({ page: customersPage, per_page: pageSize })
+    const qs = new URLSearchParams({ page: customersPage, per_page: pageSize, ...(customerQuery.trim().length >= 2 ? { search: customerQuery.trim() } : {}) })
     track('customers', fetch(`${API_URL}/admin/customers?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setCustomers(data.data ?? []); setCustomersMeta(data.meta ?? null) }).catch(() => setMessage('Could not load customers.')))
-  }, [authHeaders, customersPage, pageSize, track])
+  }, [authHeaders, customersPage, pageSize, track, customerQuery])
 
   const loadRiders = useCallback(() => {
     track('riders', fetch(`${API_URL}/admin/riders`, { headers: authHeaders() }).then(readJson)
@@ -2804,11 +2807,14 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
+      {tab === 'emails' && <EmailsPanel authHeaders={authHeaders} defaultMarket={activeMarket} onMessage={setMessage} />}
+
       {tab === 'customers' && (
         <section className="admin-panel">
+          <div className="admin-filters"><input className="admin-search" type="search" placeholder="Search name, email or phone" value={customerQuery} onChange={(event) => { setCustomerQuery(event.target.value); setCustomersPage(1) }} /></div>
           {listBusy.customers && customers.length === 0 ? <Loading>Loading customers…</Loading> : customers.length === 0 ? <p className="admin-empty">No customers yet.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Paid spend</th><th>Joined</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Paid spend</th><th>Last order</th><th>Emails</th><th>Joined</th><th></th></tr></thead>
               <tbody>
                 {customers.map((customer) => (
                   <tr key={customer.id}>
@@ -2816,6 +2822,8 @@ export default function Admin({ token, onClose }) {
                     <td>{customer.email}</td>
                     <td>{customer.orders_count}</td>
                     <td>{money(customer.spent_cents)}</td>
+                    <td>{customer.last_order_at ? new Date(customer.last_order_at).toLocaleDateString() : '—'}</td>
+                    <td>{customer.emails_count ?? 0}</td>
                     <td>{new Date(customer.joined_at).toLocaleDateString()}</td>
                     <td className="admin-actions"><button className="act" type="button" onClick={() => openCustomer(customer.id)}>View</button></td>
                   </tr>
@@ -3807,31 +3815,16 @@ export default function Admin({ token, onClose }) {
       )}
 
       {customerDetail && (
-        <div className="admin-drawer" role="presentation" onClick={() => setCustomerDetail(null)}>
-          <aside onClick={(event) => event.stopPropagation()}>
-            <button className="admin-close" type="button" onClick={() => setCustomerDetail(null)}>Close</button>
-            {customerDetail.loading ? <Loading>Loading…</Loading> : (
-              <>
-                <h3>{customerDetail.display_name ?? customerDetail.name}</h3>
-                <p className="muted">{customerDetail.email} · {customerDetail.phone || 'no phone'} · joined {new Date(customerDetail.joined_at).toLocaleDateString()}</p>
-                <label className="admin-check">
-                  <input type="checkbox" checked={!!customerDetail.is_rider} onChange={(event) => toggleRider(customerDetail.id, event.target.checked)} />
-                  Delivery rider (can log into the rider app and deliver orders)
-                </label>
-                <h4>Orders ({customerDetail.orders?.length ?? 0})</h4>
-                <ul className="admin-order-list">
-                  {(customerDetail.orders ?? []).map((order) => (
-                    <li key={order.id}>
-                      <strong>#{order.id}</strong> {money(order.total_cents, order.currency)} · {order.payment_status} · {STATUS_LABELS[order.status] ?? order.status}
-                      <span>{order.items?.length ?? 0} items · {new Date(order.created_at).toLocaleDateString()}</span>
-                    </li>
-                  ))}
-                  {(customerDetail.orders ?? []).length === 0 && <li className="muted">No orders.</li>}
-                </ul>
-              </>
-            )}
-          </aside>
-        </div>
+        <CustomerCrm
+          detail={customerDetail}
+          authHeaders={authHeaders}
+          money={money}
+          statusLabels={STATUS_LABELS}
+          onClose={() => setCustomerDetail(null)}
+          onToggleRider={toggleRider}
+          onReload={() => openCustomer(customerDetail.id)}
+          onMessage={setMessage}
+        />
       )}
 
       {sellerDetail && (
