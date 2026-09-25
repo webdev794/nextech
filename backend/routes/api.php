@@ -107,6 +107,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/orders/{order}/receipt', [OrderController::class, 'receipt']);
     Route::patch('/orders/{order}/payment-method', [OrderController::class, 'setPaymentMethod']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{order}/address-change', [OrderController::class, 'requestAddressChange']);
     Route::post('/orders/{order}/rider-review', [OrderController::class, 'storeRiderReview']);
     Route::post('/orders/{order}/payment-intent', [PaymentController::class, 'intent']);
 
@@ -175,6 +176,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
     Route::patch('/orders/{order}', [AdminOrderController::class, 'update']);
     Route::post('/orders/{order}/sync-tracking', [AdminOrderController::class, 'syncTracking']);
+    Route::post('/orders/{order}/address-change/{change}', [AdminOrderController::class, 'decideAddressChange']);
     Route::post('/orders/{order}/escalate-to-courier', [AdminOrderController::class, 'escalateToCourier']);
     Route::post('/orders/{order}/refund', [PaymentController::class, 'refund']);
     Route::post('/orders/{order}/gift-card', [AdminGiftCardController::class, 'issue']);
@@ -270,6 +272,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
+    Route::post('/seller/orders/{order}/address-change/{change}', [SellerOrderController::class, 'decideAddressChange']);
     Route::get('/seller/stats', [SellerOrderController::class, 'stats']);
     Route::get('/seller/customer-chats', [SellerCustomerChatController::class, 'index']);
     // Shipping settings (fulfillment mode, addresses, templates, working days).

@@ -5,13 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Shop;
 use App\Models\SupportThread;
+use App\Support\Privacy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
  * Customer order chats an admin has brought this seller into. The seller
- * sees only the customer's first name and their own items on that order —
- * never the email, phone or address; NexTech stays in the conversation.
+ * sees only the customer's masked name ("J**n D*e") and their own items on
+ * that order — never the email, phone or address — and emails / phone
+ * numbers typed into the chat are hidden both ways (App\Support\Privacy).
+ * NexTech stays in the conversation.
  */
 class SellerCustomerChatController extends Controller
 {
@@ -30,7 +33,7 @@ class SellerCustomerChatController extends Controller
                 'status' => $t->status,
                 'order_id' => $t->order_id,
                 'order_status' => $t->order?->status,
-                'customer_first_name' => self::firstName($t->user?->name),
+                'customer_name' => Privacy::maskName($t->user?->name),
                 'last_message_at' => $t->last_message_at,
                 'needs_seller_reply' => self::needsSellerReply($t),
             ]);
@@ -64,7 +67,8 @@ class SellerCustomerChatController extends Controller
 
         // Counts as a reply to the customer (they get the unread badge), and
         // is labelled as the seller's everywhere it's shown.
-        $thread->post($request->user(), trim((string) ($validated['body'] ?? '')), isStaff: true, fromSeller: true, attachments: $validated['attachments'] ?? []);
+        // Contact details are hidden before the buyer (or anyone) sees them.
+        $thread->post($request->user(), (string) Privacy::redactContacts(trim((string) ($validated['body'] ?? ''))), isStaff: true, fromSeller: true, attachments: $validated['attachments'] ?? []);
 
         return response()->json(['data' => $this->payload($thread->fresh(), $shop)]);
     }
@@ -85,7 +89,7 @@ class SellerCustomerChatController extends Controller
             'id' => $thread->id,
             'issue_type' => $thread->issue_type,
             'status' => $thread->status,
-            'customer_first_name' => self::firstName($thread->user?->name),
+            'customer_name' => Privacy::maskName($thread->user?->name),
             'order' => $thread->order ? [
                 'id' => $thread->order->id,
                 'status' => $thread->order->status,
@@ -94,7 +98,8 @@ class SellerCustomerChatController extends Controller
             ] : null,
             'messages' => $thread->messages->map(fn ($m) => [
                 'id' => $m->id,
-                'body' => $m->body,
+                // What the buyer or NexTech wrote reaches the seller without contact details.
+                'body' => $m->from_seller ? $m->body : Privacy::redactContacts($m->body),
                 'attachments' => $m->attachments ?? [],
                 'created_at' => $m->created_at,
                 // Who sent it, from the seller's point of view.
@@ -111,13 +116,6 @@ class SellerCustomerChatController extends Controller
         $ratedAfter = $thread->rated_at && $last && $thread->rated_at->gte($last->created_at);
 
         return $last !== null && ! $last->from_seller && ! $last->is_staff && ! $ratedAfter && $thread->status !== 'resolved';
-    }
-
-    private static function firstName(?string $name): string
-    {
-        $first = trim(explode(' ', trim((string) $name))[0] ?? '');
-
-        return $first !== '' ? $first : 'Customer';
     }
 
     private function shop(Request $request): Shop

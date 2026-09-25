@@ -357,6 +357,8 @@ export function ShipOrders({ headers, mode }) {
 
   const packages = rows.flatMap((o) => o.packages.map((p) => ({ ...p, order: o })))
   const toShip = rows.filter((o) => o.to_ship > 0 && o.status !== 'cancelled')
+  // Pending orders (first 30 minutes) and undecided address changes can't ship yet.
+  const onHold = (o) => o.pending || o.address_change_pending
   const shipped = packages.filter((p) => p.status === 'shipped' || p.status === 'in_transit')
   const done = packages.filter((p) => !['shipped', 'in_transit'].includes(p.status))
   const carriers = settings?.carriers ?? []
@@ -504,7 +506,8 @@ export function ShipOrders({ headers, mode }) {
                         </div>
                       ))}
                       {(o.label_requests ?? []).filter((r) => r.status === 'cancelled' && r.admin_note && r.admin_note !== 'Cancelled by the seller.').slice(0, 1).map((r) => <small key={r.id} className="sc-low">Label request declined: {r.admin_note}</small>)}
-                      {o.items.some((i) => free(i) > 0) && <>
+                      {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
+                      {o.items.some((i) => free(i) > 0) && !onHold(o) && <>
                         {mode !== 'label' && <button type="button" onClick={() => openShip(o, false)}>Confirm shipment</button>}
                         <button type="button" onClick={() => openShip(o, true)}>{manualLabels ? (labelTemplates.length ? 'Get shipping label' : 'Request NexTech label') : 'Buy NexTech label'}</button>
                       </>}
@@ -540,7 +543,7 @@ export function ShipOrders({ headers, mode }) {
         <div className="ss-overlay" role="presentation" onClick={() => setShipForm(null)}>
           <form className="ss-modal" onSubmit={submitShip} onClick={(e) => e.stopPropagation()}>
             <h2 className="sc-h2">{shipForm.label ? (manualLabels ? 'Request NexTech shipping label' : 'Buy NexTech shipping label') : 'Confirm shipment'} · Order #{shipForm.order.id}</h2>
-            <p className="sc-muted">Ship to: {shipForm.order.ship_to.name}, {shipForm.order.ship_to.line1}, {shipForm.order.ship_to.city}, {shipForm.order.ship_to.state} {shipForm.order.ship_to.postal_code}</p>
+            <p className="sc-muted">Ship to: {[shipForm.order.ship_to.recipient ?? shipForm.order.ship_to.name, shipForm.order.ship_to.line1, shipForm.order.ship_to.line2, shipForm.order.ship_to.city, [shipForm.order.ship_to.state, shipForm.order.ship_to.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')}</p>
             <h3 className="ss-sub">Items in this package</h3>
             {shipForm.labelRequest ? shipForm.order.items.filter((i) => shipForm.items[i.id]).map((i) => <div className="ss-item" key={i.id}><span>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}</span><span>× {shipForm.items[i.id]}</span><span className="sc-muted">on NexTech label</span></div>) : shipForm.order.items.filter((i) => free(i) > 0).map((i) => (
               <div className="ss-item" key={i.id}>

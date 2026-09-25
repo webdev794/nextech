@@ -7,6 +7,8 @@ use App\Support\SellerShipping;
 use App\Support\SellerFulfillment;
 use App\Models\OrderPackage;
 use App\Models\Order;
+use App\Models\OrderAddressChange;
+use App\Support\SellerOrders;
 use App\Models\User;
 use App\Notifications\RiderAssigned;
 use App\Support\Courier;
@@ -39,7 +41,7 @@ class AdminOrderController extends Controller
             ->where('market', Market::fromRequest($request))
             ->with([
                 'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
-            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
                 'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -72,10 +74,31 @@ class AdminOrderController extends Controller
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
             'giftCards.issuedBy:id,name',
             'refunds.creator:id,name',
+            'addressChanges',
         ]);
         $this->attachCustomerNames([$order]);
 
         return response()->json(['data' => $order]);
+    }
+
+    /** Accept or decline a buyer's request to change the shipping address. */
+    public function decideAddressChange(Request $request, Order $order, OrderAddressChange $change): JsonResponse
+    {
+        abort_unless($change->order_id === $order->id && $change->status === 'pending', 404);
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'decline'])],
+            'note' => ['required_if:decision,decline', 'nullable', 'string', 'max:500'],
+        ]);
+
+        $order->load('packages');
+        if ($data['decision'] === 'approve') {
+            abort_unless(SellerOrders::addressChangeable($order), 422, 'The order has already shipped — the address can no longer change.');
+            SellerOrders::applyAddressChange($change, null, $request->user()->id);
+        } else {
+            $change->update(['status' => 'declined', 'note' => $data['note'], 'decided_by_user_id' => $request->user()->id, 'decided_at' => now()]);
+        }
+
+        return $this->show($order->fresh());
     }
 
     public function update(Request $request, Order $order): JsonResponse
@@ -327,7 +350,7 @@ class AdminOrderController extends Controller
     {
         $fresh = $order->fresh()->load([
             'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
-            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',

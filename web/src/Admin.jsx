@@ -3987,6 +3987,35 @@ export default function Admin({ token, onClose }) {
               <p className="muted">{new Date(o.created_at).toLocaleString()} · <span className={`pill pill-${o.payment_status}`}>{o.payment_status}</span> · {STATUS_LABELS[o.status] ?? o.status}</p>
               <p className="muted">{o.user?.display_name ? `${o.user.display_name} · ` : ''}{o.user?.email ?? '—'}{(addr.phone || o.user?.phone) ? ` · ☎ ${addr.phone || o.user.phone}` : ''}</p>
 
+              {(() => {
+                // A buyer asked to ship somewhere else before the order left.
+                const change = (orderDetail.address_changes ?? o.address_changes ?? []).find((c) => c.status === 'pending')
+                if (!change) return null
+                const a = change.address ?? {}
+                const decide = async (decision) => {
+                  const note = decision === 'decline' ? window.prompt('Why can’t the address be changed? The buyer sees this.', '') : null
+                  if (decision === 'decline' && !note) return
+                  try {
+                    const response = await fetch(`${API_URL}/admin/orders/${o.id}/address-change/${change.id}`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision, note }) })
+                    const data = await readJson(response)
+                    if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the request.')
+                    setOrderDetail(data.data)
+                    setOrders((current) => current.map((x) => (x.id === o.id ? { ...x, ...data.data } : x)))
+                  } catch (error) { fail(error) }
+                }
+                return (
+                  <div className="admin-payout-request">
+                    <p><strong>Buyer asked to change the shipping address</strong> ({new Date(change.created_at).toLocaleString()})</p>
+                    <p className="muted">New: {[a.name, a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</p>
+                    {(o.items ?? []).some((i) => i.fulfilled_by === 'seller') && <p className="muted">The seller shipping it can also accept or decline this in their Seller Center.</p>}
+                    <div className="admin-form-actions">
+                      <button className="act" type="button" onClick={() => decide('approve')}>Accept new address</button>
+                      <button className="act ghost" type="button" onClick={() => decide('decline')}>Decline</button>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <h4>Items ({o.items?.length ?? 0})</h4>
               <table className="admin-table admin-order-items">
                 <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>

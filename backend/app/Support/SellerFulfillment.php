@@ -60,6 +60,7 @@ class SellerFulfillment
     public static function createPackage(Order $order, Shop $shop, array $items, ?int $addressId, array $attributes, ?LabelRequest $fromRequest = null): OrderPackage
     {
         abort_if(in_array($order->status, ['pending_payment', 'cancelled'], true), 422, 'This order can\'t be shipped.');
+        SellerOrders::assertShippable($order);
 
         return DB::transaction(function () use ($order, $shop, $items, $addressId, $attributes, $fromRequest) {
             Order::whereKey($order->id)->lockForUpdate()->first();

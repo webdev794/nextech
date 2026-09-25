@@ -7,6 +7,7 @@ import { PageSection } from './PageSections'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
+import { ManageOrders } from './SellerOrders'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './Seller.css'
 
@@ -201,8 +202,6 @@ export default function Seller({ token, onSignOut }) {
   const [productMsg, setProductMsg] = useState('')
   const [productImgBusy, setProductImgBusy] = useState(false)
   const [orderSummary, setOrderSummary] = useState(null)
-  const [orders, setOrders] = useState([])
-  const [orderMsg, setOrderMsg] = useState('')
   const [payoutReqMsg, setPayoutReqMsg] = useState('')
   const [shopLinkMsg, setShopLinkMsg] = useState('')
   const [payoutReqBusy, setPayoutReqBusy] = useState(false)
@@ -215,7 +214,6 @@ export default function Seller({ token, onSignOut }) {
   const [section, setSection] = useState('home')
   const [productTab, setProductTab] = useState('all')
   const [productSearch, setProductSearch] = useState('')
-  const [orderTab, setOrderTab] = useState('all')
   const [openGroups, setOpenGroups] = useState({ products: true, orders: true, account: false })
   // Customer <-> seller chats (buyer messages, or an order chat NexTech brought the seller into).
   const [messagesTab, setMessagesTab] = useState('customers')
@@ -572,8 +570,8 @@ export default function Seller({ token, onSignOut }) {
 
   const loadOrders = useCallback(() => {
     fetch(`${API_URL}/seller/orders`, { headers: authHeaders() }).then(readJson)
-      .then((res) => { setOrderSummary(res?.data?.summary ?? null); setOrders(res?.data?.orders ?? []) })
-      .catch(() => setOrderMsg('Could not load your orders.'))
+      .then((res) => setOrderSummary(res?.data?.summary ?? null))
+      .catch(() => {})
   }, [authHeaders])
 
   useEffect(() => {
@@ -851,12 +849,6 @@ export default function Seller({ token, onSignOut }) {
     const unreadCustomerChats = customerChats.filter(customerUnread).length
     const unreadNextech = supportThreads.filter(nextechUnread).length
     const unreadThreads = unreadNextech + unreadCustomerChats
-    const ORDER_STATUS = { confirmed: 'Confirmed', packing: 'Packing', ready_for_delivery: 'Ready to ship', out_for_delivery: 'Out for delivery', completed: 'Delivered', cancelled: 'Cancelled' }
-    const ACTIVE_ORDER = ['confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery']
-    const visibleOrders = orders.filter((o) => orderTab === 'all'
-      || (orderTab === 'active' && ACTIVE_ORDER.includes(o.status))
-      || (orderTab === 'completed' && o.status === 'completed')
-      || (orderTab === 'cancelled' && o.status === 'cancelled'))
     const balance = Math.max(0, me.available_cents ?? me.balance_cents ?? 0)
     const payoutReady = balance >= (me.min_payout_cents ?? 0) && balance > 0 && me.last_payout_request?.status !== 'pending'
     const shopUrl = me.shop?.slug ? `${window.location.origin}${import.meta.env.BASE_URL || '/'}#/shop/${me.shop.slug}` : null
@@ -873,7 +865,7 @@ export default function Seller({ token, onSignOut }) {
     const NAV = [
       { key: 'home', label: 'Homepage', icon: '⌂' },
       { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products']] },
-      { key: 'orders', label: 'Orders', icon: '☰', children: [['orders', 'Manage orders']] },
+      { key: 'orders', label: 'Orders', icon: '☰', children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
@@ -949,7 +941,7 @@ export default function Seller({ token, onSignOut }) {
                   <div className="sc-action-grid">
                     <button type="button" className={rejectedCount ? 'sc-action hot' : 'sc-action'} onClick={() => { go('products'); setProductTab('rejected') }}><span>Rejected products</span><strong>{rejectedCount}</strong></button>
                     <button type="button" className="sc-action" onClick={() => { go('products'); setProductTab('pending') }}><span>Pending review</span><strong>{pendingCount}</strong></button>
-                    <button type="button" className={orderSummary?.active ? 'sc-action hot' : 'sc-action'} onClick={() => { go('orders'); setOrderTab('active') }}><span>Orders in progress</span><strong>{orderSummary?.active ?? 0}</strong></button>
+                    <button type="button" className={orderSummary?.active ? 'sc-action hot' : 'sc-action'} onClick={() => go('orders')}><span>Orders in progress</span><strong>{orderSummary?.active ?? 0}</strong></button>
                     <button type="button" className={unreadThreads ? 'sc-action hot' : 'sc-action'} onClick={() => go('messages')}><span>Unread messages</span><strong>{unreadThreads}</strong></button>
                     <button type="button" className={payoutReady ? 'sc-action hot' : 'sc-action'} onClick={() => go('finances')}><span>Available to pay out</span><strong>{money(balance)}</strong></button>
                   </div>
@@ -1125,45 +1117,11 @@ export default function Seller({ token, onSignOut }) {
                 </div>
               </>
             ) : section === 'orders' ? (
+              <ManageOrders headers={authHeaders} go={go} shipsItself={shopMode !== 'nextech'} onSummary={setOrderSummary} />
+            ) : section === 'ship-orders' ? (
               <>
-                <h1 className="sc-title">Manage orders</h1>
-                {shopMode !== 'nextech' && <ShipOrders headers={authHeaders} mode={shopMode} />}
-                <div className="sc-card">
-                  <h2 className="sc-h2">Overview</h2>
-                  <div className="sc-action-grid">
-                    <button type="button" className={orderTab === 'active' ? 'sc-action sel' : 'sc-action'} onClick={() => setOrderTab('active')}><span>In progress</span><strong>{orderSummary?.active ?? 0}</strong></button>
-                    <button type="button" className={orderTab === 'completed' ? 'sc-action sel' : 'sc-action'} onClick={() => setOrderTab('completed')}><span>Delivered</span><strong>{orderSummary?.completed ?? 0}</strong></button>
-                    <button type="button" className={orderTab === 'cancelled' ? 'sc-action sel' : 'sc-action'} onClick={() => setOrderTab('cancelled')}><span>Cancelled</span><strong>{orderSummary?.cancelled ?? 0}</strong></button>
-                  </div>
-                </div>
-                <div className="sc-tabs">
-                  {[['all', 'All'], ['active', 'In progress'], ['completed', 'Delivered'], ['cancelled', 'Cancelled']].map(([key, label]) => <button type="button" key={key} className={orderTab === key ? 'active' : ''} onClick={() => setOrderTab(key)}>{label}</button>)}
-                </div>
-                <div className="sc-card sc-table-card">
-                  <div className="sc-table-wrap">
-                    <table className="sc-table">
-                      <thead><tr><th>Order</th><th>Date</th><th>Your items</th><th>Qty</th><th>Items total</th><th>Status</th></tr></thead>
-                      <tbody>
-                        {visibleOrders.map((order) => {
-                          const items = order.items ?? []
-                          return (
-                            <tr key={order.id}>
-                              <td><b>#{order.id}</b></td>
-                              <td>{new Date(order.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</td>
-                              <td>{items.map((i) => <div key={i.id}>{i.product_name} <span className="sc-muted">× {i.quantity}</span></div>)}</td>
-                              <td>{items.reduce((sum, i) => sum + i.quantity, 0)}</td>
-                              <td>{money(items.reduce((sum, i) => sum + i.line_total_cents, 0))}</td>
-                              <td><span className={`sc-pill order-${order.status}`}>{ORDER_STATUS[order.status] ?? order.status}</span></td>
-                            </tr>
-                          )
-                        })}
-                        {visibleOrders.length === 0 && <tr><td colSpan="6" className="sc-empty">No orders here yet.</td></tr>}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="sc-muted sc-foot">Showing your 20 most recent orders. NexTech packs and delivers them — this shows only your items in each order.</p>
-                  {orderMsg && <p className="seller-inline-error">{orderMsg}</p>}
-                </div>
+                <h1 className="sc-title">Ship orders</h1>
+                <ShipOrders headers={authHeaders} mode={shopMode} />
               </>
             ) : section === 'finances' ? (
               <>
@@ -1292,7 +1250,7 @@ export default function Seller({ token, onSignOut }) {
                     {customerChat ? (
                       <div className="sc-chat">
                         <button type="button" className="sc-link" onClick={() => setCustomerChat(null)}>&larr; All customer chats</button>
-                        <h2 className="sc-h2">{customerChat.customer_first_name}{customerChat.order ? ` · Order #${customerChat.order.id}` : ''}</h2>
+                        <h2 className="sc-h2">{customerChat.customer_name}{customerChat.order ? ` · Order #${customerChat.order.id}` : ''}</h2>
                         {customerChat.order && (
                           <p className="sc-muted">Your items: {(customerChat.order.items ?? []).map((i) => `${i.product_name} × ${i.quantity}`).join(', ') || '—'} · order {customerChat.order.status}</p>
                         )}
@@ -1301,7 +1259,7 @@ export default function Seller({ token, onSignOut }) {
                         <div className="sc-chat-log">
                           {(customerChat.messages ?? []).map((m) => (
                             <div key={m.id} className={`sc-msg ${m.from}`}>
-                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? 'NexTech' : m.from === 'customer' ? customerChat.customer_first_name : ''}</b>
+                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? 'NexTech' : m.from === 'customer' ? customerChat.customer_name : ''}</b>
                               {m.body && <span>{m.body}</span>}
                               <ChatPhotos urls={m.attachments} />
                               <small>{new Date(m.created_at).toLocaleString()}</small>
@@ -1310,10 +1268,10 @@ export default function Seller({ token, onSignOut }) {
                         </div>
                         <ChatPhotoPicker photos={customerPhotos} onChange={setCustomerPhotos} token={token} onError={setCustomerChatMsg} />
                         <form className="sc-chat-send" onSubmit={replyCustomerChat}>
-                          <textarea rows="2" placeholder={`Reply to ${customerChat.customer_first_name}…`} value={customerReply} onChange={(event) => setCustomerReply(event.target.value)} />
+                          <textarea rows="2" placeholder={`Reply to ${customerChat.customer_name}…`} value={customerReply} onChange={(event) => setCustomerReply(event.target.value)} />
                           <button type="submit" className="sc-primary" disabled={!customerReply.trim() && !customerPhotos.length}>Send</button>
                         </form>
-                        <p className="sc-muted">Keep it on NexTech — don&rsquo;t share or ask for emails, phone numbers or payment outside the platform.</p>
+                        <p className="sc-muted">Keep it on NexTech — don&rsquo;t share or ask for names, addresses, emails, phone numbers, one-time codes (OTPs) or payment outside the platform. Emails and phone numbers are hidden automatically.</p>
                       </div>
                     ) : customerChats.length === 0 ? (
                       <p className="sc-muted">No customer chats yet. When a customer has an issue with one of your items, NexTech support will bring you into their chat here.</p>
@@ -1323,7 +1281,7 @@ export default function Seller({ token, onSignOut }) {
                         <tbody>
                           {customerChats.map((t) => (
                             <tr key={t.id}>
-                              <td><b>{t.customer_first_name}</b></td>
+                              <td><b>{t.customer_name}</b></td>
                               <td>{t.order_id ? `#${t.order_id}` : '—'}</td>
                               <td>Order issue (with NexTech)</td>
                               <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>

@@ -276,6 +276,12 @@ class Order extends Model
         return $this->hasMany(SupportThread::class);
     }
 
+    /** Buyer requests to change the shipping address before the order ships. */
+    public function addressChanges(): HasMany
+    {
+        return $this->hasMany(OrderAddressChange::class)->latest('id');
+    }
+
     /** Store credit already issued against this order as a gift-card refund. */
     public function giftCardRefundedCents(): int
     {

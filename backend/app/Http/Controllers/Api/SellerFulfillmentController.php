@@ -9,7 +9,9 @@ use App\Models\OrderPackage;
 use App\Models\Shop;
 use App\Support\Courier;
 use App\Support\Market;
+use App\Support\Privacy;
 use App\Support\SellerFulfillment;
+use App\Support\SellerOrders;
 use App\Support\SellerShipping;
 use App\Support\ShippingLabel;
 use Illuminate\Http\JsonResponse;
@@ -108,6 +110,7 @@ class SellerFulfillmentController extends Controller
         ]);
 
         abort_if(SellerFulfillment::labelMode() === 'manual', 422, 'Request the label instead — NexTech will upload it for you to download.');
+        SellerOrders::assertShippable($order);
         $origin = $shop->addresses()->findOrFail($data['ship_from_address_id'])->toCourierAddress();
         $label = Courier::buyLabel($order, $origin);
 
@@ -132,6 +135,7 @@ class SellerFulfillmentController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($shop->fulfillment_mode === 'label', 422, 'Switch to "I ship, NexTech label" in Shipping settings first.');
+        SellerOrders::assertShippable($order);
         $data = $request->validate([
             'items' => ['required', 'array', 'min:1'],
             'items.*.order_item_id' => ['required', 'integer'],
@@ -324,6 +328,7 @@ class SellerFulfillmentController extends Controller
     /** @return array<string, mixed> */
     private function row(Order $order): array
     {
+        $ownLabel = request()->user()?->seller?->shop?->fulfillment_mode === 'self';
         $order->loadMissing(['items', 'packages.items', 'shopShipping', 'labelRequests']);
         $shopId = $order->packages->first()->shop_id ?? $order->shopShipping->first()->shop_id ?? $order->items->first()?->shop_id;
         $items = $order->items->where('shop_id', $shopId)->where('fulfilled_by', 'seller')->values();
@@ -334,13 +339,16 @@ class SellerFulfillmentController extends Controller
             'id' => $order->id,
             'status' => $order->status,
             'created_at' => $order->created_at,
+            // Masked name; the street address and real name only for sellers who write
+            // their own courier label — NexTech prints them on the labels it makes.
             'ship_to' => [
-                'name' => $address['name'] ?? null,
-                'line1' => $address['line1'] ?? null,
-                'line2' => $address['line2'] ?? null,
+                'name' => Privacy::maskName($address['name'] ?? null),
+                'recipient' => $ownLabel ? ($address['name'] ?? null) : null,
+                'line1' => $ownLabel ? ($address['line1'] ?? null) : null,
+                'line2' => $ownLabel ? ($address['line2'] ?? null) : null,
                 'city' => $address['city'] ?? null,
                 'state' => $address['state'] ?? null,
-                'postal_code' => $address['postal_code'] ?? null,
+                'postal_code' => $ownLabel ? ($address['postal_code'] ?? null) : null,
             ],
             'shipping' => $promise,
             'items' => $items->map(fn ($i) => [
@@ -356,6 +364,9 @@ class SellerFulfillmentController extends Controller
             'packages' => $order->packages->where('shop_id', $shopId)->values(),
             'to_ship' => $items->sum(fn ($i) => SellerFulfillment::remainingQuantity($i)),
             'overdue' => $promise && $promise->ship_by->lt(today()) && $items->contains(fn ($i) => SellerFulfillment::remainingQuantity($i) > 0),
+            // Not to be shipped yet: still pending, or the buyer's address change is undecided.
+            'pending' => SellerOrders::isPending($order),
+            'address_change_pending' => $order->addressChanges()->where('status', 'pending')->exists(),
         ];
     }
 
