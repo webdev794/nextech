@@ -206,6 +206,9 @@ already ran _migrate.php, the new columns are additive (nothing dropped), so
 rolling back the code is safe even if you don't also roll back the DB.
 TXT
 
+echo "==> removing Windows-only helpers (hosting virus scanners reject zips with .exe/.bat)"
+find "$DEST" -type f \( -iname '*.exe' -o -iname '*.bat' -o -iname '*.cmd' \) -delete
+
 echo "==> storage bundle (uploads that the local database refers to)"
 STORAGE_OUT=/d/edp/.tmp/deploy/edp-storage.zip
 rm -f "$STORAGE_OUT"

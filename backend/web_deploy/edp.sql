@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Sep 24, 2026 at 01:13 PM
+-- Generation Time: Sep 25, 2026 at 01:07 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -139,45 +139,23 @@ CREATE TABLE `cache` (
 --
 
 INSERT INTO `cache` (`key`, `value`, `expiration`) VALUES
-('gdp-cache-setting:branding', 'a:1:{s:1:\"v\";a:9:{s:10:\"store_name\";s:7:\"NexTech\";s:7:\"tagline\";s:36:\"Navigate to the Future of Technology\";s:8:\"logo_url\";N;s:11:\"favicon_url\";s:62:\"/storage/products/UwbDkyfQGw98w7hhx7hlPcFS1Cw9VZfnz06klnyk.jpg\";s:5:\"theme\";s:5:\"light\";s:12:\"layout_width\";s:4:\"full\";s:11:\"color_brand\";s:7:\"#2563EB\";s:12:\"color_accent\";s:7:\"#F97316\";s:13:\"color_heading\";s:7:\"#0F172A\";}}', 2105411864),
-('gdp-cache-setting:checkout_fees', 'a:1:{s:1:\"v\";a:9:{s:13:\"delivery_mode\";s:5:\"fixed\";s:18:\"delivery_fee_cents\";i:299;s:23:\"delivery_near_fee_cents\";i:199;s:22:\"delivery_far_fee_cents\";i:599;s:29:\"free_delivery_threshold_cents\";i:3500;s:18:\"handling_fee_cents\";i:99;s:20:\"small_cart_fee_cents\";i:199;s:20:\"small_cart_min_cents\";i:1000;s:12:\"tax_rate_bps\";i:887;}}', 2105411864),
-('gdp-cache-setting:cod_enabled', 'a:1:{s:1:\"v\";b:1;}', 2105411864),
-('gdp-cache-setting:footer', 'a:1:{s:1:\"v\";a:8:{s:9:\"copyright\";s:17:\"© {year} nextech\";s:4:\"note\";s:143:\"NexTech is a demo storefront. Prices, delivery estimates and content pages are illustrative and set by the store operator in the admin console.\";s:13:\"app_store_url\";s:39:\"https://apps.apple.com/app/nextech-demo\";s:14:\"play_store_url\";s:62:\"https://play.google.com/store/apps/details?id=com.nextech.demo\";s:7:\"socials\";a:5:{s:8:\"facebook\";s:28:\"https://facebook.com/nextech\";s:1:\"x\";s:21:\"https://x.com/nextech\";s:9:\"instagram\";s:29:\"https://instagram.com/nextech\";s:8:\"linkedin\";s:40:\"https://www.linkedin.com/company/nextech\";s:7:\"youtube\";s:32:\"https://www.youtube.com/@nextech\";}s:5:\"links\";a:0:{}s:8:\"bg_color\";s:7:\"#141414\";s:10:\"text_color\";s:7:\"#f5f5f5\";}}', 2105411864),
-('gdp-cache-setting:payments', 'a:1:{s:7:\"missing\";b:1;}', 2105411834),
-('nextech-cache-5c785c036466adea360111aa28563bfd556b5fba', 'i:1;', 1790246376),
-('nextech-cache-5c785c036466adea360111aa28563bfd556b5fba:timer', 'i:1790246376;', 1790246376),
-('nextech-cache-761f22b2c1593d0bb87e0b606f990ba4974706de', 'i:1;', 1790147918),
-('nextech-cache-761f22b2c1593d0bb87e0b606f990ba4974706de:timer', 'i:1790147918;', 1790147918),
-('nextech-cache-geo:reverse:920918df3c8dcd49995c10b908d4eab0', 'a:8:{s:5:\"label\";s:18:\"edge 29, Sector 73\";s:4:\"full\";s:129:\"edge 29, Sector 73, Sector 74, Sector 73, Mohali, S.A.S. Nagar (Mohali) Tahsil, Sahibzada Ajit Singh Nagar, Punjab, 160055, India\";s:5:\"line1\";s:7:\"edge 29\";s:4:\"city\";s:6:\"Mohali\";s:5:\"state\";s:6:\"Punjab\";s:11:\"postal_code\";s:6:\"160055\";s:3:\"lat\";d:30.7169235;s:3:\"lon\";d:76.6944091;}', 1790254843),
-('nextech-cache-geo:reverse:e6a0c721922aa7c9d6fa8569608a1dea', 'a:9:{s:5:\"label\";s:39:\"Sher Shah Suri Marg - GT Road, Ludhiana\";s:4:\"full\";s:96:\"Sher Shah Suri Marg - GT Road, Ludhiana, Ludhiana (West) Tahsil, Ludhiana, Punjab, 141003, India\";s:5:\"line1\";s:29:\"Sher Shah Suri Marg - GT Road\";s:4:\"city\";s:8:\"Ludhiana\";s:5:\"state\";s:6:\"Punjab\";s:11:\"postal_code\";s:6:\"141003\";s:7:\"country\";s:2:\"IN\";s:3:\"lat\";d:30.9009649;s:3:\"lon\";d:75.8572779;}', 1790334594),
-('nextech-cache-secure_access_grant:41', 's:64:\"472a8d8ddb4a475f60ecce689029f2a7e52076cd6f21adf711622931a26060f2\";', 1790148759),
-('nextech-cache-setting:active_countries', 'a:1:{s:1:\"v\";a:2:{i:0;s:2:\"IN\";i:1;s:2:\"US\";}}', 2105419262),
-('nextech-cache-setting:app_store_url', 'a:1:{s:7:\"missing\";b:1;}', 2105528867),
-('nextech-cache-setting:branding', 'a:1:{s:1:\"v\";a:9:{s:10:\"store_name\";s:7:\"NexTech\";s:7:\"tagline\";s:36:\"Navigate to the Future of Technology\";s:8:\"logo_url\";N;s:11:\"favicon_url\";s:62:\"/storage/products/UwbDkyfQGw98w7hhx7hlPcFS1Cw9VZfnz06klnyk.jpg\";s:5:\"theme\";s:5:\"light\";s:12:\"layout_width\";s:4:\"full\";s:11:\"color_brand\";s:7:\"#2563EB\";s:12:\"color_accent\";s:7:\"#F97316\";s:13:\"color_heading\";s:7:\"#0F172A\";}}', 2105354702),
-('nextech-cache-setting:checkout_fees', 'a:1:{s:1:\"v\";a:9:{s:13:\"delivery_mode\";s:5:\"fixed\";s:18:\"delivery_fee_cents\";i:299;s:23:\"delivery_near_fee_cents\";i:199;s:22:\"delivery_far_fee_cents\";i:599;s:29:\"free_delivery_threshold_cents\";i:3500;s:18:\"handling_fee_cents\";i:99;s:20:\"small_cart_fee_cents\";i:199;s:20:\"small_cart_min_cents\";i:1000;s:12:\"tax_rate_bps\";i:887;}}', 2105354702),
-('nextech-cache-setting:checkout_fees_IN', 'a:1:{s:7:\"missing\";b:1;}', 2105605820),
-('nextech-cache-setting:cod_enabled', 'a:1:{s:1:\"v\";b:0;}', 2105607148),
-('nextech-cache-setting:commission_rate_bps', 'a:1:{s:7:\"missing\";b:1;}', 2105423073),
-('nextech-cache-setting:courier', 'a:1:{s:1:\"v\";a:1:{s:16:\"courier_provider\";s:4:\"mock\";}}', 2105430066),
-('nextech-cache-setting:daily_payout_cap_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105588235),
-('nextech-cache-setting:footer', 'a:1:{s:1:\"v\";a:8:{s:9:\"copyright\";s:17:\"© {year} nextech\";s:4:\"note\";s:143:\"NexTech is a demo storefront. Prices, delivery estimates and content pages are illustrative and set by the store operator in the admin console.\";s:13:\"app_store_url\";s:39:\"https://apps.apple.com/app/nextech-demo\";s:14:\"play_store_url\";s:62:\"https://play.google.com/store/apps/details?id=com.nextech.demo\";s:7:\"socials\";a:5:{s:8:\"facebook\";s:28:\"https://facebook.com/nextech\";s:1:\"x\";s:21:\"https://x.com/nextech\";s:9:\"instagram\";s:29:\"https://instagram.com/nextech\";s:8:\"linkedin\";s:40:\"https://www.linkedin.com/company/nextech\";s:7:\"youtube\";s:32:\"https://www.youtube.com/@nextech\";}s:5:\"links\";a:0:{}s:8:\"bg_color\";s:7:\"#141414\";s:10:\"text_color\";s:7:\"#f5f5f5\";}}', 2105354702),
-('nextech-cache-setting:grievance_officer', 'a:1:{s:7:\"missing\";b:1;}', 2105606025),
-('nextech-cache-setting:home_market', 'a:1:{s:7:\"missing\";b:1;}', 2105605818),
-('nextech-cache-setting:max_payout_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105585703),
-('nextech-cache-setting:max_return_days', 'a:1:{s:7:\"missing\";b:1;}', 2105592181),
-('nextech-cache-setting:min_payout_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105436816),
-('nextech-cache-setting:nextech_label_mode', 'a:1:{s:1:\"v\";s:6:\"manual\";}', 2105607364),
-('nextech-cache-setting:nextech_pickup', 'a:1:{s:1:\"v\";s:6:\"hidden\";}', 2105606785),
-('nextech-cache-setting:payments', 'a:1:{s:7:\"missing\";b:1;}', 2105353137),
-('nextech-cache-setting:payouts_IN', 'a:1:{s:7:\"missing\";b:1;}', 2105605818),
-('nextech-cache-setting:play_store_url', 'a:1:{s:7:\"missing\";b:1;}', 2105528867),
-('nextech-cache-setting:return_pickup_fee_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105606327),
-('nextech-cache-setting:return_window_days', 'a:1:{s:7:\"missing\";b:1;}', 2105591708),
-('nextech-cache-setting:rider_auto_assign', 'a:1:{s:7:\"missing\";b:1;}', 2105416438),
-('nextech-cache-setting:rider_base_pay_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105587222),
-('nextech-cache-setting:rider_max_payout_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105587222),
-('nextech-cache-setting:rider_min_payout_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105587222),
-('nextech-cache-setting:rider_per_mile_cents', 'a:1:{s:7:\"missing\";b:1;}', 2105587222);
+('nextech-cache-setting:active_countries', 'a:1:{s:1:\"v\";a:2:{i:0;s:2:\"IN\";i:1;s:2:\"US\";}}', 2105692944),
+('nextech-cache-setting:branding', 'a:1:{s:1:\"v\";a:9:{s:10:\"store_name\";s:7:\"NexTech\";s:7:\"tagline\";s:36:\"Navigate to the Future of Technology\";s:8:\"logo_url\";N;s:11:\"favicon_url\";s:62:\"/storage/products/UwbDkyfQGw98w7hhx7hlPcFS1Cw9VZfnz06klnyk.jpg\";s:5:\"theme\";s:5:\"light\";s:12:\"layout_width\";s:4:\"full\";s:11:\"color_brand\";s:7:\"#2563EB\";s:12:\"color_accent\";s:7:\"#F97316\";s:13:\"color_heading\";s:7:\"#0F172A\";}}', 2105692946),
+('nextech-cache-setting:checkout_fees', 'a:1:{s:1:\"v\";a:9:{s:13:\"delivery_mode\";s:5:\"fixed\";s:18:\"delivery_fee_cents\";i:299;s:23:\"delivery_near_fee_cents\";i:199;s:22:\"delivery_far_fee_cents\";i:599;s:29:\"free_delivery_threshold_cents\";i:3500;s:18:\"handling_fee_cents\";i:99;s:20:\"small_cart_fee_cents\";i:199;s:20:\"small_cart_min_cents\";i:1000;s:12:\"tax_rate_bps\";i:887;}}', 2105692946),
+('nextech-cache-setting:checkout_fees_IN', 'a:1:{s:7:\"missing\";b:1;}', 2105692946),
+('nextech-cache-setting:cod_enabled', 'a:1:{s:1:\"v\";b:0;}', 2105692946),
+('nextech-cache-setting:commission_rate_bps', 'a:1:{s:7:\"missing\";b:1;}', 2105692946),
+('nextech-cache-setting:decoration_min_products', 'a:1:{s:7:\"missing\";b:1;}', 2105693620),
+('nextech-cache-setting:decoration_spot_check_rate', 'a:1:{s:7:\"missing\";b:1;}', 2105693620),
+('nextech-cache-setting:footer', 'a:1:{s:1:\"v\";a:8:{s:9:\"copyright\";s:17:\"© {year} nextech\";s:4:\"note\";s:143:\"NexTech is a demo storefront. Prices, delivery estimates and content pages are illustrative and set by the store operator in the admin console.\";s:13:\"app_store_url\";s:39:\"https://apps.apple.com/app/nextech-demo\";s:14:\"play_store_url\";s:62:\"https://play.google.com/store/apps/details?id=com.nextech.demo\";s:7:\"socials\";a:5:{s:8:\"facebook\";s:28:\"https://facebook.com/nextech\";s:1:\"x\";s:21:\"https://x.com/nextech\";s:9:\"instagram\";s:29:\"https://instagram.com/nextech\";s:8:\"linkedin\";s:40:\"https://www.linkedin.com/company/nextech\";s:7:\"youtube\";s:32:\"https://www.youtube.com/@nextech\";}s:5:\"links\";a:0:{}s:8:\"bg_color\";s:7:\"#141414\";s:10:\"text_color\";s:7:\"#f5f5f5\";}}', 2105692946),
+('nextech-cache-setting:grievance_officer', 'a:1:{s:7:\"missing\";b:1;}', 2105692946),
+('nextech-cache-setting:home_market', 'a:1:{s:7:\"missing\";b:1;}', 2105692944),
+('nextech-cache-setting:max_return_days', 'a:1:{s:7:\"missing\";b:1;}', 2105692946),
+('nextech-cache-setting:nextech_label_mode', 'a:1:{s:1:\"v\";s:6:\"manual\";}', 2105693829),
+('nextech-cache-setting:nextech_pickup', 'a:1:{s:1:\"v\";s:6:\"hidden\";}', 2105693829),
+('nextech-cache-setting:payments', 'a:1:{s:7:\"missing\";b:1;}', 2105692834),
+('nextech-cache-setting:payouts_IN', 'a:1:{s:7:\"missing\";b:1;}', 2105693074),
+('nextech-cache-setting:return_window_days', 'a:1:{s:7:\"missing\";b:1;}', 2105692946);
 
 -- --------------------------------------------------------
 
@@ -274,6 +252,51 @@ INSERT INTO `categories` (`id`, `name`, `slug`, `description`, `image_url`, `is_
 (18, 'Health & Fitness Tech', 'health-and-fitness-tech', NULL, '/img/cat/health-and-fitness-tech.jpg', 1, 1, 18, '2026-09-09 01:12:49', '2026-09-14 06:01:19'),
 (19, 'Premium & Flagship', 'premium-and-flagship', NULL, '/img/cat/premium-and-flagship.webp', 1, 1, 19, '2026-09-09 01:12:49', '2026-09-14 06:01:19'),
 (20, 'Car Electronics', 'car-electronics', NULL, '/img/cat/car-electronics.jpg', 1, 1, 20, '2026-09-09 01:12:49', '2026-09-14 06:01:19');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `customer_emails`
+--
+
+CREATE TABLE `customer_emails` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `to_email` varchar(190) NOT NULL,
+  `kind` varchar(30) NOT NULL,
+  `subject` varchar(255) DEFAULT NULL,
+  `body_html` longtext DEFAULT NULL,
+  `order_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `campaign_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `status` varchar(12) NOT NULL DEFAULT 'sent',
+  `error` varchar(500) DEFAULT NULL,
+  `sent_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `email_campaigns`
+--
+
+CREATE TABLE `email_campaigns` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `subject` varchar(200) NOT NULL,
+  `body` text NOT NULL,
+  `audience` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`audience`)),
+  `promotional` tinyint(1) NOT NULL DEFAULT 1,
+  `send_at` timestamp NULL DEFAULT NULL,
+  `repeat` varchar(10) NOT NULL DEFAULT 'none',
+  `status` varchar(12) NOT NULL DEFAULT 'draft',
+  `last_run_at` timestamp NULL DEFAULT NULL,
+  `sent_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -601,7 +624,15 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (114, '2026_09_24_000023_add_markets', 55),
 (115, '2026_09_24_000024_create_label_requests_table', 56),
 (116, '2026_09_24_000025_add_label_path_to_label_requests', 57),
-(117, '2026_09_24_000026_create_label_templates_table', 58);
+(117, '2026_09_24_000026_create_label_templates_table', 58),
+(118, '2026_09_25_000027_create_crm_email_tables', 59),
+(119, '2026_09_25_000028_add_seller_onboarding_tasks', 60),
+(120, '2026_09_25_000029_add_address_types_to_shipping_template_groups', 61),
+(121, '2026_09_25_000030_create_order_address_changes_table', 62),
+(122, '2026_09_25_000031_add_temu_style_product_listing', 63),
+(123, '2026_09_25_000032_make_product_category_nullable_for_drafts', 64),
+(124, '2026_09_25_000033_create_store_decorations_table', 65),
+(125, '2026_09_25_000034_create_product_reviews_table', 66);
 
 -- --------------------------------------------------------
 
@@ -668,7 +699,26 @@ INSERT INTO `orders` (`id`, `user_id`, `market`, `currency`, `store_id`, `delive
 (43, 17, 'US', 'usd', 1, 'own_rider', 'cancelled', 'admin', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'cancelled', 'card', NULL, NULL, 0, 59998, 5322, 0, 0, 0, 99, 0, 0, 65419, '{\"id\":22,\"user_id\":17,\"label\":\"Home\",\"name\":\"Testcaresort\",\"line1\":\"edge 27\",\"line2\":null,\"city\":\"Mohali\",\"state\":\"Punjab\",\"postal_code\":\"160055\",\"latitude\":30.7197622,\"longitude\":76.7056954,\"is_default\":true,\"created_at\":\"2026-09-23T06:52:21.000000Z\",\"updated_at\":\"2026-09-23T06:52:21.000000Z\",\"phone\":\"+15551234567\"}', NULL, '2026-09-23 01:22:22', '2026-09-23 01:28:28'),
 (44, 17, 'US', 'usd', 1, 'own_rider', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-09-23 01:28:48', '2026-09-23 01:29:00', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'paid', 'cod', NULL, NULL, 0, 59998, 5322, 0, 0, 0, 99, 0, 0, 65419, '{\"id\":23,\"user_id\":17,\"label\":\"Home\",\"name\":\"Testcaresort\",\"line1\":\"edge 27\",\"line2\":null,\"city\":\"Mohali\",\"state\":\"Punjab\",\"postal_code\":\"160055\",\"latitude\":30.7197622,\"longitude\":76.7056954,\"is_default\":false,\"created_at\":\"2026-09-23T06:53:55.000000Z\",\"updated_at\":\"2026-09-23T06:53:55.000000Z\",\"phone\":\"+15551234567\"}', NULL, '2026-09-23 01:23:56', '2026-09-23 01:29:00'),
 (45, 41, 'US', 'usd', 1, 'own_rider', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-09-23 01:30:24', '2026-09-23 01:30:31', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'paid', 'cod', NULL, NULL, 0, 50000, 4435, 0, 0, 0, 99, 0, 0, 54534, '{\"id\":24,\"user_id\":41,\"label\":\"Home\",\"name\":\"Testcaresort\",\"line1\":\"edge 27\",\"line2\":null,\"city\":\"Mohali\",\"state\":\"Punjab\",\"postal_code\":\"160055\",\"latitude\":30.7197622,\"longitude\":76.7056954,\"is_default\":true,\"created_at\":\"2026-09-23T06:59:41.000000Z\",\"updated_at\":\"2026-09-23T06:59:41.000000Z\",\"phone\":\"+15551234567\"}', NULL, '2026-09-23 01:29:41', '2026-09-23 01:30:31'),
-(46, 41, 'US', 'usd', 1, 'own_rider', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-09-23 01:34:08', '2026-09-23 01:34:14', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'paid', 'cod', NULL, NULL, 0, 50000, 4435, 0, 0, 0, 99, 0, 0, 54534, '{\"id\":25,\"user_id\":41,\"label\":\"Home\",\"name\":\"Testcaresort\",\"line1\":\"edge 27\",\"line2\":null,\"city\":\"Mohali\",\"state\":\"Punjab\",\"postal_code\":\"160055\",\"latitude\":30.7197622,\"longitude\":76.7056954,\"is_default\":false,\"created_at\":\"2026-09-23T07:03:52.000000Z\",\"updated_at\":\"2026-09-23T07:03:52.000000Z\",\"phone\":\"+15551234567\"}', NULL, '2026-09-23 01:33:53', '2026-09-23 01:34:14');
+(46, 41, 'US', 'usd', 1, 'own_rider', 'completed', NULL, NULL, NULL, NULL, NULL, '2026-09-23 01:34:08', '2026-09-23 01:34:14', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0, 'paid', 'cod', NULL, NULL, 0, 50000, 4435, 0, 0, 0, 99, 0, 0, 54534, '{\"id\":25,\"user_id\":41,\"label\":\"Home\",\"name\":\"Testcaresort\",\"line1\":\"edge 27\",\"line2\":null,\"city\":\"Mohali\",\"state\":\"Punjab\",\"postal_code\":\"160055\",\"latitude\":30.7197622,\"longitude\":76.7056954,\"is_default\":false,\"created_at\":\"2026-09-23T07:03:52.000000Z\",\"updated_at\":\"2026-09-23T07:03:52.000000Z\",\"phone\":\"+15551234567\"}', NULL, '2026-09-23 01:33:53', '2026-09-25 04:03:23');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `order_address_changes`
+--
+
+CREATE TABLE `order_address_changes` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `order_id` bigint(20) UNSIGNED NOT NULL,
+  `address` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`address`)),
+  `status` varchar(12) NOT NULL DEFAULT 'pending',
+  `note` varchar(500) DEFAULT NULL,
+  `decided_by_shop_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `decided_by_user_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `decided_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1017,7 +1067,7 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (274, 'App\\Models\\User', 41, 'customer', 'c2d4dc8f17d56f67726f3ce27ddbc63ce5a70b01e8decfb711407059ba2621fe', '[\"*\"]', '2026-09-22 06:06:09', NULL, '2026-09-22 06:06:09', '2026-09-22 06:06:09'),
 (275, 'App\\Models\\User', 15, 'customer', '91e978657e6b553f593882482f6945a50e40a201552a214ba0c114ac41adc19d', '[\"*\"]', '2026-09-23 00:09:37', NULL, '2026-09-22 23:56:37', '2026-09-23 00:09:37'),
 (277, 'App\\Models\\User', 15, 'customer', '99f83db171fa0a75a3aec8943b6cec5527265022e57f1d9a252f40ef7606f4f1', '[\"*\"]', '2026-09-23 00:18:10', NULL, '2026-09-23 00:17:19', '2026-09-23 00:18:10'),
-(279, 'App\\Models\\User', 15, 'customer', 'f2a453ef20ffabd006ea1e58a8a179c2268012ec290b7b2edbc5a6823552fdca', '[\"*\"]', '2026-09-24 05:43:07', NULL, '2026-09-23 00:19:32', '2026-09-24 05:43:07'),
+(279, 'App\\Models\\User', 15, 'customer', 'f2a453ef20ffabd006ea1e58a8a179c2268012ec290b7b2edbc5a6823552fdca', '[\"*\"]', '2026-09-25 04:37:03', NULL, '2026-09-23 00:19:32', '2026-09-25 04:37:03'),
 (280, 'App\\Models\\User', 41, 'customer', '45288de6c4a25a233e26aedc52c16ac055a8d160ce81eef4de3f79d3fd7b5291', '[\"*\"]', '2026-09-23 00:50:21', NULL, '2026-09-23 00:20:39', '2026-09-23 00:50:21'),
 (281, 'App\\Models\\User', 15, 'customer', '5d7f44106c91e9fc6a42f9dc5dd5b0f16468adfda1dbcbf3254f997adb65724b', '[\"*\"]', '2026-09-23 00:50:27', NULL, '2026-09-23 00:25:29', '2026-09-23 00:50:27'),
 (283, 'App\\Models\\User', 17, 'customer', '1b58d9e586b5d645e8c01b2ebbe4038311db7ef71989a46899fe526c6a9c4182', '[\"*\"]', '2026-09-23 01:28:02', NULL, '2026-09-23 01:17:54', '2026-09-23 01:28:02'),
@@ -1033,7 +1083,26 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (294, 'App\\Models\\User', 17, 'customer', '2f07ad50ba15b44c49f174678aab1d2c099acfa00a58b49ee3389e9ed2e67090', '[\"*\"]', '2026-09-24 01:03:33', NULL, '2026-09-24 00:57:54', '2026-09-24 01:03:33'),
 (296, 'App\\Models\\User', 17, 'customer', '84fd6d3b24e33aef2e007d0f80c1368b247b01223768ba0c474408dfeefa2d32', '[\"*\"]', '2026-09-24 01:19:31', NULL, '2026-09-24 01:13:13', '2026-09-24 01:19:31'),
 (298, 'App\\Models\\User', 17, 'customer', '1f01168d1136b8498ff70121d931b3207207526a54ec7f13fb724490ac98712a', '[\"*\"]', '2026-09-24 05:08:32', NULL, '2026-09-24 01:29:53', '2026-09-24 05:08:32'),
-(299, 'App\\Models\\User', 41, 'customer', 'b5177d25ecb31650e802e4029179fb349279269b7130bb29aca4eceb37b24b1f', '[\"*\"]', '2026-09-24 05:42:09', NULL, '2026-09-24 05:08:37', '2026-09-24 05:42:09');
+(299, 'App\\Models\\User', 41, 'customer', 'b5177d25ecb31650e802e4029179fb349279269b7130bb29aca4eceb37b24b1f', '[\"*\"]', '2026-09-25 00:04:02', NULL, '2026-09-24 05:08:37', '2026-09-25 00:04:02'),
+(312, 'App\\Models\\User', 15, 'customer', '33e3532a37711b788462da10e89b3e4337c91ad3ce006178d6af6587e2d0901f', '[\"*\"]', '2026-09-25 05:37:25', NULL, '2026-09-25 04:51:26', '2026-09-25 05:37:25');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `price_change_records`
+--
+
+CREATE TABLE `price_change_records` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `product_variant_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `old_price_cents` int(10) UNSIGNED NOT NULL,
+  `new_price_cents` int(10) UNSIGNED NOT NULL,
+  `source` varchar(20) NOT NULL DEFAULT 'sales_boost',
+  `sales_boost_offer_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1043,8 +1112,9 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 
 CREATE TABLE `products` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `category_id` bigint(20) UNSIGNED NOT NULL,
+  `category_id` bigint(20) UNSIGNED DEFAULT NULL,
   `shop_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `trademark_id` bigint(20) UNSIGNED DEFAULT NULL,
   `market` varchar(2) NOT NULL DEFAULT 'US',
   `status` varchar(20) NOT NULL DEFAULT 'approved',
   `rejection_reason` text DEFAULT NULL,
@@ -1052,19 +1122,29 @@ CREATE TABLE `products` (
   `name` varchar(255) NOT NULL,
   `slug` varchar(255) NOT NULL,
   `description` text DEFAULT NULL,
+  `bullet_points` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`bullet_points`)),
+  `detail_images` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`detail_images`)),
+  `product_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`product_details`)),
+  `variation_theme` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`variation_theme`)),
+  `size_chart` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`size_chart`)),
   `sku` varchar(255) NOT NULL,
+  `seller_code` varchar(60) DEFAULT NULL,
   `hsn_code` varchar(8) DEFAULT NULL,
   `gst_rate_bps` smallint(5) UNSIGNED DEFAULT NULL,
   `country_of_origin` varchar(60) DEFAULT NULL,
   `manufacturer_info` varchar(500) DEFAULT NULL,
+  `compliance` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`compliance`)),
   `next_variant_seq` int(10) UNSIGNED NOT NULL DEFAULT 1,
   `price_cents` int(10) UNSIGNED NOT NULL,
   `compare_at_price_cents` int(10) UNSIGNED DEFAULT NULL,
+  `price_references` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`price_references`)),
   `return_days` smallint(5) UNSIGNED DEFAULT NULL,
   `shipping_template_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `handling_days` tinyint(3) UNSIGNED DEFAULT NULL,
   `inventory_quantity` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `image_url` varchar(255) DEFAULT NULL,
   `video_url` varchar(500) DEFAULT NULL,
+  `detail_video_url` varchar(500) DEFAULT NULL,
   `rating_avg` decimal(3,2) DEFAULT NULL,
   `rating_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `units_sold` int(10) UNSIGNED NOT NULL DEFAULT 0,
@@ -1079,82 +1159,82 @@ CREATE TABLE `products` (
 -- Dumping data for table `products`
 --
 
-INSERT INTO `products` (`id`, `category_id`, `shop_id`, `market`, `status`, `rejection_reason`, `suggested_category_name`, `name`, `slug`, `description`, `sku`, `hsn_code`, `gst_rate_bps`, `country_of_origin`, `manufacturer_info`, `next_variant_seq`, `price_cents`, `compare_at_price_cents`, `return_days`, `shipping_template_id`, `inventory_quantity`, `image_url`, `video_url`, `rating_avg`, `rating_count`, `units_sold`, `is_active`, `deal_type`, `is_exclusive_offer`, `created_at`, `updated_at`) VALUES
-(1, 1, NULL, 'US', 'approved', NULL, NULL, 'Apple iPhone 15 Pro', 'apple-iphone-15-pro', 'Apple\'s titanium-body flagship with the A17 Pro chip, a 48MP main camera, and USB-C — built for all-day performance in the pocket.', 'ADM000001', NULL, NULL, NULL, NULL, 3, 99900, NULL, NULL, NULL, 98, '/img/products/prod-apple-iphone-15-pro.jpg', NULL, 3.81, 239, 57, 1, 'lightning', 0, '2026-09-16 11:31:22', '2026-09-22 05:07:55'),
-(2, 1, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy S24', 'samsung-galaxy-s24', 'A compact Android flagship with a bright Dynamic AMOLED display, Snapdragon power, and Galaxy AI features built in.', 'ADM000002', NULL, NULL, NULL, NULL, 2, 79900, NULL, NULL, NULL, 99, '/img/products/prod-samsung-galaxy-s24.jpg', NULL, 4.10, 635, 9572, 1, 'lightning', 0, '2025-11-22 05:17:22', '2026-09-21 06:30:22'),
-(3, 1, NULL, 'US', 'approved', NULL, NULL, 'Google Pixel 8', 'google-pixel-8', 'Google\'s pure-Android phone with the Tensor G3 chip and a camera tuned for standout low-light and portrait shots.', 'ADM000003', NULL, NULL, NULL, NULL, 1, 69900, 74900, NULL, NULL, 100, '/img/products/prod-google-pixel-8.jpg', NULL, 3.66, 439, 1234, 1, 'lightning', 0, '2026-03-26 21:52:22', '2026-09-21 06:30:22'),
-(4, 1, NULL, 'US', 'approved', NULL, NULL, 'OnePlus 12', 'oneplus-12', 'A fast, fluid flagship with Hasselblad-tuned cameras and 100W charging that tops up the battery in minutes.', 'ADM000004', NULL, NULL, NULL, NULL, 1, 73900, NULL, NULL, NULL, 100, '/img/products/prod-oneplus-12.jpg', '/videos/demo-smartphone-hands.mp4', 4.27, 420, 575, 1, 'unbeatable', 0, '2025-12-12 21:03:22', '2026-09-21 06:30:22'),
-(5, 1, NULL, 'US', 'approved', NULL, NULL, 'Xiaomi 14', 'xiaomi-14', 'A pocketable flagship with Leica optics and flagship-tier Snapdragon performance at a sharp price.', 'ADM000005', NULL, NULL, NULL, NULL, 1, 64900, NULL, NULL, NULL, 98, '/img/products/prod-xiaomi-14.jpg', NULL, 3.88, 193, 1589, 1, NULL, 0, '2026-07-01 11:49:22', '2026-09-22 02:31:02'),
-(6, 2, NULL, 'US', 'approved', NULL, NULL, 'Apple MacBook Air M3', 'apple-macbook-air-m3', 'Apple\'s fanless, all-day laptop — the M3 chip handles everyday work and creative apps without breaking a sweat.', 'ADM000006', NULL, NULL, NULL, NULL, 2, 109900, NULL, NULL, NULL, 80, '/img/products/prod-apple-macbook-air-m3.jpg', NULL, 4.55, 199, 4133, 1, 'unbeatable', 1, '2025-12-07 07:03:22', '2026-09-21 06:30:22'),
-(7, 2, NULL, 'US', 'approved', NULL, NULL, 'Dell XPS 13', 'dell-xps-13', 'A compact ultrabook with an edge-to-edge InfinityEdge display, built for work on the go.', 'ADM000007', NULL, NULL, NULL, NULL, 4, 99900, NULL, NULL, NULL, 100, '/img/products/prod-dell-xps-13.png', NULL, 3.96, 517, 460, 1, 'unbeatable', 0, '2026-07-23 15:06:22', '2026-09-21 06:30:22'),
-(8, 2, NULL, 'US', 'approved', NULL, NULL, 'HP Spectre x360', 'hp-spectre-x360', 'A convertible 2-in-1 with a gem-cut design that folds flat into tablet mode for sketching, notes, or streaming.', 'ADM000008', NULL, NULL, NULL, NULL, 2, 129900, NULL, NULL, NULL, 91, '/img/products/prod-hp-spectre-x360.png', NULL, 4.32, 114, 2624, 1, 'unbeatable', 0, '2026-06-25 20:18:22', '2026-09-21 06:30:22'),
-(9, 2, NULL, 'US', 'approved', NULL, NULL, 'Lenovo ThinkPad X1 Carbon', 'lenovo-thinkpad-x1-carbon', 'The business standard: a carbon-fibre chassis, legendary keyboard, and MIL-SPEC durability.', 'ADM000009', NULL, NULL, NULL, NULL, 1, 159900, NULL, NULL, NULL, 89, '/img/products/prod-lenovo-thinkpad-x1-carbon.jpg', NULL, NULL, 0, 6998, 1, 'lightning', 0, '2026-02-17 08:20:22', '2026-09-21 06:30:22'),
-(10, 2, NULL, 'US', 'approved', NULL, NULL, 'Asus ROG Zephyrus G14', 'asus-rog-zephyrus-g14', 'A compact gaming laptop that punches well above its size, with enough GPU power for the latest titles.', 'ADM000010', NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, 98, '/img/products/prod-asus-rog-zephyrus-g14.jpg', NULL, 4.42, 118, 581, 1, NULL, 0, '2026-08-04 07:58:22', '2026-09-21 06:30:22'),
-(11, 3, NULL, 'US', 'approved', NULL, NULL, 'Sony WH-1000XM5', 'sony-wh-1000xm5', 'Industry-leading noise cancellation and all-day comfort, tuned for travel and focus.', 'ADM000011', NULL, NULL, NULL, NULL, 3, 34900, NULL, NULL, NULL, 99, '/img/products/prod-sony-wh-1000xm5.jpg', NULL, 3.86, 428, 4104, 1, 'lightning', 0, '2026-04-02 23:24:22', '2026-09-21 06:30:22'),
-(12, 3, NULL, 'US', 'approved', NULL, NULL, 'Apple AirPods Pro 2', 'apple-airpods-pro-2', 'Adaptive noise cancellation, Transparency mode, and spatial audio in Apple\'s smallest true wireless earbuds.', 'ADM000012', NULL, NULL, NULL, NULL, 1, 24900, NULL, NULL, NULL, 99, '/img/products/prod-apple-airpods-pro-2.jpg', NULL, 4.74, 157, 11314, 1, 'lightning', 0, '2025-10-02 01:26:22', '2026-09-21 06:30:22'),
-(13, 3, NULL, 'US', 'approved', NULL, NULL, 'Bose QuietComfort Ultra', 'bose-quietcomfort-ultra', 'Bose\'s quietest headphones yet, with immersive spatial audio and plush all-day comfort.', 'ADM000013', NULL, NULL, NULL, NULL, 1, 42900, NULL, NULL, NULL, 100, '/img/products/prod-bose-quietcomfort-ultra.jpg', NULL, 3.59, 576, 1693, 1, 'unbeatable', 0, '2026-04-02 09:44:22', '2026-09-21 06:30:22'),
-(14, 3, NULL, 'US', 'approved', NULL, NULL, 'JBL Flip 6 Speaker', 'jbl-flip-6-speaker', 'A rugged, waterproof Bluetooth speaker with punchy JBL sound for the beach, the shower, or the backyard.', 'ADM000014', NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, 99, '/img/products/prod-jbl-flip-6-speaker.jpg', NULL, 3.66, 313, 2069, 1, NULL, 0, '2026-06-03 04:25:22', '2026-09-21 06:30:22'),
-(15, 3, NULL, 'US', 'approved', NULL, NULL, 'Sennheiser Momentum 4', 'sennheiser-momentum-4', 'Audiophile-tuned sound with up to 60 hours of battery life on a single charge.', 'ADM000015', NULL, NULL, NULL, NULL, 1, 34900, NULL, NULL, NULL, 99, '/img/products/prod-sennheiser-momentum-4.jpg', NULL, NULL, 0, 9820, 1, NULL, 0, '2025-10-21 22:51:22', '2026-09-21 06:30:22'),
-(16, 4, NULL, 'US', 'approved', NULL, NULL, 'Tempered Glass Screen Protector', 'tempered-glass-screen-protector', '9H hardness, an oleophobic coating, and edge-to-edge clarity that keeps your screen scratch-free.', 'ADM000016', NULL, NULL, NULL, NULL, 1, 999, NULL, NULL, NULL, 100, '/img/products/prod-tempered-glass-screen-protector.jpg', NULL, NULL, 0, 1734, 1, 'unbeatable', 0, '2026-04-24 01:25:22', '2026-09-21 06:30:22'),
-(17, 4, NULL, 'US', 'approved', NULL, NULL, 'Silicone Phone Case', 'silicone-phone-case', 'A soft-touch silicone case with a microfibre lining that protects without adding bulk.', 'ADM000017', NULL, NULL, NULL, NULL, 3, 1499, NULL, NULL, NULL, 99, '/img/products/prod-silicone-phone-case.jpg', NULL, 4.65, 596, 590, 1, 'lightning', 1, '2026-04-21 11:43:22', '2026-09-21 06:30:22'),
-(18, 4, NULL, 'US', 'approved', NULL, NULL, 'MagSafe Wireless Charger', 'magsafe-wireless-charger', 'Snap-on magnetic charging for a clean, cable-free charge every time you set your phone down.', 'ADM000018', NULL, NULL, NULL, NULL, 1, 3999, NULL, NULL, NULL, 100, '/img/products/prod-magsafe-wireless-charger.jpg', NULL, 4.28, 250, 6915, 1, 'unbeatable', 0, '2026-01-30 15:12:22', '2026-09-21 06:30:22'),
-(19, 5, NULL, 'US', 'approved', NULL, NULL, 'Apple Watch Series 9', 'apple-watch-series-9', 'Apple\'s smartwatch with the new double-tap gesture, a brighter always-on display, and deep health tracking.', 'ADM000019', NULL, NULL, NULL, NULL, 2, 39900, NULL, NULL, NULL, 100, '/img/products/prod-apple-watch-series-9.jpg', NULL, 4.02, 757, 2096, 1, 'lightning', 0, '2025-10-27 23:02:22', '2026-09-21 06:30:22'),
-(20, 5, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy Watch 6', 'samsung-galaxy-watch-6', 'A sleek Wear OS smartwatch with advanced sleep coaching and body composition tracking.', 'ADM000020', NULL, NULL, NULL, NULL, 1, 32900, NULL, NULL, NULL, 100, '/img/products/prod-samsung-galaxy-watch-6.jpg', NULL, 3.59, 268, 3710, 1, 'unbeatable', 0, '2026-04-22 13:19:22', '2026-09-21 06:30:22'),
-(21, 5, NULL, 'US', 'approved', NULL, NULL, 'Fitbit Charge 6', 'fitbit-charge-6', 'A slim fitness tracker with built-in GPS, heart-rate tracking, and up to a week of battery life.', 'ADM000021', NULL, NULL, NULL, NULL, 2, 15900, NULL, NULL, NULL, 100, '/img/products/prod-fitbit-charge-6.jpg', NULL, 4.29, 404, 9396, 1, NULL, 0, '2025-11-08 03:33:22', '2026-09-21 06:30:22'),
-(22, 6, NULL, 'US', 'approved', NULL, NULL, 'Canon EOS R50', 'canon-eos-r50', 'An entry-level mirrorless camera with fast autofocus, ideal for stepping up from a phone camera.', 'ADM000022', NULL, NULL, NULL, NULL, 1, 79900, NULL, NULL, NULL, 100, '/img/products/prod-canon-eos-r50.jpg', NULL, 4.99, 396, 9564, 1, 'lightning', 0, '2025-09-26 06:51:22', '2026-09-21 06:30:22'),
-(23, 6, NULL, 'US', 'approved', NULL, NULL, 'Sony Alpha ZV-E10', 'sony-alpha-zv-e10', 'A vlogging-focused mirrorless camera with a fully articulating screen and background-defocus mode.', 'ADM000023', NULL, NULL, NULL, NULL, 1, 69900, NULL, NULL, NULL, 100, '/img/products/prod-sony-alpha-zv-e10.jpg', NULL, 4.60, 511, 2022, 1, 'unbeatable', 0, '2026-02-17 02:49:22', '2026-09-21 06:30:22'),
-(24, 6, NULL, 'US', 'approved', NULL, NULL, 'GoPro Hero 12', 'gopro-hero-12', 'Rugged, waterproof, and stabilized — built to capture action from anywhere.', 'ADM000024', NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, 100, '/img/products/prod-gopro-hero-12.jpg', NULL, 4.64, 35, 2523, 1, NULL, 0, '2026-06-29 14:32:22', '2026-09-21 06:30:22'),
-(25, 7, NULL, 'US', 'approved', NULL, NULL, 'Samsung 55\" QLED TV', 'samsung-55-qled-tv', 'Quantum Dot colour and a wide viewing angle bring movies and sport to life in a 55-inch frame.', 'ADM000025', NULL, NULL, NULL, NULL, 1, 89900, NULL, NULL, NULL, 100, '/img/products/prod-samsung-55-qled-tv.jpg', NULL, 4.13, 369, 12695, 1, 'lightning', 0, '2025-11-14 11:10:22', '2026-09-21 06:30:22'),
-(26, 7, NULL, 'US', 'approved', NULL, NULL, 'LG 65\" OLED TV', 'lg-65-oled-tv', 'Self-lit OLED pixels deliver perfect blacks and infinite contrast on a 65-inch canvas.', 'ADM000026', NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, 100, '/img/products/prod-lg-65-oled-tv.jpg', NULL, 4.37, 309, 1554, 1, 'unbeatable', 0, '2026-08-16 11:00:22', '2026-09-21 06:30:22'),
-(27, 7, NULL, 'US', 'approved', NULL, NULL, 'Sony 43\" Bravia TV', 'sony-43-bravia-tv', 'Sony\'s processing engine sharpens detail and motion for a crisp, cinematic picture.', 'ADM000027', NULL, NULL, NULL, NULL, 1, 54900, NULL, NULL, NULL, 100, '/img/products/prod-sony-43-bravia-tv.jpg', NULL, 3.93, 361, 329, 1, NULL, 0, '2026-06-18 11:46:22', '2026-09-21 06:30:22'),
-(28, 8, NULL, 'US', 'approved', NULL, NULL, 'Sony PlayStation 5', 'sony-playstation-5', 'Lightning-fast SSD loading, stunning visuals, and the DualSense controller\'s haptic feedback.', 'ADM000028', NULL, NULL, NULL, NULL, 2, 49900, NULL, NULL, NULL, 100, '/img/products/prod-sony-playstation-5.jpg', NULL, 3.71, 633, 2512, 1, 'lightning', 0, '2026-05-01 15:13:22', '2026-09-21 06:30:22'),
-(29, 8, NULL, 'US', 'approved', NULL, NULL, 'Microsoft Xbox Series X', 'microsoft-xbox-series-x', 'Microsoft\'s most powerful console, built for 4K gaming at up to 120fps.', 'ADM000029', NULL, NULL, NULL, NULL, 1, 49900, NULL, NULL, NULL, 100, '/img/products/prod-microsoft-xbox-series-x.jpg', NULL, 3.57, 178, 8273, 1, 'unbeatable', 0, '2025-12-13 20:19:22', '2026-09-21 06:30:22'),
-(30, 8, NULL, 'US', 'approved', NULL, NULL, 'Nintendo Switch OLED', 'nintendo-switch-oled', 'A vivid 7-inch OLED screen makes handheld play pop, and it still docks to the TV in seconds.', 'ADM000030', NULL, NULL, NULL, NULL, 2, 34900, NULL, NULL, NULL, 100, '/img/products/prod-nintendo-switch-oled.jpg', NULL, 3.91, 260, 4298, 1, NULL, 0, '2025-11-08 09:04:22', '2026-09-21 06:30:22'),
-(31, 9, NULL, 'US', 'approved', NULL, NULL, 'Dyson V15 Vacuum Cleaner', 'dyson-v15-vacuum-cleaner', 'A laser reveals hidden dust while a cordless motor delivers powerful, whole-home suction.', 'ADM000031', NULL, NULL, NULL, NULL, 1, 74900, NULL, NULL, NULL, 100, '/img/products/prod-dyson-v15-vacuum-cleaner.jpg', NULL, 4.61, 7, 230, 1, 'lightning', 0, '2026-08-05 22:14:22', '2026-09-21 06:30:22'),
-(32, 9, NULL, 'US', 'approved', NULL, NULL, 'Philips Air Fryer XXL', 'philips-air-fryer-xxl', 'Rapid Air technology cooks crispy, low-oil favourites fast enough for a weeknight dinner.', 'ADM000032', NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, 100, '/img/products/prod-philips-air-fryer-xxl.jpg', NULL, 4.60, 252, 6028, 1, 'unbeatable', 0, '2026-03-07 08:28:22', '2026-09-21 06:30:22'),
-(33, 9, NULL, 'US', 'approved', NULL, NULL, 'LG 8kg Front Load Washing Machine', 'lg-8kg-front-load-washing-machine', 'Steam-cleaning and a quiet direct-drive motor make laundry day easier.', 'ADM000033', NULL, NULL, NULL, NULL, 1, 54900, NULL, NULL, NULL, 100, '/img/products/prod-lg-8kg-front-load-washing-machine.jpg', NULL, 3.59, 25, 7606, 1, NULL, 0, '2025-12-12 23:38:22', '2026-09-21 06:30:22'),
-(34, 10, NULL, 'US', 'approved', NULL, NULL, 'Logitech MX Master 3S Mouse', 'logitech-mx-master-3s-mouse', 'A precision mouse with silent clicks and an ultra-fast scroll wheel, built for all-day productivity.', 'ADM000034', NULL, NULL, NULL, NULL, 2, 9900, NULL, NULL, NULL, 100, '/img/products/prod-logitech-mx-master-3s-mouse.jpg', NULL, 4.52, 251, 2064, 1, 'lightning', 0, '2026-04-11 23:03:22', '2026-09-21 06:30:22'),
-(35, 10, NULL, 'US', 'approved', NULL, NULL, 'Keychron K2 Mechanical Keyboard', 'keychron-k2-mechanical-keyboard', 'Hot-swappable mechanical switches and Bluetooth multi-device pairing in a compact 75% layout.', 'ADM000035', NULL, NULL, NULL, NULL, 1, 8900, NULL, NULL, NULL, 100, '/img/products/prod-keychron-k2-mechanical-keyboard.jpg', NULL, 3.76, 794, 2250, 1, 'unbeatable', 0, '2025-09-29 08:29:22', '2026-09-21 06:30:22'),
-(36, 10, NULL, 'US', 'approved', NULL, NULL, 'Dell 27\" 4K Monitor', 'dell-27-4k-monitor', 'Sharp 4K clarity and accurate colour on a 27-inch panel built for work and creative editing.', 'ADM000036', NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, 100, '/img/products/prod-dell-27-4k-monitor.jpg', NULL, NULL, 0, 6203, 1, NULL, 0, '2025-12-04 09:55:22', '2026-09-21 06:30:22'),
-(37, 11, NULL, 'US', 'approved', NULL, NULL, 'Anker 20000mAh Power Bank', 'anker-20000mah-power-bank', 'Enough capacity for multiple full phone charges, with fast pass-through charging.', 'ADM000037', NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, 92, '/img/products/prod-anker-20000mah-power-bank.jpg', NULL, 4.87, 452, 7800, 1, 'lightning', 1, '2026-01-13 19:45:22', '2026-09-23 01:23:56'),
-(38, 11, NULL, 'US', 'approved', NULL, NULL, 'Apple 20W USB-C Fast Charger', 'apple-20w-usb-c-fast-charger', 'Apple\'s compact charger tops up an iPhone to 50% in about 30 minutes.', 'ADM000038', NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, 100, '/img/products/prod-apple-20w-usb-c-fast-charger.jpg', NULL, NULL, 0, 7797, 1, 'lightning', 1, '2025-09-27 09:22:22', '2026-09-21 06:30:22'),
-(39, 11, NULL, 'US', 'approved', NULL, NULL, 'Belkin 3-in-1 Wireless Charging Stand', 'belkin-3-in-1-wireless-charging-stand', 'Charge your phone, watch, and earbuds together from a single stand.', 'ADM000039', NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, 100, '/img/products/prod-belkin-3-in-1-wireless-charging-stand.jpg', NULL, 4.19, 460, 3696, 1, 'unbeatable', 0, '2025-10-03 14:28:22', '2026-09-21 06:30:22'),
-(40, 12, NULL, 'US', 'approved', NULL, NULL, 'SanDisk 1TB Portable SSD', 'sandisk-1tb-portable-ssd', 'Pocket-sized storage with fast transfer speeds, built to survive drops and bumps on the go.', 'ADM000040', NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, 100, '/img/products/prod-sandisk-1tb-portable-ssd.jpg', NULL, 3.58, 687, 597, 1, 'unbeatable', 0, '2026-04-19 02:45:22', '2026-09-21 06:30:22'),
-(41, 12, NULL, 'US', 'approved', NULL, NULL, 'Samsung 256GB microSD Card', 'samsung-256gb-microsd-card', 'High-speed storage for phones, cameras, and handheld consoles.', 'ADM000041', NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, 100, '/img/products/prod-samsung-256gb-microsd-card.jpg', NULL, 4.26, 756, 5591, 1, 'lightning', 1, '2026-02-25 03:27:22', '2026-09-21 06:30:22'),
-(42, 12, NULL, 'US', 'approved', NULL, NULL, 'WD 2TB External Hard Drive', 'wd-2tb-external-hard-drive', 'Reliable backup storage with plug-and-play simplicity for photos, videos, and files.', 'ADM000042', NULL, NULL, NULL, NULL, 1, 6999, NULL, NULL, NULL, 100, '/img/products/prod-wd-2tb-external-hard-drive.jpg', NULL, 4.49, 455, 6032, 1, 'lightning', 1, '2026-02-23 07:21:22', '2026-09-21 06:30:22'),
-(43, 13, NULL, 'US', 'approved', NULL, NULL, 'TP-Link Archer WiFi 6 Router', 'tp-link-archer-wifi-6-router', 'Faster, more reliable Wi-Fi for a house full of devices with WiFi 6 speeds.', 'ADM000043', NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, 100, '/img/products/prod-tp-link-archer-wifi-6-router.jpg', NULL, 3.89, 444, 966, 1, 'unbeatable', 0, '2026-03-11 00:11:22', '2026-09-21 06:30:22'),
-(44, 13, NULL, 'US', 'approved', NULL, NULL, 'Netgear Orbi Mesh WiFi System', 'netgear-orbi-mesh-wifi-system', 'Whole-home mesh coverage that eliminates dead zones without losing speed.', 'ADM000044', NULL, NULL, NULL, NULL, 1, 22900, NULL, NULL, NULL, 100, '/img/products/prod-netgear-orbi-mesh-wifi-system.jpg', NULL, 4.35, 390, 964, 1, NULL, 0, '2026-04-26 22:38:22', '2026-09-21 06:30:22'),
-(45, 13, NULL, 'US', 'approved', NULL, NULL, 'TP-Link 8-Port Gigabit Switch', 'tp-link-8-port-gigabit-switch', 'Expand your wired network with eight reliable gigabit ports.', 'ADM000045', NULL, NULL, NULL, NULL, 1, 3999, NULL, NULL, NULL, 100, '/img/products/prod-tp-link-8-port-gigabit-switch.jpg', NULL, NULL, 0, 6470, 1, 'lightning', 1, '2025-10-22 23:52:22', '2026-09-21 06:30:22'),
-(46, 14, NULL, 'US', 'approved', NULL, NULL, 'Philips Hair Dryer', 'philips-hair-dryer', 'Fast-drying airflow with a cooling shot to lock in your style.', 'ADM000046', NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, 100, '/img/products/prod-philips-hair-dryer.jpg', NULL, 4.56, 319, 3593, 1, 'lightning', 1, '2026-04-18 08:50:22', '2026-09-21 06:30:22'),
-(47, 14, NULL, 'US', 'approved', NULL, NULL, 'Oral-B Electric Toothbrush', 'oral-b-electric-toothbrush', 'A pressure sensor and timer help you brush the dentist-recommended way, every time.', 'ADM000047', NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, 100, '/img/products/prod-oral-b-electric-toothbrush.jpg', NULL, 4.07, 782, 1436, 1, 'lightning', 1, '2025-12-24 12:20:22', '2026-09-21 06:30:22'),
-(48, 14, NULL, 'US', 'approved', NULL, NULL, 'Panasonic Beard Trimmer', 'panasonic-beard-trimmer', 'Precision blades and multiple length settings for a clean, consistent trim.', 'ADM000048', NULL, NULL, NULL, NULL, 1, 3499, NULL, NULL, NULL, 100, '/img/products/prod-panasonic-beard-trimmer.jpg', NULL, 3.55, 28, 111, 1, 'unbeatable', 1, '2026-09-17 03:31:22', '2026-09-22 01:13:59'),
-(49, 15, NULL, 'US', 'approved', NULL, NULL, 'Motorola Video Baby Monitor', 'motorola-video-baby-monitor', 'See and hear your baby clearly with night vision and two-way audio.', 'ADM000049', NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, 100, '/img/products/prod-motorola-video-baby-monitor.jpg', NULL, 3.89, 693, 4242, 1, 'unbeatable', 0, '2025-11-13 15:29:22', '2026-09-21 06:30:22'),
-(50, 15, NULL, 'US', 'approved', NULL, NULL, 'Amazon Fire Kids Tablet', 'amazon-fire-kids-tablet', 'A durable, parent-controlled tablet built for young explorers, with a kid-proof case included.', 'ADM000050', NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, 100, '/img/products/prod-amazon-fire-kids-tablet.jpg', NULL, 3.89, 268, 1266, 1, NULL, 0, '2026-07-06 07:34:22', '2026-09-21 06:30:22'),
-(51, 15, NULL, 'US', 'approved', NULL, NULL, 'LeapFrog Learning Tablet', 'leapfrog-learning-tablet', 'A screen-time companion designed to teach letters, numbers, and problem-solving through play.', 'ADM000051', NULL, NULL, NULL, NULL, 1, 5999, NULL, NULL, NULL, 100, '/img/products/prod-leapfrog-learning-tablet.jpg', NULL, 4.18, 481, 1563, 1, 'lightning', 1, '2026-03-02 04:32:22', '2026-09-21 06:30:22'),
-(52, 16, NULL, 'US', 'approved', NULL, NULL, 'HP LaserJet Printer', 'hp-laserjet-printer', 'Crisp, fast black-and-white printing built for the home office.', 'ADM000052', NULL, NULL, NULL, NULL, 1, 17900, NULL, NULL, NULL, 100, '/img/products/prod-hp-laserjet-printer.jpg', NULL, 4.64, 726, 4705, 1, 'lightning', 0, '2026-04-05 05:46:22', '2026-09-21 06:30:22'),
-(53, 16, NULL, 'US', 'approved', NULL, NULL, 'Epson Portable Projector', 'epson-portable-projector', 'A compact projector that turns any wall into a big screen for movies or presentations.', 'ADM000053', NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, 100, '/img/products/prod-epson-portable-projector.jpg', NULL, 4.27, 15, 11857, 1, 'unbeatable', 0, '2025-11-30 22:36:22', '2026-09-21 06:30:22'),
-(54, 16, NULL, 'US', 'approved', NULL, NULL, 'Logitech Webcam C920', 'logitech-webcam-c920', 'Full HD 1080p video and clear audio, built for sharp video calls and streaming.', 'ADM000054', NULL, NULL, NULL, NULL, 1, 6999, 7999, NULL, NULL, 100, '/img/products/prod-logitech-webcam-c920.jpg', NULL, 3.84, 747, 2016, 1, NULL, 0, '2026-05-24 00:45:22', '2026-09-21 06:30:22'),
-(55, 17, NULL, 'US', 'approved', NULL, NULL, 'Amazon Echo Dot (5th Gen)', 'amazon-echo-dot-5th-gen', 'A compact smart speaker with Alexa built in, for music, routines, and controlling the rest of your smart home.', 'ADM000055', NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, 4.02, 422, 308, 1, NULL, 0, '2026-07-29 12:07:22', '2026-09-21 06:30:22'),
-(56, 17, NULL, 'US', 'approved', NULL, NULL, 'Philips Hue Smart Bulb Starter Kit', 'philips-hue-smart-bulb-starter-kit', 'Millions of colours and app-controlled scenes, with a bridge included to get your smart lighting started.', 'ADM000056', NULL, NULL, NULL, NULL, 1, 6999, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, 4.27, 17, 603, 1, NULL, 0, '2026-08-22 20:01:22', '2026-09-21 06:30:22'),
-(57, 17, NULL, 'US', 'approved', NULL, NULL, 'TP-Link Kasa Smart Plug', 'tp-link-kasa-smart-plug', 'Turn any outlet smart — schedule, voice-control, or remotely switch appliances from your phone.', 'ADM000057', NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, 3.76, 378, 14683, 1, NULL, 0, '2025-11-02 13:23:22', '2026-09-21 06:30:22'),
-(58, 17, NULL, 'US', 'approved', NULL, NULL, 'Ring Video Doorbell', 'ring-video-doorbell', 'See, hear, and speak to visitors from anywhere, with motion alerts sent straight to your phone.', 'ADM000058', NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, 4.86, 419, 6098, 1, NULL, 0, '2026-01-21 10:28:22', '2026-09-21 06:30:22'),
-(59, 17, NULL, 'US', 'approved', NULL, NULL, 'Eufy RoboVac 11S Robot Vacuum', 'eufy-robovac-11s-robot-vacuum', 'A slim robot vacuum that slides under furniture and keeps floors clean on a schedule you set.', 'ADM000059', NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, 3.82, 224, 1196, 1, NULL, 0, '2026-05-28 15:30:22', '2026-09-21 06:30:22'),
-(60, 18, NULL, 'US', 'approved', NULL, NULL, 'Garmin Vivosmart 5 Fitness Band', 'garmin-vivosmart-5-fitness-band', 'A slim fitness band with heart-rate tracking, sleep scores, and up to seven days of battery life.', 'ADM000060', NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, 0, 40, 1, NULL, 0, '2026-09-16 10:11:22', '2026-09-21 06:30:22'),
-(61, 18, NULL, 'US', 'approved', NULL, NULL, 'Withings Body+ Smart Scale', 'withings-body-plus-smart-scale', 'Weight, body fat, and muscle mass synced automatically to your phone every time you step on.', 'ADM000061', NULL, NULL, NULL, NULL, 1, 9900, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, 4.84, 256, 3796, 1, NULL, 0, '2026-04-16 07:13:22', '2026-09-21 06:30:22'),
-(62, 18, NULL, 'US', 'approved', NULL, NULL, 'Omron Digital Blood Pressure Monitor', 'omron-digital-blood-pressure-monitor', 'Clinically validated, one-button readings you can track at home between doctor visits.', 'ADM000062', NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, 4.43, 166, 1479, 1, NULL, 0, '2026-07-17 08:55:22', '2026-09-21 06:30:22'),
-(63, 18, NULL, 'US', 'approved', NULL, NULL, 'Wellue Pulse Oximeter', 'wellue-pulse-oximeter', 'A fingertip sensor that reads blood oxygen and pulse rate in seconds, with an easy-read display.', 'ADM000063', NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, 3.85, 10, 5400, 1, NULL, 0, '2025-11-24 22:05:22', '2026-09-21 06:30:22'),
-(64, 18, NULL, 'US', 'approved', NULL, NULL, 'Xiaomi Smart Skipping Rope', 'xiaomi-smart-skipping-rope', 'Counts jumps, calories, and workout time automatically, and syncs your session to a fitness app.', 'ADM000064', NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, 3.61, 297, 1800, 1, NULL, 0, '2026-06-12 06:04:22', '2026-09-21 06:30:22'),
-(65, 19, NULL, 'US', 'approved', NULL, NULL, 'Apple iPhone 15 Pro Max', 'apple-iphone-15-pro-max', 'The largest, most capable iPhone — a titanium build, a 5x telephoto lens, and the A17 Pro chip.', 'ADM000065', NULL, NULL, NULL, NULL, 1, 119900, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, 4.29, 104, 3159, 1, NULL, 0, '2026-04-11 02:02:22', '2026-09-21 06:30:22'),
-(66, 19, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy Z Fold 6', 'samsung-galaxy-z-fold-6', 'A phone that unfolds into a tablet, with a smoother hinge and multitasking built for a bigger screen.', 'ADM000066', NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, 4.09, 696, 1934, 1, NULL, 0, '2026-06-19 20:32:22', '2026-09-21 06:30:22'),
-(67, 19, NULL, 'US', 'approved', NULL, NULL, 'Sony Xperia 1 VI', 'sony-xperia-1-vi', 'A creator-focused flagship with a versatile zoom lens system and pro-grade video controls.', 'ADM000067', NULL, NULL, NULL, NULL, 1, 139900, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, 0, 6736, 1, NULL, 0, '2025-11-07 21:58:22', '2026-09-21 06:30:22'),
-(68, 19, NULL, 'US', 'approved', NULL, NULL, 'Asus ROG Phone 8', 'asus-rog-phone-8', 'A gaming flagship with a 165Hz display, AirTrigger controls, and cooling built for long sessions.', 'ADM000068', NULL, NULL, NULL, NULL, 1, 109900, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, 0, 2047, 1, NULL, 0, '2026-01-21 11:33:22', '2026-09-21 06:30:22'),
-(69, 19, NULL, 'US', 'approved', NULL, NULL, 'Dell XPS 15 Plus', 'dell-xps-15-plus', 'A premium creator laptop with an edge-to-edge InfinityEdge display and serious rendering power.', 'ADM000069', NULL, NULL, NULL, NULL, 1, 189900, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, 3.68, 13, 1887, 1, NULL, 0, '2026-04-26 11:43:22', '2026-09-21 06:30:22'),
-(70, 20, NULL, 'US', 'approved', NULL, NULL, 'Garmin DriveSmart 55 GPS Navigator', 'garmin-drivesmart-55-gps-navigator', 'Voice-activated turn-by-turn navigation with live traffic, built for the dashboard.', 'ADM000070', NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, 4.44, 647, 10507, 1, NULL, 0, '2025-11-06 10:12:22', '2026-09-21 06:30:22'),
-(71, 20, NULL, 'US', 'approved', NULL, NULL, 'Pioneer Bluetooth Car Stereo Receiver', 'pioneer-bluetooth-car-stereo-receiver', 'A touchscreen head unit upgrade with Bluetooth calling and streaming built in for any dashboard.', 'ADM000071', NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, 3.82, 665, 1374, 1, NULL, 0, '2026-08-17 06:10:22', '2026-09-21 06:30:22'),
-(72, 20, NULL, 'US', 'approved', NULL, NULL, 'iOttie Car Dashboard Phone Mount', 'iottie-car-dashboard-phone-mount', 'A one-hand, one-touch mount that holds your phone steady on the dash or windshield for hands-free navigation.', 'ADM000072', NULL, NULL, NULL, NULL, 1, 2499, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, NULL, 0, 2506, 1, NULL, 0, '2026-05-25 06:16:22', '2026-09-21 06:30:22'),
-(73, 20, NULL, 'US', 'approved', NULL, NULL, 'Car Vent Air Purifier & Freshener', 'car-vent-air-purifier-freshener', 'Clips onto any air vent to filter odours and keep the cabin smelling fresh on every drive.', 'ADM000073', NULL, NULL, NULL, NULL, 1, 1499, NULL, NULL, NULL, 97, '/img/products/cat-car-electronics.jpg', NULL, 4.18, 312, 755, 1, NULL, 0, '2026-02-15 14:38:22', '2026-09-22 01:44:43'),
-(74, 20, NULL, 'US', 'approved', NULL, NULL, 'Pioneer Digital Car Clock Gauge', 'pioneer-digital-car-clock-gauge', 'A dash-mounted digital clock and gauge that drops into any spare vent or console slot.', 'ADM000074', NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, 4.79, 277, 3804, 1, NULL, 0, '2026-06-11 03:23:22', '2026-09-21 06:30:22'),
-(78, 2, 3, 'IN', 'approved', NULL, NULL, 'Laptop side screens', 'laptop-side-screens', 'Do more work in one pc.', 'SLRCSXX0003', NULL, NULL, NULL, NULL, 3, 50000, 70000, NULL, NULL, 49, '/api/media/file/products/wqgk97y4RubOjrExw20BXlMvnsDo3hDNqTUQw1if.png', NULL, NULL, 0, 0, 1, NULL, 0, '2026-09-23 00:50:08', '2026-09-23 01:33:53');
+INSERT INTO `products` (`id`, `category_id`, `shop_id`, `trademark_id`, `market`, `status`, `rejection_reason`, `suggested_category_name`, `name`, `slug`, `description`, `bullet_points`, `detail_images`, `product_details`, `variation_theme`, `size_chart`, `sku`, `seller_code`, `hsn_code`, `gst_rate_bps`, `country_of_origin`, `manufacturer_info`, `compliance`, `next_variant_seq`, `price_cents`, `compare_at_price_cents`, `price_references`, `return_days`, `shipping_template_id`, `handling_days`, `inventory_quantity`, `image_url`, `video_url`, `detail_video_url`, `rating_avg`, `rating_count`, `units_sold`, `is_active`, `deal_type`, `is_exclusive_offer`, `created_at`, `updated_at`) VALUES
+(1, 1, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple iPhone 15 Pro', 'apple-iphone-15-pro', 'Apple\'s titanium-body flagship with the A17 Pro chip, a 48MP main camera, and USB-C — built for all-day performance in the pocket.', NULL, NULL, NULL, NULL, NULL, 'ADM000001', NULL, NULL, NULL, NULL, NULL, NULL, 3, 99900, NULL, NULL, NULL, NULL, NULL, 98, '/img/products/prod-apple-iphone-15-pro.jpg', NULL, NULL, 3.81, 239, 57, 1, 'lightning', 0, '2026-09-16 11:31:22', '2026-09-22 05:07:55'),
+(2, 1, NULL, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy S24', 'samsung-galaxy-s24', 'A compact Android flagship with a bright Dynamic AMOLED display, Snapdragon power, and Galaxy AI features built in.', NULL, NULL, NULL, NULL, NULL, 'ADM000002', NULL, NULL, NULL, NULL, NULL, NULL, 2, 79900, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-samsung-galaxy-s24.jpg', NULL, NULL, 4.10, 635, 9572, 1, 'lightning', 0, '2025-11-22 05:17:22', '2026-09-21 06:30:22'),
+(3, 1, NULL, NULL, 'US', 'approved', NULL, NULL, 'Google Pixel 8', 'google-pixel-8', 'Google\'s pure-Android phone with the Tensor G3 chip and a camera tuned for standout low-light and portrait shots.', NULL, NULL, NULL, NULL, NULL, 'ADM000003', NULL, NULL, NULL, NULL, NULL, NULL, 1, 69900, 74900, NULL, NULL, NULL, NULL, 100, '/img/products/prod-google-pixel-8.jpg', NULL, NULL, 3.66, 439, 1234, 1, 'lightning', 0, '2026-03-26 21:52:22', '2026-09-21 06:30:22'),
+(4, 1, NULL, NULL, 'US', 'approved', NULL, NULL, 'OnePlus 12', 'oneplus-12', 'A fast, fluid flagship with Hasselblad-tuned cameras and 100W charging that tops up the battery in minutes.', NULL, NULL, NULL, NULL, NULL, 'ADM000004', NULL, NULL, NULL, NULL, NULL, NULL, 1, 73900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-oneplus-12.jpg', '/videos/demo-smartphone-hands.mp4', NULL, 4.27, 420, 575, 1, 'unbeatable', 0, '2025-12-12 21:03:22', '2026-09-21 06:30:22'),
+(5, 1, NULL, NULL, 'US', 'approved', NULL, NULL, 'Xiaomi 14', 'xiaomi-14', 'A pocketable flagship with Leica optics and flagship-tier Snapdragon performance at a sharp price.', NULL, NULL, NULL, NULL, NULL, 'ADM000005', NULL, NULL, NULL, NULL, NULL, NULL, 1, 64900, NULL, NULL, NULL, NULL, NULL, 98, '/img/products/prod-xiaomi-14.jpg', NULL, NULL, 3.88, 193, 1589, 1, NULL, 0, '2026-07-01 11:49:22', '2026-09-22 02:31:02'),
+(6, 2, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple MacBook Air M3', 'apple-macbook-air-m3', 'Apple\'s fanless, all-day laptop — the M3 chip handles everyday work and creative apps without breaking a sweat.', NULL, NULL, NULL, NULL, NULL, 'ADM000006', NULL, NULL, NULL, NULL, NULL, NULL, 2, 109900, NULL, NULL, NULL, NULL, NULL, 80, '/img/products/prod-apple-macbook-air-m3.jpg', NULL, NULL, 4.55, 199, 4133, 1, 'unbeatable', 1, '2025-12-07 07:03:22', '2026-09-21 06:30:22'),
+(7, 2, NULL, NULL, 'US', 'approved', NULL, NULL, 'Dell XPS 13', 'dell-xps-13', 'A compact ultrabook with an edge-to-edge InfinityEdge display, built for work on the go.', NULL, NULL, NULL, NULL, NULL, 'ADM000007', NULL, NULL, NULL, NULL, NULL, NULL, 4, 99900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-dell-xps-13.png', NULL, NULL, 3.96, 517, 460, 1, 'unbeatable', 0, '2026-07-23 15:06:22', '2026-09-21 06:30:22'),
+(8, 2, NULL, NULL, 'US', 'approved', NULL, NULL, 'HP Spectre x360', 'hp-spectre-x360', 'A convertible 2-in-1 with a gem-cut design that folds flat into tablet mode for sketching, notes, or streaming.', NULL, NULL, NULL, NULL, NULL, 'ADM000008', NULL, NULL, NULL, NULL, NULL, NULL, 2, 129900, NULL, NULL, NULL, NULL, NULL, 91, '/img/products/prod-hp-spectre-x360.png', NULL, NULL, 4.32, 114, 2624, 1, 'unbeatable', 0, '2026-06-25 20:18:22', '2026-09-21 06:30:22'),
+(9, 2, NULL, NULL, 'US', 'approved', NULL, NULL, 'Lenovo ThinkPad X1 Carbon', 'lenovo-thinkpad-x1-carbon', 'The business standard: a carbon-fibre chassis, legendary keyboard, and MIL-SPEC durability.', NULL, NULL, NULL, NULL, NULL, 'ADM000009', NULL, NULL, NULL, NULL, NULL, NULL, 1, 159900, NULL, NULL, NULL, NULL, NULL, 89, '/img/products/prod-lenovo-thinkpad-x1-carbon.jpg', NULL, NULL, NULL, 0, 6998, 1, 'lightning', 0, '2026-02-17 08:20:22', '2026-09-21 06:30:22'),
+(10, 2, NULL, NULL, 'US', 'approved', NULL, NULL, 'Asus ROG Zephyrus G14', 'asus-rog-zephyrus-g14', 'A compact gaming laptop that punches well above its size, with enough GPU power for the latest titles.', NULL, NULL, NULL, NULL, NULL, 'ADM000010', NULL, NULL, NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, NULL, NULL, 98, '/img/products/prod-asus-rog-zephyrus-g14.jpg', NULL, NULL, 4.42, 118, 581, 1, NULL, 0, '2026-08-04 07:58:22', '2026-09-21 06:30:22'),
+(11, 3, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sony WH-1000XM5', 'sony-wh-1000xm5', 'Industry-leading noise cancellation and all-day comfort, tuned for travel and focus.', NULL, NULL, NULL, NULL, NULL, 'ADM000011', NULL, NULL, NULL, NULL, NULL, NULL, 3, 34900, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-sony-wh-1000xm5.jpg', NULL, NULL, 3.86, 428, 4104, 1, 'lightning', 0, '2026-04-02 23:24:22', '2026-09-21 06:30:22'),
+(12, 3, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple AirPods Pro 2', 'apple-airpods-pro-2', 'Adaptive noise cancellation, Transparency mode, and spatial audio in Apple\'s smallest true wireless earbuds.', NULL, NULL, NULL, NULL, NULL, 'ADM000012', NULL, NULL, NULL, NULL, NULL, NULL, 1, 24900, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-apple-airpods-pro-2.jpg', NULL, NULL, 4.74, 157, 11314, 1, 'lightning', 0, '2025-10-02 01:26:22', '2026-09-21 06:30:22'),
+(13, 3, NULL, NULL, 'US', 'approved', NULL, NULL, 'Bose QuietComfort Ultra', 'bose-quietcomfort-ultra', 'Bose\'s quietest headphones yet, with immersive spatial audio and plush all-day comfort.', NULL, NULL, NULL, NULL, NULL, 'ADM000013', NULL, NULL, NULL, NULL, NULL, NULL, 1, 42900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-bose-quietcomfort-ultra.jpg', NULL, NULL, 3.59, 576, 1693, 1, 'unbeatable', 0, '2026-04-02 09:44:22', '2026-09-21 06:30:22'),
+(14, 3, NULL, NULL, 'US', 'approved', NULL, NULL, 'JBL Flip 6 Speaker', 'jbl-flip-6-speaker', 'A rugged, waterproof Bluetooth speaker with punchy JBL sound for the beach, the shower, or the backyard.', NULL, NULL, NULL, NULL, NULL, 'ADM000014', NULL, NULL, NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-jbl-flip-6-speaker.jpg', NULL, NULL, 3.66, 313, 2069, 1, NULL, 0, '2026-06-03 04:25:22', '2026-09-21 06:30:22'),
+(15, 3, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sennheiser Momentum 4', 'sennheiser-momentum-4', 'Audiophile-tuned sound with up to 60 hours of battery life on a single charge.', NULL, NULL, NULL, NULL, NULL, 'ADM000015', NULL, NULL, NULL, NULL, NULL, NULL, 1, 34900, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-sennheiser-momentum-4.jpg', NULL, NULL, NULL, 0, 9820, 1, NULL, 0, '2025-10-21 22:51:22', '2026-09-21 06:30:22'),
+(16, 4, NULL, NULL, 'US', 'approved', NULL, NULL, 'Tempered Glass Screen Protector', 'tempered-glass-screen-protector', '9H hardness, an oleophobic coating, and edge-to-edge clarity that keeps your screen scratch-free.', NULL, NULL, NULL, NULL, NULL, 'ADM000016', NULL, NULL, NULL, NULL, NULL, NULL, 1, 999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-tempered-glass-screen-protector.jpg', NULL, NULL, NULL, 0, 1734, 1, 'unbeatable', 0, '2026-04-24 01:25:22', '2026-09-21 06:30:22'),
+(17, 4, NULL, NULL, 'US', 'approved', NULL, NULL, 'Silicone Phone Case', 'silicone-phone-case', 'A soft-touch silicone case with a microfibre lining that protects without adding bulk.', NULL, NULL, NULL, NULL, NULL, 'ADM000017', NULL, NULL, NULL, NULL, NULL, NULL, 3, 1499, NULL, NULL, NULL, NULL, NULL, 99, '/img/products/prod-silicone-phone-case.jpg', NULL, NULL, 4.65, 596, 590, 1, 'lightning', 1, '2026-04-21 11:43:22', '2026-09-21 06:30:22'),
+(18, 4, NULL, NULL, 'US', 'approved', NULL, NULL, 'MagSafe Wireless Charger', 'magsafe-wireless-charger', 'Snap-on magnetic charging for a clean, cable-free charge every time you set your phone down.', NULL, NULL, NULL, NULL, NULL, 'ADM000018', NULL, NULL, NULL, NULL, NULL, NULL, 1, 3999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-magsafe-wireless-charger.jpg', NULL, NULL, 4.28, 250, 6915, 1, 'unbeatable', 0, '2026-01-30 15:12:22', '2026-09-21 06:30:22'),
+(19, 5, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple Watch Series 9', 'apple-watch-series-9', 'Apple\'s smartwatch with the new double-tap gesture, a brighter always-on display, and deep health tracking.', NULL, NULL, NULL, NULL, NULL, 'ADM000019', NULL, NULL, NULL, NULL, NULL, NULL, 2, 39900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-apple-watch-series-9.jpg', NULL, NULL, 4.02, 757, 2096, 1, 'lightning', 0, '2025-10-27 23:02:22', '2026-09-21 06:30:22'),
+(20, 5, NULL, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy Watch 6', 'samsung-galaxy-watch-6', 'A sleek Wear OS smartwatch with advanced sleep coaching and body composition tracking.', NULL, NULL, NULL, NULL, NULL, 'ADM000020', NULL, NULL, NULL, NULL, NULL, NULL, 1, 32900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-samsung-galaxy-watch-6.jpg', NULL, NULL, 3.59, 268, 3710, 1, 'unbeatable', 0, '2026-04-22 13:19:22', '2026-09-21 06:30:22'),
+(21, 5, NULL, NULL, 'US', 'approved', NULL, NULL, 'Fitbit Charge 6', 'fitbit-charge-6', 'A slim fitness tracker with built-in GPS, heart-rate tracking, and up to a week of battery life.', NULL, NULL, NULL, NULL, NULL, 'ADM000021', NULL, NULL, NULL, NULL, NULL, NULL, 2, 15900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-fitbit-charge-6.jpg', NULL, NULL, 4.29, 404, 9396, 1, NULL, 0, '2025-11-08 03:33:22', '2026-09-21 06:30:22'),
+(22, 6, NULL, NULL, 'US', 'approved', NULL, NULL, 'Canon EOS R50', 'canon-eos-r50', 'An entry-level mirrorless camera with fast autofocus, ideal for stepping up from a phone camera.', NULL, NULL, NULL, NULL, NULL, 'ADM000022', NULL, NULL, NULL, NULL, NULL, NULL, 1, 79900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-canon-eos-r50.jpg', NULL, NULL, 4.99, 396, 9564, 1, 'lightning', 0, '2025-09-26 06:51:22', '2026-09-21 06:30:22'),
+(23, 6, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sony Alpha ZV-E10', 'sony-alpha-zv-e10', 'A vlogging-focused mirrorless camera with a fully articulating screen and background-defocus mode.', NULL, NULL, NULL, NULL, NULL, 'ADM000023', NULL, NULL, NULL, NULL, NULL, NULL, 1, 69900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-sony-alpha-zv-e10.jpg', NULL, NULL, 4.60, 511, 2022, 1, 'unbeatable', 0, '2026-02-17 02:49:22', '2026-09-21 06:30:22'),
+(24, 6, NULL, NULL, 'US', 'approved', NULL, NULL, 'GoPro Hero 12', 'gopro-hero-12', 'Rugged, waterproof, and stabilized — built to capture action from anywhere.', NULL, NULL, NULL, NULL, NULL, 'ADM000024', NULL, NULL, NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-gopro-hero-12.jpg', NULL, NULL, 4.64, 35, 2523, 1, NULL, 0, '2026-06-29 14:32:22', '2026-09-21 06:30:22'),
+(25, 7, NULL, NULL, 'US', 'approved', NULL, NULL, 'Samsung 55\" QLED TV', 'samsung-55-qled-tv', 'Quantum Dot colour and a wide viewing angle bring movies and sport to life in a 55-inch frame.', NULL, NULL, NULL, NULL, NULL, 'ADM000025', NULL, NULL, NULL, NULL, NULL, NULL, 1, 89900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-samsung-55-qled-tv.jpg', NULL, NULL, 4.13, 369, 12695, 1, 'lightning', 0, '2025-11-14 11:10:22', '2026-09-21 06:30:22'),
+(26, 7, NULL, NULL, 'US', 'approved', NULL, NULL, 'LG 65\" OLED TV', 'lg-65-oled-tv', 'Self-lit OLED pixels deliver perfect blacks and infinite contrast on a 65-inch canvas.', NULL, NULL, NULL, NULL, NULL, 'ADM000026', NULL, NULL, NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-lg-65-oled-tv.jpg', NULL, NULL, 4.37, 309, 1554, 1, 'unbeatable', 0, '2026-08-16 11:00:22', '2026-09-21 06:30:22'),
+(27, 7, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sony 43\" Bravia TV', 'sony-43-bravia-tv', 'Sony\'s processing engine sharpens detail and motion for a crisp, cinematic picture.', NULL, NULL, NULL, NULL, NULL, 'ADM000027', NULL, NULL, NULL, NULL, NULL, NULL, 1, 54900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-sony-43-bravia-tv.jpg', NULL, NULL, 3.93, 361, 329, 1, NULL, 0, '2026-06-18 11:46:22', '2026-09-21 06:30:22'),
+(28, 8, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sony PlayStation 5', 'sony-playstation-5', 'Lightning-fast SSD loading, stunning visuals, and the DualSense controller\'s haptic feedback.', NULL, NULL, NULL, NULL, NULL, 'ADM000028', NULL, NULL, NULL, NULL, NULL, NULL, 2, 49900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-sony-playstation-5.jpg', NULL, NULL, 3.71, 633, 2512, 1, 'lightning', 0, '2026-05-01 15:13:22', '2026-09-21 06:30:22'),
+(29, 8, NULL, NULL, 'US', 'approved', NULL, NULL, 'Microsoft Xbox Series X', 'microsoft-xbox-series-x', 'Microsoft\'s most powerful console, built for 4K gaming at up to 120fps.', NULL, NULL, NULL, NULL, NULL, 'ADM000029', NULL, NULL, NULL, NULL, NULL, NULL, 1, 49900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-microsoft-xbox-series-x.jpg', NULL, NULL, 3.57, 178, 8273, 1, 'unbeatable', 0, '2025-12-13 20:19:22', '2026-09-21 06:30:22'),
+(30, 8, NULL, NULL, 'US', 'approved', NULL, NULL, 'Nintendo Switch OLED', 'nintendo-switch-oled', 'A vivid 7-inch OLED screen makes handheld play pop, and it still docks to the TV in seconds.', NULL, NULL, NULL, NULL, NULL, 'ADM000030', NULL, NULL, NULL, NULL, NULL, NULL, 2, 34900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-nintendo-switch-oled.jpg', NULL, NULL, 3.91, 260, 4298, 1, NULL, 0, '2025-11-08 09:04:22', '2026-09-21 06:30:22'),
+(31, 9, NULL, NULL, 'US', 'approved', NULL, NULL, 'Dyson V15 Vacuum Cleaner', 'dyson-v15-vacuum-cleaner', 'A laser reveals hidden dust while a cordless motor delivers powerful, whole-home suction.', NULL, NULL, NULL, NULL, NULL, 'ADM000031', NULL, NULL, NULL, NULL, NULL, NULL, 1, 74900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-dyson-v15-vacuum-cleaner.jpg', NULL, NULL, 4.61, 7, 230, 1, 'lightning', 0, '2026-08-05 22:14:22', '2026-09-21 06:30:22'),
+(32, 9, NULL, NULL, 'US', 'approved', NULL, NULL, 'Philips Air Fryer XXL', 'philips-air-fryer-xxl', 'Rapid Air technology cooks crispy, low-oil favourites fast enough for a weeknight dinner.', NULL, NULL, NULL, NULL, NULL, 'ADM000032', NULL, NULL, NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-philips-air-fryer-xxl.jpg', NULL, NULL, 4.60, 252, 6028, 1, 'unbeatable', 0, '2026-03-07 08:28:22', '2026-09-21 06:30:22'),
+(33, 9, NULL, NULL, 'US', 'approved', NULL, NULL, 'LG 8kg Front Load Washing Machine', 'lg-8kg-front-load-washing-machine', 'Steam-cleaning and a quiet direct-drive motor make laundry day easier.', NULL, NULL, NULL, NULL, NULL, 'ADM000033', NULL, NULL, NULL, NULL, NULL, NULL, 1, 54900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-lg-8kg-front-load-washing-machine.jpg', NULL, NULL, 3.59, 25, 7606, 1, NULL, 0, '2025-12-12 23:38:22', '2026-09-21 06:30:22'),
+(34, 10, NULL, NULL, 'US', 'approved', NULL, NULL, 'Logitech MX Master 3S Mouse', 'logitech-mx-master-3s-mouse', 'A precision mouse with silent clicks and an ultra-fast scroll wheel, built for all-day productivity.', NULL, NULL, NULL, NULL, NULL, 'ADM000034', NULL, NULL, NULL, NULL, NULL, NULL, 2, 9900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-logitech-mx-master-3s-mouse.jpg', NULL, NULL, 4.52, 251, 2064, 1, 'lightning', 0, '2026-04-11 23:03:22', '2026-09-21 06:30:22'),
+(35, 10, NULL, NULL, 'US', 'approved', NULL, NULL, 'Keychron K2 Mechanical Keyboard', 'keychron-k2-mechanical-keyboard', 'Hot-swappable mechanical switches and Bluetooth multi-device pairing in a compact 75% layout.', NULL, NULL, NULL, NULL, NULL, 'ADM000035', NULL, NULL, NULL, NULL, NULL, NULL, 1, 8900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-keychron-k2-mechanical-keyboard.jpg', NULL, NULL, 3.76, 794, 2250, 1, 'unbeatable', 0, '2025-09-29 08:29:22', '2026-09-21 06:30:22'),
+(36, 10, NULL, NULL, 'US', 'approved', NULL, NULL, 'Dell 27\" 4K Monitor', 'dell-27-4k-monitor', 'Sharp 4K clarity and accurate colour on a 27-inch panel built for work and creative editing.', NULL, NULL, NULL, NULL, NULL, 'ADM000036', NULL, NULL, NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-dell-27-4k-monitor.jpg', NULL, NULL, NULL, 0, 6203, 1, NULL, 0, '2025-12-04 09:55:22', '2026-09-21 06:30:22'),
+(37, 11, NULL, NULL, 'US', 'approved', NULL, NULL, 'Anker 20000mAh Power Bank', 'anker-20000mah-power-bank', 'Enough capacity for multiple full phone charges, with fast pass-through charging.', NULL, NULL, NULL, NULL, NULL, 'ADM000037', NULL, NULL, NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, NULL, NULL, 92, '/img/products/prod-anker-20000mah-power-bank.jpg', NULL, NULL, 4.87, 452, 7800, 1, 'lightning', 1, '2026-01-13 19:45:22', '2026-09-23 01:23:56'),
+(38, 11, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple 20W USB-C Fast Charger', 'apple-20w-usb-c-fast-charger', 'Apple\'s compact charger tops up an iPhone to 50% in about 30 minutes.', NULL, NULL, NULL, NULL, NULL, 'ADM000038', NULL, NULL, NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-apple-20w-usb-c-fast-charger.jpg', NULL, NULL, NULL, 0, 7797, 1, 'lightning', 1, '2025-09-27 09:22:22', '2026-09-21 06:30:22'),
+(39, 11, NULL, NULL, 'US', 'approved', NULL, NULL, 'Belkin 3-in-1 Wireless Charging Stand', 'belkin-3-in-1-wireless-charging-stand', 'Charge your phone, watch, and earbuds together from a single stand.', NULL, NULL, NULL, NULL, NULL, 'ADM000039', NULL, NULL, NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-belkin-3-in-1-wireless-charging-stand.jpg', NULL, NULL, 4.19, 460, 3696, 1, 'unbeatable', 0, '2025-10-03 14:28:22', '2026-09-21 06:30:22'),
+(40, 12, NULL, NULL, 'US', 'approved', NULL, NULL, 'SanDisk 1TB Portable SSD', 'sandisk-1tb-portable-ssd', 'Pocket-sized storage with fast transfer speeds, built to survive drops and bumps on the go.', NULL, NULL, NULL, NULL, NULL, 'ADM000040', NULL, NULL, NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-sandisk-1tb-portable-ssd.jpg', NULL, NULL, 3.58, 687, 597, 1, 'unbeatable', 0, '2026-04-19 02:45:22', '2026-09-21 06:30:22'),
+(41, 12, NULL, NULL, 'US', 'approved', NULL, NULL, 'Samsung 256GB microSD Card', 'samsung-256gb-microsd-card', 'High-speed storage for phones, cameras, and handheld consoles.', NULL, NULL, NULL, NULL, NULL, 'ADM000041', NULL, NULL, NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-samsung-256gb-microsd-card.jpg', NULL, NULL, 4.26, 756, 5591, 1, 'lightning', 1, '2026-02-25 03:27:22', '2026-09-21 06:30:22'),
+(42, 12, NULL, NULL, 'US', 'approved', NULL, NULL, 'WD 2TB External Hard Drive', 'wd-2tb-external-hard-drive', 'Reliable backup storage with plug-and-play simplicity for photos, videos, and files.', NULL, NULL, NULL, NULL, NULL, 'ADM000042', NULL, NULL, NULL, NULL, NULL, NULL, 1, 6999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-wd-2tb-external-hard-drive.jpg', NULL, NULL, 4.49, 455, 6032, 1, 'lightning', 1, '2026-02-23 07:21:22', '2026-09-21 06:30:22'),
+(43, 13, NULL, NULL, 'US', 'approved', NULL, NULL, 'TP-Link Archer WiFi 6 Router', 'tp-link-archer-wifi-6-router', 'Faster, more reliable Wi-Fi for a house full of devices with WiFi 6 speeds.', NULL, NULL, NULL, NULL, NULL, 'ADM000043', NULL, NULL, NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-tp-link-archer-wifi-6-router.jpg', NULL, NULL, 3.89, 444, 966, 1, 'unbeatable', 0, '2026-03-11 00:11:22', '2026-09-21 06:30:22'),
+(44, 13, NULL, NULL, 'US', 'approved', NULL, NULL, 'Netgear Orbi Mesh WiFi System', 'netgear-orbi-mesh-wifi-system', 'Whole-home mesh coverage that eliminates dead zones without losing speed.', NULL, NULL, NULL, NULL, NULL, 'ADM000044', NULL, NULL, NULL, NULL, NULL, NULL, 1, 22900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-netgear-orbi-mesh-wifi-system.jpg', NULL, NULL, 4.35, 390, 964, 1, NULL, 0, '2026-04-26 22:38:22', '2026-09-21 06:30:22'),
+(45, 13, NULL, NULL, 'US', 'approved', NULL, NULL, 'TP-Link 8-Port Gigabit Switch', 'tp-link-8-port-gigabit-switch', 'Expand your wired network with eight reliable gigabit ports.', NULL, NULL, NULL, NULL, NULL, 'ADM000045', NULL, NULL, NULL, NULL, NULL, NULL, 1, 3999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-tp-link-8-port-gigabit-switch.jpg', NULL, NULL, NULL, 0, 6470, 1, 'lightning', 1, '2025-10-22 23:52:22', '2026-09-21 06:30:22'),
+(46, 14, NULL, NULL, 'US', 'approved', NULL, NULL, 'Philips Hair Dryer', 'philips-hair-dryer', 'Fast-drying airflow with a cooling shot to lock in your style.', NULL, NULL, NULL, NULL, NULL, 'ADM000046', NULL, NULL, NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-philips-hair-dryer.jpg', NULL, NULL, 4.56, 319, 3593, 1, 'lightning', 1, '2026-04-18 08:50:22', '2026-09-21 06:30:22'),
+(47, 14, NULL, NULL, 'US', 'approved', NULL, NULL, 'Oral-B Electric Toothbrush', 'oral-b-electric-toothbrush', 'A pressure sensor and timer help you brush the dentist-recommended way, every time.', NULL, NULL, NULL, NULL, NULL, 'ADM000047', NULL, NULL, NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-oral-b-electric-toothbrush.jpg', NULL, NULL, 4.07, 782, 1436, 1, 'lightning', 1, '2025-12-24 12:20:22', '2026-09-21 06:30:22'),
+(48, 14, NULL, NULL, 'US', 'approved', NULL, NULL, 'Panasonic Beard Trimmer', 'panasonic-beard-trimmer', 'Precision blades and multiple length settings for a clean, consistent trim.', NULL, NULL, NULL, NULL, NULL, 'ADM000048', NULL, NULL, NULL, NULL, NULL, NULL, 1, 3499, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-panasonic-beard-trimmer.jpg', NULL, NULL, 3.55, 28, 111, 1, 'unbeatable', 1, '2026-09-17 03:31:22', '2026-09-22 01:13:59'),
+(49, 15, NULL, NULL, 'US', 'approved', NULL, NULL, 'Motorola Video Baby Monitor', 'motorola-video-baby-monitor', 'See and hear your baby clearly with night vision and two-way audio.', NULL, NULL, NULL, NULL, NULL, 'ADM000049', NULL, NULL, NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-motorola-video-baby-monitor.jpg', NULL, NULL, 3.89, 693, 4242, 1, 'unbeatable', 0, '2025-11-13 15:29:22', '2026-09-21 06:30:22'),
+(50, 15, NULL, NULL, 'US', 'approved', NULL, NULL, 'Amazon Fire Kids Tablet', 'amazon-fire-kids-tablet', 'A durable, parent-controlled tablet built for young explorers, with a kid-proof case included.', NULL, NULL, NULL, NULL, NULL, 'ADM000050', NULL, NULL, NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-amazon-fire-kids-tablet.jpg', NULL, NULL, 3.89, 268, 1266, 1, NULL, 0, '2026-07-06 07:34:22', '2026-09-21 06:30:22'),
+(51, 15, NULL, NULL, 'US', 'approved', NULL, NULL, 'LeapFrog Learning Tablet', 'leapfrog-learning-tablet', 'A screen-time companion designed to teach letters, numbers, and problem-solving through play.', NULL, NULL, NULL, NULL, NULL, 'ADM000051', NULL, NULL, NULL, NULL, NULL, NULL, 1, 5999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-leapfrog-learning-tablet.jpg', NULL, NULL, 4.18, 481, 1563, 1, 'lightning', 1, '2026-03-02 04:32:22', '2026-09-21 06:30:22'),
+(52, 16, NULL, NULL, 'US', 'approved', NULL, NULL, 'HP LaserJet Printer', 'hp-laserjet-printer', 'Crisp, fast black-and-white printing built for the home office.', NULL, NULL, NULL, NULL, NULL, 'ADM000052', NULL, NULL, NULL, NULL, NULL, NULL, 1, 17900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-hp-laserjet-printer.jpg', NULL, NULL, 4.64, 726, 4705, 1, 'lightning', 0, '2026-04-05 05:46:22', '2026-09-21 06:30:22'),
+(53, 16, NULL, NULL, 'US', 'approved', NULL, NULL, 'Epson Portable Projector', 'epson-portable-projector', 'A compact projector that turns any wall into a big screen for movies or presentations.', NULL, NULL, NULL, NULL, NULL, 'ADM000053', NULL, NULL, NULL, NULL, NULL, NULL, 1, 39900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/prod-epson-portable-projector.jpg', NULL, NULL, 4.27, 15, 11857, 1, 'unbeatable', 0, '2025-11-30 22:36:22', '2026-09-21 06:30:22'),
+(54, 16, NULL, NULL, 'US', 'approved', NULL, NULL, 'Logitech Webcam C920', 'logitech-webcam-c920', 'Full HD 1080p video and clear audio, built for sharp video calls and streaming.', NULL, NULL, NULL, NULL, NULL, 'ADM000054', NULL, NULL, NULL, NULL, NULL, NULL, 1, 6999, 7999, NULL, NULL, NULL, NULL, 100, '/img/products/prod-logitech-webcam-c920.jpg', NULL, NULL, 3.84, 747, 2016, 1, NULL, 0, '2026-05-24 00:45:22', '2026-09-21 06:30:22'),
+(55, 17, NULL, NULL, 'US', 'approved', NULL, NULL, 'Amazon Echo Dot (5th Gen)', 'amazon-echo-dot-5th-gen', 'A compact smart speaker with Alexa built in, for music, routines, and controlling the rest of your smart home.', NULL, NULL, NULL, NULL, NULL, 'ADM000055', NULL, NULL, NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, NULL, 4.02, 422, 308, 1, NULL, 0, '2026-07-29 12:07:22', '2026-09-21 06:30:22'),
+(56, 17, NULL, NULL, 'US', 'approved', NULL, NULL, 'Philips Hue Smart Bulb Starter Kit', 'philips-hue-smart-bulb-starter-kit', 'Millions of colours and app-controlled scenes, with a bridge included to get your smart lighting started.', NULL, NULL, NULL, NULL, NULL, 'ADM000056', NULL, NULL, NULL, NULL, NULL, NULL, 1, 6999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, NULL, 4.27, 17, 603, 1, NULL, 0, '2026-08-22 20:01:22', '2026-09-21 06:30:22'),
+(57, 17, NULL, NULL, 'US', 'approved', NULL, NULL, 'TP-Link Kasa Smart Plug', 'tp-link-kasa-smart-plug', 'Turn any outlet smart — schedule, voice-control, or remotely switch appliances from your phone.', NULL, NULL, NULL, NULL, NULL, 'ADM000057', NULL, NULL, NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, NULL, 3.76, 378, 14683, 1, NULL, 0, '2025-11-02 13:23:22', '2026-09-21 06:30:22'),
+(58, 17, NULL, NULL, 'US', 'approved', NULL, NULL, 'Ring Video Doorbell', 'ring-video-doorbell', 'See, hear, and speak to visitors from anywhere, with motion alerts sent straight to your phone.', NULL, NULL, NULL, NULL, NULL, 'ADM000058', NULL, NULL, NULL, NULL, NULL, NULL, 1, 9999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, NULL, 4.86, 419, 6098, 1, NULL, 0, '2026-01-21 10:28:22', '2026-09-21 06:30:22'),
+(59, 17, NULL, NULL, 'US', 'approved', NULL, NULL, 'Eufy RoboVac 11S Robot Vacuum', 'eufy-robovac-11s-robot-vacuum', 'A slim robot vacuum that slides under furniture and keeps floors clean on a schedule you set.', NULL, NULL, NULL, NULL, NULL, 'ADM000059', NULL, NULL, NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-smart-home.jpg', NULL, NULL, 3.82, 224, 1196, 1, NULL, 0, '2026-05-28 15:30:22', '2026-09-21 06:30:22'),
+(60, 18, NULL, NULL, 'US', 'approved', NULL, NULL, 'Garmin Vivosmart 5 Fitness Band', 'garmin-vivosmart-5-fitness-band', 'A slim fitness band with heart-rate tracking, sleep scores, and up to seven days of battery life.', NULL, NULL, NULL, NULL, NULL, 'ADM000060', NULL, NULL, NULL, NULL, NULL, NULL, 1, 12900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, NULL, 0, 40, 1, NULL, 0, '2026-09-16 10:11:22', '2026-09-21 06:30:22'),
+(61, 18, NULL, NULL, 'US', 'approved', NULL, NULL, 'Withings Body+ Smart Scale', 'withings-body-plus-smart-scale', 'Weight, body fat, and muscle mass synced automatically to your phone every time you step on.', NULL, NULL, NULL, NULL, NULL, 'ADM000061', NULL, NULL, NULL, NULL, NULL, NULL, 1, 9900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, 4.84, 256, 3796, 1, NULL, 0, '2026-04-16 07:13:22', '2026-09-21 06:30:22'),
+(62, 18, NULL, NULL, 'US', 'approved', NULL, NULL, 'Omron Digital Blood Pressure Monitor', 'omron-digital-blood-pressure-monitor', 'Clinically validated, one-button readings you can track at home between doctor visits.', NULL, NULL, NULL, NULL, NULL, 'ADM000062', NULL, NULL, NULL, NULL, NULL, NULL, 1, 4999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, 4.43, 166, 1479, 1, NULL, 0, '2026-07-17 08:55:22', '2026-09-21 06:30:22'),
+(63, 18, NULL, NULL, 'US', 'approved', NULL, NULL, 'Wellue Pulse Oximeter', 'wellue-pulse-oximeter', 'A fingertip sensor that reads blood oxygen and pulse rate in seconds, with an easy-read display.', NULL, NULL, NULL, NULL, NULL, 'ADM000063', NULL, NULL, NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, 3.85, 10, 5400, 1, NULL, 0, '2025-11-24 22:05:22', '2026-09-21 06:30:22'),
+(64, 18, NULL, NULL, 'US', 'approved', NULL, NULL, 'Xiaomi Smart Skipping Rope', 'xiaomi-smart-skipping-rope', 'Counts jumps, calories, and workout time automatically, and syncs your session to a fitness app.', NULL, NULL, NULL, NULL, NULL, 'ADM000064', NULL, NULL, NULL, NULL, NULL, NULL, 1, 1999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-health-and-fitness-tech.jpg', NULL, NULL, 3.61, 297, 1800, 1, NULL, 0, '2026-06-12 06:04:22', '2026-09-21 06:30:22'),
+(65, 19, NULL, NULL, 'US', 'approved', NULL, NULL, 'Apple iPhone 15 Pro Max', 'apple-iphone-15-pro-max', 'The largest, most capable iPhone — a titanium build, a 5x telephoto lens, and the A17 Pro chip.', NULL, NULL, NULL, NULL, NULL, 'ADM000065', NULL, NULL, NULL, NULL, NULL, NULL, 1, 119900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, 4.29, 104, 3159, 1, NULL, 0, '2026-04-11 02:02:22', '2026-09-21 06:30:22'),
+(66, 19, NULL, NULL, 'US', 'approved', NULL, NULL, 'Samsung Galaxy Z Fold 6', 'samsung-galaxy-z-fold-6', 'A phone that unfolds into a tablet, with a smoother hinge and multitasking built for a bigger screen.', NULL, NULL, NULL, NULL, NULL, 'ADM000066', NULL, NULL, NULL, NULL, NULL, NULL, 1, 179900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, 4.09, 696, 1934, 1, NULL, 0, '2026-06-19 20:32:22', '2026-09-21 06:30:22'),
+(67, 19, NULL, NULL, 'US', 'approved', NULL, NULL, 'Sony Xperia 1 VI', 'sony-xperia-1-vi', 'A creator-focused flagship with a versatile zoom lens system and pro-grade video controls.', NULL, NULL, NULL, NULL, NULL, 'ADM000067', NULL, NULL, NULL, NULL, NULL, NULL, 1, 139900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, NULL, 0, 6736, 1, NULL, 0, '2025-11-07 21:58:22', '2026-09-21 06:30:22'),
+(68, 19, NULL, NULL, 'US', 'approved', NULL, NULL, 'Asus ROG Phone 8', 'asus-rog-phone-8', 'A gaming flagship with a 165Hz display, AirTrigger controls, and cooling built for long sessions.', NULL, NULL, NULL, NULL, NULL, 'ADM000068', NULL, NULL, NULL, NULL, NULL, NULL, 1, 109900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, NULL, 0, 2047, 1, NULL, 0, '2026-01-21 11:33:22', '2026-09-21 06:30:22'),
+(69, 19, NULL, NULL, 'US', 'approved', NULL, NULL, 'Dell XPS 15 Plus', 'dell-xps-15-plus', 'A premium creator laptop with an edge-to-edge InfinityEdge display and serious rendering power.', NULL, NULL, NULL, NULL, NULL, 'ADM000069', NULL, NULL, NULL, NULL, NULL, NULL, 1, 189900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-premium-and-flagship.jpg', NULL, NULL, 3.68, 13, 1887, 1, NULL, 0, '2026-04-26 11:43:22', '2026-09-21 06:30:22'),
+(70, 20, NULL, NULL, 'US', 'approved', NULL, NULL, 'Garmin DriveSmart 55 GPS Navigator', 'garmin-drivesmart-55-gps-navigator', 'Voice-activated turn-by-turn navigation with live traffic, built for the dashboard.', NULL, NULL, NULL, NULL, NULL, 'ADM000070', NULL, NULL, NULL, NULL, NULL, NULL, 1, 19900, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, NULL, 4.44, 647, 10507, 1, NULL, 0, '2025-11-06 10:12:22', '2026-09-21 06:30:22'),
+(71, 20, NULL, NULL, 'US', 'approved', NULL, NULL, 'Pioneer Bluetooth Car Stereo Receiver', 'pioneer-bluetooth-car-stereo-receiver', 'A touchscreen head unit upgrade with Bluetooth calling and streaming built in for any dashboard.', NULL, NULL, NULL, NULL, NULL, 'ADM000071', NULL, NULL, NULL, NULL, NULL, NULL, 1, 8999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, NULL, 3.82, 665, 1374, 1, NULL, 0, '2026-08-17 06:10:22', '2026-09-21 06:30:22'),
+(72, 20, NULL, NULL, 'US', 'approved', NULL, NULL, 'iOttie Car Dashboard Phone Mount', 'iottie-car-dashboard-phone-mount', 'A one-hand, one-touch mount that holds your phone steady on the dash or windshield for hands-free navigation.', NULL, NULL, NULL, NULL, NULL, 'ADM000072', NULL, NULL, NULL, NULL, NULL, NULL, 1, 2499, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, NULL, NULL, 0, 2506, 1, NULL, 0, '2026-05-25 06:16:22', '2026-09-21 06:30:22'),
+(73, 20, NULL, NULL, 'US', 'approved', NULL, NULL, 'Car Vent Air Purifier & Freshener', 'car-vent-air-purifier-freshener', 'Clips onto any air vent to filter odours and keep the cabin smelling fresh on every drive.', NULL, NULL, NULL, NULL, NULL, 'ADM000073', NULL, NULL, NULL, NULL, NULL, NULL, 1, 1499, NULL, NULL, NULL, NULL, NULL, 97, '/img/products/cat-car-electronics.jpg', NULL, NULL, 4.18, 312, 755, 1, NULL, 0, '2026-02-15 14:38:22', '2026-09-22 01:44:43'),
+(74, 20, NULL, NULL, 'US', 'approved', NULL, NULL, 'Pioneer Digital Car Clock Gauge', 'pioneer-digital-car-clock-gauge', 'A dash-mounted digital clock and gauge that drops into any spare vent or console slot.', NULL, NULL, NULL, NULL, NULL, 'ADM000074', NULL, NULL, NULL, NULL, NULL, NULL, 1, 2999, NULL, NULL, NULL, NULL, NULL, 100, '/img/products/cat-car-electronics.jpg', NULL, NULL, 4.79, 277, 3804, 1, NULL, 0, '2026-06-11 03:23:22', '2026-09-21 06:30:22'),
+(78, 2, 3, NULL, 'IN', 'approved', NULL, NULL, 'Laptop side screens', 'laptop-side-screens', 'Do more work in one pc.', NULL, NULL, NULL, NULL, NULL, 'SLRCSXX0003', NULL, NULL, NULL, NULL, NULL, NULL, 3, 50000, 70000, NULL, NULL, NULL, NULL, 49, '/api/media/file/products/wqgk97y4RubOjrExw20BXlMvnsDo3hDNqTUQw1if.png', NULL, NULL, NULL, 0, 0, 1, NULL, 0, '2026-09-23 00:50:08', '2026-09-23 01:33:53');
 
 -- --------------------------------------------------------
 
@@ -1188,12 +1268,40 @@ INSERT INTO `product_images` (`id`, `product_id`, `url`, `sort_order`, `created_
 
 CREATE TABLE `product_reviews` (
   `id` bigint(20) UNSIGNED NOT NULL,
-  `order_id` bigint(20) UNSIGNED NOT NULL,
-  `order_item_id` bigint(20) UNSIGNED NOT NULL,
-  `product_id` bigint(20) UNSIGNED NOT NULL,
   `user_id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `order_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `order_item_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `variant_label` varchar(120) DEFAULT NULL,
   `rating` tinyint(3) UNSIGNED NOT NULL,
-  `comment` text DEFAULT NULL,
+  `body` text DEFAULT NULL,
+  `fit` varchar(16) DEFAULT NULL,
+  `images` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`images`)),
+  `status` varchar(12) NOT NULL DEFAULT 'pending',
+  `show_on_profile` tinyint(1) NOT NULL DEFAULT 1,
+  `admin_note` varchar(500) DEFAULT NULL,
+  `reviewed_at` timestamp NULL DEFAULT NULL,
+  `helpful_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `product_upload_tasks`
+--
+
+CREATE TABLE `product_upload_tasks` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `shop_id` bigint(20) UNSIGNED NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `file_path` varchar(255) DEFAULT NULL,
+  `status` varchar(16) NOT NULL DEFAULT 'processing',
+  `records` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `error_records` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `rows` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`rows`)),
+  `results` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`results`)),
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1208,10 +1316,16 @@ CREATE TABLE `product_variants` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `product_id` bigint(20) UNSIGNED NOT NULL,
   `label` varchar(255) NOT NULL,
+  `options` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`options`)),
   `sku` varchar(255) NOT NULL,
+  `seller_code` varchar(60) DEFAULT NULL,
   `price_cents` int(10) UNSIGNED NOT NULL,
   `compare_at_price_cents` int(10) UNSIGNED DEFAULT NULL,
   `inventory_quantity` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `weight_grams` int(10) UNSIGNED DEFAULT NULL,
+  `length_mm` int(10) UNSIGNED DEFAULT NULL,
+  `width_mm` int(10) UNSIGNED DEFAULT NULL,
+  `height_mm` int(10) UNSIGNED DEFAULT NULL,
   `image_url` varchar(255) DEFAULT NULL,
   `sort_order` smallint(5) UNSIGNED NOT NULL DEFAULT 0,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
@@ -1223,26 +1337,40 @@ CREATE TABLE `product_variants` (
 -- Dumping data for table `product_variants`
 --
 
-INSERT INTO `product_variants` (`id`, `product_id`, `label`, `sku`, `price_cents`, `compare_at_price_cents`, `inventory_quantity`, `image_url`, `sort_order`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 7, '256GB SSD / 8GB RAM', 'ADM000007-V1', 99900, NULL, 80, NULL, 1, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
-(2, 7, '512GB SSD / 16GB RAM', 'ADM000007-V2', 119900, NULL, 58, NULL, 2, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
-(3, 7, '1TB SSD / 32GB RAM', 'ADM000007-V3', 149900, NULL, 22, NULL, 3, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
-(4, 11, 'Midnight Black', 'ADM000011-V1', 34900, NULL, 50, NULL, 1, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
-(5, 11, 'Platinum Silver', 'ADM000011-V2', 36900, NULL, 15, '/img/products/variant-sony-wh-1000xm5-platinum-silver.jpg', 2, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
-(6, 1, '256GB', 'ADM000001-V1', 109900, NULL, 40, NULL, 0, 1, '2026-09-14 04:55:09', '2026-09-14 07:04:36'),
-(7, 1, '512GB', 'ADM000001-V2', 129900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 07:04:36'),
-(8, 2, '256GB', 'ADM000002-V1', 89900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(9, 6, '16GB / 512GB', 'ADM000006-V1', 139900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(10, 8, '16GB / 1TB', 'ADM000008-V1', 159900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(11, 17, 'Ocean Blue', 'ADM000017-V1', 1499, NULL, 40, '/img/products/variant-silicone-phone-case-ocean-blue.jpg', 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(12, 17, 'Blossom Pink', 'ADM000017-V2', 1499, NULL, 40, '/img/products/variant-silicone-phone-case-blossom-pink.jpg', 2, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(13, 19, '45mm', 'ADM000019-V1', 42900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(14, 21, 'Coral', 'ADM000021-V1', 15900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(15, 28, 'Digital Edition', 'ADM000028-V1', 44900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 06:01:19'),
-(16, 30, 'Neon Red / Neon Blue', 'ADM000030-V1', 34900, NULL, 40, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
-(17, 34, 'Pale Grey', 'ADM000034-V1', 9900, NULL, 40, '/api/media/file/products/8veyYFqXQP5ogGnWjqGBBMDAPzGfohMDY6vNxaXm.webp', 0, 1, '2026-09-14 04:55:09', '2026-09-21 03:00:35'),
-(20, 78, 'Company2', 'SLRCSXX0003-V1', 5500, 6000, 55, '/api/media/file/products/0aP9RFYwOnZFFlkZCAwWCfQAvb0Yx0d5mdLU8O35.png', 0, 1, '2026-09-23 00:50:08', '2026-09-23 00:50:08'),
-(21, 78, 'Company3', 'SLRCSXX0003-V2', 4500, 5500, 66, '/api/media/file/products/3sxrJqa4NtyAFEz30oOnbavnW1zjqKb86z7G2PgM.png', 1, 1, '2026-09-23 00:50:08', '2026-09-23 00:50:08');
+INSERT INTO `product_variants` (`id`, `product_id`, `label`, `options`, `sku`, `seller_code`, `price_cents`, `compare_at_price_cents`, `inventory_quantity`, `weight_grams`, `length_mm`, `width_mm`, `height_mm`, `image_url`, `sort_order`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, 7, '256GB SSD / 8GB RAM', NULL, 'ADM000007-V1', NULL, 99900, NULL, 80, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
+(2, 7, '512GB SSD / 16GB RAM', NULL, 'ADM000007-V2', NULL, 119900, NULL, 58, NULL, NULL, NULL, NULL, NULL, 2, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
+(3, 7, '1TB SSD / 32GB RAM', NULL, 'ADM000007-V3', NULL, 149900, NULL, 22, NULL, NULL, NULL, NULL, NULL, 3, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
+(4, 11, 'Midnight Black', NULL, 'ADM000011-V1', NULL, 34900, NULL, 50, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
+(5, 11, 'Platinum Silver', NULL, 'ADM000011-V2', NULL, 36900, NULL, 15, NULL, NULL, NULL, NULL, '/img/products/variant-sony-wh-1000xm5-platinum-silver.jpg', 2, 1, '2026-09-09 01:12:49', '2026-09-14 04:15:22'),
+(6, 1, '256GB', NULL, 'ADM000001-V1', NULL, 109900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 0, 1, '2026-09-14 04:55:09', '2026-09-14 07:04:36'),
+(7, 1, '512GB', NULL, 'ADM000001-V2', NULL, 129900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 07:04:36'),
+(8, 2, '256GB', NULL, 'ADM000002-V1', NULL, 89900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(9, 6, '16GB / 512GB', NULL, 'ADM000006-V1', NULL, 139900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(10, 8, '16GB / 1TB', NULL, 'ADM000008-V1', NULL, 159900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(11, 17, 'Ocean Blue', NULL, 'ADM000017-V1', NULL, 1499, NULL, 40, NULL, NULL, NULL, NULL, '/img/products/variant-silicone-phone-case-ocean-blue.jpg', 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(12, 17, 'Blossom Pink', NULL, 'ADM000017-V2', NULL, 1499, NULL, 40, NULL, NULL, NULL, NULL, '/img/products/variant-silicone-phone-case-blossom-pink.jpg', 2, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(13, 19, '45mm', NULL, 'ADM000019-V1', NULL, 42900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(14, 21, 'Coral', NULL, 'ADM000021-V1', NULL, 15900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(15, 28, 'Digital Edition', NULL, 'ADM000028-V1', NULL, 44900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 06:01:19'),
+(16, 30, 'Neon Red / Neon Blue', NULL, 'ADM000030-V1', NULL, 34900, NULL, 40, NULL, NULL, NULL, NULL, NULL, 1, 1, '2026-09-14 04:55:09', '2026-09-14 04:55:09'),
+(17, 34, 'Pale Grey', NULL, 'ADM000034-V1', NULL, 9900, NULL, 40, NULL, NULL, NULL, NULL, '/api/media/file/products/8veyYFqXQP5ogGnWjqGBBMDAPzGfohMDY6vNxaXm.webp', 0, 1, '2026-09-14 04:55:09', '2026-09-21 03:00:35'),
+(20, 78, 'Company2', NULL, 'SLRCSXX0003-V1', NULL, 5500, 6000, 55, NULL, NULL, NULL, NULL, '/api/media/file/products/0aP9RFYwOnZFFlkZCAwWCfQAvb0Yx0d5mdLU8O35.png', 0, 1, '2026-09-23 00:50:08', '2026-09-23 00:50:08'),
+(21, 78, 'Company3', NULL, 'SLRCSXX0003-V2', NULL, 4500, 5500, 66, NULL, NULL, NULL, NULL, '/api/media/file/products/3sxrJqa4NtyAFEz30oOnbavnW1zjqKb86z7G2PgM.png', 1, 1, '2026-09-23 00:50:08', '2026-09-23 00:50:08');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `review_helpful_votes`
+--
+
+CREATE TABLE `review_helpful_votes` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `product_review_id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1399,6 +1527,25 @@ INSERT INTO `rider_store` (`id`, `user_id`, `store_id`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `sales_boost_offers`
+--
+
+CREATE TABLE `sales_boost_offers` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `product_id` bigint(20) UNSIGNED NOT NULL,
+  `product_variant_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `current_price_cents` int(10) UNSIGNED NOT NULL,
+  `recommended_price_cents` int(10) UNSIGNED NOT NULL,
+  `status` varchar(12) NOT NULL DEFAULT 'pending',
+  `created_by` bigint(20) UNSIGNED DEFAULT NULL,
+  `decided_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `sellers`
 --
 
@@ -1436,6 +1583,18 @@ CREATE TABLE `sellers` (
   `submitted_at` timestamp NULL DEFAULT NULL,
   `payout_method` varchar(16) DEFAULT NULL,
   `payout_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`payout_details`)),
+  `tax_info` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`tax_info`)),
+  `tax_status` varchar(16) DEFAULT NULL,
+  `tax_note` varchar(500) DEFAULT NULL,
+  `tax_submitted_at` timestamp NULL DEFAULT NULL,
+  `compliance` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`compliance`)),
+  `compliance_status` varchar(16) DEFAULT NULL,
+  `compliance_note` varchar(500) DEFAULT NULL,
+  `compliance_submitted_at` timestamp NULL DEFAULT NULL,
+  `bank_status` varchar(16) DEFAULT NULL,
+  `bank_note` varchar(500) DEFAULT NULL,
+  `bank_submitted_at` timestamp NULL DEFAULT NULL,
+  `bank_verified_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1444,9 +1603,9 @@ CREATE TABLE `sellers` (
 -- Dumping data for table `sellers`
 --
 
-INSERT INTO `sellers` (`id`, `user_id`, `country`, `business_type`, `company_name`, `tax_id`, `registered_line1`, `registered_line2`, `registered_city`, `registered_state`, `registered_postal_code`, `registered_country`, `pickup_same_as_registered`, `pickup_phone`, `pickup_line1`, `pickup_line2`, `pickup_city`, `pickup_state`, `pickup_postal_code`, `pickup_country`, `contact_name`, `id_type`, `id_number`, `date_of_birth`, `id_document_path`, `business_document_path`, `status`, `rejection_reason`, `reviewed_by`, `reviewed_at`, `submitted_at`, `payout_method`, `payout_details`, `created_at`, `updated_at`) VALUES
-(3, 15, 'IN', 'individual', 'testcaresort', '07DDIPA9391G1ZC', 'mohali', '5', 'India', 'Punjab', '160059', 'IN', 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Web Dev', 'aadhaar', '1564111566645612', '2010-02-02', 'kyc/15/bmdY1Uq4tYolz36eKWd5vcERzoGEWll3XZRGr6Bw.jpg', 'kyc/15/l91i8Gl5faUyjHn61fx1PdAhjLQVaA5PQwfyO4ns.pdf', 'approved', NULL, 15, '2026-09-22 01:51:19', '2026-09-22 01:50:26', 'paypal', '{\"email\":\"seller-payout-verify@example.com\"}', '2026-09-22 01:50:26', '2026-09-22 05:51:20'),
-(7, 41, 'IN', 'individual', 'caresort', '07DEMOA9391G1ZC', '55', 'Pannu tower', 'Mohali', 'Punjab', '144444', 'IN', 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Web Dev', 'aadhaar', '222233334444', '2016-07-23', 'kyc/41/TeoCTiNHet9s3ctTUh87VQS39GRRIlC6Xtve7pxv.pdf', 'kyc/41/wCNAhMpKgAcMBSze3I3K7m1UGblHDp0LO96NkFY1.jpg', 'needs_changes', 'change photo', 41, '2026-09-23 04:19:32', '2026-09-22 23:36:13', NULL, NULL, '2026-09-22 23:36:13', '2026-09-23 04:19:32');
+INSERT INTO `sellers` (`id`, `user_id`, `country`, `business_type`, `company_name`, `tax_id`, `registered_line1`, `registered_line2`, `registered_city`, `registered_state`, `registered_postal_code`, `registered_country`, `pickup_same_as_registered`, `pickup_phone`, `pickup_line1`, `pickup_line2`, `pickup_city`, `pickup_state`, `pickup_postal_code`, `pickup_country`, `contact_name`, `id_type`, `id_number`, `date_of_birth`, `id_document_path`, `business_document_path`, `status`, `rejection_reason`, `reviewed_by`, `reviewed_at`, `submitted_at`, `payout_method`, `payout_details`, `tax_info`, `tax_status`, `tax_note`, `tax_submitted_at`, `compliance`, `compliance_status`, `compliance_note`, `compliance_submitted_at`, `bank_status`, `bank_note`, `bank_submitted_at`, `bank_verified_at`, `created_at`, `updated_at`) VALUES
+(3, 15, 'IN', 'individual', 'testcaresort', '07DDIPA9391G1ZC', 'mohali', '5', 'India', 'Punjab', '160059', 'IN', 1, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'Web Dev', 'aadhaar', '1564111566645612', '2010-02-02', 'kyc/15/bmdY1Uq4tYolz36eKWd5vcERzoGEWll3XZRGr6Bw.jpg', 'kyc/15/l91i8Gl5faUyjHn61fx1PdAhjLQVaA5PQwfyO4ns.pdf', 'approved', NULL, 15, '2026-09-22 01:51:19', '2026-09-22 01:50:26', 'paypal', '{\"email\":\"seller-payout-verify@example.com\"}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 'linked', NULL, NULL, '2026-09-25 00:20:08', '2026-09-22 01:50:26', '2026-09-25 00:36:34'),
+(7, 41, 'IN', 'individual', 'caresort', '07DEMOA9391G1ZC', '55', 'Pannu tower', 'Mohali', 'Punjab', '144444', 'IN', 1, '9888888888', '55', 'Pannu tower', 'Mohali', 'Punjab', '144444', 'IN', 'Web Dev', 'aadhaar', '222233334444', '2016-07-23', 'kyc/41/TeoCTiNHet9s3ctTUh87VQS39GRRIlC6Xtve7pxv.pdf', 'kyc/41/wCNAhMpKgAcMBSze3I3K7m1UGblHDp0LO96NkFY1.jpg', 'pending', NULL, NULL, NULL, '2026-09-24 06:18:30', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-22 23:36:13', '2026-09-24 06:18:30');
 
 -- --------------------------------------------------------
 
@@ -1498,13 +1657,16 @@ CREATE TABLE `sessions` (
 
 INSERT INTO `sessions` (`id`, `user_id`, `ip_address`, `user_agent`, `payload`, `last_activity`) VALUES
 ('1adUTMnyviODTA5AJjYfVzigpM6dZXrQj8oDoghp', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiJOZFh5UDZxOWFacnBjUnhFSThTSW1HbjIwTjZCUFNFemI0c090Y2VKIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2FkbWluXC9wYWdlc1wvMzIiLCJyb3V0ZSI6bnVsbH0sIl9mbGFzaCI6eyJvbGQiOltdLCJuZXciOltdfX0=', 1790076873),
+('1sWXlFBqkQagtTDuaH050K3PIKDVeUjSMr9YGvaX', NULL, '127.0.0.1', 'Symfony', 'eyJfdG9rZW4iOiJTT1BWRDQ4MTdvWnZKY1d5T0hCTWNmWjBYSWRoc2hEbHI3YkdkVGRjIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC91bnN1YnNjcmliZVwvMTc/c2lnbmF0dXJlPTEzMTIyZGJlZGFhZWUxMTA0NjQ2NzY4YjU0MDU1ZTA1YTliYmE2YmY2NWE4MmZlNjE1ZDQ4NDg1OWFiYjgwM2IiLCJyb3V0ZSI6InVuc3Vic2NyaWJlIn0sIl9mbGFzaCI6eyJvbGQiOltdLCJuZXciOltdfX0=', 1790313936),
 ('3oISb7Njdw4tKH5J5FntsNvMPeZvdPZt82SXyr4x', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiI5eHZJQzA1M1FNRWFFdDh0ZTM3S3lsMlFMY1ZJbklLdGVweGNnWjVEIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2Jhbm5lcnMiLCJyb3V0ZSI6bnVsbH0sIl9mbGFzaCI6eyJvbGQiOltdLCJuZXciOltdfX0=', 1789017213),
 ('5iKl36D45BSmZw2tSmv3YKKCEPl4XQlqZACdTMAo', NULL, '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0', 'eyJfdG9rZW4iOiIyQXhSN0s5Mmh4NzNJbkRsSmxoTDVZTEJrWmJFUUVSRXZXRTJTaVI4IiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cL2xvY2FsaG9zdDo4MDAwIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1789367069),
+('7bfRrrZFZMQOp1Bg6XxFzzALeccv503Yjg6woWe9', NULL, '127.0.0.1', 'Symfony', 'eyJfdG9rZW4iOiJkTVk0WFdWWHhPQlZtaExvRXhvbG5HbjAwTjlCdXBod2FSc2NXZE55IiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC91bnN1YnNjcmliZVwvMTc/c2lnbmF0dXJlPTEzMTIyZGJlZGFhZWUxMTA0NjQ2NzY4YjU0MDU1ZTA1YTliYmE2YmY2NWE4MmZlNjE1ZDQ4NDg1OWFiYjgwM2IiLCJyb3V0ZSI6InVuc3Vic2NyaWJlIn0sIl9mbGFzaCI6eyJvbGQiOltdLCJuZXciOltdfX0=', 1790313922),
 ('7x32XCjyl74wUgYrdWpUFtSpluem1SIRbbRXVtlN', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiJlUmlkM041QnQyenZOV3pack42c2dsUnJUMGdIZjVudlFndU1zbk5xIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2Zvb3RlciIsInJvdXRlIjpudWxsfSwiX2ZsYXNoIjp7Im9sZCI6W10sIm5ldyI6W119fQ==', 1790168842),
 ('BU3pTwNXMnyuSrVlQiQZc2rx42bR04k24ro5Qr2x', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiIyQ29jd25NOW4ySTczS2VySVdIcXNzMVpBaDAzUHpIOHlZQmw5anBzIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1790059846),
 ('E3uiXV8elXX319hZg99S3K9ivwaG5bNMZA1NgvB2', NULL, '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0', 'eyJfdG9rZW4iOiJnWTFvWmlTVjVOcDZoWXRaYUJBOEJYcUtNdHhET2R3ME1WbVEwSlVoIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cL2xvY2FsaG9zdDo4MDAwIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1789044363),
 ('EcUaxHeMLWcyD1TPvFwuchfWw7Xg7nmdGwJgXbJ4', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiI2a05aWWFqaEY0UHlabVdRbTh1VXJTWlE3cG9MTFI4ZzhLRUdwSmN4IiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2hlYWx0aCIsInJvdXRlIjpudWxsfSwiX2ZsYXNoIjp7Im9sZCI6W10sIm5ldyI6W119fQ==', 1789032140),
 ('efEA3p3gn1RfGDquS0gKMSgl4GgAhVDBCXrKSl0W', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiJiYmptVW4ydmZIUlJBQjAwUzJLTEc3SlVtMm9FWlJXOVNIalhFME5zIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1790055796),
+('gEoMm1BFGvbmLTr88RP3KcqIMmB0B8dtGsxBJnc9', NULL, '127.0.0.1', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36 Edg/152.0.0.0', 'eyJfdG9rZW4iOiJoSFJISXMwVGRLU0JIVjlpYmFEVVMxRGp2cGNqWVI3YURWN1FJZDRHIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1790320647),
 ('KDh8NR5yvlZygCHNdiWQkgeOXfc147vgjjuRM0Ko', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiI5TmhmVEh0anBudjgxZ1NkaWE3ZXhudmxaV05MRVlYc3QwN3JOa1ZlIiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL3NldHRpbmdzIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1790168842),
 ('LfYGkhTNNaonvFh2fAxz8ISJrItMdWw9bqKz8LRi', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiI5Sk9ONTNjUEczU2ViWDhZUGVFNlpiUXlvSjc2akROV3FuR21Vdm44IiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2F1dGhcL21lIiwicm91dGUiOm51bGx9LCJfZmxhc2giOnsib2xkIjpbXSwibmV3IjpbXX19', 1789111585),
 ('MKCxGH4Kpc8Brjol0mxSnkw4fejEJPBIluXEzTA7', NULL, '127.0.0.1', 'curl/8.21.0', 'eyJfdG9rZW4iOiJuZkU4VFhUU3ZiaDB5aEJFdFBPNWxDREVNQXo1OU1CQnUxcE5meFN6IiwiX3ByZXZpb3VzIjp7InVybCI6Imh0dHA6XC9cLzEyNy4wLjAuMTo4MDAwXC9hcGlcL2hlYWx0aCIsInJvdXRlIjpudWxsfSwiX2ZsYXNoIjp7Im9sZCI6W10sIm5ldyI6W119fQ==', 1790168637),
@@ -1541,7 +1703,7 @@ INSERT INTO `settings` (`key`, `value`, `created_at`, `updated_at`) VALUES
 ('courier', '{\"v\":{\"courier_provider\":\"mock\"}}', '2026-09-22 04:09:42', '2026-09-22 04:11:06'),
 ('footer', '{\"v\": {\"copyright\": \"\\u00a9 {year} nextech\", \"note\": \"NexTech is a demo storefront. Prices, delivery estimates and content pages are illustrative and set by the store operator in the admin console.\", \"app_store_url\": \"https://apps.apple.com/app/nextech-demo\", \"play_store_url\": \"https://play.google.com/store/apps/details?id=com.nextech.demo\", \"socials\": {\"facebook\": \"https://facebook.com/nextech\", \"x\": \"https://x.com/nextech\", \"instagram\": \"https://instagram.com/nextech\", \"linkedin\": \"https://www.linkedin.com/company/nextech\", \"youtube\": \"https://www.youtube.com/@nextech\"}, \"links\": [], \"bg_color\": \"#141414\", \"text_color\": \"#f5f5f5\"}}', '2026-09-09 01:12:49', '2026-09-14 05:52:41'),
 ('nextech_label_mode', '{\"v\":\"manual\"}', '2026-09-24 05:13:05', '2026-09-24 05:26:03'),
-('nextech_pickup', '{\"v\":\"hidden\"}', '2026-09-24 05:16:22', '2026-09-24 05:16:25');
+('nextech_pickup', '{\"v\":\"hidden\"}', '2026-09-24 05:16:22', '2026-09-25 04:58:38');
 
 -- --------------------------------------------------------
 
@@ -1598,6 +1760,7 @@ CREATE TABLE `shipping_template_groups` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `shipping_template_id` bigint(20) UNSIGNED NOT NULL,
   `regions` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (json_valid(`regions`)),
+  `address_types` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`address_types`)),
   `transit_min_days` tinyint(3) UNSIGNED NOT NULL,
   `transit_max_days` tinyint(3) UNSIGNED NOT NULL,
   `fee_cents` int(10) UNSIGNED NOT NULL DEFAULT 0,
@@ -1624,6 +1787,7 @@ CREATE TABLE `shops` (
   `banner_url` varchar(500) DEFAULT NULL,
   `category_id` bigint(20) UNSIGNED DEFAULT NULL,
   `description` text DEFAULT NULL,
+  `decoration_terms_accepted_at` timestamp NULL DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT 0,
   `fulfillment_mode` varchar(12) NOT NULL DEFAULT 'nextech',
   `ships_saturday` tinyint(1) NOT NULL DEFAULT 0,
@@ -1639,9 +1803,9 @@ CREATE TABLE `shops` (
 -- Dumping data for table `shops`
 --
 
-INSERT INTO `shops` (`id`, `seller_id`, `market`, `name`, `slug`, `shop_code`, `next_product_seq`, `logo_url`, `banner_url`, `category_id`, `description`, `is_active`, `fulfillment_mode`, `ships_saturday`, `ships_sunday`, `working_holidays`, `free_shipping_accepted_at`, `created_at`, `updated_at`, `label_template_id`) VALUES
-(3, 3, 'IN', 'cs', 'cs', 'CSXX', 4, '/api/media/file/shops/JPWwmzWVj1Xg8QPlvFNz7V40jY3DfjllTsioSU9z.webp', NULL, 8, 'gaming desc.', 1, 'nextech', 0, 0, NULL, NULL, '2026-09-22 01:50:26', '2026-09-23 07:34:36', NULL),
-(6, 7, 'IN', 'Caresort', 'caresort', 'CARE', 1, '/api/media/file/shops/D0hktULokZmSlDVR7zzcMHhLkFyMTUKkFdW6Srzv.jpg', NULL, 19, NULL, 0, 'nextech', 0, 0, NULL, NULL, '2026-09-22 23:36:13', '2026-09-22 23:36:13', NULL);
+INSERT INTO `shops` (`id`, `seller_id`, `market`, `name`, `slug`, `shop_code`, `next_product_seq`, `logo_url`, `banner_url`, `category_id`, `description`, `decoration_terms_accepted_at`, `is_active`, `fulfillment_mode`, `ships_saturday`, `ships_sunday`, `working_holidays`, `free_shipping_accepted_at`, `created_at`, `updated_at`, `label_template_id`) VALUES
+(3, 3, 'IN', 'cs', 'cs', 'CSXX', 10, '/api/media/file/shops/JPWwmzWVj1Xg8QPlvFNz7V40jY3DfjllTsioSU9z.webp', NULL, 8, 'gaming desc.', '2026-09-25 05:26:28', 1, 'nextech', 0, 0, NULL, NULL, '2026-09-22 01:50:26', '2026-09-25 05:26:28', NULL),
+(6, 7, 'IN', 'Caresort', 'caresort', 'CARE', 1, '/api/media/file/shops/D0hktULokZmSlDVR7zzcMHhLkFyMTUKkFdW6Srzv.jpg', NULL, 19, NULL, NULL, 0, 'nextech', 0, 0, NULL, NULL, '2026-09-22 23:36:13', '2026-09-22 23:36:13', NULL);
 
 -- --------------------------------------------------------
 
@@ -1710,6 +1874,36 @@ CREATE TABLE `stores` (
 INSERT INTO `stores` (`id`, `name`, `line1`, `line2`, `city`, `state`, `postal_code`, `country`, `latitude`, `longitude`, `delivery_radius_km`, `is_active`, `created_at`, `updated_at`) VALUES
 (1, 'Caresort Solutions', 'C-86, Pannu Tower 4th Floor', 'Phase 7, Industrial Area', 'Sahibzada Ajit Singh Nagar', 'Punjab', '160055', 'US', 30.6908804, 76.7114879, 5, 1, '2026-09-09 01:33:16', '2026-09-09 01:33:16'),
 (2, 'The Royal Majestic', 'chowk, 200 Feet Rd, near Phullanwal', 'Passi Nagar', 'Ludhiana', 'Punjab', '141013', 'US', 30.9090157, 75.8516010, 5, 1, '2026-09-09 01:36:49', '2026-09-09 01:36:49');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `store_decorations`
+--
+
+CREATE TABLE `store_decorations` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `shop_id` bigint(20) UNSIGNED NOT NULL,
+  `platform` varchar(8) NOT NULL,
+  `name` varchar(80) NOT NULL,
+  `status` varchar(12) NOT NULL DEFAULT 'draft',
+  `is_live` tinyint(1) NOT NULL DEFAULT 0,
+  `page` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`page`)),
+  `sections` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`sections`)),
+  `review_note` varchar(500) DEFAULT NULL,
+  `submitted_at` timestamp NULL DEFAULT NULL,
+  `reviewed_at` timestamp NULL DEFAULT NULL,
+  `published_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `store_decorations`
+--
+
+INSERT INTO `store_decorations` (`id`, `shop_id`, `platform`, `name`, `status`, `is_live`, `page`, `sections`, `review_note`, `submitted_at`, `reviewed_at`, `published_at`, `created_at`, `updated_at`) VALUES
+(3, 3, 'desktop', 'Desktop version 1', 'draft', 0, '{\"background_image_url\":\"\",\"background_color\":\"#f3f4f6\",\"accent_color\":\"#fb7701\"}', '[]', NULL, NULL, NULL, NULL, '2026-09-25 05:26:35', '2026-09-25 05:26:35');
 
 -- --------------------------------------------------------
 
@@ -1801,7 +1995,8 @@ INSERT INTO `support_messages` (`id`, `support_thread_id`, `user_id`, `is_staff`
 (75, 14, NULL, 1, 0, 0, 1, 'Store credit $500.00 issued for the missing item(s): Laptop side screens.\nGift card: GC-54RK-26XY\nPassword: bicqwbev\nEnter both at checkout on your next order to use the balance.', NULL, NULL, '2026-09-24 01:21:04', '2026-09-24 01:21:04'),
 (76, 14, 41, 1, 0, 0, 0, 'Done.', NULL, NULL, '2026-09-24 01:22:50', '2026-09-24 01:22:50'),
 (77, 14, NULL, 1, 0, 0, 0, 'Customer ended the chat.', NULL, NULL, '2026-09-24 01:30:11', '2026-09-24 01:30:11'),
-(79, 10, NULL, 1, 0, 0, 0, 'Seller ended the chat.', NULL, NULL, '2026-09-24 01:36:21', '2026-09-24 01:36:21');
+(79, 10, NULL, 1, 0, 0, 0, 'Seller ended the chat.', NULL, NULL, '2026-09-24 01:36:21', '2026-09-24 01:36:21'),
+(86, 9, 41, 0, 0, 0, 0, 'Ok.', NULL, NULL, '2026-09-24 06:16:36', '2026-09-24 06:16:36');
 
 -- --------------------------------------------------------
 
@@ -1833,9 +2028,30 @@ CREATE TABLE `support_threads` (
 
 INSERT INTO `support_threads` (`id`, `user_id`, `order_id`, `seller_shop_id`, `seller_joined_at`, `issue_type`, `status`, `last_message_at`, `last_staff_message_at`, `resolved_at`, `rating`, `rating_comment`, `rated_at`, `created_at`, `updated_at`) VALUES
 (1, 17, NULL, NULL, NULL, 'item_missing', 'resolved', '2026-09-14 06:26:02', '2026-09-14 06:26:02', '2026-09-14 06:26:02', 5, 'got order.', '2026-09-09 05:47:54', '2026-09-09 02:28:35', '2026-09-24 04:04:24'),
-(9, 41, NULL, NULL, NULL, 'seller_product_issue', 'open', '2026-09-23 04:19:32', '2026-09-23 04:19:32', NULL, NULL, NULL, NULL, '2026-09-22 23:37:17', '2026-09-23 04:19:32'),
+(9, 41, NULL, NULL, NULL, 'seller_product_issue', 'open', '2026-09-24 06:16:36', '2026-09-23 04:19:32', NULL, NULL, NULL, NULL, '2026-09-22 23:37:17', '2026-09-24 06:16:36'),
 (10, 15, NULL, NULL, NULL, 'seller_product_issue', 'resolved', '2026-09-24 04:05:22', '2026-09-24 04:05:22', '2026-09-24 04:05:22', NULL, NULL, NULL, '2026-09-23 00:17:58', '2026-09-24 04:05:22'),
 (14, 17, 44, 3, '2026-09-24 01:12:23', 'item_damaged', 'resolved', '2026-09-24 01:30:11', '2026-09-24 01:30:11', '2026-09-24 01:30:11', 5, NULL, '2026-09-24 01:30:08', '2026-09-24 01:02:30', '2026-09-24 04:04:24');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `trademarks`
+--
+
+CREATE TABLE `trademarks` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `shop_id` bigint(20) UNSIGNED NOT NULL,
+  `name` varchar(120) NOT NULL,
+  `registration_number` varchar(60) NOT NULL,
+  `registration_country` varchar(2) NOT NULL,
+  `logo_url` varchar(500) DEFAULT NULL,
+  `certificate_path` varchar(255) DEFAULT NULL,
+  `status` varchar(12) NOT NULL DEFAULT 'pending',
+  `note` varchar(500) DEFAULT NULL,
+  `reviewed_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -1848,6 +2064,7 @@ CREATE TABLE `users` (
   `name` varchar(255) NOT NULL,
   `email` varchar(255) NOT NULL,
   `phone` varchar(32) DEFAULT NULL,
+  `marketing_opt_out` tinyint(1) NOT NULL DEFAULT 0,
   `stripe_customer_id` varchar(255) DEFAULT NULL,
   `is_admin` tinyint(1) NOT NULL DEFAULT 0,
   `is_rider` tinyint(1) NOT NULL DEFAULT 0,
@@ -1881,14 +2098,14 @@ CREATE TABLE `users` (
 -- Dumping data for table `users`
 --
 
-INSERT INTO `users` (`id`, `name`, `email`, `phone`, `stripe_customer_id`, `is_admin`, `is_rider`, `rider_is_active`, `rider_rating_avg`, `rider_rating_count`, `rider_declined_count`, `rider_missed_count`, `rider_offers_count`, `rider_daily_target_minutes`, `rider_since`, `rider_available`, `rider_unavailable_reason`, `rider_last_seen_at`, `rider_base_address`, `rider_base_lat`, `rider_base_lng`, `rider_last_lat`, `rider_last_lng`, `rider_last_located_at`, `email_verified_at`, `password`, `remember_token`, `created_at`, `updated_at`, `rider_payout_method`, `rider_payout_details`) VALUES
-(15, 'Test User', 'seller@example.com', '+15551234567', 'cus_VEAEdiTnuYPjHz', 0, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-14 23:45:34', '$2y$12$g5tHJ.DFCrrpKZljpURgPOLI45v01uAYIMzGZsLQ4PYlgosrxpM5.', NULL, '2026-09-09 01:12:48', '2026-09-22 05:01:19', NULL, NULL),
-(16, 'Sam Rider', 'rider@example.com', NULL, NULL, 0, 1, 1, NULL, 0, 0, 2, 9, NULL, '2026-09-10 01:17:26', 1, NULL, '2026-09-23 23:50:20', NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-14 23:45:34', '$2y$12$Kpz.EmIfJK7h7AZfl8iL2e01Sj7LyLQnSH0hWXa28jW9oyZp1Uu52', NULL, '2026-09-09 01:12:48', '2026-09-23 23:50:54', NULL, NULL),
-(17, 'Testcaresort', 'testcaresort@outlook.com', '+15551234567', 'cus_VE8eecdx05e2pN', 0, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$skX3B4/nh5s/002bOYkfZ.uO5eeXCokTCYPh.8Q.Z28wpSnfcUDvy', NULL, '2026-09-09 02:25:33', '2026-09-10 07:25:57', NULL, NULL),
-(18, 'New Ride', 'new_ride@example.com', NULL, NULL, 0, 1, 1, NULL, 0, 0, 0, 0, 480, '2026-09-09 05:14:36', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$kvtzqkILF65K1f7Zekch8ux7wHqhyNNSBFQG0zutKPpuhtETcpLZe', NULL, '2026-09-09 05:14:36', '2026-09-11 01:33:45', NULL, NULL),
-(19, 'Ride Example', 'ride_example@gmail.com', NULL, NULL, 0, 0, 0, NULL, 0, 0, 0, 0, NULL, '2026-09-09 05:15:06', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$s8TjsvlZWoF3ROrlOuTM2ucqQDyws.3wK9rRNdYSEe4Y6x/JnNos2', NULL, '2026-09-09 05:15:06', '2026-09-11 01:34:32', NULL, NULL),
-(28, 'UI Admin', 'uiadmin@ex.com', NULL, NULL, 1, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$V6kPxpexIX6LF07gDN.9I.z9ssx/seSKPat5GgisFgIzNM9l0mhTW', NULL, '2026-09-10 02:14:06', '2026-09-10 02:14:06', NULL, NULL),
-(41, 'Test User', 'test@example.com', '+15551234567', NULL, 1, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$ZtKk3r06.tNkAJS54MLOWOj8dFxBxWM1z0iAoaJiLd73bngIwyxSi', NULL, '2026-09-22 04:57:03', '2026-09-22 04:57:03', NULL, NULL);
+INSERT INTO `users` (`id`, `name`, `email`, `phone`, `marketing_opt_out`, `stripe_customer_id`, `is_admin`, `is_rider`, `rider_is_active`, `rider_rating_avg`, `rider_rating_count`, `rider_declined_count`, `rider_missed_count`, `rider_offers_count`, `rider_daily_target_minutes`, `rider_since`, `rider_available`, `rider_unavailable_reason`, `rider_last_seen_at`, `rider_base_address`, `rider_base_lat`, `rider_base_lng`, `rider_last_lat`, `rider_last_lng`, `rider_last_located_at`, `email_verified_at`, `password`, `remember_token`, `created_at`, `updated_at`, `rider_payout_method`, `rider_payout_details`) VALUES
+(15, 'Test User', 'seller@example.com', '+15551234567', 0, 'cus_VEAEdiTnuYPjHz', 0, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-14 23:45:34', '$2y$12$g5tHJ.DFCrrpKZljpURgPOLI45v01uAYIMzGZsLQ4PYlgosrxpM5.', NULL, '2026-09-09 01:12:48', '2026-09-22 05:01:19', NULL, NULL),
+(16, 'Sam Rider', 'rider@example.com', NULL, 0, NULL, 0, 1, 1, NULL, 0, 0, 2, 9, NULL, '2026-09-10 01:17:26', 1, NULL, '2026-09-23 23:50:20', NULL, NULL, NULL, NULL, NULL, NULL, '2026-09-14 23:45:34', '$2y$12$Kpz.EmIfJK7h7AZfl8iL2e01Sj7LyLQnSH0hWXa28jW9oyZp1Uu52', NULL, '2026-09-09 01:12:48', '2026-09-23 23:50:54', NULL, NULL),
+(17, 'Testcaresort', 'testcaresort@outlook.com', '+15551234567', 1, 'cus_VE8eecdx05e2pN', 0, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$skX3B4/nh5s/002bOYkfZ.uO5eeXCokTCYPh.8Q.Z28wpSnfcUDvy', NULL, '2026-09-09 02:25:33', '2026-09-24 23:55:36', NULL, NULL),
+(18, 'New Ride', 'new_ride@example.com', NULL, 0, NULL, 0, 1, 1, NULL, 0, 0, 0, 0, 480, '2026-09-09 05:14:36', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$kvtzqkILF65K1f7Zekch8ux7wHqhyNNSBFQG0zutKPpuhtETcpLZe', NULL, '2026-09-09 05:14:36', '2026-09-11 01:33:45', NULL, NULL),
+(19, 'Ride Example', 'ride_example@gmail.com', NULL, 0, NULL, 0, 0, 0, NULL, 0, 0, 0, 0, NULL, '2026-09-09 05:15:06', 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$s8TjsvlZWoF3ROrlOuTM2ucqQDyws.3wK9rRNdYSEe4Y6x/JnNos2', NULL, '2026-09-09 05:15:06', '2026-09-11 01:34:32', NULL, NULL),
+(28, 'UI Admin', 'uiadmin@ex.com', NULL, 0, NULL, 1, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$V6kPxpexIX6LF07gDN.9I.z9ssx/seSKPat5GgisFgIzNM9l0mhTW', NULL, '2026-09-10 02:14:06', '2026-09-10 02:14:06', NULL, NULL),
+(41, 'Test User', 'test@example.com', '+15551234567', 0, NULL, 1, 0, 1, NULL, 0, 0, 0, 0, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, '$2y$12$ZtKk3r06.tNkAJS54MLOWOj8dFxBxWM1z0iAoaJiLd73bngIwyxSi', NULL, '2026-09-22 04:57:03', '2026-09-22 04:57:03', NULL, NULL);
 
 --
 -- Indexes for dumped tables
@@ -1953,6 +2170,23 @@ ALTER TABLE `categories`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `categories_slug_unique` (`slug`),
   ADD KEY `categories_is_active_index` (`is_active`);
+
+--
+-- Indexes for table `customer_emails`
+--
+ALTER TABLE `customer_emails`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `customer_emails_order_id_foreign` (`order_id`),
+  ADD KEY `customer_emails_campaign_id_foreign` (`campaign_id`),
+  ADD KEY `customer_emails_user_id_created_at_index` (`user_id`,`created_at`);
+
+--
+-- Indexes for table `email_campaigns`
+--
+ALTER TABLE `email_campaigns`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `email_campaigns_created_by_foreign` (`created_by`),
+  ADD KEY `email_campaigns_status_send_at_index` (`status`,`send_at`);
 
 --
 -- Indexes for table `failed_jobs`
@@ -2042,6 +2276,15 @@ ALTER TABLE `orders`
   ADD KEY `orders_market_index` (`market`);
 
 --
+-- Indexes for table `order_address_changes`
+--
+ALTER TABLE `order_address_changes`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `order_address_changes_decided_by_shop_id_foreign` (`decided_by_shop_id`),
+  ADD KEY `order_address_changes_decided_by_user_id_foreign` (`decided_by_user_id`),
+  ADD KEY `order_address_changes_order_id_status_index` (`order_id`,`status`);
+
+--
 -- Indexes for table `order_items`
 --
 ALTER TABLE `order_items`
@@ -2120,6 +2363,15 @@ ALTER TABLE `personal_access_tokens`
   ADD KEY `personal_access_tokens_expires_at_index` (`expires_at`);
 
 --
+-- Indexes for table `price_change_records`
+--
+ALTER TABLE `price_change_records`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `price_change_records_product_id_foreign` (`product_id`),
+  ADD KEY `price_change_records_product_variant_id_foreign` (`product_variant_id`),
+  ADD KEY `price_change_records_sales_boost_offer_id_foreign` (`sales_boost_offer_id`);
+
+--
 -- Indexes for table `products`
 --
 ALTER TABLE `products`
@@ -2130,7 +2382,8 @@ ALTER TABLE `products`
   ADD KEY `products_is_active_index` (`is_active`),
   ADD KEY `products_shop_id_foreign` (`shop_id`),
   ADD KEY `products_shipping_template_id_foreign` (`shipping_template_id`),
-  ADD KEY `products_market_index` (`market`);
+  ADD KEY `products_market_index` (`market`),
+  ADD KEY `products_trademark_id_index` (`trademark_id`);
 
 --
 -- Indexes for table `product_images`
@@ -2146,8 +2399,16 @@ ALTER TABLE `product_reviews`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `product_reviews_order_item_id_unique` (`order_item_id`),
   ADD KEY `product_reviews_order_id_foreign` (`order_id`),
-  ADD KEY `product_reviews_user_id_foreign` (`user_id`),
-  ADD KEY `product_reviews_product_id_created_at_index` (`product_id`,`created_at`);
+  ADD KEY `product_reviews_product_id_status_index` (`product_id`,`status`),
+  ADD KEY `product_reviews_user_id_status_index` (`user_id`,`status`),
+  ADD KEY `product_reviews_status_index` (`status`);
+
+--
+-- Indexes for table `product_upload_tasks`
+--
+ALTER TABLE `product_upload_tasks`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `product_upload_tasks_shop_id_foreign` (`shop_id`);
 
 --
 -- Indexes for table `product_variants`
@@ -2157,6 +2418,14 @@ ALTER TABLE `product_variants`
   ADD UNIQUE KEY `product_variants_sku_unique` (`sku`),
   ADD KEY `product_variants_product_id_sort_order_index` (`product_id`,`sort_order`),
   ADD KEY `product_variants_is_active_index` (`is_active`);
+
+--
+-- Indexes for table `review_helpful_votes`
+--
+ALTER TABLE `review_helpful_votes`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `review_helpful_votes_product_review_id_user_id_unique` (`product_review_id`,`user_id`),
+  ADD KEY `review_helpful_votes_user_id_foreign` (`user_id`);
 
 --
 -- Indexes for table `rider_applications`
@@ -2217,6 +2486,15 @@ ALTER TABLE `rider_store`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `rider_store_user_id_store_id_unique` (`user_id`,`store_id`),
   ADD KEY `rider_store_store_id_foreign` (`store_id`);
+
+--
+-- Indexes for table `sales_boost_offers`
+--
+ALTER TABLE `sales_boost_offers`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `sales_boost_offers_product_variant_id_foreign` (`product_variant_id`),
+  ADD KEY `sales_boost_offers_created_by_foreign` (`created_by`),
+  ADD KEY `sales_boost_offers_product_id_status_index` (`product_id`,`status`);
 
 --
 -- Indexes for table `sellers`
@@ -2306,6 +2584,14 @@ ALTER TABLE `stores`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `store_decorations`
+--
+ALTER TABLE `store_decorations`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `store_decorations_shop_id_platform_is_live_index` (`shop_id`,`platform`,`is_live`),
+  ADD KEY `store_decorations_status_index` (`status`);
+
+--
 -- Indexes for table `store_inventory`
 --
 ALTER TABLE `store_inventory`
@@ -2339,6 +2625,13 @@ ALTER TABLE `support_threads`
   ADD KEY `support_threads_status_index` (`status`),
   ADD KEY `support_threads_last_message_at_index` (`last_message_at`),
   ADD KEY `support_threads_seller_shop_id_foreign` (`seller_shop_id`);
+
+--
+-- Indexes for table `trademarks`
+--
+ALTER TABLE `trademarks`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `trademarks_shop_id_status_index` (`shop_id`,`status`);
 
 --
 -- Indexes for table `users`
@@ -2388,6 +2681,18 @@ ALTER TABLE `categories`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
+-- AUTO_INCREMENT for table `customer_emails`
+--
+ALTER TABLE `customer_emails`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+
+--
+-- AUTO_INCREMENT for table `email_campaigns`
+--
+ALTER TABLE `email_campaigns`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
 -- AUTO_INCREMENT for table `failed_jobs`
 --
 ALTER TABLE `failed_jobs`
@@ -2433,19 +2738,25 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=118;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=126;
 
 --
 -- AUTO_INCREMENT for table `orders`
 --
 ALTER TABLE `orders`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=56;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=59;
+
+--
+-- AUTO_INCREMENT for table `order_address_changes`
+--
+ALTER TABLE `order_address_changes`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `order_items`
 --
 ALTER TABLE `order_items`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=66;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=67;
 
 --
 -- AUTO_INCREMENT for table `order_packages`
@@ -2487,31 +2798,49 @@ ALTER TABLE `payout_requests`
 -- AUTO_INCREMENT for table `personal_access_tokens`
 --
 ALTER TABLE `personal_access_tokens`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=300;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=315;
+
+--
+-- AUTO_INCREMENT for table `price_change_records`
+--
+ALTER TABLE `price_change_records`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `products`
 --
 ALTER TABLE `products`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=83;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=98;
 
 --
 -- AUTO_INCREMENT for table `product_images`
 --
 ALTER TABLE `product_images`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=23;
 
 --
 -- AUTO_INCREMENT for table `product_reviews`
 --
 ALTER TABLE `product_reviews`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `product_upload_tasks`
+--
+ALTER TABLE `product_upload_tasks`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `product_variants`
 --
 ALTER TABLE `product_variants`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=24;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=44;
+
+--
+-- AUTO_INCREMENT for table `review_helpful_votes`
+--
+ALTER TABLE `review_helpful_votes`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `rider_applications`
@@ -2556,6 +2885,12 @@ ALTER TABLE `rider_store`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
+-- AUTO_INCREMENT for table `sales_boost_offers`
+--
+ALTER TABLE `sales_boost_offers`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+
+--
 -- AUTO_INCREMENT for table `sellers`
 --
 ALTER TABLE `sellers`
@@ -2577,13 +2912,13 @@ ALTER TABLE `shipments`
 -- AUTO_INCREMENT for table `shipping_templates`
 --
 ALTER TABLE `shipping_templates`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `shipping_template_groups`
 --
 ALTER TABLE `shipping_template_groups`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `shops`
@@ -2595,7 +2930,7 @@ ALTER TABLE `shops`
 -- AUTO_INCREMENT for table `shop_addresses`
 --
 ALTER TABLE `shop_addresses`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- AUTO_INCREMENT for table `site_feedback`
@@ -2610,6 +2945,12 @@ ALTER TABLE `stores`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
+-- AUTO_INCREMENT for table `store_decorations`
+--
+ALTER TABLE `store_decorations`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- AUTO_INCREMENT for table `store_inventory`
 --
 ALTER TABLE `store_inventory`
@@ -2619,13 +2960,19 @@ ALTER TABLE `store_inventory`
 -- AUTO_INCREMENT for table `support_messages`
 --
 ALTER TABLE `support_messages`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=86;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=92;
 
 --
 -- AUTO_INCREMENT for table `support_threads`
 --
 ALTER TABLE `support_threads`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+
+--
+-- AUTO_INCREMENT for table `trademarks`
+--
+ALTER TABLE `trademarks`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -2656,6 +3003,20 @@ ALTER TABLE `cart_items`
   ADD CONSTRAINT `cart_items_cart_id_foreign` FOREIGN KEY (`cart_id`) REFERENCES `carts` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `cart_items_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `cart_items_product_variant_id_foreign` FOREIGN KEY (`product_variant_id`) REFERENCES `product_variants` (`id`) ON UPDATE CASCADE;
+
+--
+-- Constraints for table `customer_emails`
+--
+ALTER TABLE `customer_emails`
+  ADD CONSTRAINT `customer_emails_campaign_id_foreign` FOREIGN KEY (`campaign_id`) REFERENCES `email_campaigns` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `customer_emails_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `customer_emails_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;
+
+--
+-- Constraints for table `email_campaigns`
+--
+ALTER TABLE `email_campaigns`
+  ADD CONSTRAINT `email_campaigns_created_by_foreign` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
 -- Constraints for table `gift_cards`
@@ -2691,6 +3052,14 @@ ALTER TABLE `orders`
   ADD CONSTRAINT `orders_delivery_partner_id_foreign` FOREIGN KEY (`delivery_partner_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `orders_store_id_foreign` FOREIGN KEY (`store_id`) REFERENCES `stores` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `orders_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE;
+
+--
+-- Constraints for table `order_address_changes`
+--
+ALTER TABLE `order_address_changes`
+  ADD CONSTRAINT `order_address_changes_decided_by_shop_id_foreign` FOREIGN KEY (`decided_by_shop_id`) REFERENCES `shops` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `order_address_changes_decided_by_user_id_foreign` FOREIGN KEY (`decided_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `order_address_changes_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `order_items`
@@ -2740,6 +3109,14 @@ ALTER TABLE `payout_requests`
   ADD CONSTRAINT `payout_requests_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
 
 --
+-- Constraints for table `price_change_records`
+--
+ALTER TABLE `price_change_records`
+  ADD CONSTRAINT `price_change_records_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `price_change_records_product_variant_id_foreign` FOREIGN KEY (`product_variant_id`) REFERENCES `product_variants` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `price_change_records_sales_boost_offer_id_foreign` FOREIGN KEY (`sales_boost_offer_id`) REFERENCES `sales_boost_offers` (`id`) ON DELETE SET NULL;
+
+--
 -- Constraints for table `products`
 --
 ALTER TABLE `products`
@@ -2757,16 +3134,29 @@ ALTER TABLE `product_images`
 -- Constraints for table `product_reviews`
 --
 ALTER TABLE `product_reviews`
-  ADD CONSTRAINT `product_reviews_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE,
-  ADD CONSTRAINT `product_reviews_order_item_id_foreign` FOREIGN KEY (`order_item_id`) REFERENCES `order_items` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `product_reviews_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `product_reviews_order_item_id_foreign` FOREIGN KEY (`order_item_id`) REFERENCES `order_items` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `product_reviews_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `product_reviews_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `product_upload_tasks`
+--
+ALTER TABLE `product_upload_tasks`
+  ADD CONSTRAINT `product_upload_tasks_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `product_variants`
 --
 ALTER TABLE `product_variants`
   ADD CONSTRAINT `product_variants_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `review_helpful_votes`
+--
+ALTER TABLE `review_helpful_votes`
+  ADD CONSTRAINT `review_helpful_votes_product_review_id_foreign` FOREIGN KEY (`product_review_id`) REFERENCES `product_reviews` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `review_helpful_votes_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `rider_applications`
@@ -2818,6 +3208,14 @@ ALTER TABLE `rider_shift_breaks`
 ALTER TABLE `rider_store`
   ADD CONSTRAINT `rider_store_store_id_foreign` FOREIGN KEY (`store_id`) REFERENCES `stores` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `rider_store_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `sales_boost_offers`
+--
+ALTER TABLE `sales_boost_offers`
+  ADD CONSTRAINT `sales_boost_offers_created_by_foreign` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+  ADD CONSTRAINT `sales_boost_offers_product_id_foreign` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `sales_boost_offers_product_variant_id_foreign` FOREIGN KEY (`product_variant_id`) REFERENCES `product_variants` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `sellers`
@@ -2874,6 +3272,12 @@ ALTER TABLE `site_feedback`
   ADD CONSTRAINT `site_feedback_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL;
 
 --
+-- Constraints for table `store_decorations`
+--
+ALTER TABLE `store_decorations`
+  ADD CONSTRAINT `store_decorations_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
+
+--
 -- Constraints for table `store_inventory`
 --
 ALTER TABLE `store_inventory`
@@ -2895,6 +3299,12 @@ ALTER TABLE `support_threads`
   ADD CONSTRAINT `support_threads_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `support_threads_seller_shop_id_foreign` FOREIGN KEY (`seller_shop_id`) REFERENCES `shops` (`id`) ON DELETE SET NULL,
   ADD CONSTRAINT `support_threads_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `trademarks`
+--
+ALTER TABLE `trademarks`
+  ADD CONSTRAINT `trademarks_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
