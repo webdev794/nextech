@@ -41,6 +41,14 @@ class ProductUpload
         $templates = $shop->shippingTemplates()->get()->keyBy(fn ($t) => mb_strtolower($t->name));
         $types = (array) config('product_catalog.variation_types');
 
+        // Same gate as the Add product form: without a way to ship, products
+        // can only be saved as drafts.
+        $shippingBlock = match (true) {
+            $shop->shipsItself() && ! $shop->shippingTemplates()->exists() => 'Create a shipping template in Shipping settings before submitting products.',
+            ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => 'NexTech pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
+            default => null,
+        };
+
         $groups = [];
         foreach ($rows as $i => $row) {
             $row = array_map(fn ($v) => is_string($v) ? trim($v) : $v, (array) $row);
@@ -174,6 +182,9 @@ class ProductUpload
                 }
             }
 
+            if ($shippingBlock) {
+                $messages[] = $shippingBlock;
+            }
             $messages = [...$messages, ...array_values(ProductCatalog::listingErrors($data, $category, $variants, $images, $shop->shipsItself()))];
             if (count($variants) > Sku::MAX_VARIANTS) {
                 $messages[] = 'A product can have at most '.Sku::MAX_VARIANTS.' SKUs.';

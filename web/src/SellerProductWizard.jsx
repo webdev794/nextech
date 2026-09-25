@@ -134,9 +134,12 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
   const sym = currencySymbol()
 
   useEffect(() => {
+    let cancelled = false
     fetch(`${API_URL}/seller/catalog-config`, { headers: headers() }).then(readJson)
-      .then((d) => { setConfig(d.data); setForm(formFrom(product, d.data)) })
-      .catch(() => setMsg('Could not load the product form. Reload and try again.'))
+      // A late (or repeated) response must never wipe what the seller has typed.
+      .then((d) => { if (!cancelled) { setConfig(d.data); setForm((f) => f ?? formFrom(product, d.data)) } })
+      .catch(() => { if (!cancelled) setMsg('Could not load the product form. Reload and try again.') })
+    return () => { cancelled = true }
   }, [headers, product])
 
   if (!config || !form) return <div className="sc-card"><p className="sc-muted">{msg || 'Loading…'}</p></div>

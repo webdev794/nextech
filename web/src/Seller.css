@@ -413,6 +413,7 @@ s.sc-muted{display:inline}
 .wz-steps button:disabled{opacity:.5;cursor:not-allowed}
 .wz-card{display:flex;flex-direction:column;gap:12px}
 .wz-card>label,.wz-grid label,.wz-field{display:flex;flex-direction:column;gap:5px;font-size:12px;color:#5c6357}
+.wz-card label.sc-check{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:#1f2328}
 .wz-card input:not([type=checkbox]):not([type=radio]):not([type=file]),.wz-card select,.wz-card textarea{padding:9px 11px;border:1px solid #d9dde1;border-radius:8px;font:14px 'Okra',sans-serif;color:#1f2328;min-width:0}
 .wz-label{font-size:12px;font-weight:600;color:#3d4450}
 .wz-label small{font-weight:500}
