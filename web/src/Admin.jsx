@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ListingReview, TrademarkReview } from './AdminListingReview'
+import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
 import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
@@ -3001,6 +3001,7 @@ export default function Admin({ token, onClose }) {
             <span className="muted">Applications sellers submit at /seller. Approving flips the shop live on the storefront.</span>
           </div>
           <TrademarkReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} viewDocument={viewKycDocument} fail={fail} />
+          <DecorationReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} fail={fail} />
 
           {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications.</p> : (
             <table className="admin-table">
@@ -3650,6 +3651,15 @@ export default function Admin({ token, onClose }) {
               </div>
 
               <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
+
+              <div className="admin-form">
+                <h3>Store decoration</h3>
+                <div className="admin-form-grid">
+                  <label>Live products a store needs before its design shows<input type="number" min="0" max="1000" defaultValue={settings.decoration_min_products ?? 30} onBlur={(event) => saveSetting({ decoration_min_products: Number(event.target.value) || 0 })} /></label>
+                  <label>Share of submitted designs to spot-check (%)<input type="number" min="0" max="100" defaultValue={Math.round((settings.decoration_spot_check_rate ?? 0.3) * 100)} onBlur={(event) => saveSetting({ decoration_spot_check_rate: Math.max(0, Math.min(100, Number(event.target.value) || 0)) / 100 })} /></label>
+                </div>
+                <p className="muted">Below the product minimum, shoppers see the store’s default page even if a design is live. Spot-checked designs wait on the Sellers tab until you approve them.</p>
+              </div>
 
               <div className="admin-form">
                 <h3>Countries</h3>

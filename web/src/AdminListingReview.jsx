@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { formatMoney } from './money'
+import { DecorationView } from './StoreDecorationView'
 
 // Admin review of seller listings: everything a seller entered in the Add
 // product flow (details, variations, compliance documents, price links),
@@ -141,6 +142,62 @@ export function TrademarkReview({ authHeaders, jsonHeaders, viewDocument, fail, 
           </tr>
         ))}</tbody>
       </table>
+    </div>
+  )
+}
+
+// Store decoration spot checks: versions picked for review, previewed as shoppers would see them.
+export function DecorationReview({ authHeaders, jsonHeaders, fail }) {
+  const [rows, setRows] = useState(null)
+  const [status, setStatus] = useState('in_review')
+  const [open, setOpen] = useState(null)
+  const load = useCallback(() => {
+    fetch(`${API_URL}/admin/decorations?status=${status}`, { headers: authHeaders() }).then(readJson).then((d) => setRows(d.data ?? [])).catch(() => setRows([]))
+  }, [authHeaders, status])
+  useEffect(() => { Promise.resolve().then(load) }, [load])
+
+  async function decide(d, decision) {
+    const note = decision === 'reject' ? window.prompt(`What must ${d.shop.name} change in “${d.name}”? They see this.`, '') : null
+    if (decision === 'reject' && !note) return
+    try {
+      const response = await fetch(`${API_URL}/admin/decorations/${d.id}/review`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision, note }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the store decoration.')
+      setOpen(null)
+      load()
+    } catch (error) { fail(error) }
+  }
+
+  if (!rows || (!rows.length && status === 'in_review')) return null
+  return (
+    <div className="admin-form">
+      <h3>Store decorations {status === 'in_review' ? 'to spot-check' : ''} <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="in_review">In review</option><option value="live">Live</option><option value="rejected">Rejected</option><option value="all">All</option></select></h3>
+      <table className="admin-table">
+        <thead><tr><th>Shop</th><th>Version</th><th>Platform</th><th>Submitted</th><th></th></tr></thead>
+        <tbody>{rows.map((d) => (
+          <tr key={d.id}>
+            <td>{d.shop.name}</td>
+            <td>{d.name} {d.is_live && <span className="pill pill-approved">live</span>}{d.review_note && <span className="admin-note">{d.review_note}</span>}</td>
+            <td>{d.platform}</td>
+            <td>{d.submitted_at ? new Date(d.submitted_at).toLocaleString() : '—'}</td>
+            <td className="admin-actions"><button className="act ghost" type="button" onClick={() => setOpen(d)}>Preview</button></td>
+          </tr>
+        ))}</tbody>
+      </table>
+      {open && (
+        <div className="admin-drawer" role="presentation" onClick={() => setOpen(null)}>
+          <aside className="admin-deco-drawer" onClick={(e) => e.stopPropagation()}>
+            <button className="admin-close" type="button" onClick={() => setOpen(null)}>Close</button>
+            <h3>{open.shop.name} — {open.name} ({open.platform})</h3>
+            <p className="muted">Check that images, videos and text are lawful, the seller’s own, and follow the Seller Rules.</p>
+            <div className="admin-form-actions">
+              {open.status !== 'approved' && <button className="act" type="button" onClick={() => decide(open, 'approve')}>Approve</button>}
+              <button className="act danger" type="button" onClick={() => decide(open, 'reject')}>{open.is_live ? 'Take down' : 'Reject'}</button>
+            </div>
+            <DecorationView design={open.preview} platform={open.platform} shopName={open.shop.name} />
+          </aside>
+        </div>
+      )}
     </div>
   )
 }

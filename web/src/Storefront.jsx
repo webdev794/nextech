@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { DecorationView } from './StoreDecorationView'
 import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
 import { renderMarkdown } from './markdown'
@@ -2497,6 +2498,12 @@ export default function Storefront() {
               <button type="button" className="home-cats-arrow home-cats-arrow-right" aria-label="Scroll right" onClick={() => dealsExclusiveRef.current?.scrollBy({ left: dealsExclusiveRef.current.clientWidth * 0.6, behavior: 'smooth' })}><svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 6 15 12 9 18" /></svg></button>
             </div>
           </section>}
+
+          {dealsPage === 'shop' && shopInfo?.decoration && (() => {
+            // The seller's designed store page (Store decoration), for this screen size.
+            const design = shopInfo.decoration[itemsPerRow === 2 ? 'mobile' : 'desktop']
+            return design && <DecorationView design={design} platform={itemsPerRow === 2 ? 'mobile' : 'desktop'} shopName={shopInfo.name} onProduct={(slug) => { window.location.hash = `#/product/${slug}` }} onCategory={(name) => { setDealsCategory(name); productGridRef.current?.scrollIntoView({ behavior: 'smooth' }) }} />
+          })()}
 
           {dealsPage !== 'exclusive' && (dealsPage !== 'shop' || shopTiles.length > 0) && categoryCarousel(dealsCatsRef, dealsCatsDrag, dealsCatsWrapRef, dealsCategory, (tile) => setDealsCategory(tile ? tileMeta(tile).label : null), true, false, dealsPage === 'shop' ? shopTiles : homeTileList)}
 

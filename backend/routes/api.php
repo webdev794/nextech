@@ -48,6 +48,8 @@ use App\Http\Controllers\Api\SellerProductUploadController;
 use App\Http\Controllers\Api\SellerPricingController;
 use App\Http\Controllers\Api\SellerTrademarkController;
 use App\Http\Controllers\Api\AdminCatalogReviewController;
+use App\Http\Controllers\Api\SellerDecorationController;
+use App\Http\Controllers\Api\AdminDecorationController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
 use Illuminate\Http\Request;
@@ -211,6 +213,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'salesBoost']);
     Route::post('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'createSalesBoost']);
     Route::get('/trademarks', [AdminCatalogReviewController::class, 'trademarks']);
+    Route::get('/decorations', [AdminDecorationController::class, 'index']);
+    Route::post('/decorations/{decoration}/review', [AdminDecorationController::class, 'review']);
     Route::post('/trademarks/{trademark}/review', [AdminCatalogReviewController::class, 'reviewTrademark']);
     Route::post('/products/{product}/reject', [AdminProductController::class, 'reject']);
     Route::delete('/products/{product}', [AdminProductController::class, 'destroy']);
@@ -292,6 +296,15 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::get('/seller/sales-boost', [SellerPricingController::class, 'salesBoost']);
     Route::post('/seller/sales-boost/decide', [SellerPricingController::class, 'decide']);
     Route::get('/seller/pricing-records', [SellerPricingController::class, 'records']);
+    // My account -> Store decoration (desktop and mobile versions of the store page).
+    Route::get('/seller/decorations', [SellerDecorationController::class, 'index']);
+    Route::post('/seller/decorations/accept-terms', [SellerDecorationController::class, 'acceptTerms']);
+    Route::post('/seller/decorations', [SellerDecorationController::class, 'store']);
+    Route::patch('/seller/decorations/{decoration}', [SellerDecorationController::class, 'update']);
+    Route::post('/seller/decorations/{decoration}/submit', [SellerDecorationController::class, 'submit']);
+    Route::post('/seller/decorations/{decoration}/publish', [SellerDecorationController::class, 'publish']);
+    Route::post('/seller/decorations/{decoration}/unpublish', [SellerDecorationController::class, 'unpublish']);
+    Route::delete('/seller/decorations/{decoration}', [SellerDecorationController::class, 'destroy']);
     // Account health: trademarks.
     Route::get('/seller/trademarks', [SellerTrademarkController::class, 'index']);
     Route::post('/seller/trademarks', [SellerTrademarkController::class, 'store']);

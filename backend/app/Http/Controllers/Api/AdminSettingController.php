@@ -186,6 +186,8 @@ class AdminSettingController extends Controller
                 'rider_auto_assign' => ['sometimes', 'boolean'],
                 'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
                 'nextech_label_mode' => ['sometimes', Rule::in(['auto', 'manual'])],
+                'decoration_min_products' => ['sometimes', 'integer', 'min:0', 'max:1000'],
+                'decoration_spot_check_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
                 'active_countries' => ['sometimes', 'array'],
                 'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
                 'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
@@ -233,6 +235,12 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('nextech_label_mode', $validated)) {
             Setting::put('nextech_label_mode', $validated['nextech_label_mode']);
+        }
+
+        foreach (['decoration_min_products' => 'intval', 'decoration_spot_check_rate' => 'floatval'] as $key => $cast) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, $cast($validated[$key]));
+            }
         }
 
         if (array_key_exists('nextech_pickup', $validated)) {
@@ -338,6 +346,8 @@ class AdminSettingController extends Controller
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'nextech_label_mode' => SellerFulfillment::labelMode(),
+            'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),
+            'decoration_spot_check_rate' => \App\Support\StoreDecorations::spotCheckRate(),
             'active_countries' => Country::active(),
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
             // The US forms (original settings keys).

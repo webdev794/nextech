@@ -7,6 +7,7 @@ import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
 import { ManageOrders } from './SellerOrders'
+import { StoreDecoration } from './SellerDecoration'
 import { ProductWizard } from './SellerProductWizard'
 import { AccountHealth, BulkUpload, PricingHealth, ProductCompliance, SalesBoostPopup } from './SellerCatalogTools'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
@@ -263,8 +264,12 @@ export default function Seller({ token, onSignOut }) {
     window.location.assign(`#/p/${slug}`)
     window.scrollTo({ top: 0 })
   }
+  // Back from a policy page (#/p/<slug>) to the console. When the console itself
+  // is opened via #/seller (no /seller path rewrite), keep that hash so a reload
+  // stays in Seller Center.
   function closePage() {
-    if (window.location.hash) window.location.hash = ''
+    const home = window.location.pathname.replace(/\/$/, '').endsWith('/seller') ? '' : '#/seller'
+    if (window.location.hash.startsWith('#/p/')) window.location.hash = home
     else setPageView(null)
   }
 
@@ -743,7 +748,7 @@ export default function Seller({ token, onSignOut }) {
     const payoutReady = balance >= (me.min_payout_cents ?? 0) && balance > 0 && me.last_payout_request?.status !== 'pending'
     const shopUrl = me.shop?.slug ? `${window.location.origin}${import.meta.env.BASE_URL || '/'}#/shop/${me.shop.slug}` : null
 
-    const go = (next, tab) => { setSection(next); setProductForm(null); if (tab) setProductTab(tab); if (window.location.hash) closePage(); window.scrollTo({ top: 0 }) }
+    const go = (next, tab) => { setSection(next); setProductForm(null); if (tab) setProductTab(tab); if (window.location.hash.startsWith('#/p/')) closePage(); window.scrollTo({ top: 0 }) }
     const newProduct = () => { setProductMsg(''); setProductForm({ source: null }); setSection('add-product'); window.scrollTo({ top: 0 }) }
     const openProductById = (id) => { const found = products.find((p) => p.id === id); if (found) editProduct(found); else loadProducts() }
     const priceText = (p) => {
@@ -761,7 +766,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -932,6 +937,8 @@ export default function Seller({ token, onSignOut }) {
               <ProductCompliance headers={authHeaders} products={products} reload={loadProducts} />
             ) : section === 'pricing' ? (
               <PricingHealth headers={authHeaders} onChanged={loadProducts} />
+            ) : section === 'decoration' ? (
+              <StoreDecoration headers={authHeaders} />
             ) : section === 'account-health' ? (
               <AccountHealth headers={authHeaders} country={me.country} />
             ) : section === 'orders' ? (

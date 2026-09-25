@@ -33,6 +33,7 @@ class Shop extends Model
     protected function casts(): array
     {
         return [
+            'decoration_terms_accepted_at' => 'datetime',
             'is_active' => 'boolean',
             'next_product_seq' => 'integer',
             'ships_saturday' => 'boolean',
@@ -65,6 +66,12 @@ class Shop extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
+    }
+
+    /** Store page designs (Store decoration), per platform. */
+    public function decorations(): HasMany
+    {
+        return $this->hasMany(StoreDecoration::class);
     }
 
     /** Trademarks the shop registered (Account health). */
