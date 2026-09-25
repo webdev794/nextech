@@ -2498,7 +2498,7 @@ export default function Storefront() {
             </div>
           </section>}
 
-          {dealsPage !== 'exclusive' && (dealsPage !== 'shop' || shopTiles.length > 1) && categoryCarousel(dealsCatsRef, dealsCatsDrag, dealsCatsWrapRef, dealsCategory, (tile) => setDealsCategory(tile ? tileMeta(tile).label : null), true, false, dealsPage === 'shop' ? shopTiles : homeTileList)}
+          {dealsPage !== 'exclusive' && (dealsPage !== 'shop' || shopTiles.length > 0) && categoryCarousel(dealsCatsRef, dealsCatsDrag, dealsCatsWrapRef, dealsCategory, (tile) => setDealsCategory(tile ? tileMeta(tile).label : null), true, false, dealsPage === 'shop' ? shopTiles : homeTileList)}
 
           {dealsLoading ? <div className="empty-state">Loading…</div> : <>
             <div className="catalog-head"><h2>{dealsCategory || ''}</h2><span>{dealsProducts.length} items</span></div>
