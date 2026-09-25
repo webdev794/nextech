@@ -1,0 +1,4 @@
+backend/web_deploy/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+backend/web_deploy/**/*.zip filter=lfs diff=lfs merge=lfs -text
+backend/web_deploy/*.mp4 filter=lfs diff=lfs merge=lfs -text
+backend/web_deploy/*.zip filter=lfs diff=lfs merge=lfs -text
