@@ -46,6 +46,7 @@ export function ShippingSettings({ headers, onChanged }) {
   const [templateForm, setTemplateForm] = useState(null)
   const [freeRuleOpen, setFreeRuleOpen] = useState(false)
   const [freeRuleTick, setFreeRuleTick] = useState(false)
+  const [wantMode, setWantMode] = useState(null) // self | label, picked before setup was finished
 
   const load = useCallback(() => {
     send(headers, '/seller/shipping').then((d) => setData(d.data)).catch((e) => setMsg(e.message))
@@ -130,15 +131,41 @@ export function ShippingSettings({ headers, onChanged }) {
                 const locked = value === 'nextech' && data.nextech_pickup !== 'available' && data.fulfillment_mode !== 'nextech'
                 return (
                   <label key={value} className={`ss-mode${data.fulfillment_mode === value ? ' active' : ''}${locked ? ' disabled' : ''}`}>
-                    <input type="radio" name="fulfillment_mode" disabled={locked} checked={data.fulfillment_mode === value} onChange={() => patch({ fulfillment_mode: value }, 'Saved — new orders use this.')} />
-                    <strong>{title}{locked && ' — not available'}</strong>
+                    <input type="radio" name="fulfillment_mode" disabled={locked} checked={data.fulfillment_mode === value || (wantMode === value && !data.setup_complete)} onChange={() => {
+                      // Shipping yourself needs setup first — show the steps instead of a refused save.
+                      if (value !== 'nextech' && !data.setup_complete) { setWantMode(value); return }
+                      setWantMode(null)
+                      patch({ fulfillment_mode: value }, 'Saved — new orders use this.')
+                    }} />
+                    <strong>{title}{locked && ' — not available'}{value !== 'nextech' && !data.setup_complete && <small className="ss-needs-setup">Set up first</small>}</strong>
                     <span>{text}</span>
                   </label>
                 )
               })}
             </div>
-            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">NexTech pickup is being phased out — set up your own shipping and switch to &ldquo;Ship it yourself&rdquo; or &ldquo;NexTech label&rdquo;. You can&rsquo;t add new products until you do.</p>}
-            {!data.setup_complete && <p className="sc-muted">To ship yourself: add a ship-from address, accept the free-shipping rule, and create a shipping template.</p>}
+            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">NexTech pickup is being phased out — complete the 3 steps below, then choose &ldquo;I ship with my own courier&rdquo; or &ldquo;I ship, NexTech label&rdquo;. You can&rsquo;t add new products until you do.</p>}
+            {(!data.setup_complete || wantMode) && (() => {
+              const steps = [
+                ['Add a ship-from address', data.addresses.length > 0, () => setAddressForm({ ...EMPTY_ADDRESS, is_default: !data.addresses.length })],
+                ['Accept the free-shipping rule', !!data.free_shipping_accepted_at, () => { setFreeRuleTick(false); setFreeRuleOpen(true) }],
+                ['Create a shipping template (states, transit days, fee)', data.templates.some((t) => (t.groups ?? []).length > 0), () => { setTab('templates'); newTemplate() }],
+              ]
+              const wantTitle = MODES.find(([v]) => v === wantMode)?.[1]
+              return (
+                <div className="ss-setup">
+                  <p><b>{wantTitle ? `To switch to “${wantTitle}”, finish these steps:` : 'To ship orders yourself, finish these steps:'}</b></p>
+                  <ul className="ss-checklist">
+                    {steps.map(([label, done, go]) => (
+                      <li key={label} className={done ? 'done' : ''}>
+                        <span>{done ? '✓' : '○'} {label}</span>
+                        {!done && <button type="button" className="sc-primary" onClick={go}>Do it</button>}
+                      </li>
+                    ))}
+                  </ul>
+                  {wantMode && data.setup_complete && <button type="button" className="sc-primary" onClick={async () => { if (await patch({ fulfillment_mode: wantMode }, 'Saved — new orders use this.')) setWantMode(null) }}>Switch to &ldquo;{wantTitle}&rdquo; now</button>}
+                </div>
+              )
+            })()}
           </div>
 
           <div className="sc-card">

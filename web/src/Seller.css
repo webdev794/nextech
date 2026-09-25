@@ -358,3 +358,6 @@ s.sc-muted{display:inline}
 .ss-label-wait button{margin-left:6px}
 .ss-label-ready{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
 .ss-label-ready small{color:#1e7b34;font-weight:600}
+.ss-setup{margin-top:12px;padding:12px;border:1px solid #f3d9b8;border-radius:10px;background:#fffaf3;display:flex;flex-direction:column;gap:8px}
+.ss-setup p{margin:0}
+.ss-needs-setup{margin-left:6px;padding:1px 6px;border-radius:4px;background:#fff1e0;color:#8a4b00;font-size:12px;font-weight:600}

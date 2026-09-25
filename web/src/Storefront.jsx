@@ -519,6 +519,12 @@ export default function Storefront() {
   const [markets, setMarkets] = useState([])
   const [grievanceOfficer, setGrievanceOfficer] = useState(null)
   const [fees, setFees] = useState({ tax_rate_bps: 0, delivery_mode: 'fixed', delivery_fee_cents: 0, delivery_near_fee_cents: 0, delivery_far_fee_cents: 0, free_delivery_threshold_cents: 0, handling_fee_cents: 0, small_cart_fee_cents: 0, small_cart_min_cents: 0 })
+  // The country store being shown (declared early — hooks below depend on it).
+  const activeMarket = (market && (markets.length === 0 || markets.some((m) => m.code === market)) ? market : null) || fees.market || 'US'
+  const marketProfile = markets.find((m) => m.code === activeMarket) ?? null
+  const taxInclusive = marketProfile?.tax_mode === 'inclusive'
+  const marketName = (code) => markets.find((m) => m.code === code)?.name ?? code
+  setStoreCurrency(marketProfile?.currency ?? fees.currency ?? 'usd')
   const [serviceable, setServiceable] = useState(null)
   const [sellerQuote, setSellerQuote] = useState(null) // shipping for items sellers ship themselves
   const [order, setOrder] = useState(null)
@@ -1145,11 +1151,6 @@ export default function Storefront() {
     }
   }, [cartTotal, fees, serviceable, cart, sellerQuote]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const activeMarket = (market && (markets.length === 0 || markets.some((m) => m.code === market)) ? market : null) || fees.market || 'US'
-  const marketProfile = markets.find((m) => m.code === activeMarket) ?? null
-  const taxInclusive = marketProfile?.tax_mode === 'inclusive'
-  const marketName = (code) => markets.find((m) => m.code === code)?.name ?? code
-  setStoreCurrency(marketProfile?.currency ?? fees.currency ?? 'usd')
 
   function switchMarket(code, { fromLocation = false } = {}) {
     if (code === activeMarket || !markets.some((m) => m.code === code)) return
