@@ -3863,153 +3863,175 @@ export default function Admin({ token, onClose }) {
       )}
 
       {sellerDetail && (
-        <div className="admin-drawer" role="presentation" onClick={() => setSellerDetail(null)}>
-          <aside onClick={(event) => event.stopPropagation()}>
-            <button className="admin-close" type="button" onClick={() => setSellerDetail(null)}>Close</button>
-            {sellerDetail.loading ? <Loading>Loading…</Loading> : (
-              <>
-                <h3>{sellerDetail.shop?.name ?? sellerDetail.company_name}</h3>
-                <p className="muted"><span className={`pill pill-${sellerDetail.status}`}>{SELLER_STATUS_LABELS[sellerDetail.status] ?? sellerDetail.status}</span> · submitted {sellerDetail.submitted_at ? new Date(sellerDetail.submitted_at).toLocaleString() : '—'}</p>
-                {sellerDetail.rejection_reason && <p className="admin-cash-holding overdue">{sellerDetail.status === 'needs_changes' ? 'Changes requested: ' : 'Reason: '}{sellerDetail.rejection_reason}</p>}
-                {sellerDetail.last_message && (
-                  <p className="muted">Last message ({sellerDetail.last_message.is_staff ? 'you' : 'seller'}, {new Date(sellerDetail.last_message.created_at).toLocaleString()}): &ldquo;{sellerDetail.last_message.body}&rdquo;</p>
-                )}
-
-                <h4>Business</h4>
-                <p className="muted">{sellerDetail.company_name} · {sellerDetail.business_type} · {sellerDetail.country}</p>
-                <p className="muted">Tax ID: {sellerDetail.tax_id}</p>
-                <p className="muted">{[sellerDetail.registered_line1, sellerDetail.registered_line2, sellerDetail.registered_city, sellerDetail.registered_state, sellerDetail.registered_postal_code, sellerDetail.registered_country].filter(Boolean).join(', ')}</p>
-
-                <h4>Pickup address</h4>
-                <p className="muted">{sellerDetail.pickup_phone}</p>
-                <p className="muted">{sellerDetail.pickup_same_as_registered
-                  ? 'Same as registered address (above)'
-                  : [sellerDetail.pickup_line1, sellerDetail.pickup_line2, sellerDetail.pickup_city, sellerDetail.pickup_state, sellerDetail.pickup_postal_code, sellerDetail.pickup_country].filter(Boolean).join(', ')}</p>
-
-                <h4>Seller / contact</h4>
-                <p className="muted">{sellerDetail.contact_name} · {sellerDetail.user?.email}</p>
-                <p className="muted">{SELLER_ID_TYPE_LABELS[sellerDetail.id_type] ?? sellerDetail.id_type}: {sellerDetail.id_number} · DOB {sellerDetail.date_of_birth}</p>
-
-                <h4>Documents</h4>
+        <div className="seller-page-overlay" role="dialog" aria-modal="true" aria-label="Seller details">
+          <div className="seller-page">
+            {sellerDetail.loading ? <Loading>Loading…</Loading> : (() => {
+              const d = sellerDetail
+              const STATUS_TEXT = { pending: 'Waiting for review', approved: 'Approved', rejected: 'Sent back', processing: 'Waiting for verification', linked: 'Linked', failed: 'Verification failed' }
+              const reviewButtons = (task, status, waiting) => status && (
                 <div className="admin-form-actions">
-                  <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.id_document_path)}>View ID document</button>
-                  <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.business_document_path)}>View business document</button>
+                  {status !== (task === 'bank' ? 'linked' : 'approved') && <button className="act" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'approve')}>{task === 'bank' ? 'Verify & link' : 'Approve'}</button>}
+                  {status !== (task === 'bank' ? 'failed' : 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'reject')}>{waiting ? 'Send back' : 'Revoke'}</button>}
                 </div>
-
-                {sellerDetail.shop && sellerDetail.requirement_rules && (
-                  <>
-                    <h4>Requirements</h4>
-                    <p className="muted">Stricter rules for this seller — all off by default so a new seller can start selling straight away.</p>
-                    {Object.entries(sellerDetail.requirement_rules).map(([key, [label, help]]) => (
-                      <label className="admin-check" key={key} title={help}>
-                        <input type="checkbox" checked={!!sellerDetail.requirements?.[key]} disabled={busyId === sellerDetail.id} onChange={(event) => sellerAction(sellerDetail, 'requirements', { [key]: event.target.checked })} />
-                        <span><b>{label}</b> <span className="muted">— {help}</span></span>
-                      </label>
-                    ))}
-                  </>
-                )}
-
-                {sellerDetail.status === 'approved' && (() => {
-                  const d = sellerDetail
-                  const STATUS_TEXT = { pending: 'Waiting for review', approved: 'Approved', rejected: 'Sent back', processing: 'Waiting for verification', linked: 'Linked', failed: 'Verification failed' }
-                  const reviewButtons = (task, status, waiting) => status && (
-                    <div className="admin-form-actions">
-                      {status !== (task === 'bank' ? 'linked' : 'approved') && <button className="act" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'approve')}>{task === 'bank' ? 'Verify & link' : 'Approve'}</button>}
-                      {status !== (task === 'bank' ? 'failed' : 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'reject')}>{waiting ? 'Send back' : 'Revoke'}</button>}
+              )
+              const people = d.compliance?.people ?? []
+              const roleNames = { ubo: 'beneficial owner', director: 'director', executive: 'executive' }
+              const address = (parts) => parts.filter(Boolean).join(', ') || '—'
+              return (
+                <>
+                  <header className="seller-page-head">
+                    <div>
+                      <button className="link" type="button" onClick={() => setSellerDetail(null)}>&larr; All sellers</button>
+                      <h2>{d.shop?.name ?? d.company_name} {countryBadge(d.shop?.market ?? d.country)}</h2>
+                      <p className="muted"><span className={`pill pill-${d.status}`}>{SELLER_STATUS_LABELS[d.status] ?? d.status}</span> · submitted {d.submitted_at ? new Date(d.submitted_at).toLocaleString() : '—'}{d.reviewer ? ` · reviewed by ${d.reviewer.name}${d.reviewed_at ? ` on ${new Date(d.reviewed_at).toLocaleDateString()}` : ''}` : ''}</p>
                     </div>
-                  )
-                  const people = d.compliance?.people ?? []
-                  const roleNames = { ubo: 'beneficial owner', director: 'director', executive: 'executive' }
-                  return (
-                    <>
-                      <h4>Onboarding tasks</h4>
-                      <p className="muted"><b>1. Tax information</b> — {d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}{d.tax_note ? ` · “${d.tax_note}”` : ''}</p>
-                      {d.tax_info?.tax_number && <p className="muted">Tax number {d.tax_info.tax_number} (registered: {d.tax_id}){d.tax_info.tax_code ? ` · default item tax code: ${d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}` : ''}{d.tax_info.certificate_path && <> · <button className="link" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>View certificate</button></>}</p>}
-                      {reviewButtons('tax', d.tax_status, d.tax_status === 'pending')}
+                    <div className="admin-form-actions">
+                      <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => messageSeller(d)}>Message seller</button>
+                      {(d.status === 'pending' || d.status === 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => requestSellerChanges(d)}>Request changes</button>}
+                      {d.status === 'pending' && <>
+                        <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'approve')}>Approve</button>
+                        <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => rejectSeller(d)}>Reject</button>
+                      </>}
+                      {d.status === 'approved' && <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => suspendSeller(d)}>Suspend</button>}
+                      {d.status === 'suspended' && <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'reinstate')}>Reinstate</button>}
+                      <button className="act ghost" type="button" onClick={() => setSellerDetail(null)}>Close</button>
+                    </div>
+                  </header>
+                  {d.rejection_reason && <p className="admin-cash-holding overdue">{d.status === 'needs_changes' ? 'Changes requested: ' : 'Reason: '}{d.rejection_reason}</p>}
+                  {d.status === 'needs_changes' && <p className="muted">Waiting on the seller to edit and resubmit.</p>}
+                  {d.last_message && <p className="muted">Last message ({d.last_message.is_staff ? 'you' : 'seller'}, {new Date(d.last_message.created_at).toLocaleString()}): &ldquo;{d.last_message.body}&rdquo;</p>}
 
-                      <p className="muted"><b>2. Compliance information</b> — {d.compliance_status ? STATUS_TEXT[d.compliance_status] : 'Not started'}{d.compliance_submitted_at ? ` · submitted ${new Date(d.compliance_submitted_at).toLocaleDateString()}` : ''}{d.compliance_note ? ` · “${d.compliance_note}”` : ''}</p>
-                      {people.map((p) => (
-                        <p className="muted" key={p.id}>{p.legal_name}{p.is_primary ? ' (primary contact)' : ''} — {p.roles.map((r) => roleNames[r]).join(', ')}{p.ownership_pct != null ? ` · ${p.ownership_pct}% owned` : ''} · born {p.date_of_birth} in {p.place_of_birth} · citizen of {p.citizenship} · {p.id_type} {p.id_number} ({p.id_country}, expires {p.id_expiry}) · {[p.address?.line1, p.address?.line2, p.address?.city, p.address?.state, p.address?.postal_code, p.address?.country].filter(Boolean).join(', ')}</p>
-                      ))}
-                      {(d.compliance?.documents ?? []).length > 0 && (
-                        <div className="admin-form-actions">
-                          {d.compliance.documents.map((doc) => <button key={doc.path} className="act ghost" type="button" onClick={() => viewKycDocument(doc.path)}>{d.corporate_document_types?.[doc.type] ?? doc.type}</button>)}
-                        </div>
-                      )}
-                      {reviewButtons('compliance', d.compliance_status, d.compliance_status === 'pending')}
+                  {d.shop && (
+                    <div className="crm-stats">
+                      <div><b>{money(Math.max(0, d.available_cents ?? 0), d.currency)}</b><span>Available to pay out</span></div>
+                      <div><b>{money(d.pending_cents ?? 0, d.currency)}</b><span>Held for returns</span></div>
+                      <div><b>{money(d.balance_cents ?? 0, d.currency)}</b><span>Total balance</span></div>
+                      <div><b>{money(d.min_payout_cents ?? 0, d.currency)}</b><span>Minimum payout</span></div>
+                      <div><b>{d.shop.is_active ? 'Live' : 'Hidden'}</b><span>Shop</span></div>
+                    </div>
+                  )}
 
-                      <p className="muted"><b>3. Bank account</b> — {d.bank_status ? STATUS_TEXT[d.bank_status] : 'Not started'}{d.bank_submitted_at ? ` · submitted ${new Date(d.bank_submitted_at).toLocaleDateString()}` : ''}{d.bank_note ? ` · “${d.bank_note}”` : ''}</p>
-                      {d.payout_details?.document_path && <p className="muted">Check the bank document matches: holder, {d.payout_details.bank_code_label ?? 'routing number'} and account number, issued {d.payout_details.document_issued_on} (must be within 180 days). <button className="link" type="button" onClick={() => viewKycDocument(d.payout_details.document_path)}>View bank document</button></p>}
-                      {reviewButtons('bank', d.bank_status, d.bank_status === 'processing')}
-                    </>
-                  )
-                })()}
+                  <div className="seller-page-grid">
+                    <section className="seller-card">
+                      <h4>Business</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Company</dt><dd>{d.company_name}</dd></div>
+                        <div><dt>Type</dt><dd>{d.business_type}</dd></div>
+                        <div><dt>Country</dt><dd>{d.country}</dd></div>
+                        <div><dt>Tax ID</dt><dd>{d.tax_id}</dd></div>
+                        <div><dt>Registered address</dt><dd>{address([d.registered_line1, d.registered_line2, d.registered_city, d.registered_state, d.registered_postal_code, d.registered_country])}</dd></div>
+                      </dl>
+                    </section>
 
-                <h4>Shop</h4>
-                <p className="muted">{sellerDetail.shop?.name} {sellerDetail.shop?.is_active ? '(live)' : '(hidden)'}</p>
-
-                {sellerDetail.shop && (
-                  <>
-                    <h4>Shipping</h4>
-                    <p className="muted">{{ nextech: 'NexTech collects & delivers this seller’s orders', self: 'Ships orders with their own courier (tracking entered in Seller Center)', label: 'Ships orders on NexTech-bought labels (postage deducted from earnings)' }[sellerDetail.shop?.fulfillment_mode ?? 'nextech']}</p>
-                    <h4>Payouts</h4>
-                    <p className="muted">Available: <strong>{money(Math.max(0, sellerDetail.available_cents ?? 0), sellerDetail.currency)}</strong> · Held for returns: <strong>{money(sellerDetail.pending_cents ?? 0, sellerDetail.currency)}</strong> · Total balance: {money(sellerDetail.balance_cents ?? 0, sellerDetail.currency)}</p>
-                    {(sellerDetail.pending_orders ?? []).length > 0 && (
-                      <p className="muted">Held: {sellerDetail.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents, sellerDetail.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>
-                    )}
-                    <p className="muted"> · Minimum payout: {money(sellerDetail.min_payout_cents ?? 0, sellerDetail.currency)}{sellerDetail.max_payout_cents > 0 ? ` · Max per payout: ${money(sellerDetail.max_payout_cents, sellerDetail.currency)}` : ''}{sellerDetail.daily_payout_remaining_cents != null ? ` · ${money(sellerDetail.daily_payout_remaining_cents, sellerDetail.currency)} left today (all sellers)` : ''}</p>
-                    {sellerDetail.pending_payout_request && (
-                      <p className="admin-payout-request">💸 Seller requested <strong>{money(sellerDetail.pending_payout_request.amount_cents, sellerDetail.currency)}</strong> on {new Date(sellerDetail.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
-                    )}
-                    {sellerDetail.payout_method ? (
-                      <p className="muted">
-                        {sellerDetail.payout_method === 'bank' ? <>Bank transfer — {sellerDetail.payout_details?.holder_name}, {sellerDetail.payout_details?.bank_name}, acct {sellerDetail.payout_details?.account_number} · routing {sellerDetail.payout_details?.routing_number}</>
-                          : <>PayPal — {sellerDetail.payout_details?.email}</>}
-                      </p>
-                    ) : <p className="muted">No payout method on file yet.</p>}
-                    {(sellerDetail.ledger_entries ?? []).length > 0 && (
-                      <div className="admin-gift-issued">
-                        {sellerDetail.ledger_entries.map((entry) => (
-                          <p key={entry.id}>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type} <b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents), sellerDetail.currency)}</b>{entry.order_id ? ` — order #${entry.order_id}` : ''}{entry.note ? ` — ${entry.note}` : ''} · {new Date(entry.created_at).toLocaleDateString()}</p>
-                        ))}
-                      </div>
-                    )}
-                    {sellerDetail.status === 'approved' && (
+                    <section className="seller-card">
+                      <h4>Seller &amp; contact</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Name</dt><dd>{d.contact_name}</dd></div>
+                        <div><dt>Email</dt><dd>{d.user?.email}</dd></div>
+                        <div><dt>ID</dt><dd>{SELLER_ID_TYPE_LABELS[d.id_type] ?? d.id_type}: {d.id_number}</dd></div>
+                        <div><dt>Date of birth</dt><dd>{String(d.date_of_birth ?? '').slice(0, 10)}</dd></div>
+                        <div><dt>Pickup</dt><dd>{d.pickup_phone}{d.pickup_phone ? ' · ' : ''}{d.pickup_same_as_registered ? 'Same as registered address' : address([d.pickup_line1, d.pickup_line2, d.pickup_city, d.pickup_state, d.pickup_postal_code, d.pickup_country])}</dd></div>
+                      </dl>
                       <div className="admin-form-actions">
-                        {/* Only offered once the cleared (past-return-window) balance reaches the minimum. */}
-                        {(sellerDetail.available_cents ?? 0) >= (sellerDetail.min_payout_cents ?? 0) && (sellerDetail.available_cents ?? 0) > 0 && (
-                          <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => recordSellerPayout(sellerDetail)}>Record payout</button>
-                        )}
-                        {sellerDetail.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectPayoutRequest(sellerDetail)}>Decline request</button>}
-                        {(sellerDetail.available_cents ?? 0) < (sellerDetail.min_payout_cents ?? 0) && <p className="muted">Available balance is below the {money(sellerDetail.min_payout_cents ?? 0, sellerDetail.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</p>}
+                        <button className="act ghost" type="button" onClick={() => viewKycDocument(d.id_document_path)}>ID document</button>
+                        <button className="act ghost" type="button" onClick={() => viewKycDocument(d.business_document_path)}>Business document</button>
                       </div>
-                    )}
-                  </>
-                )}
+                    </section>
 
-                <h4>Actions</h4>
-                <div className="admin-form-actions">
-                  <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => messageSeller(sellerDetail)}>Message seller</button>
-                  {(sellerDetail.status === 'pending' || sellerDetail.status === 'rejected') && (
-                    <button className="act ghost" type="button" disabled={busyId === sellerDetail.id} onClick={() => requestSellerChanges(sellerDetail)}>Request changes</button>
-                  )}
-                  {sellerDetail.status === 'pending' && <>
-                    <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'approve')}>Approve</button>
-                    <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => rejectSeller(sellerDetail)}>Reject</button>
-                  </>}
-                  {sellerDetail.status === 'approved' && (
-                    <button className="act danger" type="button" disabled={busyId === sellerDetail.id} onClick={() => suspendSeller(sellerDetail)}>Suspend</button>
-                  )}
-                  {sellerDetail.status === 'suspended' && (
-                    <button className="act" type="button" disabled={busyId === sellerDetail.id} onClick={() => sellerAction(sellerDetail, 'reinstate')}>Reinstate</button>
-                  )}
-                  {sellerDetail.status === 'needs_changes' && <span className="muted">Waiting on the seller to edit and resubmit.</span>}
-                  {sellerDetail.status === 'rejected' && <span className="muted">No further action.</span>}
-                </div>
-                {sellerDetail.reviewer && <p className="muted">Reviewed by {sellerDetail.reviewer.name}{sellerDetail.reviewed_at ? ` on ${new Date(sellerDetail.reviewed_at).toLocaleDateString()}` : ''}</p>}
-              </>
-            )}
-          </aside>
+                    {d.shop && (
+                      <section className="seller-card">
+                        <h4>Shop &amp; shipping</h4>
+                        <dl className="admin-dl">
+                          <div><dt>Shop</dt><dd>{d.shop.name} ({d.shop.is_active ? 'live' : 'hidden'})</dd></div>
+                          <div><dt>Shipping</dt><dd>{{ nextech: 'NexTech collects & delivers this seller’s orders', self: 'Ships with their own courier (tracking entered in Seller Center)', label: 'Ships on NexTech-bought labels (postage deducted from earnings)' }[d.shop.fulfillment_mode ?? 'nextech']}</dd></div>
+                        </dl>
+                      </section>
+                    )}
+
+                    {d.shop && d.requirement_rules && (
+                      <section className="seller-card">
+                        <h4>Requirements</h4>
+                        <p className="muted">Extra rules for this seller — off by default. Listing checks, shipping setup, the onboarding checklist and the store-design minimum always apply.</p>
+                        <div className="seller-switches">
+                          {Object.entries(d.requirement_rules).map(([key, [label, help]]) => (
+                            <label className="seller-switch" key={key}>
+                              <input type="checkbox" checked={!!d.requirements?.[key]} disabled={busyId === d.id} onChange={(event) => sellerAction(d, 'requirements', { [key]: event.target.checked })} />
+                              <span><b>{label}</b><small className="muted">{help}</small></span>
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {d.status === 'approved' && (
+                      <section className="seller-card wide">
+                        <h4>Onboarding tasks</h4>
+                        <div className="seller-tasks">
+                          <div>
+                            <p><b>1. Tax information</b> — {d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.tax_note && <p className="muted">“{d.tax_note}”</p>}
+                            {d.tax_info?.tax_number && <p className="muted">Tax number {d.tax_info.tax_number} (registered: {d.tax_id}){d.tax_info.enrolment_number ? ` · GST enrolment ${d.tax_info.enrolment_number}` : ''}{d.tax_info.tax_code ? ` · default item tax code: ${d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}` : ''}{d.tax_info.certificate_path && <> · <button className="link" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>View certificate</button></>}</p>}
+                            {reviewButtons('tax', d.tax_status, d.tax_status === 'pending')}
+                          </div>
+                          <div>
+                            <p><b>2. Compliance information</b> — {d.compliance_status ? STATUS_TEXT[d.compliance_status] : 'Not started'}{d.compliance_submitted_at ? ` · submitted ${new Date(d.compliance_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.compliance_note && <p className="muted">“{d.compliance_note}”</p>}
+                            {people.map((p) => (
+                              <p className="muted" key={p.id}>{p.legal_name}{p.is_primary ? ' (primary contact)' : ''} — {p.roles.map((r) => roleNames[r]).join(', ')}{p.ownership_pct != null ? ` · ${p.ownership_pct}% owned` : ''} · born {p.date_of_birth} in {p.place_of_birth} · citizen of {p.citizenship} · {p.id_type} {p.id_number} ({p.id_country}, expires {p.id_expiry}) · {address([p.address?.line1, p.address?.line2, p.address?.city, p.address?.state, p.address?.postal_code, p.address?.country])}</p>
+                            ))}
+                            {(d.compliance?.documents ?? []).length > 0 && (
+                              <div className="admin-form-actions">
+                                {d.compliance.documents.map((doc) => <button key={doc.path} className="act ghost" type="button" onClick={() => viewKycDocument(doc.path)}>{d.corporate_document_types?.[doc.type] ?? doc.type}</button>)}
+                              </div>
+                            )}
+                            {reviewButtons('compliance', d.compliance_status, d.compliance_status === 'pending')}
+                          </div>
+                          <div>
+                            <p><b>3. Bank account</b> — {d.bank_status ? STATUS_TEXT[d.bank_status] : 'Not started'}{d.bank_submitted_at ? ` · submitted ${new Date(d.bank_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.bank_note && <p className="muted">“{d.bank_note}”</p>}
+                            {d.payout_details?.document_path && <p className="muted">Check the bank document matches: holder, {d.payout_details.bank_code_label ?? 'routing number'} and account number, issued {d.payout_details.document_issued_on} (must be within 180 days). <button className="link" type="button" onClick={() => viewKycDocument(d.payout_details.document_path)}>View bank document</button></p>}
+                            {reviewButtons('bank', d.bank_status, d.bank_status === 'processing')}
+                          </div>
+                        </div>
+                      </section>
+                    )}
+
+                    {d.shop && (
+                      <section className="seller-card wide">
+                        <h4>Payouts</h4>
+                        {d.pending_payout_request && <p className="admin-payout-request">💸 Seller requested <strong>{money(d.pending_payout_request.amount_cents, d.currency)}</strong> on {new Date(d.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>}
+                        <p className="muted">{d.payout_method
+                          ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.email}</>)
+                          : 'No payout method on file yet.'}
+                          {d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
+                        {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>}
+                        {d.status === 'approved' && (
+                          <div className="admin-form-actions">
+                            {(d.available_cents ?? 0) >= (d.min_payout_cents ?? 0) && (d.available_cents ?? 0) > 0 && <button className="act" type="button" disabled={busyId === d.id} onClick={() => recordSellerPayout(d)}>Record payout</button>}
+                            {d.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => rejectPayoutRequest(d)}>Decline request</button>}
+                            {(d.available_cents ?? 0) < (d.min_payout_cents ?? 0) && <span className="muted">Available balance is below the {money(d.min_payout_cents ?? 0, d.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</span>}
+                          </div>
+                        )}
+                        {(d.ledger_entries ?? []).length > 0 && (
+                          <table className="admin-table">
+                            <thead><tr><th>Date</th><th>Entry</th><th>Order</th><th>Amount</th></tr></thead>
+                            <tbody>{d.ledger_entries.map((entry) => (
+                              <tr key={entry.id}>
+                                <td>{new Date(entry.created_at).toLocaleDateString()}</td>
+                                <td>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type}{entry.note ? <span className="admin-note">{entry.note}</span> : null}</td>
+                                <td>{entry.order_id ? `#${entry.order_id}` : '—'}</td>
+                                <td><b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents), d.currency)}</b></td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        )}
+                      </section>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
+          </div>
         </div>
       )}
 
