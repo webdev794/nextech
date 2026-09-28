@@ -34,6 +34,7 @@ class Shop extends Model
     {
         return [
             'decoration_terms_accepted_at' => 'datetime',
+            'requirements' => 'array',
             'is_active' => 'boolean',
             'next_product_seq' => 'integer',
             'ships_saturday' => 'boolean',

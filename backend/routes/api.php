@@ -189,6 +189,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
     Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
+    Route::post('/sellers/{seller}/requirements', [AdminSellerController::class, 'requirements']);
     Route::post('/sellers/{seller}/onboarding/{task}', [AdminSellerController::class, 'reviewOnboarding'])->whereIn('task', ['tax', 'compliance', 'bank']);
 
     Route::get('/orders', [AdminOrderController::class, 'index']);

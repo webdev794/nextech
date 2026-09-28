@@ -10,6 +10,7 @@ use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\SellerLedger;
 use App\Support\SellerOnboarding;
+use App\Support\SellerRequirements;
 use App\Support\Market;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
@@ -273,6 +274,16 @@ class AdminSellerController extends Controller
         return response()->json(['data' => $this->row($seller->fresh()->load(['user:id,name,email,phone', 'shop', 'reviewer:id,name']), detailed: true)]);
     }
 
+    /** Switch the stricter seller rules on or off for this seller (all off by default). */
+    public function requirements(Request $request, Seller $seller): JsonResponse
+    {
+        abort_unless($seller->shop, 422, 'This seller has no shop yet.');
+        $data = $request->validate(collect(SellerRequirements::RULES)->keys()->mapWithKeys(fn ($k) => [$k => ['sometimes', 'boolean']])->all());
+        $seller->shop->forceFill(['requirements' => array_merge(SellerRequirements::all($seller->shop), array_map('boolval', $data))])->save();
+
+        return response()->json(['data' => $this->row($seller->fresh()->load(['user:id,name,email,phone', 'shop', 'reviewer:id,name']), detailed: true)]);
+    }
+
     /**
      * Finds or creates an open seller<->admin thread for this seller and
      * posts a staff message into it — mirrors RiderController::threadFor().
@@ -404,6 +415,8 @@ class AdminSellerController extends Controller
             $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents($shop?->market);
             $row['currency'] = Market::currency($shop?->market);
             $row['pending_payout_request'] = $shop?->payoutRequests()->where('status', 'pending')->first();
+            $row['requirements'] = SellerRequirements::all($shop);
+            $row['requirement_rules'] = SellerRequirements::RULES;
         }
 
         return $row;

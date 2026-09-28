@@ -7,6 +7,7 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Support\ProductCatalog;
 use App\Support\StoreDecorations;
+use App\Support\SellerRequirements;
 use App\Models\ProductVariant;
 use App\Models\Shop;
 use App\Support\Market;
@@ -207,7 +208,7 @@ class CatalogController extends Controller
             'categories' => $categories,
             // The seller's decorated store page, per platform — only once the
             // store has enough live products; otherwise the default page.
-            'decoration' => (clone $live)->count() >= StoreDecorations::minProducts()
+            'decoration' => (! SellerRequirements::on($shop, 'store_min_products') || (clone $live)->count() >= StoreDecorations::minProducts())
                 ? collect(StoreDecorations::PLATFORMS)->mapWithKeys(fn ($platform) => [$platform => ($d = $shop->decorations()->where('platform', $platform)->where('is_live', true)->first()) ? StoreDecorations::resolve($d, $shop) : null])->all()
                 : null,
         ]]);

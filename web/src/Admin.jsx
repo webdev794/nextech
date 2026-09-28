@@ -3886,6 +3886,19 @@ export default function Admin({ token, onClose }) {
                   <button className="act ghost" type="button" onClick={() => viewKycDocument(sellerDetail.business_document_path)}>View business document</button>
                 </div>
 
+                {sellerDetail.shop && sellerDetail.requirement_rules && (
+                  <>
+                    <h4>Requirements</h4>
+                    <p className="muted">Stricter rules for this seller — all off by default so a new seller can start selling straight away.</p>
+                    {Object.entries(sellerDetail.requirement_rules).map(([key, [label, help]]) => (
+                      <label className="admin-check" key={key} title={help}>
+                        <input type="checkbox" checked={!!sellerDetail.requirements?.[key]} disabled={busyId === sellerDetail.id} onChange={(event) => sellerAction(sellerDetail, 'requirements', { [key]: event.target.checked })} />
+                        <span><b>{label}</b> <span className="muted">— {help}</span></span>
+                      </label>
+                    ))}
+                  </>
+                )}
+
                 {sellerDetail.status === 'approved' && (() => {
                   const d = sellerDetail
                   const STATUS_TEXT = { pending: 'Waiting for review', approved: 'Approved', rejected: 'Sent back', processing: 'Waiting for verification', linked: 'Linked', failed: 'Verification failed' }

@@ -43,7 +43,8 @@ class ProductUpload
 
         // Same gate as the Add product form: without a way to ship, products
         // can only be saved as drafts.
-        $shippingBlock = match (true) {
+        $strict = SellerRequirements::on($shop, 'listing_details');
+        $shippingBlock = ! SellerRequirements::on($shop, 'shipping_setup') ? null : match (true) {
             $shop->shipsItself() && ! $shop->shippingTemplates()->exists() => 'Create a shipping template in Shipping settings before submitting products.',
             ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => 'NexTech pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
             default => null,
@@ -176,7 +177,7 @@ class ProductUpload
                 $data['gst_rate_bps'] = ($first['gst_rate'] ?? '') !== '' ? (int) round((float) $first['gst_rate'] * 100) : null;
                 $data['manufacturer_info'] = ($first['manufacturer_info'] ?? '') ?: null;
                 foreach (['hsn_code' => 'HSN code', 'gst_rate_bps' => 'GST rate', 'manufacturer_info' => 'Manufacturer / packer / importer'] as $key => $label) {
-                    if (empty($data[$key])) {
+                    if ($strict && empty($data[$key])) {
                         $messages[] = $label.' is required.';
                     }
                 }
@@ -185,7 +186,7 @@ class ProductUpload
             if ($shippingBlock) {
                 $messages[] = $shippingBlock;
             }
-            $messages = [...$messages, ...array_values(ProductCatalog::listingErrors($data, $category, $variants, $images, $shop->shipsItself()))];
+            $messages = [...$messages, ...array_values(ProductCatalog::listingErrors($data, $category, $variants, $images, $shop->shipsItself(), $strict))];
             if (count($variants) > Sku::MAX_VARIANTS) {
                 $messages[] = 'A product can have at most '.Sku::MAX_VARIANTS.' SKUs.';
                 $variants = array_slice($variants, 0, Sku::MAX_VARIANTS);

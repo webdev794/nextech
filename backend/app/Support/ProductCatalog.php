@@ -66,6 +66,10 @@ class ProductCatalog
      */
     public static function missingCompliance(Product $product): array
     {
+        // Only enforced for sellers admin switched the rule on for.
+        if ($product->shop_id && ! SellerRequirements::on($product->shop, 'compliance_docs')) {
+            return [];
+        }
         $product->loadMissing('category');
         $have = collect((array) ($product->compliance['documents'] ?? []))->pluck('type')->all();
         $attributes = (array) $product->product_details;
@@ -83,9 +87,10 @@ class ProductCatalog
      * @param  array<string, mixed>  $data  the product fields (as stored)
      * @param  list<array<string, mixed>>  $variants  the live variant rows
      * @param  list<string>  $images
+     * @param  bool  $strict  full checks (the seller's "Full listing checks" rule); off = name, category, image and price only
      * @return array<string, string>
      */
-    public static function listingErrors(array $data, ?Category $category, array $variants, array $images, bool $shipsItself): array
+    public static function listingErrors(array $data, ?Category $category, array $variants, array $images, bool $shipsItself, bool $strict = true): array
     {
         $errors = [];
         if (! $category) {
@@ -94,7 +99,7 @@ class ProductCatalog
         if (trim((string) ($data['name'] ?? '')) === '') {
             $errors['name'] = 'Enter a product name.';
         }
-        if (trim((string) ($data['description'] ?? '')) === '') {
+        if ($strict && trim((string) ($data['description'] ?? '')) === '') {
             $errors['description'] = 'Add a product description.';
         }
         if (! $images) {
@@ -103,10 +108,10 @@ class ProductCatalog
         if (! $variants && (int) ($data['price_cents'] ?? 0) <= 0) {
             $errors['price_cents'] = 'Enter the base price.';
         }
-        if (trim((string) ($data['country_of_origin'] ?? '')) === '') {
+        if ($strict && trim((string) ($data['country_of_origin'] ?? '')) === '') {
             $errors['country_of_origin'] = 'Choose the country/region of origin.';
         }
-        if ($shipsItself && empty($data['handling_days'])) {
+        if ($strict && $shipsItself && empty($data['handling_days'])) {
             $errors['handling_days'] = 'Choose a handling time.';
         }
 
@@ -114,7 +119,7 @@ class ProductCatalog
         foreach (self::attributesFor($category) as $field) {
             $value = $attributes[$field['key']] ?? null;
             $empty = $value === null || $value === '' || $value === [];
-            if (($field['required'] ?? false) && self::applies($field, $attributes) && $empty) {
+            if ($strict && ($field['required'] ?? false) && self::applies($field, $attributes) && $empty) {
                 $errors['product_details.'.$field['key']] = $field['label'].' is required.';
             } elseif (! $empty && in_array($field['type'], ['select', 'multiselect'], true)) {
                 $bad = array_diff(array_map('strval', (array) $value), array_map('strval', $field['options']));
@@ -157,7 +162,7 @@ class ProductCatalog
                 }
             }
         }
-        if ($apparel) {
+        if ($apparel && $strict) {
             $sizes = collect($variants)->pluck('options.Size')->filter()->unique()->values()->all();
             $chart = (array) ($data['size_chart']['rows'] ?? []);
             $charted = collect($chart)->pluck('size')->all();

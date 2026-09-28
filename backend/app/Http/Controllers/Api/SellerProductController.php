@@ -11,6 +11,7 @@ use App\Support\ProductCatalog;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
+use App\Support\SellerRequirements;
 use App\Support\SellerShipping;
 use App\Support\Sku;
 use Illuminate\Database\QueryException;
@@ -60,6 +61,7 @@ class SellerProductController extends Controller
             'ships_itself' => $shop->shipsItself(),
             'fulfillment_mode' => $shop->fulfillment_mode,
             'market' => $shop->market,
+            'requirements' => SellerRequirements::all($shop),
         ]]);
     }
 
@@ -67,7 +69,7 @@ class SellerProductController extends Controller
     {
         $shop = $this->shop($request);
         $submit = $request->boolean('submit', true);
-        if ($submit) {
+        if ($submit && SellerRequirements::on($shop, 'shipping_setup')) {
             // Like Temu: a seller who ships themselves needs a shipping template before listing.
             abort_if($shop->shipsItself() && ! $shop->shippingTemplates()->exists(), 422, 'Create a shipping template in Shipping settings before adding products.');
             // With NexTech pickup switched off, new listings need the seller's own shipping.
@@ -211,7 +213,7 @@ class SellerProductController extends Controller
     {
         $row = $product->toArray();
         $row['listing_errors'] = $product->status === 'draft'
-            ? ProductCatalog::listingErrors($product->toArray(), $product->category, $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all(), $product->images->pluck('url')->all(), $shop->shipsItself())
+            ? ProductCatalog::listingErrors($product->toArray(), $product->category, $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all(), $product->images->pluck('url')->all(), $shop->shipsItself(), SellerRequirements::on($shop, 'listing_details'))
             : [];
         $row['missing_compliance'] = ProductCatalog::missingCompliance($product);
         $row['low_traffic'] = $product->relationLoaded('salesBoostOffers') && $product->salesBoostOffers->isNotEmpty();
@@ -228,7 +230,7 @@ class SellerProductController extends Controller
     private function assertListable(array $data, array $variants, array $images, Shop $shop): void
     {
         $live = array_values(array_filter($variants, fn ($v) => empty($v['_delete'])));
-        $errors = ProductCatalog::listingErrors($data, Category::find($data['category_id'] ?? null), $live, array_values(array_filter($images)), $shop->shipsItself());
+        $errors = ProductCatalog::listingErrors($data, Category::find($data['category_id'] ?? null), $live, array_values(array_filter($images)), $shop->shipsItself(), SellerRequirements::on($shop, 'listing_details'));
         if ($errors) {
             throw ValidationException::withMessages($errors);
         }
@@ -321,7 +323,7 @@ class SellerProductController extends Controller
             'variants.*.height_mm' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000'],
             'variants.*.sort_order' => ['sometimes', 'integer', 'min:0'],
             'variants.*.is_active' => ['sometimes', 'boolean'],
-        ] + Market::productRules($market, $product === null && $submit));
+        ] + Market::productRules($market, $product === null && $submit && SellerRequirements::on($shop, 'listing_details')));
 
         foreach (['bullet_points', 'price_references', 'detail_images'] as $list) {
             if (array_key_exists($list, $data) && is_array($data[$list])) {

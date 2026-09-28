@@ -146,7 +146,7 @@ export function ShippingSettings({ headers, onChanged }) {
                 )
               })}
             </div>
-            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">NexTech pickup is being phased out — complete the 3 steps below, then choose &ldquo;I ship with my own courier&rdquo; or &ldquo;I ship, NexTech label&rdquo;. You can&rsquo;t add new products until you do.</p>}
+            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">NexTech pickup is being phased out — complete the 3 steps below, then choose &ldquo;I ship with my own courier&rdquo; or &ldquo;I ship, NexTech label&rdquo;.{data.shipping_required && <> You can&rsquo;t add new products until you do.</>}</p>}
             {(!data.setup_complete || wantMode) && (() => {
               const steps = [
                 ['Add a ship-from address', data.addresses.length > 0, () => setAddressForm({ ...EMPTY_ADDRESS, is_default: !data.addresses.length })],

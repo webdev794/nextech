@@ -833,7 +833,7 @@ export default function Seller({ token, onSignOut }) {
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
                 {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact NexTech via Messages if you think this is a mistake.</div>}
-                <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />
+                {me.requirements?.onboarding_tasks && <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />}
                 <div className="sc-card">
                   <h2 className="sc-h2">Action needed</h2>
                   <div className="sc-action-grid">
@@ -984,8 +984,8 @@ export default function Seller({ token, onSignOut }) {
                           {req?.status === 'rejected' && <p className="seller-payout-status rejected">Your last payout request wasn&rsquo;t approved{req.admin_note ? `: ${req.admin_note}` : '.'}</p>}
                           {balance >= (me.min_payout_cents ?? 0) && balance > 0 && (
                             <div className="seller-payout-request">
-                              <button type="button" className="seller-btn" disabled={payoutReqBusy || me.bank_status !== 'linked'} onClick={requestPayout}>Request payout of {money(requestable)}</button>
-                              {me.bank_status !== 'linked' && <span className="seller-earnings-note">{me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.'}</span>}
+                              <button type="button" className="seller-btn" disabled={payoutReqBusy || !me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')} onClick={requestPayout}>Request payout of {money(requestable)}</button>
+                              {(!me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')) && <span className="seller-earnings-note">{me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.'}</span>}
                               {max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — the rest can be requested after this one is paid.</span>}
                             </div>
                           )}

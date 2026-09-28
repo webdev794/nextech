@@ -606,7 +606,7 @@ export function ProductCompliance({ headers, products, reload }) {
             <ul className="ob-people">
               {docsFor(open.product).map((d) => (
                 <li key={d.key}>
-                  <span><b>{d.label}</b>{d.required ? <small className="wz-req"> required</small> : <small className="sc-muted"> optional</small>}{open.documents.filter((x) => x.type === d.key).map((h) => <small key={h.path} className="sc-muted"> · {h.name} <button type="button" className="sc-link" onClick={() => setOpen({ ...open, documents: open.documents.filter((x) => x !== h) })}>remove</button></small>)}</span>
+                  <span><b>{d.label}</b>{d.required && config.requirements?.compliance_docs ? <small className="wz-req"> required</small> : <small className="sc-muted"> optional</small>}{open.documents.filter((x) => x.type === d.key).map((h) => <small key={h.path} className="sc-muted"> · {h.name} <button type="button" className="sc-link" onClick={() => setOpen({ ...open, documents: open.documents.filter((x) => x !== h) })}>remove</button></small>)}</span>
                   <label className="seller-btn ghost wz-upload">Upload<input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={busy} onChange={async (e) => {
                     const f = e.target.files?.[0]
                     e.target.value = ''

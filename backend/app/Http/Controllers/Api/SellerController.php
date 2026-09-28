@@ -10,6 +10,7 @@ use App\Support\Market;
 use App\Support\Money;
 use App\Support\SellerLedger;
 use App\Support\SellerOnboarding;
+use App\Support\SellerRequirements;
 use App\Support\Sku;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -184,6 +185,7 @@ class SellerController extends Controller
             $seller->gst_rates_bps = Market::profile($market)['gst_rates_bps'] ?? [];
             $seller->withholding = collect(Market::profile($market)['withholding'] ?? [])->map(fn ($r) => $r['label'].' '.($r['rate_bps'] / 100).'%')->values();
             $seller->onboarding_tasks = SellerOnboarding::tasks($seller);
+            $seller->requirements = SellerRequirements::all($seller->shop);
         }
 
         return response()->json(['data' => $seller]);
@@ -198,7 +200,8 @@ class SellerController extends Controller
     {
         $seller = $request->user()->seller()->with('shop')->first();
         abort_unless($seller?->status === 'approved' && $seller->shop, 403, 'Approved seller access required.');
-        abort_unless($seller->payout_method && $seller->bank_status === 'linked', 422, $seller->bank_status === 'processing'
+        // Bank verification is enforced only when admin turned it on for this seller.
+        abort_unless($seller->payout_method && ($seller->bank_status === 'linked' || ! SellerRequirements::on($seller->shop, 'bank_verification')), 422, $seller->bank_status === 'processing'
             ? 'Your bank account is still being verified (usually 1–2 business days).'
             : 'Add and verify your bank account first.');
 

@@ -378,7 +378,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                 const value = form.product_details[f.key]
                 return (
                   <div key={f.key} className={`wz-attr${f.when ? ' conditional' : ''}`}>
-                    <span className="wz-label">{f.label}{f.unit ? ` (${f.unit})` : ''}{f.required && on && <b className="wz-req"> *</b>}</span>
+                    <span className="wz-label">{f.label}{f.unit ? ` (${f.unit})` : ''}{f.required && on && config.requirements?.listing_details && <b className="wz-req"> *</b>}</span>
                     {f.type === 'select' ? (
                       <select value={value ?? ''} onChange={(e) => setDetail(f.key, e.target.value)}><option value="">Select…</option>{f.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>
                     ) : f.type === 'multiselect' ? (
@@ -530,7 +530,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                 const have = form.documents.filter((x) => x.type === d.key)
                 return (
                   <li key={d.key}>
-                    <span><b>{d.label}</b>{d.required ? <small className="wz-req"> required</small> : <small className="sc-muted"> optional</small>}{have.map((h) => <small key={h.path} className="sc-muted"> · {h.name} <button type="button" className="sc-link" onClick={() => set({ documents: form.documents.filter((x) => x !== h) })}>remove</button></small>)}</span>
+                    <span><b>{d.label}</b>{d.required && config.requirements?.compliance_docs ? <small className="wz-req"> required</small> : <small className="sc-muted"> optional</small>}{have.map((h) => <small key={h.path} className="sc-muted"> · {h.name} <button type="button" className="sc-link" onClick={() => set({ documents: form.documents.filter((x) => x !== h) })}>remove</button></small>)}</span>
                     <label className="seller-btn ghost wz-upload">Upload<input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; upload('doc', f, (doc) => setForm((x) => ({ ...x, documents: [...x.documents, { type: d.key, ...doc }] }))) }} /></label>
                   </li>
                 )

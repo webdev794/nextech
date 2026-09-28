@@ -261,6 +261,8 @@ class SellerShippingController extends Controller
             'address_types' => SellerShipping::addressTypes($shop->market),
             'setup_complete' => SellerShipping::setupComplete($shop),
             'nextech_pickup' => SellerShipping::nextechPickup(),
+            // Whether this seller must set up shipping before adding products.
+            'shipping_required' => \App\Support\SellerRequirements::on($shop, 'shipping_setup'),
             'label_mode' => SellerFulfillment::labelMode(),
             'label_templates' => LabelTemplate::where('is_active', true)->orderByDesc('is_default')->orderBy('name')->get(['id', 'name', 'size', 'is_default']),
             'label_template_id' => $shop->label_template_id,
