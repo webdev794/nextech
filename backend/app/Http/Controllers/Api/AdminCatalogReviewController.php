@@ -25,7 +25,7 @@ class AdminCatalogReviewController extends Controller
 
         $trademarks = Trademark::query()
             ->with('shop:id,name,market')
-            ->whereHas('shop', fn ($q) => $q->where('market', Market::fromRequest($request)))
+            ->whereHas('shop', fn ($q) => ($m = Market::adminFilter($request)) ? $q->where('market', $m) : $q)
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->latest('id')
             ->limit(200)

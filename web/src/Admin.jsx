@@ -530,6 +530,7 @@ export default function Admin({ token, onClose }) {
   const [riderApps, setRiderApps] = useState([])
   const [sellers, setSellers] = useState([])
   const [sellerStatus, setSellerStatus] = useState('all')
+  const [sellersElsewhere, setSellersElsewhere] = useState({}) // other countries' seller counts, for the empty list
   const [sellerDetail, setSellerDetail] = useState(null)
   const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
@@ -537,7 +538,7 @@ export default function Admin({ token, onClose }) {
   const [settings, setSettings] = useState(null)
   // The admin's currency / country switch (top bar): Dashboard, Orders,
   // Products, Sellers and Settings → charges show only that market's entries.
-  const [adminMarket, setAdminMarket] = useState(() => { try { return localStorage.getItem('nextech_admin_market') || '' } catch { return '' } })
+  const [adminMarket, setAdminMarket] = useState(() => { try { return localStorage.getItem('nextech_admin_market') || 'ALL' } catch { return 'ALL' } })
   const [feesForm, setFeesForm] = useState(null)
   const [brandingForm, setBrandingForm] = useState(null)
   const [footerForm, setFooterForm] = useState(null)
@@ -657,7 +658,7 @@ export default function Admin({ token, onClose }) {
   const loadSellers = useCallback(() => {
     const qs = new URLSearchParams(sellerStatus === 'all' ? {} : { status: sellerStatus })
     track('sellers', fetch(`${API_URL}/admin/sellers?${qs}`, { headers: authHeaders() }).then(readJson)
-      .then((data) => setSellers(data.data ?? [])).catch(() => setMessage('Could not load seller applications.')))
+      .then((data) => { setSellers(data.data ?? []); setSellersElsewhere(data.elsewhere ?? {}) }).catch(() => setMessage('Could not load seller applications.')))
   }, [authHeaders, sellerStatus, track])
 
   // Approved shops, for the Products form's Shop picker — kept separate from
@@ -751,6 +752,8 @@ export default function Admin({ token, onClose }) {
     chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
   }, [threadId, threadMessageCount, lastThreadMessageId])
   useEffect(() => { if (tab === 'settings') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
+  // The country dropdown in the top bar is built from the settings — load them on open.
+  useEffect(() => { if (!settings) loadSettings() }, [settings, loadSettings])
   useEffect(() => { if (tab === 'branding' || tab === 'secure' || tab === 'footer') loadSettings() }, [tab, loadSettings])
 
   // Background notification poll — runs on every admin tab so a new customer
@@ -876,7 +879,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, latitude, longitude, ...rest } = storeForm
-    const payload = { ...rest, country: rest.country || activeMarket, delivery_radius_km: Number(rest.delivery_radius_km) }
+    const payload = { ...rest, country: rest.country || workMarket, delivery_radius_km: Number(rest.delivery_radius_km) }
     if (String(latitude).trim() !== '' && String(longitude).trim() !== '') {
       payload.latitude = Number(latitude)
       payload.longitude = Number(longitude)
@@ -1545,7 +1548,7 @@ export default function Admin({ token, onClose }) {
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
     rest.sku = rest.sku?.trim() || null
-    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || activeMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
+    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || workMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
     // sent as [] so the backend drops any rows. `rows` below (sent as
@@ -1928,10 +1931,15 @@ export default function Admin({ token, onClose }) {
 
   const homeMarket = settings?.home_market ?? 'US'
   const marketOptions = settings?.all_markets?.length ? settings.all_markets : [{ code: homeMarket, name: settings?.home_market_name ?? 'United States', currency: settings?.home_currency ?? 'usd' }]
-  const activeMarket = marketOptions.some((m) => m.code === adminMarket) ? adminMarket : homeMarket
-  const activeCurrency = marketOptions.find((m) => m.code === activeMarket)?.currency ?? 'usd'
+  // 'ALL' = every country in the lists (each row carries a country badge); totals,
+  // charts and charge settings can't add up different currencies, so they use
+  // the default country then (workMarket).
+  const activeMarket = adminMarket === 'ALL' || !marketOptions.some((m) => m.code === adminMarket) ? (marketOptions.length > 1 ? 'ALL' : homeMarket) : adminMarket
+  const workMarket = activeMarket === 'ALL' ? homeMarket : activeMarket
+  const activeCurrency = marketOptions.find((m) => m.code === workMarket)?.currency ?? 'usd'
+  const countryBadge = (code) => (activeMarket === 'ALL' && code ? <span className="pill pill-country" title={marketOptions.find((m) => m.code === code)?.name ?? code}>{code}</span> : null)
   setStoreCurrency(activeCurrency)
-  const chargesMarket = activeMarket === 'US' ? 'home' : activeMarket // the US uses the original charge forms
+  const chargesMarket = workMarket === 'US' ? 'home' : workMarket // the US uses the original charge forms
   const switchAdminMarket = (code) => {
     setAdminMarket(code)
     try { localStorage.setItem('nextech_admin_market', code) } catch { /* ignore */ }
@@ -1973,6 +1981,7 @@ export default function Admin({ token, onClose }) {
         <div className="admin-bar-right">
           {marketOptions.length > 1 && (
             <select className="admin-market-select" aria-label="Currency" title="Show entries for this currency / country" value={activeMarket} onChange={(event) => switchAdminMarket(event.target.value)}>
+              <option value="ALL">All countries</option>
               {marketOptions.map((m) => <option key={m.code} value={m.code}>{currencySymbol(m.currency)} {m.currency.toUpperCase()} · {m.name}</option>)}
             </select>
           )}
@@ -2298,6 +2307,7 @@ export default function Admin({ token, onClose }) {
         <main className="admin-main">
       {message && <p className="admin-message">{message}</p>}
 
+      {tab === 'dashboard' && activeMarket === 'ALL' && <p className="muted admin-currency-note">Totals and charts can&rsquo;t add up different currencies — showing <b>{marketOptions.find((m) => m.code === workMarket)?.name}</b>. Pick a country in the top bar to see another.</p>}
       {tab === 'dashboard' && (
         <>
           <section className="admin-grid">
@@ -2463,7 +2473,7 @@ export default function Admin({ token, onClose }) {
               <tbody>
                 {orders.map((order) => { const feedback = orderFeedbackTone(order); return (
                   <tr key={order.id}>
-                    <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button></td>
+                    <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button>{countryBadge(order.market)}</td>
                     <td>{order.user?.display_name ?? '—'}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
                     <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
@@ -2588,7 +2598,7 @@ export default function Admin({ token, onClose }) {
                 </label>
                 {!productForm.shop_id ? (
                   <label>Sold in (country store)
-                    <select value={productForm.market || activeMarket} onChange={(event) => setProductForm({ ...productForm, market: event.target.value })}>
+                    <select value={productForm.market || workMarket} onChange={(event) => setProductForm({ ...productForm, market: event.target.value })}>
                       {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({currencySymbol(m.currency)} {m.currency.toUpperCase()})</option>)}
                     </select>
                   </label>
@@ -2731,7 +2741,7 @@ export default function Admin({ token, onClose }) {
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
                   return (
                   <tr key={product.id}>
-                    <td>{product.name}</td>
+                    <td>{product.name}{countryBadge(product.market)}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
@@ -2820,7 +2830,7 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
-      {tab === 'emails' && <EmailsPanel authHeaders={authHeaders} defaultMarket={activeMarket} onMessage={setMessage} />}
+      {tab === 'emails' && <EmailsPanel authHeaders={authHeaders} defaultMarket={workMarket} onMessage={setMessage} />}
 
       {tab === 'customers' && (
         <section className="admin-panel">
@@ -2954,7 +2964,7 @@ export default function Admin({ token, onClose }) {
               <tbody>
                 {pageSlice(riders, ridersPage).map((rider) => (
                   <tr key={rider.id}>
-                    <td>{rider.name}</td>
+                    <td>{rider.name}{countryBadge(rider.stores?.[0]?.country)}</td>
                     <td>{rider.phone || <span className="muted">—</span>}</td>
                     <td>{riderStatusChip(rider)}</td>
                     <td className={rider.cash_holding_cents > 0 ? (cashHoldingOverdue(rider.cash_holding_since) ? 'admin-td-cash-overdue' : 'admin-td-cash-today') : undefined}>{(rider.stores ?? []).length
@@ -3003,13 +3013,13 @@ export default function Admin({ token, onClose }) {
           <TrademarkReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} viewDocument={viewKycDocument} fail={fail} />
           <DecorationReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} fail={fail} />
 
-          {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications.</p> : (
+          {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications{activeMarket === 'ALL' ? '' : ` in ${marketOptions.find((m) => m.code === activeMarket)?.name ?? activeMarket}`}.{Object.entries(sellersElsewhere).filter(([, n]) => n > 0).map(([code, n]) => <> {n} seller{n === 1 ? ' is' : 's are'} in {marketOptions.find((m) => m.code === code)?.name ?? code} — <button key={code} type="button" className="link" onClick={() => switchAdminMarket(code)}>switch to {(marketOptions.find((m) => m.code === code)?.currency ?? '').toUpperCase()}</button>.</>)}</p> : (
             <table className="admin-table">
               <thead><tr><th>Shop</th><th>Contact</th><th>Country</th><th>Business type</th><th>Status</th><th>Last message</th><th>Submitted</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(sellers, sellersPage).map((seller) => (
                   <tr key={seller.id}>
-                    <td>{seller.shop?.name ?? '—'}</td>
+                    <td>{seller.shop?.name ?? '—'}{countryBadge(seller.shop?.market ?? seller.country)}</td>
                     <td>{seller.user?.name}<br /><span className="muted">{seller.user?.email}</span></td>
                     <td>{seller.country}</td>
                     <td>{seller.business_type}</td>
@@ -3045,7 +3055,7 @@ export default function Admin({ token, onClose }) {
                 <label>City<input required value={storeForm.city} onChange={(event) => setStoreForm({ ...storeForm, city: event.target.value })} /></label>
                 <label>State<input required maxLength="60" value={storeForm.state} onChange={(event) => setStoreForm({ ...storeForm, state: event.target.value })} /></label>
                 <label>Postal code<input required maxLength="12" value={storeForm.postal_code} onChange={(event) => setStoreForm({ ...storeForm, postal_code: event.target.value })} /></label>
-                <label>Country<select value={storeForm.country || activeMarket} onChange={(event) => setStoreForm({ ...storeForm, country: event.target.value })}>{marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}</select></label>
+                <label>Country<select value={storeForm.country || workMarket} onChange={(event) => setStoreForm({ ...storeForm, country: event.target.value })}>{marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}</select></label>
                 <label>Delivery radius (km)<input required type="number" min="1" max="200" value={storeForm.delivery_radius_km} onChange={(event) => setStoreForm({ ...storeForm, delivery_radius_km: event.target.value })} /></label>
                 <label>Latitude (optional)<input type="number" step="any" value={storeForm.latitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, latitude: event.target.value })} /></label>
                 <label>Longitude (optional)<input type="number" step="any" value={storeForm.longitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, longitude: event.target.value })} /></label>
@@ -3683,7 +3693,7 @@ export default function Admin({ token, onClose }) {
                 <p className="muted">Every country can have its own NexTech stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
               </div>
 
-              <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === activeMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
+              <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === workMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
               {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
                 ? <MarketSettings key={chargesMarket} settings={settings} only={chargesMarket} save={saveSetting} onSaved={setMessage} />
                 : <>

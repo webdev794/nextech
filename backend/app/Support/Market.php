@@ -61,6 +61,17 @@ class Market
         return self::resolve($request->header('X-Market') ?: $request->input('market'));
     }
 
+    /**
+     * The admin console's country filter: a market code, or null for
+     * "All countries" (X-Market: ALL) — lists then show every country.
+     */
+    public static function adminFilter(Request $request): ?string
+    {
+        $raw = strtoupper((string) ($request->header('X-Market') ?: $request->input('market')));
+
+        return $raw === 'ALL' ? null : self::resolve($raw ?: null);
+    }
+
     /** The market a seller registered in (their country), falling back to home. */
     public static function forCountry(?string $country): string
     {

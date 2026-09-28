@@ -34,7 +34,7 @@ class AdminProductController extends Controller
         $sort = $validated['sort'] ?? 'newest';
 
         $products = Product::query()
-            ->inMarket(Market::fromRequest($request))
+            ->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))
             ->with(['category:id,name,slug', 'shop:id,name', 'variants', 'storeInventory', 'images', 'trademark:id,name'])
             ->withCount(['salesBoostOffers as low_traffic_offers' => fn ($q) => $q->where('status', 'pending')])
             // When filtering by store, `effective_stock` is that store's on-hand

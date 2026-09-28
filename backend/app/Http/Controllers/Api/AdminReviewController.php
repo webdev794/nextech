@@ -29,7 +29,7 @@ class AdminReviewController extends Controller
         $status = $data['status'] ?? 'pending';
 
         $page = ProductReview::query()
-            ->whereHas('product', fn ($q) => $q->inMarket(Market::fromRequest($request)))
+            ->whereHas('product', fn ($q) => ($m = Market::adminFilter($request)) ? $q->inMarket($m) : $q)
             ->when($status !== 'all', fn ($q) => $q->where('status', $status))
             ->when($data['rating'] ?? null, fn ($q, $r) => $q->where('rating', $r))
             ->when($data['search'] ?? null, fn ($q, $s) => $q->where(fn ($w) => $w->where('body', 'like', "%{$s}%")
@@ -49,7 +49,7 @@ class AdminReviewController extends Controller
                 'shop' => $r->product?->shop?->name,
             ])->values(),
             'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total()],
-            'pending' => ProductReview::where('status', 'pending')->whereHas('product', fn ($q) => $q->inMarket(Market::fromRequest($request)))->count(),
+            'pending' => ProductReview::where('status', 'pending')->whereHas('product', fn ($q) => ($m = Market::adminFilter($request)) ? $q->inMarket($m) : $q)->count(),
         ]);
     }
 

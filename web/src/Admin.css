@@ -528,3 +528,6 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-tm-logo{width:28px;height:28px;object-fit:contain;margin-right:6px;vertical-align:middle}
 
 .admin-drawer aside.admin-deco-drawer{width:min(1100px,100%)}
+
+/* Country badge on rows in the "All countries" view */
+.pill.pill-country{margin-left:6px;background:#eef2f7;color:#334155;font-size:12px;white-space:nowrap}

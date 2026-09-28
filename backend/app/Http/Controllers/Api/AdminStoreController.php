@@ -14,7 +14,7 @@ class AdminStoreController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        return response()->json(['data' => Store::where('country', Market::fromRequest($request))->orderBy('name')->get()]);
+        return response()->json(['data' => Store::when(Market::adminFilter($request), fn ($q, $m) => $q->where('country', $m))->orderBy('name')->get()]);
     }
 
     public function store(Request $request): JsonResponse

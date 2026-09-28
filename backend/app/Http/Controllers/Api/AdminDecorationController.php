@@ -23,7 +23,7 @@ class AdminDecorationController extends Controller
 
         $rows = StoreDecoration::query()
             ->with('shop')
-            ->whereHas('shop', fn ($q) => $q->where('market', Market::fromRequest($request)))
+            ->whereHas('shop', fn ($q) => ($m = Market::adminFilter($request)) ? $q->where('market', $m) : $q)
             ->when($status === 'live', fn ($q) => $q->where('is_live', true))
             ->when(in_array($status, ['in_review', 'rejected'], true), fn ($q) => $q->where('status', $status))
             ->latest('submitted_at')

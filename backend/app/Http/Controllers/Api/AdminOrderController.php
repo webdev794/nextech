@@ -38,7 +38,7 @@ class AdminOrderController extends Controller
         }
 
         $orders = Order::query()
-            ->where('market', Market::fromRequest($request))
+            ->when(Market::adminFilter($request), fn ($q, $m) => $q->where('market', $m))
             ->with([
                 'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
             'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',

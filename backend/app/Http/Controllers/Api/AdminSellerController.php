@@ -27,20 +27,25 @@ class AdminSellerController extends Controller
             'status' => ['sometimes', Rule::in(['pending', 'needs_changes', 'approved', 'rejected', 'suspended'])],
         ]);
 
-        $market = Market::fromRequest($request);
+        $market = Market::adminFilter($request);
         $others = array_values(array_diff(array_keys(config('markets', [])), [Market::home()]));
         $sellers = Seller::query()
             ->with(['user:id,name,email', 'shop:id,seller_id,name,slug,is_active,market'])
-            ->where(fn ($q) => $q->whereHas('shop', fn ($shop) => $shop->where('market', $market))
+            ->when($market, fn ($query) => $query->where(fn ($q) => $q->whereHas('shop', fn ($shop) => $shop->where('market', $market))
                 ->orWhere(fn ($q) => $q->doesntHave('shop')->where(fn ($c) => $market === Market::home()
                     ? $c->whereNotIn('country', $others)->orWhereNull('country')
-                    : $c->where('country', $market))))
+                    : $c->where('country', $market)))))
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->orderByDesc('submitted_at')
             ->orderByDesc('id')
             ->get();
 
-        return response()->json(['data' => $sellers->map($this->row(...))->values()]);
+        // Sellers of the other countries, so an empty list can point there.
+        $elsewhere = Seller::query()->with('shop:id,seller_id,market')->get()->toBase()
+            ->groupBy(fn (Seller $s) => $s->shop?->market ?? Market::forCountry($s->country))
+            ->except($market ?? '')->map->count();
+
+        return response()->json(['data' => $sellers->map($this->row(...))->values(), 'elsewhere' => $elsewhere]);
     }
 
     public function show(Seller $seller): JsonResponse
@@ -59,7 +64,7 @@ class AdminSellerController extends Controller
     public function shops(Request $request): JsonResponse
     {
         return response()->json([
-            'data' => Shop::query()->where('is_active', true)->where('market', Market::fromRequest($request))->orderBy('name')->get(['id', 'name']),
+            'data' => Shop::query()->where('is_active', true)->when(Market::adminFilter($request), fn ($q, $m) => $q->where('market', $m))->orderBy('name')->get(['id', 'name']),
         ]);
     }
 

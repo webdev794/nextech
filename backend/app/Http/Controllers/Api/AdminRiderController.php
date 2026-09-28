@@ -21,12 +21,12 @@ class AdminRiderController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $market = Market::fromRequest($request);
+        $market = Market::adminFilter($request);
         $riders = User::query()
             ->where('is_rider', true)
             // Riders of this country's stores (and ones not linked to a store yet).
-            ->where(fn ($q) => $q->whereHas('stores', fn ($s) => $s->where('country', $market))->orWhereDoesntHave('stores'))
-            ->with('stores:id,name,city')
+            ->when($market, fn ($query) => $query->where(fn ($q) => $q->whereHas('stores', fn ($s) => $s->where('country', $market))->orWhereDoesntHave('stores')))
+            ->with('stores:id,name,city,country')
             ->withCount(['deliveries as active_deliveries' => fn ($query) => $query
                 ->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])])
             ->orderBy('name')
