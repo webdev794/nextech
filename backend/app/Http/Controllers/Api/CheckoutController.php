@@ -16,6 +16,7 @@ use App\Support\Market;
 use App\Support\Purchasable;
 use App\Support\SellerLedger;
 use App\Support\SellerShipping;
+use App\Support\SellerTax;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -123,6 +124,16 @@ class CheckoutController extends Controller
             $sellerShips = fn ($cartItem) => (bool) $cartItem->product?->shop?->shipsItself();
             $nextechLines = $cart->items->reject($sellerShips);
             $sellerLines = $cart->items->filter($sellerShips);
+
+            // India: sellers selling with a PAN only (no GSTIN) may sell only
+            // within their own state (Notification No. 34/2023-Central Tax).
+            $deliveryState = SellerShipping::stateCode($address['state'] ?? null, $market);
+            foreach ($cart->items as $cartItem) {
+                $onlyState = SellerTax::onlyState($cartItem->product?->shop?->seller);
+                if ($onlyState && $deliveryState !== $onlyState) {
+                    throw ValidationException::withMessages(['address' => ["{$cartItem->product->name} can only be delivered within ".(Market::states($market)[$onlyState] ?? $onlyState).' — remove it or use an address there.']]);
+                }
+            }
 
             if ($sellerLines->isNotEmpty() && $paymentMethod === 'cod') {
                 throw ValidationException::withMessages([

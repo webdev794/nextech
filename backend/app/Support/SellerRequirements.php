@@ -5,29 +5,39 @@ namespace App\Support;
 use App\Models\Shop;
 
 /**
- * Stricter seller rules admin can switch on per shop (Admin -> Sellers ->
- * a seller -> Requirements). Everything is off unless admin turns it on, so
- * new sellers can list and sell without the extra checks.
+ * Seller rules. The basics every seller follows are always on: full listing
+ * checks, shipping set up before adding products, the "Get your shop ready"
+ * checklist, and the store design product minimum. Admin can additionally
+ * switch on stricter rules per shop (Admin -> Sellers -> a seller ->
+ * Requirements) — all off by default so new sellers can start easily.
  */
 class SellerRequirements
 {
+    /** Always on for every seller. */
+    public const ALWAYS = ['listing_details', 'shipping_setup', 'onboarding_tasks', 'store_min_products'];
+
+    /** Switchable per seller by admin (off by default). */
     public const RULES = [
         'compliance_docs' => ['Compliance documents', 'Products need their required compliance documents before they can be approved, and sellers see "documents missing" warnings.'],
-        'listing_details' => ['Full listing checks', 'Submitting a product needs every required product detail, a description, the country of origin, a handling time and (India) HSN / GST / manufacturer details. Name, category, image and price are always required.'],
-        'shipping_setup' => ['Shipping setup', 'The seller must set up their own shipping (a shipping template, or NexTech pickup where it is offered) before adding products.'],
         'bank_verification' => ['Bank verification', 'Payout requests need a bank account that admin has verified.'],
-        'onboarding_tasks' => ['Onboarding tasks', 'Shows the "Get your shop ready" checklist (tax, compliance, bank, shipping) on the seller homepage.'],
-        'store_min_products' => ['Store design minimum', 'A decorated store page is shown only once the store has the minimum number of live products (Settings).'],
     ];
 
     public static function on(?Shop $shop, string $rule): bool
     {
+        if (in_array($rule, self::ALWAYS, true)) {
+            return true;
+        }
+        // Follows the seller's tax ID: GSTIN sellers must give HSN + GST rate, PAN-only sellers needn't.
+        if ($rule === 'gst_details') {
+            return SellerTax::gstRequired($shop?->seller);
+        }
+
         return (bool) (($shop?->requirements ?? [])[$rule] ?? false);
     }
 
     /** @return array<string, bool> */
     public static function all(?Shop $shop): array
     {
-        return collect(self::RULES)->keys()->mapWithKeys(fn ($rule) => [$rule => self::on($shop, $rule)])->all();
+        return collect([...self::ALWAYS, ...array_keys(self::RULES), 'gst_details'])->mapWithKeys(fn ($rule) => [$rule => self::on($shop, $rule)])->all();
     }
 }

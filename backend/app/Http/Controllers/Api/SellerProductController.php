@@ -323,7 +323,7 @@ class SellerProductController extends Controller
             'variants.*.height_mm' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000'],
             'variants.*.sort_order' => ['sometimes', 'integer', 'min:0'],
             'variants.*.is_active' => ['sometimes', 'boolean'],
-        ] + Market::productRules($market, $product === null && $submit && SellerRequirements::on($shop, 'listing_details')));
+        ] + Market::productRules($market, $product === null && $submit && SellerRequirements::on($shop, 'listing_details'), SellerRequirements::on($shop, 'gst_details')));
 
         foreach (['bullet_points', 'price_references', 'detail_images'] as $list) {
             if (array_key_exists($list, $data) && is_array($data[$list])) {

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Seller;
 use App\Support\SellerOnboarding;
+use App\Support\SellerTax;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -32,7 +33,9 @@ class SellerOnboardingController extends Controller
             'tax_number' => ['required', 'string', 'max:60'],
             'certificate_path' => [($config['tax_certificate_required'] ?? false) ? 'required' : 'nullable', 'string', 'max:255'],
             'certificate_name' => ['nullable', 'string', 'max:255'],
-        ], ['certificate_path.required' => 'Upload your '.($config['tax_certificate_label'] ?? 'tax certificate').'.']);
+            // PAN-only sellers (India): the enrolment number from the GST portal (Notification 34/2023).
+            'enrolment_number' => [SellerTax::panOnly($seller) ? 'required' : 'nullable', 'string', 'max:20', 'regex:/^[A-Za-z0-9]{10,20}$/'],
+        ], ['enrolment_number.required' => 'Enter the GST enrolment number you got on the GST portal for your PAN.', 'certificate_path.required' => 'Upload your '.($config['tax_certificate_label'] ?? 'tax certificate').'.']);
 
         if (SellerOnboarding::normalizeTaxNumber($data['tax_number']) !== SellerOnboarding::normalizeTaxNumber($seller->tax_id)) {
             throw ValidationException::withMessages(['tax_number' => 'This doesn’t match the '.($config['tax_number_label'] ?? 'tax number').' you gave when you registered ('.$seller->tax_id.').']);
@@ -43,6 +46,7 @@ class SellerOnboardingController extends Controller
             'tax_number' => $seller->tax_id, // matched above; kept in the registered format
             'certificate_path' => $data['certificate_path'] ?? null,
             'certificate_name' => $data['certificate_name'] ?? null,
+            'enrolment_number' => isset($data['enrolment_number']) ? strtoupper($data['enrolment_number']) : null,
         ]);
         // Changing step 1 after step 2 was done sends it back for review.
         $resubmit = ! empty($info['tax_code']);
@@ -260,6 +264,8 @@ class SellerOnboardingController extends Controller
             'company_name' => $seller->company_name,
             'country' => $seller->country,
             'registered_tax_id' => $seller->tax_id,
+            'pan_only' => SellerTax::panOnly($seller),
+            'only_state' => SellerTax::onlyState($seller),
             'registered_address' => array_filter([$seller->registered_line1, $seller->registered_line2, $seller->registered_city, $seller->registered_state, $seller->registered_postal_code, $seller->registered_country]),
             'primary_contact' => SellerOnboarding::primaryContact($seller),
             'tax' => ['info' => $seller->tax_info, 'status' => $seller->tax_status, 'note' => $seller->tax_note, 'submitted_at' => $seller->tax_submitted_at],

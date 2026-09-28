@@ -517,8 +517,8 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           <datalist id="wz-countries">{COUNTRY_NAMES.map((c) => <option key={c} value={c} />)}</datalist>
           {inclusive && (
             <div className="wz-grid">
-              <label>HSN code<input inputMode="numeric" value={form.hsn_code} onChange={(e) => set({ hsn_code: e.target.value.trim() })} />{err('hsn_code')}</label>
-              <label>GST rate<select value={form.gst_rate_bps} onChange={(e) => set({ gst_rate_bps: e.target.value })}><option value="">Select…</option>{(gstRates ?? []).map((r) => <option key={r} value={r}>{r / 100}%</option>)}</select>{err('gst_rate_bps')}</label>
+              <label>HSN code{config.requirements?.gst_details ? '' : ' (optional)'}<input inputMode="numeric" value={form.hsn_code} onChange={(e) => set({ hsn_code: e.target.value.trim() })} />{err('hsn_code')}</label>
+              <label>GST rate{config.requirements?.gst_details ? '' : ' (optional)'}<select value={form.gst_rate_bps} onChange={(e) => set({ gst_rate_bps: e.target.value })}><option value="">Select…</option>{(gstRates ?? []).map((r) => <option key={r} value={r}>{r / 100}%</option>)}</select>{err('gst_rate_bps')}</label>
               <label>Manufacturer / packer / importer (name &amp; address)<input value={form.manufacturer_info} onChange={(e) => set({ manufacturer_info: e.target.value })} />{err('manufacturer_info')}</label>
             </div>
           )}

@@ -21,9 +21,10 @@ return [
             ['value' => 'public_listed', 'label' => 'Public Listed Company', 'description' => 'Company listed on a public stock exchange.'],
         ],
         'tax_id' => [
-            'label' => 'GSTIN',
-            'placeholder' => '22AAAAA0000A1Z5',
-            'regex' => '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$',
+            // GSTIN, or PAN for sellers without GST registration.
+            'label' => 'GSTIN or PAN',
+            'placeholder' => '22AAAAA0000A1Z5 or AAAAA0000A',
+            'regex' => '^([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}|[A-Z]{5}[0-9]{4}[A-Z])$',
             'help_url' => 'https://www.gst.gov.in/',
         ],
         'id_types' => [
@@ -51,9 +52,10 @@ return [
             ['value' => 'public_listed', 'label' => 'Public Listed Company', 'description' => 'Company listed on a public stock exchange (e.g. NYSE, NASDAQ).'],
         ],
         'tax_id' => [
-            'label' => 'EIN / Business Number',
-            'placeholder' => '12-3456789',
-            'regex' => '^\d{2}-?\d{7}$',
+            // Marketplaces need a taxpayer ID for Form 1099-K: an EIN, or the owner's SSN / ITIN.
+            'label' => 'EIN, SSN or ITIN',
+            'placeholder' => '12-3456789 or 123-45-6789',
+            'regex' => '^(\d{2}-?\d{7}|\d{3}-?\d{2}-?\d{4})$',
             'help_url' => 'https://www.irs.gov/businesses/small-businesses-self-employed/employer-id-numbers',
         ],
         'id_types' => [

@@ -137,14 +137,16 @@ class Market
      *
      * @return array<string, list<mixed>>
      */
-    public static function productRules(?string $market, bool $required): array
+    public static function productRules(?string $market, bool $required, bool $gstRequired = true): array
     {
         $need = $required && self::taxInclusive($market) ? 'required' : 'sometimes';
+        // HSN / GST rate can be optional for sellers without GST registration.
+        $gst = $gstRequired ? $need : 'sometimes';
         $rates = (array) (self::profile($market)['gst_rates_bps'] ?? [0, 300, 500, 1800, 4000]);
 
         return [
-            'hsn_code' => [$need, 'nullable', 'string', 'regex:/^\d{4}(\d{2})?(\d{2})?$/'],
-            'gst_rate_bps' => [$need, 'nullable', 'integer', 'in:'.implode(',', $rates)],
+            'hsn_code' => [$gst, 'nullable', 'string', 'regex:/^\d{4}(\d{2})?(\d{2})?$/'],
+            'gst_rate_bps' => [$gst, 'nullable', 'integer', 'in:'.implode(',', $rates)],
             'country_of_origin' => [$need, 'nullable', 'string', 'max:60'],
             'manufacturer_info' => [$need, 'nullable', 'string', 'max:500'],
         ];

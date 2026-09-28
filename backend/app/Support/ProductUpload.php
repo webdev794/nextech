@@ -44,6 +44,7 @@ class ProductUpload
         // Same gate as the Add product form: without a way to ship, products
         // can only be saved as drafts.
         $strict = SellerRequirements::on($shop, 'listing_details');
+        $gstRequired = SellerRequirements::on($shop, 'gst_details');
         $shippingBlock = ! SellerRequirements::on($shop, 'shipping_setup') ? null : match (true) {
             $shop->shipsItself() && ! $shop->shippingTemplates()->exists() => 'Create a shipping template in Shipping settings before submitting products.',
             ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => 'NexTech pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
@@ -177,7 +178,7 @@ class ProductUpload
                 $data['gst_rate_bps'] = ($first['gst_rate'] ?? '') !== '' ? (int) round((float) $first['gst_rate'] * 100) : null;
                 $data['manufacturer_info'] = ($first['manufacturer_info'] ?? '') ?: null;
                 foreach (['hsn_code' => 'HSN code', 'gst_rate_bps' => 'GST rate', 'manufacturer_info' => 'Manufacturer / packer / importer'] as $key => $label) {
-                    if ($strict && empty($data[$key])) {
+                    if ($strict && empty($data[$key]) && ($key === 'manufacturer_info' || $gstRequired)) {
                         $messages[] = $label.' is required.';
                     }
                 }

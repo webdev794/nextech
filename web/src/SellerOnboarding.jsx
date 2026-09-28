@@ -137,7 +137,7 @@ export function TaxInformation({ headers, onSupport }) {
   const info = data.tax.info ?? {}
   const status = data.tax.status
   const step1Done = !!info.tax_number
-  const openStep1 = () => { setStep1({ tax_number: info.tax_number ?? '', certificate: info.certificate_path ? { path: info.certificate_path, name: info.certificate_name } : null }); setOpen(1) }
+  const openStep1 = () => { setStep1({ tax_number: info.tax_number ?? '', enrolment_number: info.enrolment_number ?? '', certificate: info.certificate_path ? { path: info.certificate_path, name: info.certificate_name } : null }); setOpen(1) }
   const openStep2 = () => { setStep2({ tax_code: info.tax_code ?? Object.keys(cfg.tax_codes ?? {})[0] ?? '', agree: false }); setOpen(2) }
 
   return (
@@ -166,11 +166,15 @@ export function TaxInformation({ headers, onSupport }) {
         <div className="ss-overlay" role="presentation" onClick={() => setOpen(null)}>
           <form className="ss-modal" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
             e.preventDefault()
-            if (await submit('/seller/onboarding/tax-number', { tax_number: step1.tax_number, certificate_path: step1.certificate?.path ?? null, certificate_name: step1.certificate?.name ?? null }, info.tax_code ? 'Saved — your tax information is back in review.' : 'Saved. Now configure your tax calculation settings (step 2).')) setOpen(null)
+            if (await submit('/seller/onboarding/tax-number', { tax_number: step1.tax_number, enrolment_number: step1.enrolment_number || null, certificate_path: step1.certificate?.path ?? null, certificate_name: step1.certificate?.name ?? null }, info.tax_code ? 'Saved — your tax information is back in review.' : 'Saved. Now configure your tax calculation settings (step 2).')) setOpen(null)
           }}>
             <h2 className="sc-h2">Add your {cfg.tax_number_label}</h2>
             <label>{cfg.tax_number_label}<input required value={step1.tax_number} onChange={(e) => setStep1({ ...step1, tax_number: e.target.value })} /></label>
             <p className="sc-muted">Make sure it&rsquo;s valid and matches the one you gave when you registered.</p>
+            {data.pan_only && <>
+              <label>GST enrolment number<input required value={step1.enrolment_number} onChange={(e) => setStep1({ ...step1, enrolment_number: e.target.value.trim() })} /></label>
+              <p className="sc-muted">Selling with a PAN only (no GSTIN)? Take an enrolment number for your PAN on the GST portal (Notification 34/2023). Without GST registration you can sell only within your own state and must stay under the GST turnover threshold — your products are delivered only to buyers in your state.</p>
+            </>}
             <Uploader headers={headers} kind="tax_certificate" label={cfg.tax_certificate_label} required={!!cfg.tax_certificate_required} value={step1.certificate} onChange={(certificate) => setStep1((s) => ({ ...s, certificate }))} onError={setMsg} />
             <p className="sc-muted">The name and address on the certificate must match your registration: <b>{data.company_name}</b>, {data.registered_address.join(', ')}.</p>
             <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setOpen(null)}>Cancel</button><button type="submit" className="sc-primary" disabled={cfg.tax_certificate_required && !step1.certificate}>Submit</button></div>

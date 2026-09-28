@@ -22,7 +22,7 @@ return [
         'withholding' => [],
         // Seller Center onboarding (App\Support\SellerOnboarding).
         'onboarding' => [
-            'tax_number_label' => 'EIN / Business Number',
+            'tax_number_label' => 'EIN, SSN or ITIN',
             // An IRS EIN confirmation letter (CP 575 / 147C) is optional in the US.
             'tax_certificate_required' => false,
             'tax_certificate_label' => 'EIN confirmation letter (IRS CP 575 or 147C)',
@@ -118,10 +118,10 @@ return [
             'tds_194o' => ['label' => 'TDS (sec. 194-O)', 'rate_bps' => 10, 'base' => 'taxable'],
         ],
         'onboarding' => [
-            'tax_number_label' => 'GSTIN',
-            // GST registration certificate (Form GST REG-06) is required in India.
+            'tax_number_label' => 'GSTIN or PAN',
+            // GST registration certificate (Form GST REG-06), or the PAN card for sellers without GST.
             'tax_certificate_required' => true,
-            'tax_certificate_label' => 'GST registration certificate (Form GST REG-06)',
+            'tax_certificate_label' => 'GST registration certificate (Form GST REG-06), or your PAN card',
             // Default HSN (all 18% GST) for items that don't set their own.
             'tax_codes' => [
                 '8517' => 'HSN 8517 — Mobile phones & communication devices',
