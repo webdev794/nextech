@@ -556,6 +556,19 @@ export default function Seller({ token, onSignOut }) {
     if (me?.status) loadSupportThreads()
   }, [me?.status, loadProducts, loadOrders, loadSupportThreads])
 
+  // Coming back to this tab picks up anything admin changed meanwhile (e.g. the
+  // seller's requirement switches, a product approval).
+  useEffect(() => {
+    if (me?.status !== 'approved') return undefined
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      loadProducts()
+      fetch(`${API_URL}/seller/me`, { headers: authHeaders() }).then(readJson).then((res) => { if (res?.data) setMe(res.data) }).catch(() => {})
+    }
+    document.addEventListener('visibilitychange', refresh)
+    return () => document.removeEventListener('visibilitychange', refresh)
+  }, [me?.status, loadProducts, authHeaders])
+
   // On the (non-approved) status page, jump straight into the seller<->admin
   // conversation instead of making the seller pick it out of a thread list.
   useEffect(() => {
