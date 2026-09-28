@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DecorationView } from './StoreDecorationView'
 import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js'
 import { loadStripe } from '@stripe/stripe-js'
@@ -10,6 +10,8 @@ import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import './StorefrontBase.css'
 import './Storefront.css'
 import './Checkout.css'
+import { CustomerChatDock } from './SurfaceChats'
+import { openChat } from './chatDockUtils'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const FEEDBACK_OPTIONS = [
@@ -1696,6 +1698,7 @@ export default function Storefront() {
     } catch (error) { setOrdersMessage(error.message) }
   }
 
+  const chatHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` }), [])
   const authGet = (path) => fetch(`${API_URL}${path}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` } })
   const authPost = (path, body) => fetch(`${API_URL}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` }, body: JSON.stringify(body) })
   const authSend = (path, method, body) => fetch(`${API_URL}${path}`, { method, headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${localStorage.getItem('gdp_token')}` }, body: body ? JSON.stringify(body) : undefined })
@@ -1846,6 +1849,14 @@ export default function Storefront() {
     authGet('/support/threads').then(responseJson).then((d) => { setThreads(d.data ?? []); markThreadsSeen(d.data ?? []) }).catch(() => {})
   }
 
+  // A conversation opens as a chat window, bottom right (CustomerChatDock);
+  // its "⋯" brings up the full view here (photos, rating, End Chat).
+  function openSupportChat(t) {
+    setSupportView(null)
+    markThreadsSeen([t])
+    openChat({ key: `support-${t.id}`, kind: 'support', id: t.id, name: issueLabel(t.issue_type), subtitle: ['Started by you', t.order_id ? `order #${t.order_id}` : null].filter(Boolean).join(' · ') })
+  }
+
   async function openThread(id) {
     setSupportMsg('')
     try {
@@ -1868,7 +1879,7 @@ export default function Storefront() {
       if (!response.ok) throw new Error(data.message ?? 'Could not send your request.')
       setSupportForm({ about_order: false, order_id: '', issue_type: 'item_missing', message: '' })
       setSupportPhotos([])
-      setSupportView(data.data)
+      openSupportChat(data.data)
       loadThreads()
     } catch (error) { setSupportMsg(error.message) } finally { setSupportBusy(false) }
   }
@@ -2929,7 +2940,7 @@ export default function Storefront() {
       {supportView === 'list' ? <>
         <h2 id="support-title">Support</h2>
         <button className="checkout-button" type="button" onClick={() => { setSupportForm({ about_order: false, order_id: '', issue_type: 'item_missing', message: '' }); setSupportView('new') }}>New request <span>&rarr;</span></button>
-        {threads.length === 0 ? <p className="auth-intro">No conversations yet.</p> : <ul className="support-list">{threads.map((t) => <li key={t.id}><button type="button" onClick={() => openThread(t.id)}><strong>{issueLabel(t.issue_type)}{t.order_id ? ` · Order #${t.order_id}` : ''}</strong><span>{t.status === 'resolved' ? 'Resolved' : 'Open'} · {t.last_message_at ? new Date(t.last_message_at).toLocaleDateString() : ''}</span></button></li>)}</ul>}
+        {threads.length === 0 ? <p className="auth-intro">No conversations yet.</p> : <ul className="support-list">{threads.map((t) => <li key={t.id}><button type="button" onClick={() => openSupportChat(t)}><strong>{issueLabel(t.issue_type)}{t.order_id ? ` · Order #${t.order_id}` : ''}</strong><span>{t.status === 'resolved' ? 'Resolved' : 'Open'} · {t.last_message_at ? new Date(t.last_message_at).toLocaleDateString() : ''}</span></button></li>)}</ul>}
       </> : supportView === 'new' ? <>
         <h2 id="support-title">New request</h2>
         <p className="pay-methods-label">Is this about an order?</p>
@@ -2972,6 +2983,12 @@ export default function Storefront() {
       {supportMsg && <p className="auth-message">{supportMsg}</p>}
     </div></div>}
   </div>
+  {currentUser && <CustomerChatDock authHeaders={chatHeaders} issueLabel={issueLabel} onDetails={openThread}
+    onRead={(chat, page) => {
+      // Read in the chat window — clear the Help dot for it.
+      const last = [...page.messages].reverse().find((m) => !m.mine && m.from !== 'system')
+      if (last && page.thread_id) markThreadsSeen([{ id: page.thread_id, last_staff_message_at: last.created_at }])
+    }} />}
   <footer className="site-footer" style={{ '--footer-bg': footer?.bg_color, '--footer-text': footer?.text_color }}>
     {(() => {
       const footerPages = pages.filter((p) => p.show_in_footer)

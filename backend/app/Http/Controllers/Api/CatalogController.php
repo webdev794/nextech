@@ -56,6 +56,11 @@ class CatalogController extends Controller
                     'products',
                     fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->visibleAtStore($storeId),
                 ))
+                // Demo products hidden: drop categories that only had demo products.
+                ->when(Product::demosHidden(), fn ($query) => $query->whereHas(
+                    'products',
+                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->shownToShoppers(),
+                ))
                 ->orderBy('sort_order')
                 ->orderBy('name')
                 ->get(),
@@ -86,6 +91,7 @@ class CatalogController extends Controller
             ])
             ->where('is_active', true)
             ->where('status', 'approved')
+            ->shownToShoppers()
             // Shoppers see only their market's products — except on a shop's
             // own page, which lists that shop whatever market it's in.
             ->when($shopId === null, fn ($query) => $query->inMarket(Market::fromRequest($request)))
@@ -154,6 +160,7 @@ class CatalogController extends Controller
             ->where('is_active', true)
             ->where('status', 'approved')
             ->where('deal_type', $validated['deal_type'])
+            ->shownToShoppers()
             ->inMarket(Market::fromRequest($request))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
@@ -181,6 +188,7 @@ class CatalogController extends Controller
         $live = $shop->products()
             ->where('is_active', true)
             ->where('status', 'approved')
+            ->shownToShoppers()
             ->whereHas('category', fn ($q) => $q->where('is_active', true));
         $categories = Category::query()
             ->whereIn('id', (clone $live)->select('category_id'))
@@ -239,6 +247,7 @@ class CatalogController extends Controller
         abort_unless(
             $product->is_active
                 && $product->status === 'approved'
+                && ! $product->hiddenFromShoppers()
                 && $product->category?->is_active
                 && ($storeId === null || ! $product->usesStoreInventory()
                     || $product->availabilityAt($storeId)['sold']

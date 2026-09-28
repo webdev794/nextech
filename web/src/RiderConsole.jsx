@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
 import RiderEarnings from './RiderEarnings'
+import { RiderChatDock } from './SurfaceChats'
+import { openChat } from './chatDockUtils'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const STORE_URL = import.meta.env.BASE_URL || '/'
@@ -396,12 +398,8 @@ export default function RiderConsole({ token, onSignOut }) {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [chatOrder, setChatOrder] = useState(null)
-  const [chat, setChat] = useState({ messages: [], thread_id: null })
-  const [reply, setReply] = useState('')
   const [alertOpen, setAlertOpen] = useState(false)
   const [payKey, setPayKey] = useState(0)
-  const chatLogRef = useRef(null)
 
   const load = useCallback(async () => {
     try {
@@ -450,43 +448,9 @@ export default function RiderConsole({ token, onSignOut }) {
     return () => clearInterval(t)
   }, [loadStats])
 
-  const loadChat = useCallback(async (orderId) => {
-    try {
-      const res = await fetch(`${API_URL}/rider/orders/${orderId}/messages`, { headers: headers() })
-      const body = await readJson(res)
-      if (res.ok) setChat(body.data ?? { messages: [], thread_id: null })
-    } catch { /* keep last */ }
-  }, [headers])
-
-  useEffect(() => {
-    if (!chatOrder) return
-    const id = chatOrder
-    let alive = true
-    const tick = () => { if (alive) loadChat(id) }
-    Promise.resolve().then(tick)
-    const t = setInterval(tick, 4000)
-    return () => { alive = false; clearInterval(t) }
-  }, [chatOrder, loadChat])
-
-  useEffect(() => {
-    if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
-  }, [chat])
-
-  async function sendReply() {
-    const text = reply.trim()
-    if (!text || !chatOrder) return
-    setReply('')
-    try {
-      const res = await fetch(`${API_URL}/rider/orders/${chatOrder}/messages`, {
-        method: 'POST', headers: headers(true), body: JSON.stringify({ body: text }),
-      })
-      const body = await readJson(res)
-      if (res.ok) setChat(body.data)
-      else { setReply(text); setError(body.message ?? 'Message not sent.') }
-    } catch { setReply(text); setError('Message not sent.') }
-  }
-
   const refresh = () => { load(); loadStats(); setPayKey((k) => k + 1) }
+  // Customer chats open bottom right (RiderChatDock), beside the NexTech one.
+  const chatWithCustomer = (orderId) => openChat({ key: `order-${orderId}`, kind: 'order', id: orderId, name: `Order #${orderId}`, subtitle: 'Chat with the customer' })
 
   if (loading) return <div className="rider-shell"><div className="rider-loading">Loading your deliveries…</div></div>
 
@@ -533,40 +497,18 @@ export default function RiderConsole({ token, onSignOut }) {
         <h2>My deliveries ({data.assigned.length})</h2>
         {data.assigned.length === 0
           ? <p className="rider-empty">Nothing assigned to you right now. New assignments appear here automatically.</p>
-          : data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={setChatOrder} />)}
+          : data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
       </section>
 
       {data.pool.length > 0 && (
         <section className="rider-section">
           <h2>Available to pick up ({data.pool.length})</h2>
-          {data.pool.map((o) => <DeliveryCard key={o.id} order={o} pool headers={headers} onDone={refresh} onChat={setChatOrder} />)}
+          {data.pool.map((o) => <DeliveryCard key={o.id} order={o} pool headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
         </section>
       )}
 
-      {chatOrder && (
-        <div className="rider-chat-overlay" role="presentation" onClick={() => setChatOrder(null)}>
-          <aside className="rider-chat" onClick={(e) => e.stopPropagation()}>
-            <div className="rider-chat-head">
-              <strong>Order #{chatOrder} · customer</strong>
-              <button type="button" onClick={() => setChatOrder(null)}>Close</button>
-            </div>
-            <div className="rider-chat-log" ref={chatLogRef}>
-              {chat.messages?.length
-                ? chat.messages.map((m) => (
-                    <div key={m.id} className={`rider-msg ${m.mine ? 'mine' : m.from}`}>
-                      <span>{m.body}</span>
-                      <em>{new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</em>
-                    </div>
-                  ))
-                : <p className="rider-empty">No messages yet. Say hello to the customer.</p>}
-            </div>
-            <div className="rider-chat-send">
-              <input placeholder="Message the customer" value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendReply() }} />
-              <button type="button" disabled={!reply.trim()} onClick={sendReply}>Send</button>
-            </div>
-          </aside>
-        </div>
-      )}
+      <RiderChatDock headers={headers} orders={data.assigned} />
+
     </div>
   )
 }

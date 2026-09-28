@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ChatPage;
 use App\Models\OrderItem;
 use App\Models\Shop;
+use App\Models\SupportMessage;
 use App\Models\SupportThread;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -65,6 +67,29 @@ class AdminSupportController extends Controller
             'user.orders' => fn ($q) => $q->select('id', 'user_id', 'status', 'total_cents', 'created_at')->latest()->limit(20),
             'order.items', 'order.refunds', 'order.giftCards', 'order.giftCards.issuedBy:id,name',
         ];
+    }
+
+    /** The thread as a page of chat messages, for the docked chat window. */
+    public function chat(Request $request, SupportThread $thread): JsonResponse
+    {
+        return response()->json(['data' => ChatPage::of($thread, 'admin', $request->integer('before') ?: null)]);
+    }
+
+    /** An internal note on the thread — for staff to refer back to, never shown in the chat. */
+    public function addNote(Request $request, SupportThread $thread): JsonResponse
+    {
+        $data = $request->validate(['body' => ['required', 'string', 'max:2000']]);
+        $thread->post($request->user(), trim($data['body']), isStaff: true, internal: true);
+
+        return $this->show($thread);
+    }
+
+    public function deleteNote(SupportThread $thread, SupportMessage $message): JsonResponse
+    {
+        abort_unless($message->support_thread_id === $thread->id && $message->internal, 404);
+        $message->delete();
+
+        return $this->show($thread);
     }
 
     public function show(SupportThread $thread): JsonResponse

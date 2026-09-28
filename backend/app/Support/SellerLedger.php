@@ -138,15 +138,17 @@ class SellerLedger
     /**
      * The shop's balance split into what can be paid out now ("available") and
      * what's still held for returns ("pending"), plus the held orders and when
-     * each releases. Payouts (no order) and anything on a cleared order count
-     * as available; credits and refunds on an order still inside its return
-     * window (or not yet delivered) are pending.
+     * each releases. Payouts and fees (no order) and anything on a cleared
+     * order count as available; credits and refunds on an order still inside
+     * its return window (or not yet delivered) are pending. A sale credit whose
+     * order record is gone can't be checked against a return window, so it's
+     * held too (order_id null) until admin sorts it out.
      *
      * @return array{available_cents: int, pending_cents: int, pending: list<array<string, mixed>>}
      */
     public static function breakdown(Shop $shop): array
     {
-        $entries = SellerLedgerEntry::where('shop_id', $shop->id)->get(['order_id', 'amount_cents']);
+        $entries = SellerLedgerEntry::where('shop_id', $shop->id)->get(['order_id', 'type', 'amount_cents']);
         $orderIds = $entries->pluck('order_id')->filter()->unique();
         $orders = Order::query()
             ->whereIn('id', $orderIds)
@@ -161,7 +163,10 @@ class SellerLedger
             $order = $entry->order_id ? $orders->get($entry->order_id) : null;
             $release = $order ? self::releaseDate($order, $shop->id) : null;
 
-            if (! $entry->order_id || ($release && $release->lte($now))) {
+            if (! $entry->order_id && $entry->type === 'order_credit') {
+                $pendingByOrder['missing'] ??= ['order_id' => null, 'amount_cents' => 0, 'releases_at' => null, 'return_days' => null, 'delivered' => false, 'order_missing' => true];
+                $pendingByOrder['missing']['amount_cents'] += (int) $entry->amount_cents;
+            } elseif (! $entry->order_id || ($release && $release->lte($now))) {
                 $available += (int) $entry->amount_cents;
             } else {
                 $pendingByOrder[$entry->order_id] ??= ['order_id' => $entry->order_id, 'amount_cents' => 0, 'releases_at' => $release, 'return_days' => $order ? self::orderReturnDays($order, $shop->id) : null, 'delivered' => $order && ($order->delivered_at || $order->status === 'completed')];

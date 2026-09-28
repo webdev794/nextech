@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Profanity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +15,8 @@ class SupportThread extends Model
         'delivery',
         // Seller <-> admin channel, not a customer order complaint.
         'seller_product_issue', 'seller_other',
+        // A rider's own chat with NexTech (StaffChat).
+        'rider_support',
     ];
 
     protected $fillable = [
@@ -87,7 +90,8 @@ class SupportThread extends Model
             'from_seller' => $fromSeller,
             'internal' => $internal,
             'hidden_from_seller' => $hiddenFromSeller,
-            'body' => $body,
+            // Abusive words are masked for everyone in the chat (system notes are ours).
+            'body' => $system ? $body : Profanity::mask($body),
             'attachments' => $attachments ?: null,
         ]);
 

@@ -32,6 +32,7 @@ use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RiderController;
+use App\Http\Controllers\Api\SellerChatController;
 use App\Http\Controllers\Api\SellerController;
 use App\Http\Controllers\Api\SellerOnboardingController;
 use App\Http\Controllers\Api\SellerKycController;
@@ -125,6 +126,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/support/threads', [SupportThreadController::class, 'index']);
     Route::post('/support/threads', [SupportThreadController::class, 'store']);
     Route::get('/support/threads/{thread}', [SupportThreadController::class, 'show']);
+    Route::get('/support/threads/{thread}/chat', [SupportThreadController::class, 'chat']);
     Route::post('/support/threads/{thread}/messages', [SupportThreadController::class, 'message']);
     Route::post('/support/threads/{thread}/rating', [SupportThreadController::class, 'rate']);
     Route::post('/support/threads/{thread}/end', [SupportThreadController::class, 'end']);
@@ -185,9 +187,13 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/reject', [AdminSellerController::class, 'reject']);
     Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
+    Route::delete('/sellers/{seller}', [AdminSellerController::class, 'remove']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
     Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
+    Route::get('/sellers/{seller}/chat', [AdminSellerController::class, 'chat']);
+    Route::post('/sellers/{seller}/chat', [AdminSellerController::class, 'chatMessage']);
+    Route::get('/sellers/{seller}/ledger', [AdminSellerController::class, 'ledger']);
     Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
     Route::post('/sellers/{seller}/requirements', [AdminSellerController::class, 'requirements']);
     Route::post('/sellers/{seller}/onboarding/{task}', [AdminSellerController::class, 'reviewOnboarding'])->whereIn('task', ['tax', 'compliance', 'bank']);
@@ -204,6 +210,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 
     Route::get('/support/threads', [AdminSupportController::class, 'index']);
     Route::get('/support/threads/{thread}', [AdminSupportController::class, 'show']);
+    Route::get('/support/threads/{thread}/chat', [AdminSupportController::class, 'chat']);
+    Route::post('/support/threads/{thread}/notes', [AdminSupportController::class, 'addNote']);
+    Route::delete('/support/threads/{thread}/notes/{message}', [AdminSupportController::class, 'deleteNote']);
     Route::post('/support/threads/{thread}/messages', [AdminSupportController::class, 'message']);
     Route::patch('/support/threads/{thread}', [AdminSupportController::class, 'update']);
     Route::post('/support/threads/{thread}/seller', [AdminSupportController::class, 'addSeller']);
@@ -221,6 +230,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/label-requests/{labelRequest}/replace', [AdminLabelRequestController::class, 'replace']);
 
     Route::get('/products', [AdminProductController::class, 'index']);
+    // Demo products: mark them, and show / hide them all on the store.
+    Route::post('/products/demo', [AdminProductController::class, 'bulkDemo']);
+    Route::post('/products/demo-visibility', [AdminProductController::class, 'demoVisibility']);
+    Route::patch('/products/{product}/demo', [AdminProductController::class, 'setDemo']);
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);
     Route::post('/products/{product}/approve', [AdminProductController::class, 'approve']);
@@ -283,6 +296,9 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
     // Onboarding tasks: tax information, compliance information, bank account.
     Route::get('/seller/onboarding', [SellerOnboardingController::class, 'show']);
+    // The floating NexTech chat in Seller Center.
+    Route::get('/seller/chat', [SellerChatController::class, 'show']);
+    Route::post('/seller/chat', [SellerChatController::class, 'store']);
     Route::post('/seller/onboarding/tax-number', [SellerOnboardingController::class, 'saveTaxNumber']);
     Route::post('/seller/onboarding/tax-settings', [SellerOnboardingController::class, 'saveTaxSettings']);
     Route::post('/seller/onboarding/compliance', [SellerOnboardingController::class, 'saveCompliance']);
@@ -350,6 +366,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
     Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
+    Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);
     Route::post('/seller/customer-chats/{thread}/messages', [SellerCustomerChatController::class, 'message']);
 });
 
@@ -369,6 +386,10 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
     Route::post('/orders/{order}/cash-collected', [RiderController::class, 'cashCollected']);
     Route::post('/orders/{order}/payment-refused', [RiderController::class, 'paymentRefused']);
     Route::get('/orders/{order}/messages', [RiderController::class, 'messages']);
+    Route::get('/orders/{order}/chat', [RiderController::class, 'chat']);
+    // The rider's own chat with NexTech.
+    Route::get('/support-chat', [SellerChatController::class, 'show']);
+    Route::post('/support-chat', [SellerChatController::class, 'store']);
     Route::post('/orders/{order}/messages', [RiderController::class, 'postMessage']);
 });
 

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Product;
+use App\Models\Setting;
 use App\Support\ProductCatalog;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
@@ -28,6 +29,7 @@ class AdminProductController extends Controller
             'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft'])],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
+            'demo' => ['sometimes', Rule::in(['only', 'none'])],
         ]);
 
         $storeId = $validated['store_id'] ?? null;
@@ -53,6 +55,7 @@ class AdminProductController extends Controller
                 fn ($inner) => $inner->where('products.name', 'like', "%{$search}%")->orWhere('products.sku', 'like', "%{$search}%")
             ))
             ->when($validated['category_id'] ?? null, fn ($query, $id) => $query->where('products.category_id', $id))
+            ->when($validated['demo'] ?? null, fn ($query, $demo) => $query->where('products.is_demo', $demo === 'only'))
             // Sellers' unfinished drafts (Manage products -> Incomplete) stay out of the review list.
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('products.status', $status), fn ($query) => $query->where('products.status', '!=', 'draft'))
             ->when($sort === 'newest', fn ($query) => $query->orderByDesc('products.created_at')->orderByDesc('products.id'))
@@ -74,8 +77,50 @@ class AdminProductController extends Controller
                 'last_page' => $products->lastPage(),
                 'per_page' => $products->perPage(),
                 'total' => $products->total(),
+                // Demo products: how many (in this market view) and whether they're hidden from the store.
+                'demo_count' => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))->where('is_demo', true)->count(),
+                'demos_hidden' => Product::demosHidden(),
             ],
         ]);
+    }
+
+    /** Mark one product as a demo product, or not. */
+    public function setDemo(Request $request, Product $product): JsonResponse
+    {
+        $data = $request->validate(['is_demo' => ['required', 'boolean']]);
+        $product->forceFill(['is_demo' => $data['is_demo']])->save();
+
+        return response()->json(['data' => ['id' => $product->id, 'is_demo' => $product->is_demo]]);
+    }
+
+    /** Mark every product matching the list's filters (search, category, status, market) as demo, or not. */
+    public function bulkDemo(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'is_demo' => ['required', 'boolean'],
+            'search' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
+            'status' => ['sometimes', 'nullable', Rule::in(['pending', 'approved', 'rejected', 'draft'])],
+            'nextech_only' => ['sometimes', 'boolean'],
+        ]);
+        $count = Product::query()
+            ->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))
+            ->when($data['search'] ?? null, fn ($q, $search) => $q->where(fn ($inner) => $inner->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%")))
+            ->when($data['category_id'] ?? null, fn ($q, $id) => $q->where('category_id', $id))
+            ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status), fn ($q) => $q->where('status', '!=', 'draft'))
+            ->when($data['nextech_only'] ?? false, fn ($q) => $q->whereNull('shop_id'))
+            ->update(['is_demo' => $data['is_demo']]);
+
+        return response()->json(['data' => ['updated' => $count]]);
+    }
+
+    /** Show or hide all demo products on the store. */
+    public function demoVisibility(Request $request): JsonResponse
+    {
+        $data = $request->validate(['hidden' => ['required', 'boolean']]);
+        Setting::put('hide_demo_products', $data['hidden']);
+
+        return response()->json(['data' => ['demos_hidden' => Product::demosHidden()]]);
     }
 
     public function store(Request $request): JsonResponse

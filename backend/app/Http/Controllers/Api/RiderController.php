@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ChatPage;
 use App\Models\Order;
 use App\Models\SupportThread;
 use App\Models\User;
@@ -500,22 +501,34 @@ class RiderController extends Controller
         return response()->json(['data' => $this->threadPayload($this->threadFor($order), $request->user()->id)]);
     }
 
+    /** The customer chat as a page of messages, for the docked chat window. */
+    public function chat(Request $request, Order $order): JsonResponse
+    {
+        $this->assertMine($request, $order);
+
+        // Just looking doesn't start a conversation — the first message does (postMessage()).
+        $thread = SupportThread::where('order_id', $order->id)->where('user_id', $order->user_id)->orderBy('id')->first();
+
+        return response()->json(['data' => ChatPage::of($thread, 'rider', $request->integer('before') ?: null)]);
+    }
+
     public function postMessage(Request $request, Order $order): JsonResponse
     {
         $this->assertMine($request, $order);
-        $validated = $request->validate(['body' => ['required', 'string', 'max:2000']]);
+        $validated = $request->validate(ChatPage::MESSAGE_RULES);
+        $body = trim((string) ($validated['body'] ?? ''));
 
         $thread = $this->threadFor($order);
         if ($thread->status === 'resolved') {
             $thread->forceFill(['status' => 'open', 'resolved_at' => null])->save();
         }
         // Rider messages read as "staff" on the customer's side.
-        $thread->post($request->user(), $validated['body'], isStaff: true);
+        $thread->post($request->user(), $body, isStaff: true, attachments: $validated['attachments'] ?? []);
 
         // Delivery chat is time-sensitive — nudge the customer by email too.
         $email = $order->user?->email;
         if ($email) {
-            Notification::route('mail', $email)->notify(new RiderMessage($order->id, $validated['body']));
+            Notification::route('mail', $email)->notify(new RiderMessage($order->id, $body !== '' ? $body : 'Sent you a photo.'));
         }
 
         return response()->json(['data' => $this->threadPayload($thread->fresh(), $request->user()->id)]);

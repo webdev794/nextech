@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ChatPage;
 use App\Models\SupportThread;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,7 +35,7 @@ class SupportThreadController extends Controller
     {
         $validated = $request->validate([
             'order_id' => ['nullable', 'integer'],
-            'issue_type' => ['required', Rule::in(SupportThread::ISSUE_TYPES)],
+            'issue_type' => ['required', Rule::in(array_diff(SupportThread::ISSUE_TYPES, ['rider_support']))],
             'message' => ['required', 'string', 'max:2000'],
             'attachments' => ['sometimes', 'array', 'max:4'],
             'attachments.*' => ['string', 'max:500', 'starts_with:/api/media/file/support/'],
@@ -65,6 +66,15 @@ class SupportThreadController extends Controller
         $thread->post($request->user(), $validated['message'], attachments: $validated['attachments'] ?? []);
 
         return response()->json(['data' => $this->withMessages($thread)], 201);
+    }
+
+    /** The thread as a page of chat messages, for the docked chat window. */
+    public function chat(Request $request, SupportThread $thread): JsonResponse
+    {
+        abort_unless($thread->user_id === $request->user()->id, 404);
+        self::assertContext($request, $thread);
+
+        return response()->json(['data' => ChatPage::of($thread, 'customer', $request->integer('before') ?: null)]);
     }
 
     public function show(Request $request, SupportThread $thread): JsonResponse

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
+import { AdminChatDock, SellerLedgerTable } from './AdminSellerChat'
+import { openSellerChat, openSupportChat } from './sellerChatEvents'
 import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { MarketSettings } from './AdminMarkets'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
-import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
 import { renderMarkdown } from './markdown'
 import { SECTION_TYPES, blankSection } from './pageSectionTypes'
@@ -166,8 +167,8 @@ const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
   customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
-const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended']
-const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Suspended' }
+const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended', 'removed']
+const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Deactivated', removed: 'Removed' }
 const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
 const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
@@ -474,6 +475,7 @@ export default function Admin({ token, onClose }) {
   const [ordersMeta, setOrdersMeta] = useState(null)
   const [productsPage, setProductsPage] = useState(1)
   const [productsMeta, setProductsMeta] = useState(null)
+  const [productDemo, setProductDemo] = useState('all') // all | only | none — the Demo filter
   const [customersPage, setCustomersPage] = useState(1)
   const [customersMeta, setCustomersMeta] = useState(null)
   // Small lists paged client-side.
@@ -553,9 +555,7 @@ export default function Admin({ token, onClose }) {
   const [threads, setThreads] = useState([])
   const [threadStatus, setThreadStatus] = useState('open')
   const [thread, setThread] = useState(null)
-  const [threadReply, setThreadReply] = useState('')
-  const [threadPhotos, setThreadPhotos] = useState([]) // photo URLs for the next admin reply
-  const chatLogRef = useRef(null)
+  const [noteDraft, setNoteDraft] = useState('')
   const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
   const [giftIssued, setGiftIssued] = useState(null)
   const [supportBadge, setSupportBadge] = useState(0)
@@ -635,9 +635,41 @@ export default function Admin({ token, onClose }) {
     if (productStore) qs.set('store_id', productStore)
     if (productCategory) qs.set('category_id', productCategory)
     if (productStatus !== 'all') qs.set('status', productStatus)
+    if (productDemo !== 'all') qs.set('demo', productDemo)
     track('products', fetch(`${API_URL}/admin/products?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setProducts(data.data ?? []); setProductsMeta(data.meta ?? null) }).catch(() => setMessage('Could not load products.')))
-  }, [authHeaders, productSearch, productSort, productStore, productCategory, productStatus, productsPage, pageSize, track])
+  }, [authHeaders, productSearch, productSort, productStore, productCategory, productStatus, productDemo, productsPage, pageSize, track])
+
+  // Demo products: flag one, flag everything the filters match, or show / hide them all on the store.
+  async function setProductDemoFlag(product, isDemo) {
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/demo`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ is_demo: isDemo }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not update the product.')
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
+
+  async function markAllDemo(isDemo) {
+    const total = productsMeta?.total ?? products.length
+    if (!window.confirm(`Mark all ${total} product${total === 1 ? '' : 's'} matching the current filters as ${isDemo ? 'demo' : 'not demo'}?`)) return
+    try {
+      const body = { is_demo: isDemo, search: productSearch.trim() || null, category_id: productCategory ? Number(productCategory) : null, status: productStatus !== 'all' ? productStatus : null }
+      const response = await fetch(`${API_URL}/admin/products/demo`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the products.')
+      setMessage(`${data.data.updated} product${data.data.updated === 1 ? '' : 's'} marked as ${isDemo ? 'demo' : 'not demo'}.`)
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
+
+  async function setDemosHidden(hidden) {
+    try {
+      const response = await fetch(`${API_URL}/admin/products/demo-visibility`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ hidden }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not change demo products.')
+      setMessage(hidden ? 'Demo products are now hidden from the store.' : 'Demo products are shown on the store again.')
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
 
   const loadCategories = useCallback(() => {
     track('categories', fetch(`${API_URL}/admin/categories`, { headers: authHeaders() }).then(readJson)
@@ -743,14 +775,6 @@ export default function Admin({ token, onClose }) {
     }, 5000)
     return () => clearInterval(timer)
   }, [threadId, authHeaders])
-  // Keep the chat pinned to the newest message — on open, after sending, and
-  // when the 5s poll above brings in a customer's reply.
-  const threadMessageCount = thread?.messages?.length ?? 0
-  const lastThreadMessageId = thread?.messages?.[threadMessageCount - 1]?.id ?? null
-  useEffect(() => {
-    if (!chatLogRef.current) return
-    chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
-  }, [threadId, threadMessageCount, lastThreadMessageId])
   useEffect(() => { if (tab === 'settings') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
   // The country dropdown in the top bar is built from the settings — load them on open.
   useEffect(() => { if (!settings) loadSettings() }, [settings, loadSettings])
@@ -1330,6 +1354,7 @@ export default function Admin({ token, onClose }) {
 
   async function openThread(id) {
     setMessage('')
+    setNoteDraft('')
     setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
     setSupportToasts((cur) => cur.filter((t) => t.id !== id))
     try {
@@ -1339,15 +1364,24 @@ export default function Admin({ token, onClose }) {
     } catch (error) { fail(error) }
   }
 
-  async function replyThread() {
-    const body = threadReply.trim()
-    if ((!body && !threadPhotos.length) || !thread) return
+  // Internal notes on a support thread (staff only, never in the chat).
+  async function addThreadNote() {
+    if (!thread || !noteDraft.trim()) return
     try {
-      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/messages`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body, ...(threadPhotos.length ? { attachments: threadPhotos } : {}) }) })
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/notes`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body: noteDraft.trim() }) })
       const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? 'Message not sent.')
-      setThreadReply('')
-      setThreadPhotos([])
+      if (!response.ok) throw new Error(data.message ?? 'Note not saved.')
+      setNoteDraft('')
+      setThread(data.data)
+    } catch (error) { fail(error) }
+  }
+
+  async function deleteThreadNote(noteId) {
+    if (!thread || !window.confirm('Delete this note?')) return
+    try {
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/notes/${noteId}`, { method: 'DELETE', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Note not deleted.')
       setThread(data.data)
     } catch (error) { fail(error) }
   }
@@ -1718,6 +1752,24 @@ export default function Admin({ token, onClose }) {
     const reason = window.prompt(`Reason for rejecting "${product.name}":`, '')
     if (reason) productAction(product, 'reject', { reason })
   }
+  // Remove a seller for good: products never ordered are deleted, the rest switched off.
+  async function removeSeller(seller) {
+    const name = seller.shop?.name ?? seller.company_name ?? 'this seller'
+    const reason = window.prompt(`Remove ${name} permanently? Their shop closes, products never ordered are deleted, and products with orders are switched off. They can't re-apply.
+
+Reason:`, '')
+    if (!reason?.trim()) return
+    setBusyId(seller.id)
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}`, { method: 'DELETE', headers: jsonHeaders(), body: JSON.stringify({ reason: reason.trim() }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not remove the seller.')
+      setSellers((cur) => cur.map((s) => (s.id === seller.id ? data.data : s)))
+      setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, ...data.data } : cur))
+      setMessage(`${name} removed — ${data.meta.deleted} product${data.meta.deleted === 1 ? '' : 's'} deleted${data.meta.kept ? `, ${data.meta.kept} with orders switched off` : ''}.`)
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
   function suspendSeller(seller) {
     const reason = window.prompt(`Reason for suspending ${seller.shop?.name ?? 'this seller'}:`, '')
     if (reason) sellerAction(seller, 'suspend', { reason })
@@ -1741,22 +1793,9 @@ export default function Admin({ token, onClose }) {
     if (note?.trim()) sellerAction(seller, 'payout-request/reject', { note: note.trim() })
   }
 
-  // Deliberately not routed through sellerAction() — that helper expects the
-  // response's `data` to be a Seller row it can merge into sellers/sellerDetail
-  // state, but this endpoint returns the SupportThread instead. Re-opens the
-  // detail drawer afterward so the "Last message" line reflects what was sent.
-  async function messageSeller(seller) {
-    const body = window.prompt(`Message to ${seller.shop?.name ?? 'this seller'}:`, '')
-    if (!body || !body.trim()) return
-    setBusyId(seller.id)
-    setMessage('')
-    try {
-      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}/message`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body: body.trim() }) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not send the message.')
-      setMessage('Message sent.')
-      openSellerDetail(seller.id)
-    } catch (error) { fail(error) } finally { setBusyId(null) }
+  // Opens (or brings up) the chat window with this seller, bottom right.
+  function messageSeller(seller) {
+    openSellerChat(seller)
   }
 
   function requestSellerChanges(seller) {
@@ -2175,7 +2214,7 @@ export default function Admin({ token, onClose }) {
                       <section>
                         <h5>New chat messages</h5>
                         {pendingThreads.slice(0, BELL_ITEM_CAP).map((t) => (
-                          <button key={t.id} type="button" className="admin-bell-item" onClick={() => { setSpeakerOpen(false); goTab('support'); openThread(t.id) }}>
+                          <button key={t.id} type="button" className="admin-bell-item" onClick={() => { setSpeakerOpen(false); setSupportToasts((cur) => cur.filter((x) => x.id !== t.id)); openSupportChat(t, ISSUE_LABELS) }}>
                             💬 {t.user?.email ?? 'Customer'}{t.order_id ? ` · order #${t.order_id}` : ''}
                           </button>
                         ))}
@@ -2205,7 +2244,7 @@ export default function Admin({ token, onClose }) {
           ))}
           {supportToasts.map((t) => (
             <div key={`${t.id}-${t.text}`} className="admin-toast">
-              <button type="button" className="admin-toast-body" onClick={() => { goTab('support'); openThread(t.id) }}>
+              <button type="button" className="admin-toast-body" onClick={() => { setSupportToasts((cur) => cur.filter((x) => x.id !== t.id)); openSupportChat(t, ISSUE_LABELS) }}>
                 💬 {t.text} <span>Open →</span>
               </button>
               <button type="button" className="admin-bell-x" title="Dismiss" onClick={() => setSupportToasts((cur) => cur.filter((x) => x.id !== t.id))}>×</button>
@@ -2576,6 +2615,13 @@ export default function Admin({ token, onClose }) {
                 {PRODUCT_STATUS_FILTERS.map((s) => <option key={s} value={s}>{PRODUCT_STATUS_LABELS[s]}</option>)}
               </select>
             </label>
+            <label>Demo
+              <select value={productDemo} onChange={(event) => { setProductDemo(event.target.value); setProductsPage(1) }}>
+                <option value="all">All products</option>
+                <option value="only">Demo only</option>
+                <option value="none">Not demo</option>
+              </select>
+            </label>
             <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollFormIntoView('admin-product-form') }}>New product</button>
           </div>
 
@@ -2733,9 +2779,17 @@ export default function Admin({ token, onClose }) {
             </form>
           )}
 
+          {productsMeta && (
+            <div className={`admin-demo-bar${productsMeta.demos_hidden ? ' hidden' : ''}`}>
+              <span><b>Demo products:</b> {productsMeta.demo_count} · {productsMeta.demos_hidden ? 'hidden from the store' : 'shown on the store'}</span>
+              <button className="act" type="button" onClick={() => setDemosHidden(!productsMeta.demos_hidden)}>{productsMeta.demos_hidden ? 'Show demo products' : 'Hide demo products'}</button>
+              <button className="act ghost" type="button" onClick={() => markAllDemo(true)}>Mark all listed as demo</button>
+              <button className="act ghost" type="button" onClick={() => markAllDemo(false)}>Mark all listed as not demo</button>
+            </div>
+          )}
           {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th>Demo</th><th></th></tr></thead>
               <tbody>
                 {products.map((product) => {
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
@@ -2750,6 +2804,12 @@ export default function Admin({ token, onClose }) {
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}</td>
+                    <td>
+                      <select className={`admin-demo-select${product.is_demo ? ' on' : ''}`} value={product.is_demo ? 'demo' : 'real'} aria-label="Demo product" onChange={(event) => setProductDemoFlag(product, event.target.value === 'demo')}>
+                        <option value="real">Not demo</option>
+                        <option value="demo">Demo</option>
+                      </select>
+                    </td>
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
                       {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
@@ -3368,7 +3428,7 @@ export default function Admin({ token, onClose }) {
                     <td><span className={`pill pill-${t.status === 'open' ? 'failed' : 'paid'}`}>{t.status}</span></td>
                     <td>{t.rating != null ? <span className="admin-review-stars" title={t.rating_comment || ''}>{'★'.repeat(t.rating)}<span className="dim">{'★'.repeat(5 - t.rating)}</span></span> : <span className="muted">—</span>}</td>
                     <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>
-                    <td className="admin-actions"><button className="act" type="button" onClick={() => openThread(t.id)}>Open</button></td>
+                    <td className="admin-actions"><button className="act" type="button" onClick={() => openSupportChat(t, ISSUE_LABELS)}>Open</button><button className="act ghost" type="button" onClick={() => openThread(t.id)}>Details</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -3790,6 +3850,7 @@ export default function Admin({ token, onClose }) {
               {thread.status === 'open'
                 ? <button className="act" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('resolved')}>Mark resolved</button>
                 : <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('open')}>Re-open</button>}
+              <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => openSupportChat(thread, ISSUE_LABELS)}>Open chat</button>
             </p>
             {thread.rating != null && (
               <p className="admin-chat-rating">
@@ -3798,13 +3859,18 @@ export default function Admin({ token, onClose }) {
                 {thread.rating_comment && <span className="admin-chat-rating-c">“{thread.rating_comment}”</span>}
               </p>
             )}
-            <div className="chat-log" ref={chatLogRef}>{(thread.messages ?? []).map((m) => (
-              <div key={m.id} className={`chat-msg ${m.internal ? 'internal' : m.from_seller ? 'seller' : m.is_staff && m.user_id ? 'staff' : m.user_id ? 'customer' : 'system'}`}>
-                {(m.internal || m.body) && <span>{m.internal && '🔒 '}{m.body}</span>}
-                <ChatPhotos urls={m.attachments} />
-                <em>{m.internal ? 'Internal note — not visible to customer · ' : ''}{m.from_seller ? `${thread.seller_shop?.name ?? 'Seller'} (seller) · ` : ''}{new Date(m.created_at).toLocaleString()}</em>
-              </div>
-            ))}</div>
+            <div className="admin-form admin-notes" style={{ marginTop: 12 }}>
+              <h4>Internal notes</h4>
+              <p className="muted">Only staff see these — never shown in the chat.</p>
+              {(thread.messages ?? []).filter((m) => m.internal).map((m) => (
+                <div key={m.id} className="admin-note-row">
+                  <span>🔒 {m.body}<small className="muted"> · {new Date(m.created_at).toLocaleString()}</small></span>
+                  <button className="act ghost" type="button" onClick={() => deleteThreadNote(m.id)}>Delete</button>
+                </div>
+              ))}
+              <textarea rows="2" maxLength="2000" placeholder="Add a note for later…" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
+              <div className="admin-form-actions"><button className="act" type="button" disabled={!noteDraft.trim()} onClick={addThreadNote}>Add note</button></div>
+            </div>
             {thread.order_id && !String(thread.issue_type).startsWith('seller_') && (
               thread.seller_shop
                 ? <p className="muted">Seller in this chat: <b>{thread.seller_shop.name}</b></p>
@@ -3814,11 +3880,6 @@ export default function Admin({ token, onClose }) {
                   </p>
                 )
             )}
-            <ChatPhotoPicker photos={threadPhotos} onChange={setThreadPhotos} token={token} onError={setMessage} />
-            <div className="chat-send">
-              <input placeholder="Reply to the customer" value={threadReply} onChange={(event) => setThreadReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') replyThread() }} />
-              <button type="button" disabled={!threadReply.trim() && !threadPhotos.length} onClick={replyThread}>Send</button>
-            </div>
 
             {thread.order && thread.order.payment_status === 'pending' && (thread.user?.gift_cards ?? []).length > 0 && (
               <div className="admin-form" style={{ marginTop: 16 }}>
@@ -3892,14 +3953,14 @@ export default function Admin({ token, onClose }) {
                         <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'approve')}>Approve</button>
                         <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => rejectSeller(d)}>Reject</button>
                       </>}
-                      {d.status === 'approved' && <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => suspendSeller(d)}>Suspend</button>}
+                      {d.status === 'approved' && <button className="act danger" type="button" disabled={busyId === d.id} title="Hides the shop and all its products; you can reinstate later" onClick={() => suspendSeller(d)}>Deactivate</button>}
+                      {d.status !== 'removed' && <button className="act danger" type="button" disabled={busyId === d.id} title="Deletes their products and closes the shop for good" onClick={() => removeSeller(d)}>Remove seller</button>}
                       {d.status === 'suspended' && <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'reinstate')}>Reinstate</button>}
                       <button className="act ghost" type="button" onClick={() => setSellerDetail(null)}>Close</button>
                     </div>
                   </header>
                   {d.rejection_reason && <p className="admin-cash-holding overdue">{d.status === 'needs_changes' ? 'Changes requested: ' : 'Reason: '}{d.rejection_reason}</p>}
                   {d.status === 'needs_changes' && <p className="muted">Waiting on the seller to edit and resubmit.</p>}
-                  {d.last_message && <p className="muted">Last message ({d.last_message.is_staff ? 'you' : 'seller'}, {new Date(d.last_message.created_at).toLocaleString()}): &ldquo;{d.last_message.body}&rdquo;</p>}
 
                   {d.shop && (
                     <div className="crm-stats">
@@ -4004,7 +4065,7 @@ export default function Admin({ token, onClose }) {
                           ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.email}</>)
                           : 'No payout method on file yet.'}
                           {d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
-                        {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`).join(' · ')}</p>}
+                        {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => (p.order_missing ? `${money(p.amount_cents, d.currency)} sale credit with no order on record (held — check the ledger)` : `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`)).join(' · ')}</p>}
                         {d.status === 'approved' && (
                           <div className="admin-form-actions">
                             {(d.available_cents ?? 0) >= (d.min_payout_cents ?? 0) && (d.available_cents ?? 0) > 0 && <button className="act" type="button" disabled={busyId === d.id} onClick={() => recordSellerPayout(d)}>Record payout</button>}
@@ -4012,19 +4073,7 @@ export default function Admin({ token, onClose }) {
                             {(d.available_cents ?? 0) < (d.min_payout_cents ?? 0) && <span className="muted">Available balance is below the {money(d.min_payout_cents ?? 0, d.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</span>}
                           </div>
                         )}
-                        {(d.ledger_entries ?? []).length > 0 && (
-                          <table className="admin-table">
-                            <thead><tr><th>Date</th><th>Entry</th><th>Order</th><th>Amount</th></tr></thead>
-                            <tbody>{d.ledger_entries.map((entry) => (
-                              <tr key={entry.id}>
-                                <td>{new Date(entry.created_at).toLocaleDateString()}</td>
-                                <td>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type}{entry.note ? <span className="admin-note">{entry.note}</span> : null}</td>
-                                <td>{entry.order_id ? `#${entry.order_id}` : '—'}</td>
-                                <td><b>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents), d.currency)}</b></td>
-                              </tr>
-                            ))}</tbody>
-                          </table>
-                        )}
+                        <SellerLedgerTable sellerId={d.id} authHeaders={authHeaders} labels={LEDGER_TYPE_LABELS} />
                       </section>
                     )}
                   </div>
@@ -4034,6 +4083,8 @@ export default function Admin({ token, onClose }) {
           </div>
         </div>
       )}
+
+      <AdminChatDock authHeaders={authHeaders} issueLabels={ISSUE_LABELS} onSupportDetails={openThread} />
 
       {listingReview && (
         <ListingReview

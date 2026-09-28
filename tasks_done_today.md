@@ -14,5 +14,4 @@
 - **Store decoration:** sellers design their store page for desktop and mobile with drag-and-drop sections — banner, category, product, video, plus announcement bar, image grid, auto product lists, sale countdown, brand story, spacer; spot checks by admin; one live version per platform (shown once a store has 30 live products — admin setting).
 - **Shop pages** always show the category carousel of that seller's categories.
 - **Product reviews (backend):** buyers can review delivered items with photos; reviews wait for admin approval; public reviewer pages and "Helpful" votes. The storefront and admin screens for reviews are still to do.
-- **Fixes:** Indian sellers saw "$" instead of "₹" in Seller Center; Seller Center menu clicks dropped the #/seller address; Add product form could lose typed input; bulk upload bypassed the shipping check.
-- **Local setup:** XAMPP's Apache and PHP config pointed at the deleted C:\xampp — now D:\xampp.
+

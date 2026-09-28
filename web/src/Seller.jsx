@@ -11,6 +11,7 @@ import { StoreDecoration } from './SellerDecoration'
 import { ProductWizard } from './SellerProductWizard'
 import { AccountHealth, BulkUpload, PricingHealth, ProductCompliance, SalesBoostPopup } from './SellerCatalogTools'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
+import { SellerChatDock } from './SurfaceChats'
 import './Seller.css'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -976,8 +977,8 @@ export default function Seller({ token, onSignOut }) {
                     {(me.pending_orders ?? []).length > 0 && (
                       <ul className="seller-earnings-list seller-held-list">
                         {me.pending_orders.map((p) => (
-                          <li key={p.order_id}>
-                            <span>Order #{p.order_id} — {p.return_days != null ? `${p.return_days}-day return window · ` : ''}{p.releases_at ? `payable from ${new Date(p.releases_at).toLocaleDateString()}` : 'payable after delivery + return window'}</span>
+                          <li key={p.order_id ?? 'missing'}>
+                            <span>{p.order_missing ? 'Sale credit without an order on record — held until NexTech reviews it' : <>Order #{p.order_id} — {p.return_days != null ? `${p.return_days}-day return window · ` : ''}{p.releases_at ? `payable from ${new Date(p.releases_at).toLocaleDateString()}` : 'payable after delivery + return window'}</>}</span>
                             <span className={p.amount_cents >= 0 ? 'positive' : 'negative'}>{p.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(p.amount_cents))}</span>
                           </li>
                         ))}
@@ -1289,6 +1290,12 @@ export default function Seller({ token, onSignOut }) {
             ) : null}
           </main>
         </div>
+        <SellerChatDock authHeaders={authHeaders} onCustomerDetails={(row) => { setSection('messages'); setMessagesTab('customers'); openCustomerChat(row) }}
+          onRead={(chat, page) => {
+            // Read in the chat window — clear it from the Messages / dashboard counts.
+            if (chat.kind === 'nextech') { const t = supportThreads.find((x) => x.id === page.thread_id); if (t) markSeen(`s-${t.id}`, t.last_staff_message_at) }
+            else { const t = customerChats.find((x) => x.id === page.thread_id); if (t) markSeen(`c-${t.id}`, t.last_message_at) }
+          }} />
       </div>
     )
   }

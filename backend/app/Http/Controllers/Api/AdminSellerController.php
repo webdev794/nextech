@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Product;
 use App\Models\Seller;
 use App\Models\Shop;
 use App\Models\SupportMessage;
@@ -12,6 +13,8 @@ use App\Support\SellerLedger;
 use App\Support\SellerOnboarding;
 use App\Support\SellerRequirements;
 use App\Support\Market;
+use App\Support\ChatPage;
+use App\Support\StaffChat;
 use App\Support\Money;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -222,6 +225,40 @@ class AdminSellerController extends Controller
         return response()->json(['data' => $thread->fresh()]);
     }
 
+    /** The admin<->seller conversation for the chat window (latest thread). */
+    public function chat(Request $request, Seller $seller): JsonResponse
+    {
+        return response()->json(['data' => $this->chatPayload($seller, $request->integer('before') ?: null)]);
+    }
+
+    /** Send from the chat window; returns the updated conversation. */
+    public function chatMessage(Request $request, Seller $seller): JsonResponse
+    {
+        $data = $request->validate(ChatPage::MESSAGE_RULES);
+        StaffChat::post($seller->user_id, $request->user(), trim((string) ($data['body'] ?? '')), 'seller', fromOwner: false, attachments: $data['attachments'] ?? []);
+
+        return response()->json(['data' => $this->chatPayload($seller)]);
+    }
+
+    /** The seller's ledger, a page at a time (newest first). */
+    public function ledger(Request $request, Seller $seller): JsonResponse
+    {
+        abort_unless($seller->shop, 404);
+        $page = $seller->shop->ledgerEntries()->latest('id')->paginate(15, ['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at']);
+
+        return response()->json([
+            'data' => $page->items(),
+            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total()],
+            'currency' => Market::currency($seller->shop->market),
+        ]);
+    }
+
+    /** @return array<string, mixed> */
+    private function chatPayload(Seller $seller, ?int $before = null): array
+    {
+        return ['seller' => ['id' => $seller->id, 'name' => $seller->shop?->name ?? $seller->company_name]] + StaffChat::page($seller->user_id, 'seller', 'admin', $before);
+    }
+
     /**
      * Sends the application back to the seller for edits — sets status to
      * needs_changes (which unlocks SellerController::apply() for a
@@ -312,6 +349,43 @@ class AdminSellerController extends Controller
         $thread->post($sender, $body, isStaff: true);
 
         return $thread;
+    }
+
+    /**
+     * Remove a seller for good: their shop closes, every product of theirs
+     * that was never ordered is deleted (with its images and variants), and
+     * ones with order history — which must stay on record — are switched off
+     * and hidden. A removed seller can't re-apply or be reinstated.
+     */
+    public function remove(Request $request, Seller $seller): JsonResponse
+    {
+        abort_if($seller->status === 'removed', 422, 'This seller has already been removed.');
+        $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        $counts = DB::transaction(function () use ($seller, $data, $request): array {
+            $seller->forceFill([
+                'status' => 'removed',
+                'rejection_reason' => $data['reason'],
+                'reviewed_by' => $request->user()->id,
+                'reviewed_at' => now(),
+            ])->save();
+
+            $shop = $seller->shop;
+            if (! $shop) {
+                return ['deleted' => 0, 'kept' => 0];
+            }
+            $shop->forceFill(['is_active' => false])->save();
+
+            $ids = $shop->products()->pluck('id');
+            DB::table('cart_items')->whereIn('product_id', $ids)->delete();
+            $ordered = DB::table('order_items')->whereIn('product_id', $ids)->distinct()->pluck('product_id');
+            $deleted = Product::whereIn('id', $ids->diff($ordered))->delete();
+            Product::whereIn('id', $ordered)->update(['is_active' => false]);
+
+            return ['deleted' => $deleted, 'kept' => $ordered->count()];
+        });
+
+        return response()->json(['data' => $this->row($seller->fresh()->load('shop')), 'meta' => $counts]);
     }
 
     public function reinstate(Seller $seller): JsonResponse

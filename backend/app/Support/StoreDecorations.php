@@ -213,13 +213,13 @@ class StoreDecorations
     /** @return Collection<int, Product> */
     public static function liveProducts(Shop $shop): Collection
     {
-        return $shop->products()->where('is_active', true)->where('status', 'approved')->get(['id', 'name', 'slug', 'image_url', 'price_cents', 'compare_at_price_cents', 'category_id', 'rating_avg', 'rating_count', 'units_sold', 'created_at']);
+        return $shop->products()->where('is_active', true)->where('status', 'approved')->shownToShoppers()->get(['id', 'name', 'slug', 'image_url', 'price_cents', 'compare_at_price_cents', 'category_id', 'rating_avg', 'rating_count', 'units_sold', 'created_at']);
     }
 
     /** @return list<int> */
     public static function shopCategoryIds(Shop $shop): array
     {
-        return $shop->products()->where('is_active', true)->where('status', 'approved')->whereNotNull('category_id')->distinct()->pluck('category_id')->map(fn ($id) => (int) $id)->all();
+        return $shop->products()->where('is_active', true)->where('status', 'approved')->shownToShoppers()->whereNotNull('category_id')->distinct()->pluck('category_id')->map(fn ($id) => (int) $id)->all();
     }
 
     /**

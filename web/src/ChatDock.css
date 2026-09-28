@@ -1,0 +1,55 @@
+.chatdock{position:fixed;right:16px;bottom:0;z-index:9999;display:flex;flex-direction:row-reverse;align-items:flex-end;gap:10px;max-width:calc(100vw - 32px);font-family:inherit;pointer-events:none}
+.chatdock>*{pointer-events:auto}
+.chatdock-win{display:flex;flex-direction:column;width:360px;height:300px;border:1px solid #d7dcd6;border-bottom:0;border-radius:12px 12px 0 0;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.chatdock-win.min{height:auto}
+.chatdock-win.max{width:min(720px,calc(100vw - 32px));height:min(80vh,720px)}
+.chatdock-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-radius:12px 12px 0 0;background:#18211c;color:#fff;cursor:pointer;user-select:none}
+.chatdock-win.floating{border-bottom:1px solid #d7dcd6;border-radius:12px}
+.chatdock-win.floating .chatdock-head{cursor:move;touch-action:none}
+.chatdock-head b{font-size:14px}
+.chatdock-badge{margin-left:8px;padding:1px 7px;border-radius:999px;background:#e5432c;font-size:12px}
+.chatdock-tools{display:flex;gap:2px}
+.chatdock-tools button{width:24px;height:24px;border:0;border-radius:6px;background:rgba(255,255,255,.12);color:#fff;cursor:pointer;font-size:14px;line-height:1}
+.chatdock-log{flex:1;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:10px;background:#f6f7f5}
+.chatdock-older{align-self:center;padding:4px 12px;border:1px solid #d7dcd6;border-radius:999px;background:#fff;color:#18211c;font:inherit;font-size:12px;cursor:pointer}
+.chatdock-muted{margin:0;color:#6b7770;font-size:12px}
+.chatdock-msg{max-width:80%;display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:10px;background:#fff;border:1px solid #e5e8e3;font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.chatdock-msg.mine{align-self:flex-end;background:#e7f3ea;border-color:#cfe6d5}
+.chatdock-msg.system{align-self:center;background:transparent;border:0;color:#6b7770;font-size:12px;text-align:center}
+.chatdock-msg em{font-style:normal;font-size:12px;color:#6b7770}
+.chatdock-send{display:flex;gap:8px;padding:8px;border-top:1px solid #eef0ec}
+.chatdock-send textarea{flex:1;resize:none;padding:8px;border:1px solid #d7dcd6;border-radius:8px;font:inherit;font-size:14px}
+.chatdock-sendbtn{padding:0 14px;border:0;border-radius:8px;background:#18211c;color:#fff;font:inherit;font-size:14px;cursor:pointer}
+.chatdock-sendbtn:disabled{opacity:.45;cursor:default}
+.chatdock-error{margin:0;padding:4px 12px;color:#c0392b;font-size:12px}
+@media (max-width:640px){.chatdock-win{width:calc(100vw - 32px)}}
+.chatdock-popup{position:fixed;inset:0;display:flex}
+.chatdock-popup .chatdock-win{width:100%;height:100%;border-radius:0;border:0;box-shadow:none}
+.chatdock-popup .chatdock-head{border-radius:0;cursor:default}
+.chatdock-win.min{width:240px}
+.chatdock-win.alert .chatdock-head{animation:chatdock-flash 1s ease-in-out infinite}
+@keyframes chatdock-flash{0%,100%{background:#18211c}50%{background:#e5432c}}
+@media (prefers-reduced-motion:reduce){.chatdock-win.alert .chatdock-head{animation:none;background:#e5432c}}
+.chatdock-title{display:grid;grid-template-columns:auto auto;justify-content:start;align-items:center;column-gap:6px;min-width:0;flex:1}
+.chatdock-title b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatdock-title small{grid-column:1/-1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.7}
+.chatdock-badge{margin-left:0}
+.chatdock-tools{flex-shrink:0}
+.chatdock-tools button{display:inline-flex;align-items:center;justify-content:center}
+.chatdock-tools button.off{color:rgba(255,255,255,.45);background:transparent}
+.chatdock-msg.rider:not(.mine){border-color:#f0d9b5;background:#fff8ec}
+.chatdock-win.chatdock-launcher{position:relative;width:auto;min-width:160px}
+.chatdock-list{position:absolute;right:0;bottom:100%;width:300px;max-height:min(420px,70vh);overflow:auto;margin-bottom:8px;padding:6px;border:1px solid #d7dcd6;border-radius:12px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.18)}
+.chatdock-list button{display:flex;flex-direction:column;gap:2px;width:100%;padding:8px 10px;border:0;border-radius:8px;background:transparent;text-align:left;font:inherit;font-size:14px;color:#18211c;cursor:pointer}
+.chatdock-list button:hover{background:#f1f4ef}
+.chatdock-list small{font-size:12px;color:#6b7770}
+.chatdock-dot{display:inline-block;width:8px;height:8px;margin-left:6px;border-radius:50%;background:#e5432c;vertical-align:middle}
+.chatdock-list .chatdock-muted{padding:8px}
+@media (max-width:640px){.chatdock{right:8px;max-width:calc(100vw - 16px)}.chatdock-list{width:calc(100vw - 32px)}}
+.chatdock-photos{padding:6px 8px 0;border-top:1px solid #eef0ec}
+.chatdock-photos .chat-photo-picker{margin:0;gap:6px}
+.chatdock-photos + .chatdock-send{border-top:0}
+.chatdock-msg .chat-photos img{max-width:96px;max-height:96px}
+.chatdock.left{right:auto;left:16px;flex-direction:row}
+.chatdock.left .chatdock-list{right:auto;left:0}
+@media (max-width:640px){.chatdock.left{left:8px}}

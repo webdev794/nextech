@@ -37,6 +37,7 @@ class Product extends Model
         'is_active',
         'deal_type',
         'is_exclusive_offer',
+        'is_demo',
         'rating_avg',
         'rating_count',
         'units_sold',
@@ -58,6 +59,7 @@ class Product extends Model
             'inventory_quantity' => 'integer',
             'is_active' => 'boolean',
             'is_exclusive_offer' => 'boolean',
+            'is_demo' => 'boolean',
             'rating_avg' => 'float',
             'rating_count' => 'integer',
             'units_sold' => 'integer',
@@ -85,6 +87,39 @@ class Product extends Model
                 $product->market = Market::home();
             }
         });
+    }
+
+    /** Admin has hidden all demo products from the store (Products -> "Demo products"). */
+    public static function demosHidden(): bool
+    {
+        return (bool) Setting::get('hide_demo_products', false);
+    }
+
+    /**
+     * Not shown or sold to shoppers: a demo product while demos are hidden, or
+     * a seller's product while their shop isn't live (seller suspended or
+     * removed, shop switched off).
+     */
+    public function hiddenFromShoppers(): bool
+    {
+        if ($this->is_demo && self::demosHidden()) {
+            return true;
+        }
+        if ($this->shop_id === null) {
+            return false;
+        }
+        $shop = $this->shop;
+
+        return ! ($shop?->is_active && $shop->seller?->status === 'approved');
+    }
+
+    /** What shoppers may see: NexTech's own products and live shops' ones, no demo products while they're hidden. */
+    public function scopeShownToShoppers(Builder $query): Builder
+    {
+        return $query
+            ->when(self::demosHidden(), fn ($q) => $q->where($q->qualifyColumn('is_demo'), false))
+            ->where(fn ($q) => $q->whereNull($q->qualifyColumn('shop_id'))
+                ->orWhereHas('shop', fn ($shop) => $shop->where('is_active', true)->whereHas('seller', fn ($seller) => $seller->where('status', 'approved'))));
     }
 
     /** Only products sold in this market. */

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\ChatPage;
 use App\Models\Shop;
 use App\Models\SupportThread;
 use App\Support\Privacy;
@@ -39,6 +40,14 @@ class SellerCustomerChatController extends Controller
             ]);
 
         return response()->json(['data' => $threads]);
+    }
+
+    /** The chat as a page of messages, for the docked chat window. */
+    public function chat(Request $request, SupportThread $thread): JsonResponse
+    {
+        abort_unless($thread->seller_shop_id === $this->shop($request)->id, 404);
+
+        return response()->json(['data' => ChatPage::of($thread, 'seller', $request->integer('before') ?: null)]);
     }
 
     public function show(Request $request, SupportThread $thread): JsonResponse
