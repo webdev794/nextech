@@ -13,7 +13,7 @@ class CourierCredentials
      * chosen yet, so there's no sensible env default to fall back to, and the
      * admin-UI form is the intended (and only) way these get set.
      *
-     * @return array{provider: string, base_url: string, api_key: string, api_secret: string, account_code: string}
+     * @return array{provider: string, base_url: string, api_key: string, api_secret: string, account_code: string, tracking_api_key: string, tracking_webhook_secret: string}
      */
     public static function current(): array
     {
@@ -28,6 +28,9 @@ class CourierCredentials
             'api_key' => $pick('courier_api_key'),
             'api_secret' => $pick('courier_api_secret'),
             'account_code' => $pick('courier_account_code'),
+            // Live tracking for sellers' own-courier packages (AfterShip — LiveTracking).
+            'tracking_api_key' => $pick('tracking_api_key'),
+            'tracking_webhook_secret' => $pick('tracking_webhook_secret'),
         ];
     }
 }

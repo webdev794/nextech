@@ -219,7 +219,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             {detail.packages.length > 0 && (
               <>
                 <h3 className="ss-sub">Packages</h3>
-                {detail.packages.map((p) => <p key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status.replace('_', ' ')} · shipped {dateTime(p.shipped_at)}</p>)}
+                {detail.packages.map((p) => <div key={p.id}><p>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.tracking_label ?? p.status.replace('_', ' ')} · shipped {dateTime(p.shipped_at)}</p>{p.tracking_detail && <p className="sc-muted">{p.tracking_detail}{p.tracking_eta ? ` · expected by ${new Date(p.tracking_eta).toLocaleDateString()}` : ''}</p>}</div>)}
               </>
             )}
             <div className="ss-actions">

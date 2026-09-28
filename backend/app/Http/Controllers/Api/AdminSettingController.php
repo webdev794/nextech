@@ -75,6 +75,9 @@ class AdminSettingController extends Controller
         'courier_account_code' => ['sometimes', 'nullable', 'string', 'max:255'],
         'courier_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
         'courier_api_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
+        // AfterShip live tracking (LiveTracking).
+        'tracking_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'tracking_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
     ];
 
     /** Footer content (a nested blob, sanitised by FooterConfig). */
@@ -310,7 +313,7 @@ class AdminSettingController extends Controller
             $this->assertUnlocked($request);
         }
 
-        foreach (['courier_api_key', 'courier_api_secret'] as $secret) {
+        foreach (['courier_api_key', 'courier_api_secret', 'tracking_api_key', 'tracking_webhook_secret'] as $secret) {
             if (array_key_exists($secret, $courier) && trim((string) $courier[$secret]) === '') {
                 unset($courier[$secret]);
             }
@@ -412,6 +415,11 @@ class AdminSettingController extends Controller
                 'api_key_hint' => self::hint($courier['api_key']),
                 'api_secret_set' => $courier['api_secret'] !== '',
                 'api_secret_hint' => self::hint($courier['api_secret']),
+                'tracking_api_key_set' => $courier['tracking_api_key'] !== '',
+                'tracking_api_key_hint' => self::hint($courier['tracking_api_key']),
+                'tracking_webhook_secret_set' => $courier['tracking_webhook_secret'] !== '',
+                'tracking_webhook_secret_hint' => self::hint($courier['tracking_webhook_secret']),
+                'tracking_webhook_url' => url('/api/webhooks/aftership'),
             ],
         ];
     }

@@ -202,7 +202,7 @@ class SellerOrderController extends Controller
                 : array_intersect_key($address, array_flip(['city', 'state']))),
             'packages' => $order->packages->map(fn ($p) => [
                 'id' => $p->id, 'carrier' => $p->carrier, 'tracking_number' => $p->tracking_number,
-                'tracking_url' => SellerShipping::trackingUrl($p->carrier, $p->tracking_number), 'status' => $p->status, 'shipped_at' => $p->shipped_at,
+                'tracking_url' => SellerShipping::trackingUrl($p->carrier, $p->tracking_number), 'tracking_label' => $p->tracking_label, 'tracking_detail' => $p->tracking_detail, 'tracking_eta' => $p->tracking_eta, 'status' => $p->status, 'shipped_at' => $p->shipped_at,
             ])->values(),
             'buyer_contacted_at' => SellerOrders::buyerContactedAt($order),
             'address_change' => $change && $sellerShips ? ['id' => $change->id, 'address' => ['name' => Privacy::maskName($change->address['name'] ?? null)] + (request()->user()?->seller?->shop?->fulfillment_mode === 'self' ? $change->address : array_intersect_key($change->address, array_flip(['city', 'state']))), 'created_at' => $change->created_at] : null,
@@ -238,6 +238,39 @@ class SellerOrderController extends Controller
      * payout. Plus window totals and top products by units sold. Grouped in
      * PHP, like AdminController::ordersTimeseries().
      */
+    /**
+     * For Seller Center's new-order alert (polled): the newest order with this
+     * shop's items, how many of the shop's own shipments are still to ship, and
+     * the latest few orders.
+     */
+    public function alerts(Request $request): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $mine = Order::query()
+            ->whereHas('items', fn ($q) => $q->where('shop_id', $shop->id))
+            ->whereNotIn('status', ['pending_payment', 'cancelled']);
+        $toShip = (clone $mine)
+            ->whereNotIn('status', ['completed', 'delivered'])
+            ->whereHas('items', fn ($q) => $q->where('shop_id', $shop->id)->where('fulfilled_by', 'seller'))
+            ->whereDoesntHave('packages', fn ($q) => $q->where('shop_id', $shop->id))
+            ->count();
+        $recent = (clone $mine)->with(['items' => fn ($q) => $q->where('shop_id', $shop->id), 'shopShipping' => fn ($q) => $q->where('shop_id', $shop->id)])
+            ->latest('id')->limit(5)->get()
+            ->map(fn (Order $o) => [
+                'id' => $o->id,
+                'created_at' => $o->created_at,
+                'items' => $o->items->sum('quantity'),
+                'ships_itself' => $o->items->contains(fn ($i) => $i->fulfilled_by === 'seller'),
+                'ship_by' => $o->shopShipping->first()?->ship_by,
+            ]);
+
+        return response()->json(['data' => [
+            'latest_order_id' => $recent->first()['id'] ?? null,
+            'to_ship' => $toShip,
+            'recent' => $recent,
+        ]]);
+    }
+
     public function stats(Request $request): JsonResponse
     {
         $shop = $this->shop($request);

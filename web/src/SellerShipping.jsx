@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 import { currencySymbol, storeMoney } from './money'
+import { TrackingTimeline } from './TrackingTimeline'
 
 const money = (cents) => storeMoney(cents ?? 0)
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—')
@@ -453,7 +454,7 @@ export function ShipOrders({ headers, mode }) {
       <td>{p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">NexTech label · {money(p.label_cost_cents)}</small>}</td>
       <td>{p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}{p.edit_count > 0 && <small className="sc-muted">edited {p.edit_count}/3</small>}</td>
       <td>{shortDate(p.shipped_at)}</td>
-      <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replace('_', ' ')}</span></td>
+      <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replace('_', ' ')}</span><TrackingTimeline pkg={p} /></td>
       <td className="sc-actions">
         {p.can_edit && <button type="button" onClick={() => setEditForm({ package: p, carrier: p.carrier, tracking: p.tracking_number, warn: false })}>Edit tracking</button>}
         {p.label_url && <a href={p.label_url} target="_blank" rel="noreferrer">Print label</a>}

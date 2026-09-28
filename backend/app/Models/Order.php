@@ -6,6 +6,7 @@ use App\Notifications\OrderConfirmed;
 use App\Notifications\OrderDelivered;
 use App\Notifications\OrderShipped;
 use App\Support\CustomerMail;
+use App\Support\SellerOrderAlerts;
 use App\Support\Geo;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
@@ -81,11 +82,12 @@ class Order extends Model
 
     protected static function booted(): void
     {
-        // Order emails. Sent after the surrounding transaction commits, so a
+        // Order emails (the customer, and each seller with items on it). Sent after the surrounding transaction commits, so a
         // rolled-back checkout never emails, and the order's items exist by then.
         static::created(function (Order $order): void {
             if ($order->status === 'confirmed') {
                 DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+                DB::afterCommit(fn () => SellerOrderAlerts::newOrder($order->fresh()));
             }
         });
         static::updated(function (Order $order): void {
@@ -94,6 +96,7 @@ class Order extends Model
             }
             if ($order->status === 'confirmed' && $order->getOriginal('status') === 'pending_payment') {
                 DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+                DB::afterCommit(fn () => SellerOrderAlerts::newOrder($order->fresh()));
             }
             // Seller-shipped orders email per package instead (SellerFulfillment::createPackage).
             if ($order->status === 'out_for_delivery' && $order->delivery_method !== 'seller') {

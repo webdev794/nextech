@@ -559,3 +559,7 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-demo-bar span{margin-right:auto}
 .admin-demo-select{padding:4px 6px;border:1px solid #d7dcd6;border-radius:6px;font:inherit;font-size:12px;background:#fff}
 .admin-demo-select.on{background:#fff6e5;border-color:#f3dcae}
+.admin-order-seller{display:block}
+.admin-order-seller + .admin-order-seller{margin-top:4px}
+.admin-seller-ship .admin-pkg{margin:4px 0}
+.admin-seller-ship .admin-pkg .link{margin-right:10px}

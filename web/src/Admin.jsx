@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
 import { AdminChatDock, SellerLedgerTable } from './AdminSellerChat'
+import { TrackingTimeline } from './TrackingTimeline'
 import { openSellerChat, openSupportChat } from './sellerChatEvents'
 import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
@@ -167,6 +168,28 @@ const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
   customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
+// Who sells the items on an order and who ships them: each seller shop
+// ("ships itself" or NexTech delivering), plus NexTech's own stock.
+function orderSellers(order) {
+  const shops = new Map()
+  let nextechStock = false
+  for (const item of order.items ?? []) {
+    if (!item.shop_id) { nextechStock = true; continue }
+    const cur = shops.get(item.shop_id) ?? { name: item.shop?.name ?? `Shop #${item.shop_id}`, ships: false }
+    if (item.fulfilled_by === 'seller') cur.ships = true
+    shops.set(item.shop_id, cur)
+  }
+  if (!shops.size) return <span className="muted">NexTech</span>
+  return (
+    <>
+      {[...shops.values()].map((shop) => (
+        <span key={shop.name} className="admin-order-seller"><b>{shop.name}</b><span className="admin-note">{shop.ships ? 'seller ships' : 'NexTech delivers'}</span></span>
+      ))}
+      {nextechStock && <span className="admin-note">+ NexTech items</span>}
+    </>
+  )
+}
+
 const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended', 'removed']
 const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Deactivated', removed: 'Removed' }
 const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
@@ -714,6 +737,8 @@ export default function Admin({ token, onClose }) {
           courier_account_code: data.data.courier?.account_code ?? '',
           courier_api_key: '',
           courier_api_secret: '',
+          tracking_api_key: '',
+          tracking_webhook_secret: '',
         })
       })
       .catch(() => setMessage('Could not load settings.'))
@@ -1165,6 +1190,8 @@ export default function Admin({ token, onClose }) {
     }
     if (courierForm.courier_api_key.trim()) patch.courier_api_key = courierForm.courier_api_key.trim()
     if (courierForm.courier_api_secret.trim()) patch.courier_api_secret = courierForm.courier_api_secret.trim()
+    if (courierForm.tracking_api_key.trim()) patch.tracking_api_key = courierForm.tracking_api_key.trim()
+    if (courierForm.tracking_webhook_secret.trim()) patch.tracking_webhook_secret = courierForm.tracking_webhook_secret.trim()
     const saved = await saveSetting(patch, { 'X-Secure-Access': secureToken })
     if (saved) {
       setCourierForm({
@@ -1173,6 +1200,8 @@ export default function Admin({ token, onClose }) {
         courier_account_code: saved.courier?.account_code ?? '',
         courier_api_key: '',
         courier_api_secret: '',
+          tracking_api_key: '',
+          tracking_webhook_secret: '',
       })
       setMessage('Courier settings saved — they take effect immediately.')
     } else {
@@ -2508,12 +2537,13 @@ Reason:`, '')
           {listBusy.orders && orders.length === 0 ? <Loading>Loading orders…</Loading> : orders.length === 0 ? <p className="admin-empty">No orders for this filter.</p> : (
             <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>#</th><th>Customer</th><th>Placed</th><th>Total</th><th>Payment</th><th>Delivery</th><th>Courier</th><th>Actions</th></tr></thead>
+              <thead><tr><th>#</th><th>Customer</th><th>Seller</th><th>Placed</th><th>Total</th><th>Payment</th><th>Delivery</th><th>Courier</th><th>Actions</th></tr></thead>
               <tbody>
                 {orders.map((order) => { const feedback = orderFeedbackTone(order); return (
                   <tr key={order.id}>
                     <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button>{countryBadge(order.market)}</td>
                     <td>{order.user?.display_name ?? '—'}</td>
+                    <td>{orderSellers(order)}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
                     <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
                     <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
@@ -2522,7 +2552,7 @@ Reason:`, '')
                       {order.delivery_method === 'seller' ? (
                         <>
                           <span className="pill pill-seller">Seller ships</span>
-                          {(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note">{pk.carrier} · {pk.tracking_number} · {pk.status.replace('_', ' ')}</span>)}
+                          {(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note" title={pk.tracking_detail ?? undefined}>{pk.carrier} · {pk.tracking_number} · {pk.tracking_label ?? pk.status.replace('_', ' ')}{pk.tracking_events?.[0]?.location ? ` · ${pk.tracking_events[0].location}` : ''}</span>)}
                           {(order.packages ?? []).length === 0 && order.status !== 'cancelled' && <span className="admin-note">awaiting seller shipment</span>}
                         </>
                       ) : order.delivery_method === 'online_courier' ? (
@@ -3679,6 +3709,22 @@ Reason:`, '')
                       placeholder={settings.courier?.api_secret_set ? `current: ${settings.courier.api_secret_hint} — leave blank to keep` : 'API secret'}
                       onChange={(event) => setCourierForm({ ...courierForm, courier_api_secret: event.target.value })} />
                   </label>
+                  <h3 style={{ marginTop: 18 }}>Live tracking — AfterShip</h3>
+                  <p className="muted">
+                    Tracks every package sellers ship with their own courier (Delhivery, Blue Dart, UPS, FedEx, USPS and hundreds more) from its tracking number,
+                    and shows the courier&rsquo;s latest status to the buyer, the seller and you. {settings.courier?.tracking_api_key_set ? <b>On.</b> : <b>Off until you add an API key.</b>}
+                  </p>
+                  <label>AfterShip API key
+                    <input type="password" autoComplete="off" value={courierForm.tracking_api_key}
+                      placeholder={settings.courier?.tracking_api_key_set ? `current: ${settings.courier.tracking_api_key_hint} — leave blank to keep` : 'From AfterShip → Settings → API keys'}
+                      onChange={(event) => setCourierForm({ ...courierForm, tracking_api_key: event.target.value })} />
+                  </label>
+                  <label>Webhook secret (optional)
+                    <input type="password" autoComplete="off" value={courierForm.tracking_webhook_secret}
+                      placeholder={settings.courier?.tracking_webhook_secret_set ? `current: ${settings.courier.tracking_webhook_secret_hint} — leave blank to keep` : 'From AfterShip → Settings → Webhooks'}
+                      onChange={(event) => setCourierForm({ ...courierForm, tracking_webhook_secret: event.target.value })} />
+                  </label>
+                  {settings.courier?.tracking_webhook_url && <p className="muted">For instant updates, add this webhook URL in AfterShip (Settings → Webhooks): <code>{settings.courier.tracking_webhook_url}</code>. Without it, tracking still refreshes whenever an order is viewed.</p>}
                   <p className="muted">Secrets are stored in the database and shown afterwards only as a hint.</p>
                   <div className="admin-form-actions"><button className="act" type="submit">Save courier settings</button></div>
                 </form>
@@ -4198,15 +4244,16 @@ Reason:`, '')
                         <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? 'NexTech label' : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
                         {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
                         {pks.map((pk) => (
-                          <p key={pk.id} className="muted">
+                          <div key={pk.id} className="muted admin-pkg">
                             📦 {pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
                             {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
                             {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
+                            <TrackingTimeline pkg={pk} />
                             {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}
                             {' '}<button type="button" className="link" disabled={busyId === o.id} onClick={() => editPackageTracking(o, pk)}>Edit tracking</button>
                             {pk.status !== 'delivered' && <button type="button" className="link" disabled={busyId === o.id} onClick={() => patchPackage(o, pk, { status: 'delivered' })}> Mark delivered</button>}
                             {!['lost', 'delivered'].includes(pk.status) && <button type="button" className="link" disabled={busyId === o.id} onClick={() => { if (window.confirm('Mark this package as lost?')) patchPackage(o, pk, { status: 'lost' }) }}> Lost</button>}
-                          </p>
+                          </div>
                         ))}
                       </div>
                     )

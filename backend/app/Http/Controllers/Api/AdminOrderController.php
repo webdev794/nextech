@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\LiveTracking;
 use App\Support\SellerShipping;
 use App\Support\SellerFulfillment;
 use App\Models\OrderPackage;
@@ -40,7 +41,7 @@ class AdminOrderController extends Controller
         $orders = Order::query()
             ->when(Market::adminFilter($request), fn ($q, $m) => $q->where('market', $m))
             ->with([
-                'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+                'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
             'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
@@ -51,6 +52,7 @@ class AdminOrderController extends Controller
             ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
+        LiveTracking::refreshOrders($orders->getCollection());
 
         $this->attachCustomerNames($orders->items());
 
@@ -349,7 +351,7 @@ class AdminOrderController extends Controller
     private function detail(Order $order): Order
     {
         $fresh = $order->fresh()->load([
-            'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+            'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
             'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',

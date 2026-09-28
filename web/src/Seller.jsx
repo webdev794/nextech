@@ -211,6 +211,11 @@ export default function Seller({ token, onSignOut }) {
   }, [])
   const [pageView, setPageView] = useState(null) // { slug, title, content } | 'loading' | null
   const [soundMuted, setSoundMuted] = useState(() => { try { return localStorage.getItem('nextech_seller_sound_muted') === '1' } catch { return false } })
+  // New orders: polled every 30s. A newer order than the last one seen chimes,
+  // shows a browser notification and a banner until the seller opens it.
+  const [orderAlerts, setOrderAlerts] = useState(null) // { latest_order_id, to_ship, recent }
+  const [newOrders, setNewOrders] = useState([]) // orders not yet looked at
+  const lastOrderSeen = useRef((() => { try { return Number(localStorage.getItem('nextech_seller_last_order')) || null } catch { return null } })())
   const seenMessagesRef = useRef(null)
   const supportThreadRef = useRef(null)
 
@@ -676,6 +681,47 @@ export default function Seller({ token, onSignOut }) {
       .catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (me?.status !== 'approved') return undefined
+    let stopped = false
+    const check = async () => {
+      try {
+        const data = await readJson(await fetch(`${API_URL}/seller/orders/alerts`, { headers: authHeaders() }))
+        if (stopped || !data?.data) return
+        const alerts = data.data
+        setOrderAlerts(alerts)
+        if (lastOrderSeen.current === null) {
+          // First visit on this browser: what's there already isn't news.
+          lastOrderSeen.current = alerts.latest_order_id ?? 0
+          try { localStorage.setItem('nextech_seller_last_order', String(lastOrderSeen.current)) } catch { /* ignore */ }
+          return
+        }
+        const fresh = (alerts.recent ?? []).filter((o) => o.id > lastOrderSeen.current)
+        setNewOrders(fresh)
+        if (fresh.length && fresh[0].id !== newestAlerted.current) {
+          newestAlerted.current = fresh[0].id
+          if (!soundMuted) playMessageChime()
+          if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
+            try { new Notification(`New order #${fresh[0].id}`, { body: fresh[0].ships_itself && fresh[0].ship_by ? `Ship by ${new Date(fresh[0].ship_by).toLocaleDateString()}` : 'Open Seller Center → Manage orders' }) } catch { /* ignore */ }
+          }
+        }
+      } catch { /* keep last */ }
+    }
+    check()
+    const timer = setInterval(check, 30000)
+    if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {})
+    return () => { stopped = true; clearInterval(timer) }
+  }, [me?.status, authHeaders, soundMuted])
+  const newestAlerted = useRef(null)
+  const seeNewOrders = () => {
+    const newest = newOrders[0]?.id
+    if (newest) {
+      lastOrderSeen.current = newest
+      try { localStorage.setItem('nextech_seller_last_order', String(newest)) } catch { /* ignore */ }
+    }
+    setNewOrders([])
+  }
+
   async function openCustomerChat(row) {
     setCustomerChatMsg('')
     try {
@@ -776,7 +822,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'home', label: 'Homepage', icon: '⌂' },
       { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Add products via upload'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
       { key: 'performance', label: 'Performance', icon: '♡', children: [['account-health', 'Account health']] },
-      { key: 'orders', label: 'Orders', icon: '☰', children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
+      { key: 'orders', label: 'Orders', icon: '☰', badge: orderAlerts?.to_ship ?? 0, children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
@@ -827,6 +873,14 @@ export default function Seller({ token, onSignOut }) {
           </nav>
 
           <main className="sc-main">
+            {newOrders.length > 0 && (
+              <div className="sc-new-order" role="status">
+                <span>🛒 <b>{newOrders.length === 1 ? `New order #${newOrders[0].id}` : `${newOrders.length} new orders`}</b>
+                  {newOrders[0].ships_itself ? (newOrders[0].ship_by ? ` — ship by ${new Date(newOrders[0].ship_by).toLocaleDateString()}` : ' — you ship it') : ' — NexTech collects it'}</span>
+                <button type="button" className="sc-primary" onClick={() => { seeNewOrders(); go('orders') }}>View orders</button>
+                <button type="button" className="sc-link" onClick={seeNewOrders}>Dismiss</button>
+              </div>
+            )}
             {pageView ? (
               <article className="sc-card seller-page-view">
                 {pageView === 'loading' ? <p className="seller-loading">Loading&hellip;</p> : <>

@@ -1,0 +1,9 @@
+.trk{margin:6px 0 2px;padding:8px 10px;border-left:3px solid #2f8f4e;border-radius:6px;background:#f4faf5;font-size:14px;text-align:left}
+.trk.problem{border-left-color:#d8572a;background:#fff5ef}
+.trk p{margin:0}
+.trk-now b{font-weight:600}
+.trk-time,.trk-detail{color:#5d6a62;font-size:12px}
+.trk-toggle{margin-top:4px;padding:0;border:0;background:none;color:#1f6f3f;font:inherit;font-size:12px;text-decoration:underline;cursor:pointer}
+.trk-list{margin:6px 0 0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:6px}
+.trk-list li{display:flex;flex-direction:column;font-size:12px}
+.trk-list small{color:#5d6a62;font-size:12px}

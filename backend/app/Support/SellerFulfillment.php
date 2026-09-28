@@ -12,6 +12,7 @@ use App\Models\Shop;
 use App\Notifications\OrderShipped;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use App\Support\LiveTracking;
 
 /**
  * Seller-shipped order lines: what's left to ship, and keeping the order in
@@ -90,6 +91,10 @@ class SellerFulfillment
 
             // Tell the customer, with carrier + tracking link (after commit).
             DB::afterCommit(fn () => $order->fresh()?->emailCustomer(new OrderShipped($order->fresh(), $package->fresh())));
+            // Live courier tracking for own-courier packages (NexTech labels track through the courier connection).
+            if ($package->label_source === 'own') {
+                DB::afterCommit(fn () => LiveTracking::register($package->fresh()));
+            }
 
             return $package->load('items');
         });

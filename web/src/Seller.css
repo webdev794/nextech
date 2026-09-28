@@ -462,3 +462,7 @@ s.sc-muted{display:inline}
 .pb-progress{isolation:isolate}
 .pb-progress i{z-index:-1}
 .ah-logo{width:40px;height:40px;object-fit:contain;border-radius:6px;background:#fff;border:1px solid #eef0f2}
+
+.sc-new-order{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:0 0 16px;padding:12px 16px;border:1px solid #ffd3a8;border-radius:12px;background:#fff4e8;font-size:14px;animation:sc-new-order-in .3s ease-out}
+.sc-new-order span{margin-right:auto}
+@keyframes sc-new-order-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}

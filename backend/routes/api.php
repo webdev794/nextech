@@ -55,6 +55,7 @@ use App\Http\Controllers\Api\ReviewController;
 use App\Http\Controllers\Api\AdminReviewController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
+use App\Http\Controllers\Api\TrackingWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -340,6 +341,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/trademarks', [SellerTrademarkController::class, 'store']);
     Route::patch('/seller/trademarks/{trademark}', [SellerTrademarkController::class, 'update']);
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
+    Route::get('/seller/orders/alerts', [SellerOrderController::class, 'alerts']);
     Route::post('/seller/orders/{order}/address-change/{change}', [SellerOrderController::class, 'decideAddressChange']);
     Route::get('/seller/stats', [SellerOrderController::class, 'stats']);
     Route::get('/seller/customer-chats', [SellerCustomerChatController::class, 'index']);
@@ -394,6 +396,8 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
 });
 
 Route::post('/payments/stripe/webhook', [PaymentController::class, 'webhook']);
+// AfterShip live courier tracking (LiveTracking).
+Route::post('/webhooks/aftership', [TrackingWebhookController::class, 'aftership']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

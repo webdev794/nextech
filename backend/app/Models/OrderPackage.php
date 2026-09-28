@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Support\SellerShipping;
+use App\Support\LiveTracking;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -20,7 +21,7 @@ class OrderPackage extends Model
 
     protected $hidden = ['label_path'];
 
-    protected $appends = ['tracking_url', 'can_edit', 'has_label_file'];
+    protected $appends = ['tracking_url', 'can_edit', 'has_label_file', 'tracking_label'];
 
     protected function casts(): array
     {
@@ -30,6 +31,9 @@ class OrderPackage extends Model
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
             'last_edited_at' => 'datetime',
+            'tracking_eta' => 'date',
+            'tracking_events' => 'array',
+            'tracking_synced_at' => 'datetime',
         ];
     }
 
@@ -46,6 +50,12 @@ class OrderPackage extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderPackageItem::class);
+    }
+
+    /** Live courier status in words (LiveTracking), when the package is tracked. */
+    public function getTrackingLabelAttribute(): ?string
+    {
+        return LiveTracking::label($this->tracking_tag);
     }
 
     public function getTrackingUrlAttribute(): ?string

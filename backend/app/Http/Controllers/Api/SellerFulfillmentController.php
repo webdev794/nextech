@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\LiveTracking;
 use App\Models\LabelRequest;
 use App\Models\Order;
 use App\Models\OrderPackage;
@@ -43,6 +44,7 @@ class SellerFulfillmentController extends Controller
             ->latest()
             ->limit(100)
             ->get();
+        LiveTracking::refreshOrders($orders);
 
         return response()->json(['data' => $orders->map(fn (Order $o) => $this->row($o))->values()]);
     }
@@ -286,6 +288,11 @@ class SellerFulfillmentController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($package->shop_id === $shop->id, 404);
+        if ($package->label_source === 'own' && LiveTracking::enabled()) {
+            LiveTracking::refresh($package);
+
+            return response()->json(['data' => $this->row($package->order->fresh())]);
+        }
         abort_unless($package->label_source === 'nextech' && ! $package->label_path, 422, 'Only NexTech labels bought through the courier connection are tracked automatically.');
 
         $status = Courier::trackLabel($package->carrier, $package->tracking_number, $package->shipped_at, $package->status);
@@ -317,12 +324,15 @@ class SellerFulfillmentController extends Controller
             ], 422));
         }
 
-        $package->update([
+        $package->forceFill([
             'carrier' => $data['carrier'],
             'tracking_number' => $tracking,
             'edit_count' => $package->edit_count + 1,
             'last_edited_at' => now(),
-        ]);
+            // New number: start live tracking over.
+            'tracking_ref' => null, 'tracking_tag' => null, 'tracking_detail' => null, 'tracking_eta' => null, 'tracking_events' => null, 'tracking_synced_at' => null,
+        ])->save();
+        DB::afterCommit(fn () => LiveTracking::register($package->fresh()));
     }
 
     /** @return array<string, mixed> */

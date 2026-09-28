@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\LiveTracking;
 use App\Models\Order;
 use App\Support\SellerOrders;
 use App\Models\Setting;
@@ -20,6 +21,7 @@ class OrderController extends Controller
             ->with(['items.review:id,order_item_id,rating,status', 'riderReview', 'packages.items', 'shopShipping.shop:id,name', 'addressChanges'])
             ->latest()
             ->paginate(20);
+        LiveTracking::refreshOrders($orders->getCollection());
 
         // The handover code is hidden by default; the owning customer sees it so
         // they can read it to the rider at the door.
