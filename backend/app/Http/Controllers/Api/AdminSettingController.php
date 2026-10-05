@@ -195,6 +195,9 @@ class AdminSettingController extends Controller
                 'active_countries' => ['sometimes', 'array'],
                 'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
                 'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+                // New-seller commission (Secure access): null = same rate as established sellers.
+                'new_seller_commission_rate_bps' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:10000'],
+                'new_seller_days' => ['sometimes', 'integer', 'min:1', 'max:3650'],
                 'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'max_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
@@ -266,6 +269,17 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('commission_rate_bps', $validated)) {
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        // New-seller commission lives behind the Secure access unlock.
+        if (array_key_exists('new_seller_commission_rate_bps', $validated) || array_key_exists('new_seller_days', $validated)) {
+            $this->assertUnlocked($request);
+            if (array_key_exists('new_seller_commission_rate_bps', $validated)) {
+                Setting::put('new_seller_commission_rate_bps', $validated['new_seller_commission_rate_bps'] === null ? null : (int) $validated['new_seller_commission_rate_bps']);
+            }
+            if (array_key_exists('new_seller_days', $validated)) {
+                Setting::put('new_seller_days', (int) $validated['new_seller_days']);
+            }
         }
 
         foreach (['min_payout_cents', 'max_payout_cents', 'daily_payout_cap_cents', 'return_window_days', 'max_return_days', 'return_pickup_fee_cents', 'label_postage_cents', 'rider_base_pay_cents', 'rider_per_mile_cents', 'rider_min_payout_cents', 'rider_max_payout_cents'] as $key) {
@@ -376,6 +390,8 @@ class AdminSettingController extends Controller
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
             // The US forms (original settings keys).
             'commission_rate_bps' => SellerLedger::rate('US'),
+            'new_seller_commission_rate_bps' => SellerLedger::newSellerRateBps(),
+            'new_seller_days' => SellerLedger::newSellerDays(),
             'min_payout_cents' => SellerLedger::minPayoutCents('US'),
             'max_payout_cents' => SellerLedger::maxPayoutCents('US'),
             'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents('US'),

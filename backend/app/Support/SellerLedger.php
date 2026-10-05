@@ -227,7 +227,7 @@ class SellerLedger
                     continue;
                 }
 
-                $commission = (int) round($subtotal * self::rate(self::commissionMarket($order, (int) $shopId)) / 10000);
+                $commission = (int) round($subtotal * self::shopRate($order, (int) $shopId) / 10000);
                 // The shipping the buyer paid a seller who ships it themselves goes
                 // to that seller (who pays the courier), commission-free — the
                 // seller's own fee in their currency when shipped abroad.
@@ -302,7 +302,7 @@ class SellerLedger
                 ? self::shopLinesCents($order, (int) $shopId, $shopItems->whereIn('id', $itemIds))
                 : self::toShop($order, (int) $shopId, $refundShareOrder);
 
-            $commissionBack = (int) round($refundShare * self::rate(self::commissionMarket($order, (int) $shopId)) / 10000);
+            $commissionBack = (int) round($refundShare * self::shopRate($order, (int) $shopId) / 10000);
 
             SellerLedgerEntry::create([
                 'shop_id' => $shopId,
@@ -418,6 +418,40 @@ class SellerLedger
         return (int) $items->sum(fn ($item) => $item->seller_line_total_cents !== null
             ? (int) $item->seller_line_total_cents
             : self::toShop($order, $shopId, (int) $item->line_total_cents));
+    }
+
+    /**
+     * Commission on one shop's share of an order: the new-seller rate while the
+     * shop is in its first days (from approval), else the market's rate. Judged
+     * at the order's date, so a later refund nets out the same rate the sale paid.
+     */
+    public static function shopRate(Order $order, int $shopId): int
+    {
+        $newRate = self::newSellerRateBps();
+        if ($newRate === null) {
+            return self::rate(self::commissionMarket($order, $shopId));
+        }
+        $shop = Shop::with('seller:id,reviewed_at')->find($shopId);
+        $joined = $shop?->seller?->reviewed_at ?? $shop?->created_at;
+        $at = $order->created_at ?? now();
+
+        return $joined && $at->lt($joined->copy()->addDays(self::newSellerDays()))
+            ? $newRate
+            : self::rate(self::commissionMarket($order, $shopId));
+    }
+
+    /** Commission for new sellers (all markets); null = same as everyone else. */
+    public static function newSellerRateBps(): ?int
+    {
+        $v = Setting::get('new_seller_commission_rate_bps');
+
+        return $v === null || $v === '' ? null : (int) $v;
+    }
+
+    /** How long a seller counts as new, in days from approval. */
+    public static function newSellerDays(): int
+    {
+        return (int) Setting::get('new_seller_days', 90);
     }
 
     /** Commission follows the seller's own market on cross-border orders. */

@@ -428,6 +428,11 @@ function playOrderAlert() {
 }
 
 // Fee settings <-> a dollar/percent form the admin edits.
+// Secure access → new-seller commission (bps on the server, % in the form).
+function sellerRateToForm(s) {
+  return { new_pct: s.new_seller_commission_rate_bps == null ? '' : (s.new_seller_commission_rate_bps / 100).toFixed(2), days: String(s.new_seller_days ?? 90) }
+}
+
 function feesToForm(s) {
   return {
     delivery_mode: s.delivery_mode ?? 'fixed',
@@ -613,6 +618,7 @@ export default function Admin({ token, onClose }) {
   const [brandingForm, setBrandingForm] = useState(null)
   const [footerForm, setFooterForm] = useState(null)
   const [paymentsForm, setPaymentsForm] = useState(null)
+  const [sellerRateForm, setSellerRateForm] = useState(null)
   const [courierForm, setCourierForm] = useState(null)
   const [pendingReviews, setPendingReviews] = useState(0)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
@@ -777,6 +783,7 @@ export default function Admin({ token, onClose }) {
         setBrandingForm({ ...EMPTY_BRANDING, ...(data.data.branding ?? {}) })
         setFooterForm({ ...EMPTY_FOOTER, ...(data.data.footer ?? {}), socials: { ...EMPTY_FOOTER.socials, ...(data.data.footer?.socials ?? {}) }, links: (data.data.footer?.links ?? []).map((l) => ({ ...l })) })
         setPaymentsForm({ stripe_key: data.data.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
+        setSellerRateForm(sellerRateToForm(data.data))
         setCourierForm({
           courier_provider: data.data.courier?.provider ?? 'mock',
           courier_base_url: data.data.courier?.base_url ?? '',
@@ -1235,6 +1242,18 @@ export default function Admin({ token, onClose }) {
     } else {
       setSecureGate('locked'); setSecureToken('')
     }
+  }
+
+  // Secure access → commission for new sellers (their first N days after approval).
+  async function saveSellerRates(event) {
+    event.preventDefault()
+    const pct = sellerRateForm.new_pct.trim()
+    const patch = {
+      new_seller_commission_rate_bps: pct === '' ? null : Math.max(0, Math.min(10000, Math.round(Number(pct) * 100))),
+      new_seller_days: Math.max(1, Math.min(3650, Math.round(Number(sellerRateForm.days) || 90))),
+    }
+    const saved = await saveSetting(patch, { 'X-Secure-Access': secureToken })
+    if (saved) { setSellerRateForm(sellerRateToForm(saved)); setMessage('Seller commission saved — applies to new orders.') }
   }
 
   async function saveCourier(event) {
@@ -3740,6 +3759,26 @@ Reason:`, '')
                 <div className="admin-form-actions"><button className="act" type="submit">Save account</button></div>
               </form>
 
+              {sellerRateForm && settings && (
+                <form className="admin-form" onSubmit={saveSellerRates}>
+                  <h3>Seller commission — new vs. established sellers</h3>
+                  <p className="muted">
+                    Established sellers pay the commission rate under Charges ({((settings.commission_rate_bps ?? 0) / 100).toFixed(2)}% in {settings.home_market_name ?? 'the home market'}; other countries use their own rate).
+                    Give sellers a different rate for their first days after approval — e.g. a lower intro rate to attract new shops.
+                  </p>
+                  <div className="admin-form-grid">
+                    <label>New-seller commission (%)
+                      <input type="number" min="0" max="100" step="0.01" value={sellerRateForm.new_pct} placeholder="Same as established" onChange={(event) => setSellerRateForm({ ...sellerRateForm, new_pct: event.target.value })} />
+                    </label>
+                    <label>Counts as new for (days after approval)
+                      <input type="number" min="1" max="3650" step="1" value={sellerRateForm.days} onChange={(event) => setSellerRateForm({ ...sellerRateForm, days: event.target.value })} />
+                    </label>
+                  </div>
+                  <p className="muted">Leave the new-seller rate blank to charge everyone the same. Applies to all countries, judged by each order&rsquo;s date; refunds take back the same rate the order paid.</p>
+                  <div className="admin-form-actions"><button className="act" type="submit">Save seller commission</button></div>
+                </form>
+              )}
+
               {paymentsForm && settings && (
                 <form className="admin-form" onSubmit={savePayments}>
                   <h3>Payments — Stripe</h3>
@@ -3895,7 +3934,7 @@ Reason:`, '')
                 <h3>Marketplace commission &amp; seller payouts ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
                 <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
                 <div className="admin-form-grid">
-                  <label>Commission rate (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
+                  <label>Commission rate — established sellers (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
                   <label>Minimum payout ($)<input type="number" min="0" step="0.01" value={feesForm.min_payout} onChange={(event) => setFeesForm({ ...feesForm, min_payout: event.target.value })} /></label>
                   <label>Maximum per payout ($)<input type="number" min="0" step="0.01" value={feesForm.max_payout} onChange={(event) => setFeesForm({ ...feesForm, max_payout: event.target.value })} /></label>
                   <label>Daily payout cap, all sellers ($)<input type="number" min="0" step="0.01" placeholder="0 = no cap" value={feesForm.daily_payout_cap} onChange={(event) => setFeesForm({ ...feesForm, daily_payout_cap: event.target.value })} /></label>
