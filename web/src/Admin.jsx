@@ -3226,7 +3226,7 @@ Reason:`, '')
                     <td>{seller.last_message ? <span className="muted">{seller.last_message.is_staff ? 'You: ' : ''}{seller.last_message.body.length > 60 ? `${seller.last_message.body.slice(0, 60)}…` : seller.last_message.body}</span> : <span className="muted">—</span>}</td>
                     <td>{seller.submitted_at ? new Date(seller.submitted_at).toLocaleDateString() : '—'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => openSellerDetail(seller.id)}>Review</button>
+                      <button className="act" type="button" onClick={() => openSellerDetail(seller.id)}>{seller.status === 'pending' || seller.reviews_pending > 0 ? 'Review' : 'View'}</button>
                     </td>
                   </tr>
                 ))}
@@ -4165,6 +4165,19 @@ Reason:`, '')
                         <div><dt>Tax ID</dt><dd>{d.tax_id}</dd></div>
                         <div><dt>Registered address</dt><dd>{address([d.registered_line1, d.registered_line2, d.registered_city, d.registered_state, d.registered_postal_code, d.registered_country])}</dd></div>
                       </dl>
+                    </section>
+
+                    <section className="seller-card">
+                      <h4>Tax information</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Registered tax ID</dt><dd>{d.tax_id || '—'}</dd></div>
+                        <div><dt>{d.country === 'IN' ? 'GSTIN / PAN' : 'Tax number'}</dt><dd>{d.tax_info?.tax_number || 'Not added yet'}</dd></div>
+                        {d.tax_info?.enrolment_number && <div><dt>GST enrolment</dt><dd>{d.tax_info.enrolment_number}</dd></div>}
+                        {d.tax_info?.tax_code && <div><dt>Default item tax code</dt><dd>{d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}</dd></div>}
+                        <div><dt>Status</dt><dd>{d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}</dd></div>
+                        {d.tax_info?.terms_accepted_at && <div><dt>Tax terms accepted</dt><dd>{new Date(d.tax_info.terms_accepted_at).toLocaleString()}</dd></div>}
+                      </dl>
+                      {d.tax_info?.certificate_path && <div className="admin-form-actions"><button className="act ghost" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>Tax certificate{d.tax_info.certificate_name ? ` (${d.tax_info.certificate_name})` : ''}</button></div>}
                     </section>
 
                     <section className="seller-card">
