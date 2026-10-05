@@ -13,6 +13,7 @@ use App\Support\Market;
 use App\Support\Privacy;
 use App\Support\SellerFulfillment;
 use App\Support\SellerOrders;
+use App\Support\SellerProgress;
 use App\Support\SellerShipping;
 use App\Support\ShippingLabel;
 use Illuminate\Http\JsonResponse;
@@ -275,12 +276,35 @@ class SellerFulfillmentController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($package->shop_id === $shop->id, 404);
-        abort_if($package->status === 'delivered', 422, 'Already marked delivered.');
-
-        $package->update(['status' => 'delivered', 'delivered_at' => now()]);
-        SellerFulfillment::sync($package->order);
+        $data = $request->validate(['cash_collected' => ['sometimes', 'boolean']]);
+        SellerProgress::advance($package, 'delivered', 'seller', (bool) ($data['cash_collected'] ?? false));
 
         return response()->json(['data' => $this->row($package->order->fresh())]);
+    }
+
+    /**
+     * The seller's step-by-step update on a package: in transit, out for
+     * delivery, delivered (with "cash collected" for cash on delivery).
+     */
+    public function progress(Request $request, OrderPackage $package): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($package->shop_id === $shop->id, 404);
+        $data = $request->validate([
+            'status' => ['required', Rule::in(['in_transit', 'out_for_delivery', 'delivered'])],
+            'cash_collected' => ['sometimes', 'boolean'],
+        ]);
+        SellerProgress::advance($package, $data['status'], 'seller', (bool) ($data['cash_collected'] ?? false));
+
+        return response()->json(['data' => $this->row($package->order->fresh())]);
+    }
+
+    /** The seller packed their part of the order (before the courier picks it up). */
+    public function packed(Request $request, Order $order): JsonResponse
+    {
+        SellerProgress::markPacked($order, $this->shop($request));
+
+        return response()->json(['data' => $this->row($order->fresh())]);
     }
 
     /** NexTech labels: pull the latest status from the courier. */
@@ -313,7 +337,7 @@ class SellerFulfillmentController extends Controller
     private function applyTrackingEdit(OrderPackage $package, array $data): void
     {
         abort_unless($package->label_source === 'own', 422, 'Tracking on a NexTech label comes from the courier and can\'t be edited.');
-        abort_unless(in_array($package->status, ['shipped', 'in_transit'], true), 422, 'Tracking can\'t be changed once a package is delivered, returned or lost.');
+        abort_unless(in_array($package->status, SellerProgress::MOVING, true), 422, 'Tracking can\'t be changed once a package is delivered, returned or lost.');
         abort_if($package->edit_count >= OrderPackage::MAX_EDITS, 422, 'This package\'s tracking has already been changed '.OrderPackage::MAX_EDITS.' times.');
 
         $tracking = strtoupper(preg_replace('/\s+/', '', $data['tracking_number']));
@@ -349,6 +373,10 @@ class SellerFulfillmentController extends Controller
             'id' => $order->id,
             'status' => $order->status,
             'created_at' => $order->created_at,
+            // Cash on delivery: the seller's courier collects it; the seller confirms when delivered.
+            'cod' => $order->payment_method === 'cod',
+            'cod_amount_cents' => $order->payment_method === 'cod' ? (int) $order->total_cents : null,
+            'currency' => $order->currency,
             // Masked name; the street address and real name only for sellers who write
             // their own courier label — NexTech prints them on the labels it makes.
             'ship_to' => [
@@ -365,6 +393,7 @@ class SellerFulfillmentController extends Controller
                 'id' => $i->id,
                 'product_name' => $i->product_name,
                 'variant_label' => $i->variant_label,
+                'personalization' => $i->personalization,
                 'sku' => $i->sku,
                 'quantity' => $i->quantity,
                 'remaining' => SellerFulfillment::remainingQuantity($i),

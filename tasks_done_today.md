@@ -1,17 +1,39 @@
 # Tasks Done Today
 
-- **NexTech pickup phase-out fix:** when admin turns off "NexTech collects & delivers", sellers still on it no longer see it as selected — they pick their own shipping instead.
-- **Admin-editable label postage:** the postage charged for NexTech shipping labels (was fixed at $9.99) is now set per country in Admin → Settings.
-- **Seller onboarding tasks (Temu-style "Get your shop ready"):** 1 tax information (tax number matching registration + certificate, default item tax code), 2 additional compliance information (beneficial owners, directors, executives, corporate documents), 3 bank account (bank document within 180 days, confirm pop-up, processing / linked / failed), 4 shipping templates. Admin reviews each task; payouts need a verified bank account.
-- **Shipping templates:** address type per group (street / PO box / military APO-FPO) enforced at checkout; country field on ship-from addresses.
-- **Manage orders (Temu-style):** Pending / Unshipped / Shipped / Canceled tabs, last 30 days by default with date range and sort, search by up to 100 order / goods / SKU / tracking / order item IDs, Action needed (buyer contacted support, address change requested, at risk of late shipment), order details. Orders stay Pending for 30 minutes and can't be shipped then.
-- **Buyer address changes:** buyers can ask to change the shipping address before an order ships; the seller (or admin) accepts or declines.
-- **Buyer privacy for sellers:** buyer names shown masked ("J**n D*e"); only own-courier sellers see the street address; emails and phone numbers hidden in seller chats both ways, with a "don't share personal details" notice.
-- **Add product wizard (Temu-style):** name & category (recommended / previously used), description (bullet points, up to 10 images, product and detail videos, detail images, trademark), product details per category with conditional fields, variations (up to 2 levels, 30 SKUs) with per-SKU image, stock, price, weight and size, fulfillment, safety & compliance. Drafts under Manage products → Incomplete.
-- **Add products via upload:** Excel template for up to 5 categories (colour-coded required / not applicable / conditional cells, dropdowns, Data Definitions), upload with Completed / Action required results, downloadable results, drafts for rows with errors, drafts straight from images.
-- **Pricing health:** admin sales boost offers for "Low traffic" products, seller accepts or rejects per variation or in batches, pricing records, daily pop-up; low-traffic products rank lower.
-- **Product compliance page** (products can't be approved without required documents) and **Account health → trademarks** (reviewed by admin).
-- **Store decoration:** sellers design their store page for desktop and mobile with drag-and-drop sections — banner, category, product, video, plus announcement bar, image grid, auto product lists, sale countdown, brand story, spacer; spot checks by admin; one live version per platform (shown once a store has 30 live products — admin setting).
-- **Shop pages** always show the category carousel of that seller's categories.
-- **Product reviews (backend):** buyers can review delivered items with photos; reviews wait for admin approval; public reviewer pages and "Helpful" votes. The storefront and admin screens for reviews are still to do.
+## Selling across countries
+- **Country from IP address:** a first visit opens the visitor's country store (India / USA); the seller application starts on their country; rider sign-up lists stores in their country first. Anyone can still switch country.
+- **Buying from another country:** sellers who ship with their own courier can ship to the other country (their own fee and delivery days). Those products appear in that store in the buyer's currency, marked "✈ from India" with "import duties may apply". The seller is paid exactly their listed price in their own currency plus the shipping fee.
+- **Exchange rate:** fetched daily from two free sources and cross-checked; buyers pay the rate plus a 3% margin kept by NexTech. Admin → Settings → Currency conversion: see the rate, set a fixed rate or margin, update now. Each order keeps its rate.
 
+## Digital downloads (games, software, e-books…)
+- Sellers choose **Digital download** when adding a product: its own fields (Type, Works on, Version, File format, Languages, System requirements, License, Age rating) instead of physical ones like RAM or colour.
+- Sellers upload files (in small pieces, up to 4 GB each) or add a hosted link; files stay private. Optional license keys (one per copy; stock follows the keys left), download limit and install instructions.
+- Buyers: no address or phone at checkout, card only, not returnable. Once paid, the order completes, the buyer gets an email, and **Your downloads** shows the file, license key and instructions; private 10-minute download links.
+
+## Products
+- **Buyer photo upload:** sellers can let buyers upload photos (and optional text) for personalized products; the seller and admin see and download them with the order.
+- **Product page sections:** sellers can add FAQs, Specifications, System requirements or their own sections; buyers see each on a coloured card.
+- **Required fields** (name, category, image, price) marked with a red * for sellers and admin; admin can't save a product without an image.
+- **Admin "Approve anyway":** approve a product even if details like HSN / GST rate or documents are missing; the seller is emailed what to add and it stays live while they fill it in.
+- **Admin → Products quick filters** with counts: Not approved yet, Waiting for review, Drafts, Rejected, Live — details missing. Search also finds products by seller name or seller product code.
+
+## Reviews, favourites, account
+- **Product reviews:** real buyer reviews on product pages (the made-up sample reviews are gone) with stars, photos, filters and "Helpful"; reviewer pages; "Write a review" on delivered items in Your orders; Admin → Reviews to approve, reject or delete.
+- **My favourites:** "♡ Add to favourites" next to Add to cart, a My favourites page, and "Save for later" in the cart.
+- **Your profile page** with details and shortcuts; **Your reviews** page with each review's status.
+
+## Orders, payment and delivery
+- **Cash on delivery** switched on; also available for orders sellers ship themselves (seller opts in, one-seller carts). Sellers update each step — Packed, Picked up, In transit, Out for delivery, Delivered & cash collected — buyers and admin see the timeline; daily reminder emails for stale orders; commission taken from the seller's balance.
+- **Sellers now receive the shipping fee** buyers pay when the seller ships the order.
+- **Checkout:** back arrow at the top left of the checkout and payment popups; the address is checked before payment; the card form no longer asks for a separate postal code; correct currency shown.
+
+## Look and feel
+- **Strip above the menu (like Temu):** only the 2nd section changes; the others stay fixed.
+- **Store logo everywhere:** the logo from Store settings shows in the storefront, admin, Seller Center, rider screen and sign-in pages, and updates everywhere when changed; no old/text logo flash on refresh.
+
+## Fixed
+- Cancelled orders now put their stock back.
+- Double-clicking "Review order" could double quantities or create a second order.
+- Saving the profile while the page was loading could wipe the phone number.
+- "Pay with cash on delivery instead" skipped the seller rules.
+- Seller product pages showed "not found" in the storefront.

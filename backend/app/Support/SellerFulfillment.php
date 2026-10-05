@@ -83,6 +83,8 @@ class SellerFulfillment
                 'ship_from_address_id' => $addressId,
                 'status' => 'shipped',
                 'shipped_at' => now(),
+                'status_history' => [SellerProgress::entry('shipped', 'seller')],
+                'progress_updated_at' => now(),
             ]);
             foreach ($items as $row) {
                 $package->items()->create(['order_item_id' => $row['order_item_id'], 'quantity' => $row['quantity']]);

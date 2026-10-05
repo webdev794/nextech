@@ -221,22 +221,27 @@ class SellerLedger
                 return;
             }
 
-            $rate = self::rate($order->market);
-
             foreach ($items->groupBy('shop_id') as $shopId => $shopItems) {
-                $subtotal = (int) $shopItems->sum('line_total_cents');
+                $subtotal = self::shopLinesCents($order, (int) $shopId, $shopItems);
                 if ($subtotal <= 0) {
                     continue;
                 }
 
-                $commission = (int) round($subtotal * $rate / 10000);
+                $commission = (int) round($subtotal * self::rate(self::commissionMarket($order, (int) $shopId)) / 10000);
+                // The shipping the buyer paid a seller who ships it themselves goes
+                // to that seller (who pays the courier), commission-free — the
+                // seller's own fee in their currency when shipped abroad.
+                $shipping = $order->shopShipping()->where('shop_id', $shopId)->first();
+                $abroad = self::shopMarket((int) $shopId) !== $order->market;
+                $shippingCents = $abroad ? (int) ($shipping?->seller_fee_cents ?? 0) : (int) ($shipping?->fee_cents ?? 0);
 
                 SellerLedgerEntry::create([
                     'shop_id' => $shopId,
                     'order_id' => $order->id,
                     'type' => 'order_credit',
-                    'amount_cents' => $subtotal - $commission,
+                    'amount_cents' => $subtotal - $commission + $shippingCents,
                     'commission_cents' => $commission,
+                    'note' => $shippingCents > 0 ? 'Includes '.($abroad ? 'international ' : '').'shipping '.Money::format($shippingCents, Market::currency(self::shopMarket((int) $shopId))) : null,
                 ]);
 
                 self::withhold($order, (int) $shopId, self::taxableCents($shopItems), 1);
@@ -284,18 +289,20 @@ class SellerLedger
             return;
         }
 
-        $rate = self::rate($order->market);
         $itemPool = min($refundAmountCents, $orderSubtotal);
 
         foreach ($items->groupBy('shop_id') as $shopId => $shopItems) {
-            $refundShare = $itemIds
+            $refundShareOrder = $itemIds
                 ? (int) $shopItems->whereIn('id', $itemIds)->sum('line_total_cents')
                 : (int) round($itemPool * $shopItems->sum('line_total_cents') / $orderSubtotal);
-            if ($refundShare <= 0) {
+            if ($refundShareOrder <= 0) {
                 continue;
             }
+            $refundShare = $itemIds
+                ? self::shopLinesCents($order, (int) $shopId, $shopItems->whereIn('id', $itemIds))
+                : self::toShop($order, (int) $shopId, $refundShareOrder);
 
-            $commissionBack = (int) round($refundShare * $rate / 10000);
+            $commissionBack = (int) round($refundShare * self::rate(self::commissionMarket($order, (int) $shopId)) / 10000);
 
             SellerLedgerEntry::create([
                 'shop_id' => $shopId,
@@ -308,7 +315,7 @@ class SellerLedger
             // Tax withheld on the refunded value comes back (net-of-returns basis).
             $gross = (int) $shopItems->sum('line_total_cents');
             if ($gross > 0) {
-                self::withhold($order, (int) $shopId, (int) round(self::taxableCents($shopItems) * $refundShare / $gross), -1);
+                self::withhold($order, (int) $shopId, (int) round(self::taxableCents($shopItems) * $refundShareOrder / $gross), -1);
             }
         }
     }
@@ -334,7 +341,7 @@ class SellerLedger
         $shopIds = ($itemIds ? $items->whereIn('id', $itemIds) : $items)->pluck('shop_id')->unique();
 
         foreach ($shopIds as $shopId) {
-            $pickupFee = self::returnPickupFeeCents($order->market);
+            $pickupFee = self::toShop($order, (int) $shopId, self::returnPickupFeeCents($order->market));
             if ($pickup && $pickupFee > 0) {
                 SellerLedgerEntry::create([
                     'shop_id' => $shopId,
@@ -346,7 +353,7 @@ class SellerLedger
 
             $alreadyCharged = SellerLedgerEntry::where('shop_id', $shopId)->where('order_id', $order->id)->where('type', 'delivery_fee_charge')->exists();
             if ($delivery && ! $alreadyCharged && $orderSubtotal > 0 && (int) $order->delivery_fee_cents > 0) {
-                $share = (int) round($order->delivery_fee_cents * $items->where('shop_id', $shopId)->sum('line_total_cents') / $orderSubtotal);
+                $share = self::toShop($order, (int) $shopId, (int) round($order->delivery_fee_cents * $items->where('shop_id', $shopId)->sum('line_total_cents') / $orderSubtotal));
                 if ($share > 0) {
                     SellerLedgerEntry::create([
                         'shop_id' => $shopId,
@@ -373,6 +380,7 @@ class SellerLedger
     private static function withhold(Order $order, int $shopId, int $taxableCents, int $sign): void
     {
         $shop = Shop::find($shopId);
+        $taxableCents = self::toShop($order, $shopId, $taxableCents);
         foreach ((array) (Market::profile($shop?->market)['withholding'] ?? []) as $type => $rule) {
             $amount = (int) round($taxableCents * (int) $rule['rate_bps'] / 10000);
             if ($amount > 0) {
@@ -385,6 +393,44 @@ class SellerLedger
                 ]);
             }
         }
+    }
+
+    /**
+     * An amount in the order's currency, in the shop's own currency: cross-
+     * border orders divide by the rate frozen on the order (Fx), so the seller
+     * gets back exactly their listed price and the margin stays with the
+     * platform. Same-currency orders pass through unchanged.
+     */
+    public static function toShop(Order $order, int $shopId, int $cents): int
+    {
+        $rates = (array) $order->fx_rates;
+        if (! $rates) {
+            return $cents;
+        }
+        $multiplier = (float) ($rates[strtolower(Market::currency(self::shopMarket($shopId)))] ?? 0);
+
+        return $multiplier > 0 ? (int) round($cents / $multiplier) : $cents;
+    }
+
+    /** These lines' value in the shop's currency: the frozen seller price on imports, else the line totals. */
+    private static function shopLinesCents(Order $order, int $shopId, $items): int
+    {
+        return (int) $items->sum(fn ($item) => $item->seller_line_total_cents !== null
+            ? (int) $item->seller_line_total_cents
+            : self::toShop($order, $shopId, (int) $item->line_total_cents));
+    }
+
+    /** Commission follows the seller's own market on cross-border orders. */
+    private static function commissionMarket(Order $order, int $shopId): ?string
+    {
+        return $order->fx_rates ? self::shopMarket($shopId) : $order->market;
+    }
+
+    private static function shopMarket(int $shopId): ?string
+    {
+        static $markets = [];
+
+        return $markets[$shopId] ??= Shop::whereKey($shopId)->value('market');
     }
 
     /** The withholding types for ledger labels, e.g. ['tcs_gst' => 'TCS (GST sec. 52)']. */

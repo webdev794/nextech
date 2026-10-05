@@ -194,10 +194,15 @@ class SellerShipping
      * promises the slowest transit among them.
      *
      * @param  list<array{product: Product, quantity: int, line_total_cents: int}>  $lines
+     * Shops in another country than the buyer ($market) charge their
+     * international fee for that country instead (converted into the buyer's
+     * currency; never free), with their international transit days.
+     *
      * @param  ?string  $addressType  standard | po_box | military (see addressType()); null = not known yet
+     * @param  ?string  $market  the buyer's country; null = each shop's own
      * @return array{shops: list<array<string, mixed>>, total_cents: int, unshippable: list<string>}
      */
-    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null, ?string $addressType = null): array
+    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null, ?string $addressType = null, ?string $market = null): array
     {
         $orderedAt ??= now();
         $byShop = [];
@@ -207,6 +212,29 @@ class SellerShipping
             $product = $line['product'];
             $shop = $product->relationLoaded('shop') ? $product->shop : $product->shop()->first();
             if (! $shop || ! in_array($shop->fulfillment_mode, ['self', 'label'], true)) {
+                continue;
+            }
+
+            if ($market && $shop->market !== strtoupper($market)) {
+                $terms = $shop->shipsTo($market);
+                if (! $terms) {
+                    $unshippable[] = $product->name;
+
+                    continue;
+                }
+                $template = self::templateFor($product, $shop);
+                $entry = $byShop[$shop->id] ??= [
+                    'shop' => $shop, 'subtotal' => 0, 'fee' => 0, 'min' => 0, 'max' => 0, 'handling' => 0,
+                ];
+                $entry['intl'] = true;
+                $entry['subtotal'] += (int) $line['line_total_cents'];
+                $entry['fee'] = max($entry['fee'], Fx::convert((int) ($terms['fee_cents'] ?? 0), Market::currency($shop->market), Market::currency($market)));
+                $entry['seller_fee'] = max($entry['seller_fee'] ?? 0, (int) ($terms['fee_cents'] ?? 0));
+                $entry['min'] = max($entry['min'], (int) ($terms['transit_min_days'] ?? 0));
+                $entry['max'] = max($entry['max'], (int) ($terms['transit_max_days'] ?? 0));
+                $entry['handling'] = max($entry['handling'], (int) ($template?->handling_days ?? 1));
+                $byShop[$shop->id] = $entry;
+
                 continue;
             }
 
@@ -236,15 +264,19 @@ class SellerShipping
         $shops = [];
         $total = 0;
         foreach ($byShop as $shopId => $e) {
-            $threshold = self::freeShippingThresholdCents($e['shop']->market);
+            // The free-shipping rule is domestic only — international shipping is always charged.
+            $threshold = empty($e['intl']) ? self::freeShippingThresholdCents($e['shop']->market) : 0;
             $free = $threshold > 0 && $e['subtotal'] >= $threshold;
             $fee = $free ? 0 : $e['fee'];
             $shipBy = self::addWorkingDays($e['shop'], $orderedAt, max(1, $e['handling']));
             $shops[] = [
                 'shop_id' => $shopId,
                 'shop_name' => $e['shop']->name,
+                'ships_from' => ! empty($e['intl']) ? $e['shop']->market : null,
                 'mode' => $e['shop']->fulfillment_mode,
                 'fee_cents' => $fee,
+                // International: the seller's own fee in their currency (what they're credited).
+                'seller_fee_cents' => ! empty($e['intl']) ? (int) $e['seller_fee'] : null,
                 'free_shipping' => $free,
                 'transit_min_days' => $e['min'],
                 'transit_max_days' => $e['max'],

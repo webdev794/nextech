@@ -1,0 +1,16 @@
+.dl{display:flex;flex-direction:column;gap:14px}
+.dl-card{padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.dl-head{display:flex;align-items:center;gap:12px}
+.dl-head img{width:52px;height:52px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.dl-name{padding:0;border:0;background:none;color:var(--ink);font:inherit;font-size:14px;font-weight:600;text-align:left;cursor:pointer}
+.dl-name:hover{text-decoration:underline}
+.dl-meta{display:block;color:var(--muted);font-size:12px}
+.dl-wait{margin:10px 0 0;color:var(--muted);font-size:14px}
+.dl-keys{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 0;font-size:12px;font-weight:600}
+.dl-keys code{display:inline-flex;align-items:center;gap:8px;padding:6px 6px 6px 10px;border:1px dashed var(--green);border-radius:8px;background:var(--lime);font-size:14px;letter-spacing:.5px}
+.dl-keys code button{padding:3px 8px;border:0;border-radius:6px;background:var(--green);color:#fff;font:inherit;font-size:12px;cursor:pointer}
+.dl-files{display:flex;flex-direction:column;gap:8px;margin:12px 0 0;padding:0;list-style:none}
+.dl-files li{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+.dl-files small{color:var(--muted);font-size:12px}
+.dl-btn{width:auto !important;padding:9px 16px !important}
+.dl-help{margin:12px 0 0;font-size:14px;white-space:pre-line}

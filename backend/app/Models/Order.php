@@ -38,7 +38,7 @@ class Order extends Model
     ];
 
     protected $fillable = [
-        'user_id', 'market', 'currency', 'tax_included_cents', 'store_id', 'status', 'delivery_method', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
+        'user_id', 'market', 'currency', 'fx_rates', 'tax_included_cents', 'store_id', 'status', 'delivery_method', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
         'subtotal_cents', 'tax_cents', 'delivery_fee_cents', 'seller_shipping_cents', 'handling_fee_cents',
         'small_cart_fee_cents', 'gift_card_discount_cents', 'total_cents', 'delivery_address', 'delivery_instructions',
         'stripe_payment_intent_id', 'stripe_refund_id', 'refunded_amount_cents',
@@ -66,6 +66,7 @@ class Order extends Model
             'total_cents' => 'integer',
             'refunded_amount_cents' => 'integer',
             'delivery_address' => 'array',
+            'fx_rates' => 'array',
             'rider_offer_expires_at' => 'datetime',
             'rider_accepted_at' => 'datetime',
             'rider_offer_declined_ids' => 'array',
@@ -91,8 +92,16 @@ class Order extends Model
             }
         });
         static::updated(function (Order $order): void {
+            // Paid: digital items become downloadable straight away.
+            if ($order->wasChanged('payment_status') && $order->payment_status === 'paid') {
+                DB::afterCommit(fn () => \App\Support\DigitalProducts::fulfill($order));
+            }
             if (! $order->wasChanged('status')) {
                 return;
+            }
+            // Cancelled before delivery: the units go back on the shelf they came from.
+            if ($order->status === 'cancelled' && $order->getOriginal('status') !== 'completed') {
+                $order->restoreStock();
             }
             if ($order->status === 'confirmed' && $order->getOriginal('status') === 'pending_payment') {
                 DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
@@ -103,6 +112,31 @@ class Order extends Model
                 DB::afterCommit(fn () => $order->emailCustomer(new OrderShipped($order->fresh())));
             }
         });
+    }
+
+    /**
+     * Put a cancelled order's units back — mirroring where checkout took them
+     * from: the serving store's shelf for products on per-store stock,
+     * otherwise the variant's or the product's own counter.
+     */
+    public function restoreStock(): void
+    {
+        foreach ($this->items()->with('product')->get() as $item) {
+            $product = $item->product;
+            if (! $product || $item->quantity <= 0) {
+                continue;
+            }
+            $shelf = $this->store_id && $product->usesStoreInventory()
+                ? $product->storeInventory()->where('store_id', $this->store_id)->where('product_variant_id', $item->product_variant_id)->first()
+                : null;
+            if ($shelf) {
+                $shelf->increment('quantity', $item->quantity);
+            } elseif ($item->product_variant_id && ($variant = ProductVariant::find($item->product_variant_id))) {
+                $variant->increment('inventory_quantity', $item->quantity);
+            } else {
+                $product->increment('inventory_quantity', $item->quantity);
+            }
+        }
     }
 
     /** Send an order email to the customer (logged in the CRM; a failure never breaks the caller). */

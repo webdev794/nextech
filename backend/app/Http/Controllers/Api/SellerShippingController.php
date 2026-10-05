@@ -11,6 +11,7 @@ use App\Support\Country;
 use App\Support\Market;
 use App\Support\SellerFulfillment;
 use App\Support\SellerShipping;
+use App\Support\SellerTax;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,12 +39,37 @@ class SellerShippingController extends Controller
             'working_holidays' => ['sometimes', 'array'],
             'working_holidays.*' => [Rule::in(array_keys(Market::holidays($shop->market)))],
             'accept_free_shipping' => ['sometimes', 'accepted'],
+            'accepts_cod' => ['sometimes', 'boolean'],
+            // Countries shipped to, keyed by market code; fee in the shop's currency.
+            'intl_shipping' => ['sometimes', 'nullable', 'array'],
+            'intl_shipping.*.fee_cents' => ['required', 'integer', 'min:0', 'max:100000000'],
+            'intl_shipping.*.transit_min_days' => ['required', 'integer', 'min:1', 'max:90'],
+            'intl_shipping.*.transit_max_days' => ['required', 'integer', 'min:1', 'max:90', 'gte:intl_shipping.*.transit_min_days'],
         ]);
+
+        if (array_key_exists('intl_shipping', $data)) {
+            $allowed = collect($this->intlDestinations($shop))->pluck('code')->all();
+            $intl = collect((array) $data['intl_shipping'])
+                ->mapWithKeys(fn ($terms, $code) => [strtoupper((string) $code) => $terms]);
+            abort_if($intl->keys()->diff($allowed)->isNotEmpty(), 422, 'You can only ship to the countries NexTech sells in.');
+            if ($intl->isNotEmpty()) {
+                abort_if($block = $this->intlBlocked($shop), 422, (string) $block);
+                abort_unless($shop->fulfillment_mode === 'self' || ($data['fulfillment_mode'] ?? null) === 'self', 422, 'Shipping abroad needs "I ship with my own courier" — switch to it first.');
+            }
+            $shop->intl_shipping = $intl->isEmpty() ? null : $intl->map(fn ($t) => [
+                'fee_cents' => (int) $t['fee_cents'],
+                'transit_min_days' => (int) $t['transit_min_days'],
+                'transit_max_days' => (int) $t['transit_max_days'],
+            ])->all();
+        }
 
         if (! empty($data['accept_free_shipping'])) {
             $shop->free_shipping_accepted_at ??= now();
         }
-        foreach (['ships_saturday', 'ships_sunday', 'working_holidays'] as $key) {
+        if (! empty($data['accepts_cod'])) {
+            abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Cash on delivery is for orders you ship yourself — choose how you ship first.');
+        }
+        foreach (['ships_saturday', 'ships_sunday', 'working_holidays', 'accepts_cod'] as $key) {
             if (array_key_exists($key, $data)) {
                 $shop->{$key} = $data[$key];
             }
@@ -249,6 +275,7 @@ class SellerShippingController extends Controller
 
         return [
             'fulfillment_mode' => $shop->fulfillment_mode,
+            'accepts_cod' => (bool) $shop->accepts_cod,
             'ships_saturday' => (bool) $shop->ships_saturday,
             'ships_sunday' => (bool) $shop->ships_sunday,
             'working_holidays' => $shop->working_holidays ?? [],
@@ -271,7 +298,30 @@ class SellerShippingController extends Controller
             'states' => Market::states($shop->market),
             'holidays' => $upcoming,
             'carriers' => collect(Market::carriers($shop->market))->map(fn ($c, $key) => ['value' => $key, 'label' => $c[0]])->values(),
+            // International shipping: countries admin has switched on, other than the shop's own.
+            'intl_shipping' => (object) ((array) $shop->intl_shipping),
+            'intl_destinations' => $this->intlDestinations($shop),
+            'intl_blocked' => $this->intlBlocked($shop),
         ];
+    }
+
+    /** @return list<array{code: string, name: string, currency: string}> */
+    private function intlDestinations(Shop $shop): array
+    {
+        return collect(Market::codes())
+            ->reject(fn ($code) => $code === $shop->market)
+            ->map(fn ($code) => ['code' => $code, 'name' => Country::find($code)['name'] ?? $code, 'currency' => Market::currency($code)])
+            ->values()->all();
+    }
+
+    /** Why this shop can't ship abroad, or null. */
+    private function intlBlocked(Shop $shop): ?string
+    {
+        if (SellerTax::onlyState($shop->seller)) {
+            return 'Sellers registered with a PAN only (no GSTIN) can sell only within their own state, so they can\'t ship abroad.';
+        }
+
+        return null;
     }
 
     private function shop(Request $request): Shop

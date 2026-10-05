@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
+import { setBranding as setSharedBranding } from './useBranding'
 import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
 import { AdminChatDock, SellerLedgerTable } from './AdminSellerChat'
-import { TrackingTimeline } from './TrackingTimeline'
+import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
+import { PersonalizationView } from './Personalization'
 import { openSellerChat, openSupportChat } from './sellerChatEvents'
 import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
+import { AdminReviews } from './AdminReviews'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { MarketSettings } from './AdminMarkets'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
@@ -157,17 +161,58 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'emails', 'riders', 'sellers', 'stores', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'reviews', 'categories', 'customers', 'emails', 'riders', 'sellers', 'stores', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
-  dashboard: 'Dashboard', orders: 'Orders', products: 'Products', categories: 'Categories',
+  dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
   customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
   support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
-  dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
+  dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', reviews: '\u{2B50}', categories: '\u{1F5C2}️',
   customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
+// Cross-border currency conversion: the market rate (fetched daily from two
+// sources and cross-checked), an optional fixed rate, and the platform margin
+// buyers pay on top. Sellers are always paid their own listed price.
+function CurrencySettings({ fx, saveSetting, onSaved }) {
+  const [margin, setMargin] = useState(() => String(fx.margin_bps / 100))
+  const [manual, setManual] = useState(() => Object.fromEntries(fx.currencies.map((c) => [c.currency, c.manual_rate ?? ''])))
+  const [busy, setBusy] = useState(false)
+  const run = async (patch, msg) => { setBusy(true); const saved = await saveSetting(patch); setBusy(false); if (saved) onSaved(msg) }
+  return (
+    <form className="admin-form" onSubmit={(e) => { e.preventDefault(); run({ fx_margin_bps: Math.round(Number(margin || 0) * 100), fx_manual: Object.fromEntries(Object.entries(manual).map(([c, v]) => [c, v === '' ? null : Number(v)])) }, 'Currency settings saved.') }}>
+      <h3>Currency conversion (cross-border orders)</h3>
+      <p className="muted">When a buyer orders from a seller in another country, prices are converted into the buyer&rsquo;s currency at the rate below plus your margin. The seller is paid their own listed price; the margin stays with NexTech (it covers the card&rsquo;s currency-conversion fee). Each order keeps the rate it was placed at.</p>
+      {fx.currencies.map((c) => (
+        <div key={c.currency} className="admin-fx-row">
+          <p><b>1 USD = {c.in_use} {c.currency.toUpperCase()}</b>{c.manual_rate ? ' (your fixed rate)' : ' (market rate)'} · buyers pay <b>{c.buyer_rate} {c.currency.toUpperCase()}</b> per USD with the margin
+            <span className="admin-note admin-fx-note">Market rate: {c.market_rate ?? 'not fetched yet'}{fx.fetched_at ? ` · updated ${new Date(fx.fetched_at).toLocaleString()}` : ''}{fx.sources?.length ? ` · from ${fx.sources.join(' + ')}` : ''}</span></p>
+          <label>Fixed rate (optional — leave blank to follow the market)
+            <input type="number" min="0" step="0.0001" value={manual[c.currency] ?? ''} placeholder={String(c.market_rate ?? '')} onChange={(e) => setManual((m) => ({ ...m, [c.currency]: e.target.value }))} />
+          </label>
+        </div>
+      ))}
+      <label>Margin added for buyers (%)
+        <input type="number" min="0" max="20" step="0.1" value={margin} onChange={(e) => setMargin(e.target.value)} />
+      </label>
+      <div className="admin-form-actions">
+        <button className="act" type="submit" disabled={busy}>Save currency settings</button>
+        <button type="button" className="act ghost" disabled={busy} onClick={() => run({ fx_refresh: true }, 'Market rate updated.')}>Update market rate now</button>
+      </div>
+    </form>
+  )
+}
+
+// A seller-shipped package still on its way with no update for 2+ days (and
+// no live courier tracking): how many days, else 0.
+function staleSellerUpdate(pk) {
+  if (!['shipped', 'in_transit', 'out_for_delivery'].includes(pk.status) || pk.tracking_ref) return 0
+  const last = new Date(pk.progress_updated_at ?? pk.shipped_at).getTime()
+  const days = Math.floor((Date.now() - last) / 86400000)
+  return days >= 2 ? days : 0
+}
+
 // Who sells the items on an order and who ships them: each seller shop
 // ("ships itself" or NexTech delivering), plus NexTech's own stock.
 function orderSellers(order) {
@@ -192,10 +237,10 @@ function orderSellers(order) {
 
 const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended', 'removed']
 const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Deactivated', removed: 'Removed' }
-const PRODUCT_STATUS_FILTERS = ['pending', 'approved', 'rejected']
-const PRODUCT_STATUS_LABELS = { pending: 'Pending', approved: 'Approved', rejected: 'Rejected' }
+const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved']
+const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -569,6 +614,7 @@ export default function Admin({ token, onClose }) {
   const [footerForm, setFooterForm] = useState(null)
   const [paymentsForm, setPaymentsForm] = useState(null)
   const [courierForm, setCourierForm] = useState(null)
+  const [pendingReviews, setPendingReviews] = useState(0)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
   const [secureGate, setSecureGate] = useState('locked') // locked | code | unlocked
   const [secureSecret, setSecureSecret] = useState('') // password or OTP code
@@ -780,6 +826,15 @@ export default function Admin({ token, onClose }) {
   useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
   useEffect(() => { if (tab === 'customers') loadCustomers() }, [tab, loadCustomers])
+  // Reviews waiting for approval, for the badge on the Reviews menu item.
+  useEffect(() => {
+    let stopped = false
+    const check = () => fetch(`${API_URL}/admin/reviews?status=pending`, { headers: authHeaders() }).then(readJson)
+      .then((d) => { if (!stopped && typeof d.pending === 'number') setPendingReviews(d.pending) }).catch(() => {})
+    check()
+    const timer = setInterval(check, 120000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [authHeaders])
   const loadRiderApps = useCallback(() => {
     fetch(`${API_URL}/admin/rider-applications`, { headers: authHeaders() })
       .then(readJson)
@@ -1118,7 +1173,8 @@ export default function Admin({ token, onClose }) {
       color_accent: brandingForm.color_accent,
       color_heading: brandingForm.color_heading,
     })
-    if (saved) { setBrandingForm({ ...EMPTY_BRANDING, ...(saved.branding ?? {}) }); setMessage('Store settings saved — refresh the storefront to see them.') }
+    // The new logo/name shows everywhere straight away (admin, Seller Center, rider, storefront).
+    if (saved) { setBrandingForm({ ...EMPTY_BRANDING, ...(saved.branding ?? {}) }); setSharedBranding(saved.branding ?? {}); setMessage('Store settings saved — the new logo and name show everywhere.') }
   }
 
   async function saveFooter(event) {
@@ -1611,6 +1667,7 @@ export default function Admin({ token, onClose }) {
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
     rest.sku = rest.sku?.trim() || null
+    if (!rest.image_url?.trim() && !(rest.images ?? []).filter(Boolean).length) { setMessage('Add a product image — a product can’t go live without one.'); return }
     const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || workMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
@@ -1775,6 +1832,22 @@ export default function Admin({ token, onClose }) {
       setProducts((cur) => cur.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
       setListingReview((cur) => (cur?.id === product.id ? { ...cur, ...data.data } : cur))
     } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Approve; when details are still missing (HSN / GST rate, compliance
+  // documents, or the seller never submitted it), confirm "approve anyway" —
+  // it goes live and the seller is emailed to add them soon.
+  function approveProduct(product) {
+    const f = product.followups ?? { blocking: [], later: [] }
+    if (f.blocking?.length) { setMessage(`Can’t go live yet: ${f.blocking.join(' ')}`); return }
+    const missing = f.later ?? []
+    if (missing.length || product.status === 'draft') {
+      const list = missing.length ? missing.map((m) => `• ${m}`).join('\n') : '• The seller hasn’t submitted it yet.'
+      if (!window.confirm(`Approve "${product.name}" anyway? It goes live now and the seller is asked to add soon:\n\n${list}`)) return
+      productAction(product, 'approve', { override: true })
+      return
+    }
+    productAction(product, 'approve')
   }
 
   function rejectProduct(product) {
@@ -2045,7 +2118,7 @@ Reason:`, '')
     <div className={`admin-shell${navOpen ? '' : ' nav-collapsed'}`}>
       <header className="admin-bar">
         <button className="admin-menu-toggle" type="button" aria-label={navOpen ? 'Hide menu' : 'Show menu'} aria-expanded={navOpen} onClick={toggleNav}>☰</button>
-        <div className="admin-brand"><span>g</span> Admin console</div>
+        <div className="admin-brand"><BrandLogo onDark /> Admin console</div>
         <div className="admin-bar-right">
           {marketOptions.length > 1 && (
             <select className="admin-market-select" aria-label="Currency" title="Show entries for this currency / country" value={activeMarket} onChange={(event) => switchAdminMarket(event.target.value)}>
@@ -2296,6 +2369,7 @@ Reason:`, '')
             <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => goTab(name)}>
               <span className="nav-ico" aria-hidden>{TAB_ICONS[name]}</span>
               <span className="nav-label">{TAB_LABELS[name]}</span>
+              {name === 'reviews' && pendingReviews > 0 && <span className="nav-badge">{pendingReviews}</span>}
             </button>
           ))}
 
@@ -2552,7 +2626,7 @@ Reason:`, '')
                       {order.delivery_method === 'seller' ? (
                         <>
                           <span className="pill pill-seller">Seller ships</span>
-                          {(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note" title={pk.tracking_detail ?? undefined}>{pk.carrier} · {pk.tracking_number} · {pk.tracking_label ?? pk.status.replace('_', ' ')}{pk.tracking_events?.[0]?.location ? ` · ${pk.tracking_events[0].location}` : ''}</span>)}
+                          {(order.packages ?? []).filter((pk) => staleSellerUpdate(pk)).slice(0, 1).map((pk) => <span key={`stale-${pk.id}`} className="pill pill-stale" title="The seller hasn't updated this package for 2+ days">No seller update {staleSellerUpdate(pk)}d</span>)}{(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note" title={pk.tracking_detail ?? undefined}>{pk.carrier} · {pk.tracking_number} · {pk.tracking_label ?? pk.status.replace('_', ' ')}{pk.tracking_events?.[0]?.location ? ` · ${pk.tracking_events[0].location}` : ''}</span>)}
                           {(order.packages ?? []).length === 0 && order.status !== 'cancelled' && <span className="admin-note">awaiting seller shipment</span>}
                         </>
                       ) : order.delivery_method === 'online_courier' ? (
@@ -2612,8 +2686,19 @@ Reason:`, '')
 
       {tab === 'products' && (
         <section className="admin-panel">
+          {/* Quick filters: what still needs work, with counts. */}
+          <div className="admin-filters admin-prod-quick">
+            {[['all', 'All products'], ['unapproved', 'Not approved yet'], ['pending', 'Waiting for review'], ['draft', 'Drafts'], ['rejected', 'Rejected'], ['followups', 'Live — details missing']].map(([value, label]) => {
+              const n = value === 'all' ? null : productsMeta?.status_counts?.[value]
+              return (
+                <button key={value} type="button" className={productStatus === value ? 'chip active' : 'chip'} onClick={() => { setProductStatus(value); setProductsPage(1); setProductForm(null) }}>
+                  {label}{n != null && <span className={`chip-count${n > 0 && value !== 'all' ? ' hot' : ''}`}>{n}</span>}
+                </button>
+              )
+            })}
+          </div>
           <div className="admin-toolbar">
-            <input className="admin-search" value={productSearch} placeholder="Search name or SKU" onChange={(event) => { setProductSearch(event.target.value); setProductsPage(1); setProductForm(null) }} />
+            <input className="admin-search" value={productSearch} placeholder="Search name, SKU or seller" onChange={(event) => { setProductSearch(event.target.value); setProductsPage(1); setProductForm(null) }} />
             <label>Sort
               <select value={productSort} onChange={(event) => { setProductSort(event.target.value); setProductsPage(1); setProductForm(null) }}>
                 <option value="newest">Newest first</option>
@@ -2659,7 +2744,7 @@ Reason:`, '')
             <form id="admin-product-form" className="admin-form" onSubmit={saveProduct}>
               <h3>{productForm.id ? `Edit product #${productForm.id}` : 'New product'}</h3>
               <div className="admin-form-grid">
-                <label>Category
+                <label>Category<b className="admin-req" title="Required"> *</b>
                   <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
                     <option value="" disabled>Choose…</option>
                     {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
@@ -2679,10 +2764,10 @@ Reason:`, '')
                     </select>
                   </label>
                 ) : <p className="admin-note">Sold in the seller&rsquo;s country store.</p>}
-                <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
+                <label>Name<b className="admin-req" title="Required"> *</b><input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
                 <label>SKU<input value={productForm.sku ?? ''} placeholder="Auto-generated if left blank" onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
                 <label>Regular price ({currencySymbol()})<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
-                <label>Sale price ({currencySymbol()})<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
+                <label>Sale price ({currencySymbol()})<b className="admin-req" title="Required"> *</b><input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
                 <label>Return window (days, max {feesForm?.max_return_days ?? 90})<input type="number" min="0" max={feesForm?.max_return_days ?? 90} placeholder={`default ${feesForm?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
                 {productForm.per_store_stock
                   ? <label>Inventory<input type="text" value="Per store — see below" disabled title="This product tracks stock per store; the counts are in the Store stock section." /></label>
@@ -2697,7 +2782,7 @@ Reason:`, '')
                 </label>
                 <label className="admin-check"><input type="checkbox" checked={!!productForm.is_exclusive_offer} onChange={(event) => setProductForm({ ...productForm, is_exclusive_offer: event.target.checked })} /> Exclusive Offer</label>
               </div>
-              <label>Image
+              <label>Image<b className="admin-req" title="Required"> *</b> <span className="muted">(a product can&rsquo;t go live without a name, category, image and price)</span>
                 <div className="admin-image-field">
                   {productForm.image_url && <img src={mediaUrl(productForm.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Image URL, or upload →" value={productForm.image_url ?? ''} onChange={(event) => setProductForm({ ...productForm, image_url: event.target.value })} />
@@ -2825,7 +2910,7 @@ Reason:`, '')
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
                   return (
                   <tr key={product.id}>
-                    <td>{product.name}{countryBadge(product.market)}</td>
+                    <td>{product.name}{countryBadge(product.market)}{product.product_type === 'digital' && <span className="pill pill-digital" title="Digital download">⬇ Digital</span>}{(product.followup_items ?? []).length > 0 && <span className="admin-note" title={product.followup_items.join(' ')}>⚠ seller to add {product.followup_items.length} detail{product.followup_items.length === 1 ? '' : 's'}</span>}{product.shop_id && ['pending', 'draft'].includes(product.status) && (product.followups?.later ?? []).length > 0 && <span className="admin-note" title={product.followups.later.join(' ')}>⚠ {product.followups.later.length} detail{product.followups.later.length === 1 ? '' : 's'} missing</span>}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
@@ -2843,12 +2928,12 @@ Reason:`, '')
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
                       {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
-                      {product.shop_id && product.status === 'pending' && <>
-                        <button className="act" type="button" disabled={busyId === product.id || (product.missing_compliance ?? []).length > 0} title={(product.missing_compliance ?? []).length ? 'Compliance documents missing' : undefined} onClick={() => productAction(product, 'approve')}>Approve</button>
+                      {product.shop_id && ['pending', 'draft'].includes(product.status) && <>
+                        <button className="act" type="button" disabled={busyId === product.id} title={(product.followups?.later ?? []).length ? `Still missing: ${product.followups.later.join(' ')}` : undefined} onClick={() => approveProduct(product)}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve'}</button>
                         <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
                       </>}
                       {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
-                      {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => productAction(product, 'approve')}>Approve</button>}
+                      {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => approveProduct(product)}>Approve</button>}
                       <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>
                     </td>
                   </tr>
@@ -2920,6 +3005,7 @@ Reason:`, '')
         </section>
       )}
 
+      {tab === 'reviews' && <AdminReviews authHeaders={authHeaders} onMessage={setMessage} onPending={setPendingReviews} />}
       {tab === 'emails' && <EmailsPanel authHeaders={authHeaders} defaultMarket={workMarket} onMessage={setMessage} />}
 
       {tab === 'customers' && (
@@ -3747,6 +3833,8 @@ Reason:`, '')
                 <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
               </div>
 
+              {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
+
               <div className="admin-form">
                 <h3>Seller shipping</h3>
                 <label>&ldquo;NexTech collects &amp; delivers&rdquo; option for sellers
@@ -4142,7 +4230,7 @@ Reason:`, '')
           busy={busyId === listingReview.id}
           fail={fail}
           onClose={() => setListingReview(null)}
-          onAction={(action) => (action === 'approve' ? productAction(listingReview, 'approve') : rejectProduct(listingReview))}
+          onAction={(action) => (action === 'approve' ? approveProduct(listingReview) : rejectProduct(listingReview))}
         />
       )}
 
@@ -4193,7 +4281,7 @@ Reason:`, '')
                 <tbody>
                   {(o.items ?? []).map((it) => (
                     <tr key={it.id}>
-                      <td>{it.product_name}{it.variant_label && <span className="admin-note">{it.variant_label}</span>}</td>
+                      <td>{it.product_name}{it.variant_label && <span className="admin-note">{it.variant_label}</span>}<PersonalizationView value={it.personalization} download /></td>
                       <td>{it.quantity}</td>
                       <td>{money(it.unit_price_cents, o.currency)}</td>
                       <td>{money(it.line_total_cents, o.currency)}</td>
@@ -4248,6 +4336,7 @@ Reason:`, '')
                             📦 {pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
                             {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
                             {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
+                            <PackageProgress pkg={pk} packedAt={ss.packed_at} cod={o.payment_method === 'cod'} />
                             <TrackingTimeline pkg={pk} />
                             {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}
                             {' '}<button type="button" className="link" disabled={busyId === o.id} onClick={() => editPackageTracking(o, pk)}>Edit tracking</button>

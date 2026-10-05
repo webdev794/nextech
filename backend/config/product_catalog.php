@@ -38,6 +38,20 @@ return [
     ],
 
     // Extra product details per category slug.
+    // A digital download (product type "digital"), in any category, gets these
+    // fields instead of the category's physical ones (RAM, colour, battery…).
+    'digital_attributes' => [
+        ['key' => 'digital_type', 'label' => 'Type', 'type' => 'select', 'options' => ['Game', 'Software / app', 'E-book', 'Music / audio', 'Video / course', 'Template / design asset', 'Font', 'Plugin / extension', 'Other'], 'required' => true],
+        ['key' => 'platforms', 'label' => 'Works on', 'type' => 'multiselect', 'options' => ['Windows', 'macOS', 'Linux', 'Android', 'iOS / iPadOS', 'Web browser', 'Any device'], 'required' => true],
+        ['key' => 'version', 'label' => 'Version', 'type' => 'text'],
+        ['key' => 'file_format', 'label' => 'File format', 'type' => 'text', 'placeholder' => 'e.g. EXE installer, ZIP, PDF, EPUB, MP3, MP4'],
+        ['key' => 'languages', 'label' => 'Languages', 'type' => 'multiselect', 'options' => ['English', 'Hindi', 'Spanish', 'French', 'German', 'Chinese', 'Japanese', 'Arabic', 'Other']],
+        ['key' => 'system_requirements', 'label' => 'System requirements', 'type' => 'text', 'placeholder' => 'e.g. Windows 10+, 8 GB RAM, 20 GB free space, DirectX 12'],
+        ['key' => 'license_type', 'label' => 'License', 'type' => 'select', 'options' => ['Personal use', 'Commercial use', 'Single device', 'Multiple devices', 'Lifetime', 'Subscription (1 year)', 'Open source', 'Other']],
+        ['key' => 'age_rating', 'label' => 'Age rating', 'type' => 'select', 'options' => ['Everyone', '7+', '12+', '16+', '18+']],
+        ['key' => 'pages_or_duration', 'label' => 'Pages / length', 'type' => 'text', 'placeholder' => 'e.g. 320 pages, 4 h 20 min'],
+    ],
+
     'category_attributes' => [
         'mobiles-smartphones' => [
             ['key' => 'storage_capacity', 'label' => 'Storage capacity', 'type' => 'select', 'options' => $storage, 'required' => true],

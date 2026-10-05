@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
 import { mediaUrl } from './mediaUrl'
 import './Admin.css'
 
@@ -113,6 +114,7 @@ export default function AdminEntry() {
   return (
     <div className="admin-gate">
       <form className="admin-gate-card" onSubmit={otp ? submitCode : submitPassword}>
+        <div className="entry-logo"><BrandLogo /></div>
         <h1>Administrator sign-in</h1>
         <p className="admin-gate-sub">{otp
           ? `Enter the 6-digit code sent to ${otp.email}.`

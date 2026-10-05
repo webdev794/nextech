@@ -15,8 +15,12 @@ use App\Models\Product;
 class ProductCatalog
 {
     /** @return list<array<string, mixed>> */
-    public static function attributesFor(?Category $category): array
+    public static function attributesFor(?Category $category, bool $digital = false): array
     {
+        // A digital download has its own field set (type, platforms, version…), whatever its category.
+        if ($digital) {
+            return (array) config('product_catalog.digital_attributes', []);
+        }
         $extra = $category ? (array) config('product_catalog.category_attributes.'.$category->slug, []) : [];
         $extraKeys = array_column($extra, 'key');
 
@@ -30,8 +34,11 @@ class ProductCatalog
     }
 
     /** @return list<array<string, mixed>> */
-    public static function complianceFor(?string $market, ?Category $category): array
+    public static function complianceFor(?string $market, ?Category $category, bool $digital = false): array
     {
+        if ($digital) {
+            return []; // physical-product documents don't apply to downloads
+        }
         $market = strtoupper((string) ($market ?? Market::home()));
         $byMarket = (array) config('product_catalog.compliance.'.$market, config('product_catalog.compliance.US'));
         $specific = $category ? (array) ($byMarket[$category->slug] ?? []) : [];
@@ -74,9 +81,47 @@ class ProductCatalog
         $have = collect((array) ($product->compliance['documents'] ?? []))->pluck('type')->all();
         $attributes = (array) $product->product_details;
 
-        return collect(self::complianceFor($product->market, $product->category))
+        return collect(self::complianceFor($product->market, $product->category, $product->isDigital()))
             ->filter(fn ($d) => ($d['required'] ?? false) && self::applies($d, $attributes) && ! in_array($d['key'], $have, true))
             ->pluck('label')->values()->all();
+    }
+
+    /**
+     * What a seller product still lacks, for admin's "Approve anyway":
+     * 'blocking' = the basics no product can go live without (name, category,
+     * an image, a price); 'later' = everything else the seller can add after
+     * it's live (full listing details, HSN / GST rate, compliance documents).
+     *
+     * @return array{blocking: list<string>, later: list<string>}
+     */
+    public static function followups(Product $product): array
+    {
+        $product->loadMissing(['category', 'variants', 'images', 'shop.seller']);
+        $shop = $product->shop;
+        $data = $product->toArray();
+        $variants = $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all();
+        $images = $product->images->pluck('url')->all();
+        $shipsItself = (bool) $shop?->shipsItself();
+
+        $basics = self::listingErrors($data, $product->category, $variants, $images, $shipsItself, false);
+        $full = array_diff_key(self::listingErrors($data, $product->category, $variants, $images, $shipsItself, true), $basics);
+        $later = array_values($full);
+        if (Market::taxInclusive($product->market) && SellerRequirements::on($shop, 'gst_details')) {
+            if (! $product->hsn_code) {
+                $later[] = 'Add the HSN code.';
+            }
+            if ($product->gst_rate_bps === null) {
+                $later[] = 'Choose the GST rate.';
+            }
+        }
+        if (Market::taxInclusive($product->market) && ! $product->isDigital() && ! $product->manufacturer_info) {
+            $later[] = 'Add the manufacturer / packer details.';
+        }
+        foreach (self::missingCompliance($product) as $doc) {
+            $later[] = "Upload the compliance document: {$doc}.";
+        }
+
+        return ['blocking' => array_values($basics), 'later' => array_values(array_unique($later))];
     }
 
     /**
@@ -108,15 +153,17 @@ class ProductCatalog
         if (! $variants && (int) ($data['price_cents'] ?? 0) <= 0) {
             $errors['price_cents'] = 'Enter the base price.';
         }
-        if ($strict && trim((string) ($data['country_of_origin'] ?? '')) === '') {
+        // Downloads have no country of origin or handling time.
+        $digital = ($data['product_type'] ?? null) === 'digital';
+        if ($strict && ! $digital && trim((string) ($data['country_of_origin'] ?? '')) === '') {
             $errors['country_of_origin'] = 'Choose the country/region of origin.';
         }
-        if ($strict && $shipsItself && empty($data['handling_days'])) {
+        if ($strict && ! $digital && $shipsItself && empty($data['handling_days'])) {
             $errors['handling_days'] = 'Choose a handling time.';
         }
 
         $attributes = (array) ($data['product_details'] ?? []);
-        foreach (self::attributesFor($category) as $field) {
+        foreach (self::attributesFor($category, $digital) as $field) {
             $value = $attributes[$field['key']] ?? null;
             $empty = $value === null || $value === '' || $value === [];
             if ($strict && ($field['required'] ?? false) && self::applies($field, $attributes) && $empty) {
@@ -193,6 +240,8 @@ class ProductCatalog
                 'compliance' => self::complianceFor($market, $c),
                 'keywords' => (array) config('product_catalog.keywords.'.$c->slug, []),
             ])->values(),
+            // Shown instead of a category's fields when the seller picks "Digital download".
+            'digital_attributes' => self::attributesFor(null, true),
             'variation_types' => config('product_catalog.variation_types'),
             'max_variation_levels' => config('product_catalog.max_variation_levels'),
             'size_families' => config('product_catalog.size_families'),

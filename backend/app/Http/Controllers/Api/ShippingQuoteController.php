@@ -8,6 +8,7 @@ use App\Models\OrderPackage;
 use App\Models\Product;
 use App\Support\Market;
 use App\Support\SellerFulfillment;
+use App\Support\SellerProgress;
 use App\Support\SellerShipping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,17 +38,19 @@ class ShippingQuoteController extends Controller
         $sellerShipped = [];
         foreach ($data['lines'] as $line) {
             $product = $products->get($line['product_id']);
-            if (! $product || ! $product->shop?->shipsItself()) {
+            if (! $product || $product->isDigital() || ! $product->shop?->shipsItself()) {
                 continue;
             }
             $sellerShipped[] = $product->id;
             $lines[] = ['product' => $product, 'quantity' => $line['quantity'], 'line_total_cents' => $line['price_cents'] * $line['quantity']];
         }
 
-        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data));
+        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data), ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null);
 
         return response()->json(['data' => $quote + [
             'seller_shipped_product_ids' => array_values(array_unique($sellerShipped)),
+            // Cash on delivery for this cart: null = allowed, otherwise why not.
+            'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request)),
             'state_known' => SellerShipping::stateCode($data['state'] ?? null, Market::fromRequest($request)) !== null,
         ]]);
     }
@@ -57,9 +60,10 @@ class ShippingQuoteController extends Controller
     {
         abort_unless($order->user_id === $request->user()->id && $package->order_id === $order->id, 404);
         abort_if($package->status === 'delivered', 422, 'Already marked as received.');
+        abort_unless(in_array($package->status, SellerProgress::MOVING, true), 422, 'This package can’t be marked received.');
 
-        $package->update(['status' => 'delivered', 'delivered_at' => now()]);
-        SellerFulfillment::sync($order);
+        // Recorded as the buyer's step; cash on delivery is still confirmed by the seller.
+        SellerProgress::advance($package, 'delivered', 'buyer');
 
         return response()->json(['data' => $package->fresh()]);
     }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
 import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
 import RiderEarnings from './RiderEarnings'
@@ -457,7 +458,7 @@ export default function RiderConsole({ token, onSignOut }) {
   return (
     <div className="rider-shell">
       <header className="rider-bar">
-        <strong>Deliveries</strong>
+        <strong className="rider-brand"><BrandLogo onDark /> Deliveries</strong>
         <div>
           <div className="rider-alert-wrap">
             <button type="button" className="rider-link" aria-expanded={alertOpen} onClick={() => setAlertOpen((v) => !v)}>Alert sound</button>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\Setting;
+use App\Notifications\SellerProductFollowup;
 use App\Support\ProductCatalog;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
@@ -26,7 +27,7 @@ class AdminProductController extends Controller
             'search' => ['sometimes', 'string', 'max:100'],
             'category_id' => ['sometimes', 'integer', 'exists:categories,id'],
             'store_id' => ['sometimes', 'integer', 'exists:stores,id'],
-            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft'])],
+            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft', 'unapproved', 'followups'])],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'demo' => ['sometimes', Rule::in(['only', 'none'])],
@@ -51,13 +52,10 @@ class AdminProductController extends Controller
                 ->selectRaw('COALESCE(si.quantity, products.inventory_quantity) as effective_stock')
                 ->visibleAtStore($storeId), fn ($query) => $query
                 ->selectRaw('products.inventory_quantity as effective_stock'))
-            ->when($validated['search'] ?? null, fn ($query, $search) => $query->where(
-                fn ($inner) => $inner->where('products.name', 'like', "%{$search}%")->orWhere('products.sku', 'like', "%{$search}%")
-            ))
+            ->when($validated['search'] ?? null, fn ($query, $search) => self::search($query, $search))
             ->when($validated['category_id'] ?? null, fn ($query, $id) => $query->where('products.category_id', $id))
             ->when($validated['demo'] ?? null, fn ($query, $demo) => $query->where('products.is_demo', $demo === 'only'))
-            // Sellers' unfinished drafts (Manage products -> Incomplete) stay out of the review list.
-            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('products.status', $status), fn ($query) => $query->where('products.status', '!=', 'draft'))
+            ->tap(fn ($query) => self::byStatus($query, $validated['status'] ?? null))
             ->when($sort === 'newest', fn ($query) => $query->orderByDesc('products.created_at')->orderByDesc('products.id'))
             ->when($sort === 'oldest', fn ($query) => $query->orderBy('products.created_at')->orderBy('products.id'))
             ->when($sort === 'name', fn ($query) => $query->orderBy('products.name'))
@@ -68,6 +66,10 @@ class AdminProductController extends Controller
         // Required compliance documents a seller product still lacks — it can't be approved until they're in.
         foreach ($products->items() as $item) {
             $item->setAttribute('missing_compliance', $item->shop_id ? ProductCatalog::missingCompliance($item) : []);
+            // Waiting on admin, or live with details still to add: what's missing.
+            if ($item->shop_id && $item->status !== 'rejected') {
+                $item->setAttribute('followups', ProductCatalog::followups($item));
+            }
         }
 
         return response()->json([
@@ -80,8 +82,50 @@ class AdminProductController extends Controller
                 // Demo products: how many (in this market view) and whether they're hidden from the store.
                 'demo_count' => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))->where('is_demo', true)->count(),
                 'demos_hidden' => Product::demosHidden(),
+                // For the quick filters: seller products not approved yet, and live ones still missing details.
+                'status_counts' => self::statusCounts($request),
             ],
         ]);
+    }
+
+    /**
+     * The list's status filter. Default (none) hides sellers' unfinished
+     * drafts; 'unapproved' = everything not live yet (waiting for review,
+     * drafts, rejected); 'followups' = approved anyway, details still missing.
+     */
+    private static function byStatus($query, ?string $status): void
+    {
+        match ($status) {
+            null => $query->where('products.status', '!=', 'draft'),
+            'unapproved' => $query->whereIn('products.status', ['pending', 'draft', 'rejected']),
+            'followups' => $query->where('products.status', 'approved')->whereNotNull('products.followup_requested_at'),
+            default => $query->where('products.status', $status),
+        };
+    }
+
+    /** Name, SKU, the seller's own product code, or the seller's shop name. */
+    private static function search($query, string $search): void
+    {
+        $query->where(fn ($inner) => $inner
+            ->where('products.name', 'like', "%{$search}%")
+            ->orWhere('products.sku', 'like', "%{$search}%")
+            ->orWhere('products.seller_code', 'like', "%{$search}%")
+            ->orWhereHas('shop', fn ($shop) => $shop->where('name', 'like', "%{$search}%")));
+    }
+
+    /** @return array<string, int> */
+    private static function statusCounts(Request $request): array
+    {
+        $base = fn () => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m));
+        $byStatus = $base()->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
+
+        return [
+            'pending' => (int) ($byStatus['pending'] ?? 0),
+            'draft' => (int) ($byStatus['draft'] ?? 0),
+            'rejected' => (int) ($byStatus['rejected'] ?? 0),
+            'unapproved' => (int) (($byStatus['pending'] ?? 0) + ($byStatus['draft'] ?? 0) + ($byStatus['rejected'] ?? 0)),
+            'followups' => $base()->where('status', 'approved')->whereNotNull('followup_requested_at')->count(),
+        ];
     }
 
     /** Mark one product as a demo product, or not. */
@@ -100,14 +144,14 @@ class AdminProductController extends Controller
             'is_demo' => ['required', 'boolean'],
             'search' => ['sometimes', 'nullable', 'string', 'max:100'],
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
-            'status' => ['sometimes', 'nullable', Rule::in(['pending', 'approved', 'rejected', 'draft'])],
+            'status' => ['sometimes', 'nullable', Rule::in(['pending', 'approved', 'rejected', 'draft', 'unapproved', 'followups'])],
             'nextech_only' => ['sometimes', 'boolean'],
         ]);
         $count = Product::query()
             ->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))
-            ->when($data['search'] ?? null, fn ($q, $search) => $q->where(fn ($inner) => $inner->where('name', 'like', "%{$search}%")->orWhere('sku', 'like', "%{$search}%")))
+            ->when($data['search'] ?? null, fn ($q, $search) => self::search($q, $search))
             ->when($data['category_id'] ?? null, fn ($q, $id) => $q->where('category_id', $id))
-            ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status), fn ($q) => $q->where('status', '!=', 'draft'))
+            ->tap(fn ($q) => self::byStatus($q, $data['status'] ?? null))
             ->when($data['nextech_only'] ?? false, fn ($q) => $q->whereNull('shop_id'))
             ->update(['is_demo' => $data['is_demo']]);
 
@@ -126,6 +170,7 @@ class AdminProductController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        abort_if(empty($data['image_url']) && empty(array_filter((array) ($data['images'] ?? []))), 422, 'Add a product image — a product can’t go live without one.');
         // NexTech's own product: the country picked in the form, else the one the admin is working in.
         $data['market'] = ($data['shop_id'] ?? null) ? null : ($data['market'] ?? Market::fromRequest($request));
         if ($data['market'] === null) {
@@ -161,6 +206,10 @@ class AdminProductController extends Controller
     public function update(Request $request, Product $product): JsonResponse
     {
         $data = $this->validated($request, $product);
+        // A product always keeps at least one image.
+        if (array_key_exists('image_url', $data) && array_key_exists('images', $data)) {
+            abort_if(empty($data['image_url']) && empty(array_filter((array) $data['images'])), 422, 'Add a product image — a product can’t go live without one.');
+        }
         // A seller product's country is always its shop's.
         if (($data['shop_id'] ?? $product->shop_id) !== null) {
             unset($data['market']);
@@ -188,14 +237,35 @@ class AdminProductController extends Controller
      * row — an admin-owned product (shop_id null) is always already
      * 'approved' via store()/update() forcing it, so this is a no-op there.
      */
-    public function approve(Product $product): JsonResponse
+    public function approve(Request $request, Product $product): JsonResponse
     {
         abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
-        abort_if($product->status === 'draft', 422, 'The seller hasn’t submitted this product yet.');
-        $missing = ProductCatalog::missingCompliance($product);
-        abort_if($missing !== [], 422, 'Compliance documents missing: '.implode(', ', $missing).'. Ask the seller to upload them under Products -> Product compliance.');
+        $followups = ProductCatalog::followups($product);
+        abort_if($followups['blocking'] !== [], 422, 'Can’t go live yet: '.implode(' ', $followups['blocking']));
+        // Details still missing (e.g. HSN / GST rate, compliance documents): admin
+        // may approve anyway so the shop can start selling, and the seller is
+        // asked to add them soon.
+        if (($followups['later'] !== [] || $product->status === 'draft') && ! $request->boolean('override')) {
+            return response()->json([
+                'message' => 'Still missing: '.implode(' ', $followups['later'] ?: ['the seller hasn’t submitted it yet.']),
+                'missing' => $followups['later'],
+                'can_override' => true,
+            ], 422);
+        }
 
-        $product->forceFill(['status' => 'approved', 'rejection_reason' => null])->save();
+        $product->forceFill([
+            'status' => 'approved',
+            'rejection_reason' => null,
+            'followup_items' => $followups['later'] ?: null,
+            'followup_requested_at' => $followups['later'] ? now() : null,
+        ])->save();
+        if ($followups['later']) {
+            try {
+                $product->shop?->seller?->user?->notify(new SellerProductFollowup($product, $followups['later']));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
     }

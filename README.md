@@ -1234,3 +1234,35 @@ See `mobile/README.md` for how to run the app in Expo Go and point it at the API
 -----
 Tasks to do:
 iOS build/testing pass for the mobile app (see Known Gaps To Revisit).
+
+The storefront and admin screens for reviews are still to do.
+
+Admin should have option to approve product even if GST, etc, not entered yet, to make seller online active. 
+
+Add compliance information first. Mismatch? 
+
+I have noticed when a user make order and his profile will show his review. However user has no option create review for a product which was ordered at http://127.0.0.1:5173/#/account/orders 
+
+I noticed latest order I made, there was tax charged $0.00 as shown in bill receipt. I think each store may have a different type of tax rate, handling fee, etc entered by seller of that product? 
+
+In order page, horizontal scroll bar is below table, so need to scroll down below table, to access it to see right. Need it below page for easy access.
+
+what about all tax information, gstin customer added, is it visible to admin anywhere? maybe like customer, sellers page in admin should also have a view button with all their details.
+	
+When seller submit application for verification, admin can make items which need verification again, and when seller logs in on temu.com, it shows like image attached. add Similar functionality on it. 
+
+Seller also has option to change product active, reslist in temu.com 
+seller also has VAT registration number in temu.com 
+seller also have category of displaying shipped, unshipped order. 
+videos see? 
+Available to pay out $45.00 <- But minimum payout amount is $1000 set, so it should show available only when reached $1000 or +. 
+
+courier to other country set?
+
+
+We can choose if any seller can ship internationally? Maybe admin approve it? 
+
+https://chatgpt.com/c/6ab4f80f-2620-83e8-b3a8-eb667a8eff92 registration process videos verify if all added. 
+Translate other videos too, to verify changes. 
+
+Create folder Documents > Seller Documents > write this whole process in pdf. 

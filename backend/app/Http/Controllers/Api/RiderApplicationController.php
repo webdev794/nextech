@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RiderApplication;
 use App\Models\Store;
 use App\Support\Geo;
+use App\Support\VisitorCountry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -50,10 +51,14 @@ class RiderApplicationController extends Controller
             [$lat, $lng] = Geo::geocode($data['address']);
         }
 
+        // No location yet: the visitor's own country (from their IP) first.
+        $country = ($lat === null || $lng === null) ? VisitorCountry::detect($request) : null;
+
         $stores = Store::query()
             ->where('is_active', true)
             ->withCount(['riders' => fn ($q) => $q->where('is_rider', true)])
-            ->get(['id', 'name', 'line1', 'city', 'state', 'postal_code', 'latitude', 'longitude'])
+            ->when($country, fn ($q) => $q->orderByRaw('country = ? DESC', [$country]))
+            ->get(['id', 'name', 'line1', 'city', 'state', 'postal_code', 'country', 'latitude', 'longitude'])
             ->map(function (Store $store) use ($lat, $lng) {
                 $km = ($lat !== null && $lng !== null && $store->latitude !== null && $store->longitude !== null)
                     ? Geo::haversineKm($lat, $lng, (float) $store->latitude, (float) $store->longitude)

@@ -7,3 +7,14 @@
 .trk-list{margin:6px 0 0;padding:0 0 0 16px;display:flex;flex-direction:column;gap:6px}
 .trk-list li{display:flex;flex-direction:column;font-size:12px}
 .trk-list small{color:#5d6a62;font-size:12px}
+.pp{display:flex;flex-wrap:wrap;gap:0;margin:8px 0 4px;padding:0;list-style:none;font-size:12px}
+.pp li{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:92px;padding:0 10px 0 0;color:#8a948e}
+.pp li::before{content:"";position:absolute;top:5px;left:12px;right:0;height:2px;background:#dfe4e1}
+.pp li:last-child::before{display:none}
+.pp li.done{color:#1f3a2a}
+.pp li.done::before{background:#2f8f4e}
+.pp-dot{position:relative;z-index:1;width:12px;height:12px;border-radius:50%;border:2px solid #c6cdc9;background:#fff}
+.pp li.done .pp-dot{border-color:#2f8f4e;background:#2f8f4e}
+.pp b{font-weight:600}
+.pp small{color:#5d6a62;font-size:12px}
+.pp-off{margin:6px 0;color:#b4361f;font-size:12px}

@@ -10,6 +10,8 @@ use App\Support\StoreDecorations;
 use App\Support\SellerRequirements;
 use App\Models\ProductVariant;
 use App\Models\Shop;
+use App\Support\Country;
+use App\Support\Fx;
 use App\Support\Market;
 use App\Support\StoreLocator;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +38,42 @@ class CatalogController extends Controller
         )?->id;
     }
 
+    /** Shop columns the catalog needs: shipping terms for cross-border products, name/link for the product page. */
+    // seller_id: whether the shop is live (Product::hiddenFromShoppers) needs its seller.
+    private const SHOP_COLUMNS = 'id,seller_id,name,slug,market,fulfillment_mode,intl_shipping';
+
+    /**
+     * A product shipped in from another country's seller: prices converted
+     * into the shopper's currency (with the platform margin), plus where it
+     * ships from and the seller's international shipping fee and transit.
+     */
+    private function presentCrossBorder(Product $product, ?string $market): void
+    {
+        $terms = $market ? $product->crossBorderTerms($market) : null;
+        if (! $terms) {
+            return;
+        }
+        $from = Market::currency($product->market);
+        $to = Market::currency($market);
+        $rate = Fx::multiplier($from, $to);
+        $conv = fn ($cents) => $cents === null ? null : Fx::convert((int) $cents, $from, $to, $rate);
+
+        $product->setAttribute('price_cents', $conv($product->price_cents));
+        $product->setAttribute('compare_at_price_cents', $conv($product->compare_at_price_cents));
+        foreach ($product->variants as $variant) {
+            $variant->setAttribute('price_cents', $conv($variant->price_cents));
+            $variant->setAttribute('compare_at_price_cents', $conv($variant->compare_at_price_cents));
+        }
+        $product->setAttribute('currency', $to);
+        $product->setAttribute('ships_from', $product->market);
+        $product->setAttribute('ships_from_name', Country::find($product->market)['name'] ?? $product->market);
+        $product->setAttribute('intl_shipping', [
+            'fee_cents' => $conv((int) ($terms['fee_cents'] ?? 0)),
+            'transit_min_days' => (int) ($terms['transit_min_days'] ?? 0),
+            'transit_max_days' => (int) ($terms['transit_max_days'] ?? 0),
+        ]);
+    }
+
     public function categories(Request $request): JsonResponse
     {
         $storeId = $this->servingStoreId($request);
@@ -47,7 +85,7 @@ class CatalogController extends Controller
                 // Outside the home market, only categories that market sells in.
                 ->when($market !== Market::home(), fn ($query) => $query->whereHas(
                     'products',
-                    fn ($inner) => $inner->inMarket($market)->where('is_active', true)->where('status', 'approved'),
+                    fn ($inner) => $inner->availableIn($market)->where('is_active', true)->where('status', 'approved'),
                 ))
                 // When a store serves this customer, hide a category with nothing
                 // for sale there (an out-of-stock item still counts). With no
@@ -81,6 +119,7 @@ class CatalogController extends Controller
 
         $storeId = $this->servingStoreId($request);
         $shopId = isset($validated['shop']) ? (self::publicShop($validated['shop'])?->id ?? 0) : null;
+        $market = Market::fromRequest($request);
 
         $products = Product::query()
             ->with([
@@ -88,13 +127,15 @@ class CatalogController extends Controller
                 'variants' => fn ($query) => $query->where('is_active', true),
                 'storeInventory',
                 'images',
+                'shop:'.self::SHOP_COLUMNS,
             ])
             ->where('is_active', true)
             ->where('status', 'approved')
             ->shownToShoppers()
-            // Shoppers see only their market's products — except on a shop's
-            // own page, which lists that shop whatever market it's in.
-            ->when($shopId === null, fn ($query) => $query->inMarket(Market::fromRequest($request)))
+            // Shoppers see their market's products and those shipped in from
+            // other countries — except on a shop's own page, which lists that
+            // shop whatever market it's in.
+            ->when($shopId === null, fn ($query) => $query->availableIn($market))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->when(isset($validated['search']), function ($query) use ($validated) {
@@ -130,9 +171,33 @@ class CatalogController extends Controller
                 fn ($query) => $query->orderBy('name'),
             )
             ->paginate($validated['per_page'] ?? 20)
-            ->through(fn (Product $product) => $this->present($product, $storeId));
+            ->through(fn (Product $product) => $this->present($product, $storeId, $market));
 
         return response()->json($products);
+    }
+
+    /**
+     * The signed-in buyer's favourites that are on sale in the store being
+     * browsed, newest saved first, shaped like any product list.
+     */
+    public function favorites(Request $request): JsonResponse
+    {
+        $market = Market::fromRequest($request);
+        $ids = \App\Models\Favorite::where('user_id', $request->user()->id)->latest()->pluck('product_id');
+
+        $products = Product::query()
+            ->with(['category', 'variants' => fn ($query) => $query->where('is_active', true), 'storeInventory', 'images', 'shop:'.self::SHOP_COLUMNS])
+            ->whereIn('id', $ids)
+            ->where('is_active', true)
+            ->where('status', 'approved')
+            ->shownToShoppers()
+            ->availableIn($market)
+            ->get()
+            ->sortBy(fn (Product $p) => $ids->search($p->id))
+            ->values()
+            ->map(fn (Product $product) => $this->present($product, null, $market));
+
+        return response()->json(['data' => $products, 'saved_elsewhere' => $ids->count() - $products->count()]);
     }
 
     /**
@@ -149,6 +214,7 @@ class CatalogController extends Controller
         ]);
 
         $storeId = $this->servingStoreId($request);
+        $market = Market::fromRequest($request);
 
         $products = Product::query()
             ->with([
@@ -156,19 +222,20 @@ class CatalogController extends Controller
                 'variants' => fn ($query) => $query->where('is_active', true),
                 'storeInventory',
                 'images',
+                'shop:'.self::SHOP_COLUMNS,
             ])
             ->where('is_active', true)
             ->where('status', 'approved')
             ->where('deal_type', $validated['deal_type'])
             ->shownToShoppers()
-            ->inMarket(Market::fromRequest($request))
+            ->availableIn($market)
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->inRandomOrder()
             ->limit($validated['limit'] ?? 3)
             ->get()
-            ->map(fn (Product $product) => $this->present($product, $storeId));
+            ->map(fn (Product $product) => $this->present($product, $storeId, $market));
 
         return response()->json(['data' => $products]);
     }
@@ -236,7 +303,7 @@ class CatalogController extends Controller
         $storeId = $this->servingStoreId($request);
 
         $product->load([
-            'shop:id,name,slug,is_active',
+            'shop:'.self::SHOP_COLUMNS.',is_active',
             'category',
             'variants' => fn ($query) => $query->where('is_active', true),
             'storeInventory',
@@ -258,7 +325,7 @@ class CatalogController extends Controller
         );
 
         return response()->json([
-            'data' => $this->present($product, $storeId),
+            'data' => $this->present($product, $storeId, Market::fromRequest($request), keepShop: true),
         ]);
     }
 
@@ -269,8 +336,10 @@ class CatalogController extends Controller
      * working; `out_of_stock` flags a stocked-but-empty line, and variants the
      * store doesn't carry are dropped.
      */
-    private function present(Product $product, ?int $storeId): Product
+    private function present(Product $product, ?int $storeId, ?string $market = null, bool $keepShop = false): Product
     {
+        $this->presentCrossBorder($product, $market);
+
         if ($storeId !== null && $product->usesStoreInventory()) {
             $kept = [];
 
@@ -302,16 +371,24 @@ class CatalogController extends Controller
         $prices = $product->variants->pluck('price_cents')->push($product->price_cents);
         $product->setAttribute('price_min_cents', (int) $prices->min());
         $product->setAttribute('price_max_cents', (int) $prices->max());
-        $product->setAttribute('currency', Market::currency($product->market));
+        if (! $product->getAttribute('ships_from')) {
+            $product->setAttribute('currency', Market::currency($product->market));
+        }
 
         // storeInventory was only loaded to compute the above; don't ship it.
         $product->unsetRelation('storeInventory');
+        // The shop was loaded for its shipping terms; only the product page shows it (name/link).
+        if (! $keepShop) {
+            $product->unsetRelation('shop');
+        } else {
+            $product->shop?->makeHidden(['intl_shipping', 'fulfillment_mode', 'market', 'seller_id', 'seller']);
+        }
 
         // Seller-only listing data never reaches shoppers.
         $product->makeHidden(['compliance', 'price_references', 'seller_code', 'rejection_reason', 'suggested_category_name']);
         if ($product->relationLoaded('category') && $product->product_details) {
             // Product details as labelled specifications for the product page.
-            $fields = collect(ProductCatalog::attributesFor($product->category))->keyBy('key');
+            $fields = collect(ProductCatalog::attributesFor($product->category, $product->isDigital()))->keyBy('key');
             $product->setAttribute('specifications', collect($product->product_details)
                 ->filter(fn ($v, $k) => $fields->has($k) && $v !== null && $v !== '' && $v !== [] && ProductCatalog::applies($fields[$k], $product->product_details))
                 ->map(fn ($v, $k) => ['label' => $fields[$k]['label'], 'value' => implode(', ', (array) $v).(isset($fields[$k]['unit']) ? ' '.$fields[$k]['unit'] : '')])

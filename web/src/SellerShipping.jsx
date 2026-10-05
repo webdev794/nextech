@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 import { currencySymbol, storeMoney } from './money'
-import { TrackingTimeline } from './TrackingTimeline'
+import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
+import { PersonalizationView } from './Personalization'
 
 const money = (cents) => storeMoney(cents ?? 0)
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—')
@@ -35,6 +36,53 @@ const MODES = [
 ]
 const EMPTY_ADDRESS = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', phone: '', contact_name: '', is_default: false }
 const EMPTY_GROUP = { regions: [], address_types: ['standard'], transit_min_days: 2, transit_max_days: 5, fee: '' }
+
+// ---------------------------------------------------------------------------
+// International shipping: the other countries this shop ships to (from the
+// ones admin sells in), with a fee in the shop's currency and transit days.
+// Buyers there see the products in their own currency; the seller is paid
+// their listed price plus the shipping fee.
+// ---------------------------------------------------------------------------
+function IntlShipping({ data, patch }) {
+  const fromData = useCallback(() => Object.fromEntries((data.intl_destinations ?? []).map((d) => {
+    const t = data.intl_shipping?.[d.code]
+    return [d.code, { on: !!t, fee: t ? (t.fee_cents / 100).toFixed(2) : '', min: t?.transit_min_days ?? 7, max: t?.transit_max_days ?? 14 }]
+  })), [data])
+  const [form, setForm] = useState(fromData)
+  if (!(data.intl_destinations ?? []).length) return null
+  const ownCourier = data.fulfillment_mode === 'self'
+  const set = (code, p) => setForm((f) => ({ ...f, [code]: { ...f[code], ...p } }))
+
+  function save(event) {
+    event.preventDefault()
+    const body = Object.fromEntries(Object.entries(form).filter(([, v]) => v.on).map(([code, v]) => [code, { fee_cents: Math.round(Number(v.fee || 0) * 100), transit_min_days: Number(v.min), transit_max_days: Number(v.max) }]))
+    patch({ intl_shipping: body }, Object.keys(body).length ? 'Saved — buyers in those countries can now buy your products.' : 'Saved — you ship only within your country.')
+  }
+
+  return (
+    <div className="sc-card">
+      <h2 className="sc-h2">International shipping</h2>
+      <p className="sc-muted">Sell to buyers in other countries NexTech sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork, and enter the tracking number as usual. Buyers pay any import duties on delivery.</p>
+      {data.intl_blocked ? <p className="ss-warn">{data.intl_blocked}</p> : !ownCourier ? <p className="ss-warn">Shipping abroad needs &ldquo;I ship with my own courier&rdquo; — choose it above first.</p> : (
+        <form onSubmit={save} className="ss-intl">
+          {data.intl_destinations.map((d) => {
+            const v = form[d.code] ?? { on: false, fee: '', min: 7, max: 14 }
+            return (
+              <div key={d.code} className={`ss-intl-row${v.on ? ' on' : ''}`}>
+                <label className="sc-check"><input type="checkbox" checked={v.on} onChange={(e) => set(d.code, { on: e.target.checked })} /> Ship to {d.name}</label>
+                {v.on && <>
+                  <label>Shipping fee ({currencySymbol(data.currency)})<input type="number" min="0" step="0.01" required value={v.fee} onChange={(e) => set(d.code, { fee: e.target.value })} /></label>
+                  <label>Arrives in (days)<span className="ss-intl-days"><input type="number" min="1" max="90" required value={v.min} onChange={(e) => set(d.code, { min: e.target.value })} /> – <input type="number" min={v.min || 1} max="90" required value={v.max} onChange={(e) => set(d.code, { max: e.target.value })} /></span></label>
+                </>}
+              </div>
+            )
+          })}
+          <div><button type="submit" className="sc-primary">Save international shipping</button></div>
+        </form>
+      )}
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Shipping settings
@@ -171,6 +219,19 @@ export function ShippingSettings({ headers, onChanged }) {
               )
             })()}
           </div>
+
+          {['self', 'label'].includes(data.fulfillment_mode) && (
+            <div className="sc-card">
+              <h2 className="sc-h2">Cash on delivery</h2>
+              <label className="sc-check ss-cod-toggle">
+                <input type="checkbox" checked={!!data.accepts_cod} onChange={(e) => patch({ accepts_cod: e.target.checked }, e.target.checked ? 'Cash on delivery is on — buyers can choose it when their cart is only from your shop.' : 'Cash on delivery is off.')} />
+                Accept cash on delivery
+              </label>
+              <p className="sc-muted">Your courier collects the cash when it delivers (use a courier COD service, e.g. Delhivery or Blue Dart COD in India). Offered when everything in the buyer&rsquo;s cart is from your shop and ships within {data.country_name}. Update each order as it moves — <b>Packed</b>, <b>In transit</b>, <b>Out for delivery</b>, <b>Delivered &amp; cash collected</b> — buyers and NexTech see every step, and you&rsquo;ll get a reminder when an order goes 2 days without an update. Once you confirm the cash, NexTech&rsquo;s commission and fees on that order are taken from your balance.</p>
+            </div>
+          )}
+
+          <IntlShipping key={JSON.stringify(data.intl_shipping ?? {}) + data.fulfillment_mode} data={data} patch={patch} />
 
           <div className="sc-card">
             <div className="sc-head"><h2 className="sc-h2">Ship-from addresses</h2><button type="button" className="sc-primary" onClick={() => setAddressForm({ ...EMPTY_ADDRESS, is_default: !data.addresses.length })}>+ Add a new address</button></div>
@@ -360,8 +421,11 @@ export function ShipOrders({ headers, mode }) {
   const toShip = rows.filter((o) => o.to_ship > 0 && o.status !== 'cancelled')
   // Pending orders (first 30 minutes) and undecided address changes can't ship yet.
   const onHold = (o) => o.pending || o.address_change_pending
-  const shipped = packages.filter((p) => p.status === 'shipped' || p.status === 'in_transit')
-  const done = packages.filter((p) => !['shipped', 'in_transit'].includes(p.status))
+  const MOVING = ['shipped', 'in_transit', 'out_for_delivery']
+  const shipped = packages.filter((p) => MOVING.includes(p.status))
+  const done = packages.filter((p) => !MOVING.includes(p.status))
+  // Next step a seller can record on a package they ship themselves.
+  const NEXT = { shipped: [['in_transit', 'In transit'], ['out_for_delivery', 'Out for delivery'], ['delivered', 'Delivered']], in_transit: [['out_for_delivery', 'Out for delivery'], ['delivered', 'Delivered']], out_for_delivery: [['delivered', 'Delivered']] }
   const carriers = settings?.carriers ?? []
   const defaultAddress = settings?.addresses?.find((a) => a.is_default)?.id ?? settings?.addresses?.[0]?.id ?? ''
   // Manual labels: the seller requests one, NexTech uploads it to download.
@@ -442,6 +506,15 @@ export function ShipOrders({ headers, mode }) {
     } catch (e) { setMsg(e.message) }
   }
 
+  async function progress(p, status) {
+    let cash = false
+    if (status === 'delivered' && p.order.cod) {
+      if (!window.confirm(`Cash on delivery: did the courier (or you) collect ${money(p.order.cod_amount_cents)} from the buyer? Confirm only once you have it.`)) return
+      cash = true
+    } else if (!window.confirm(`Mark this package “${{ in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered' }[status]}”? The buyer and NexTech see this update.`)) return
+    await act(`/seller/fulfillment/packages/${p.id}/progress`, { status, cash_collected: cash })
+  }
+
   async function act(path, body) {
     setMsg('')
     try { await send(headers, path, 'POST', body); load() } catch (e) { setMsg(e.message) }
@@ -454,13 +527,14 @@ export function ShipOrders({ headers, mode }) {
       <td>{p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">NexTech label · {money(p.label_cost_cents)}</small>}</td>
       <td>{p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}{p.edit_count > 0 && <small className="sc-muted">edited {p.edit_count}/3</small>}</td>
       <td>{shortDate(p.shipped_at)}</td>
-      <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replace('_', ' ')}</span><TrackingTimeline pkg={p} /></td>
+      <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replaceAll('_', ' ')}</span>{p.order.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(p.order.cod_amount_cents)}</span>}<PackageProgress pkg={p} packedAt={p.order.shipping?.packed_at} cod={p.order.cod} /><TrackingTimeline pkg={p} /></td>
       <td className="sc-actions">
         {p.can_edit && <button type="button" onClick={() => setEditForm({ package: p, carrier: p.carrier, tracking: p.tracking_number, warn: false })}>Edit tracking</button>}
         {p.label_url && <a href={p.label_url} target="_blank" rel="noreferrer">Print label</a>}
         {p.has_label_file && <button type="button" onClick={() => downloadLabel(p)}>Download label</button>}
         {p.label_source === 'nextech' && !p.has_label_file && ['shipped', 'in_transit'].includes(p.status) && <button type="button" onClick={() => act(`/seller/fulfillment/packages/${p.id}/sync`)}>Refresh tracking</button>}
-        {(p.label_source === 'own' || p.has_label_file) && ['shipped', 'in_transit'].includes(p.status) && <button type="button" onClick={() => { if (window.confirm('Mark this package as delivered?')) act(`/seller/fulfillment/packages/${p.id}/delivered`) }}>Mark delivered</button>}
+        {(p.label_source === 'own' || p.has_label_file) && (NEXT[p.status] ?? []).map(([status, label]) => <button type="button" key={status} onClick={() => progress(p, status)}>{status === 'delivered' && p.order.cod ? 'Delivered & cash collected' : label}</button>)}
+        {p.status === 'delivered' && p.order.cod && !p.cash_collected_at && <button type="button" className="sc-primary" onClick={() => progress(p, 'delivered')}>Confirm cash collected</button>}
       </td>
     </tr>
   )
@@ -488,9 +562,9 @@ export function ShipOrders({ headers, mode }) {
               <tbody>
                 {toShip.map((o) => (
                   <tr key={o.id}>
-                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small></td>
+                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
                     <td>{o.ship_to.name}<small className="sc-muted">{[o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(', ')}<br />{o.ship_to.city}, {o.ship_to.state} {o.ship_to.postal_code}</small></td>
-                    <td>{o.items.filter((i) => i.remaining > 0).map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.remaining}</span></div>)}</td>
+                    <td>{o.items.filter((i) => i.remaining > 0).map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.remaining}</span><PersonalizationView value={i.personalization} download /></div>)}</td>
                     <td className={o.overdue ? 'sc-low' : ''}>{shortDate(o.shipping?.ship_by)}{o.overdue && <small>Overdue</small>}</td>
                     <td>{shortDate(o.shipping?.deliver_from)}–{shortDate(o.shipping?.deliver_by)}</td>
                     <td className="sc-actions">

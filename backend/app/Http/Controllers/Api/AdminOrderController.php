@@ -332,7 +332,7 @@ class AdminOrderController extends Controller
         $data = $request->validate([
             'carrier' => ['sometimes', Rule::in(array_keys(Market::allCarriers()))],
             'tracking_number' => ['sometimes', 'string', 'min:6', 'max:60'],
-            'status' => ['sometimes', Rule::in(['shipped', 'in_transit', 'delivered', 'returned', 'lost'])],
+            'status' => ['sometimes', Rule::in(['shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'lost'])],
         ]);
 
         if (isset($data['tracking_number'])) {

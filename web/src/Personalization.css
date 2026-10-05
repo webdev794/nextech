@@ -1,0 +1,20 @@
+.pz{display:flex;flex-direction:column;gap:8px;margin:10px 0;padding:12px 14px;border:1px dashed #9cc9a8;border-radius:12px;background:#f6fbf7;text-align:left}
+.pz-title{margin:0;font-size:14px;font-weight:600}
+.pz-req{color:#b4361f;font-weight:600}
+.pz-opt{color:#5d6a62;font-weight:400}
+.pz-help{margin:0;color:#5d6a62;font-size:12px;white-space:pre-line}
+.pz-photos{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.pz-thumb{position:relative}
+.pz-thumb img{width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #dfe4e1}
+.pz-thumb button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:#18211c;color:#fff;font-size:12px;cursor:pointer}
+.pz-add{display:grid;place-items:center;min-width:96px;height:64px;padding:0 10px;border:1px dashed #5d6a62;border-radius:8px;color:#1f3a2a;font-size:12px;font-weight:600;cursor:pointer;background:#fff}
+.pz-add.busy{opacity:.6;cursor:progress}
+.pz-count{color:#5d6a62;font-size:12px}
+.pz-note{display:flex;flex-direction:column;gap:4px;font-size:12px}
+.pz-note input{padding:8px 10px;border:1px solid #cfd5d9;border-radius:8px;font:inherit;font-size:14px}
+.pz-signin{align-self:flex-start;padding:8px 14px;border:1px solid #1f3a2a;border-radius:999px;background:#fff;color:#1f3a2a;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.pz-msg{margin:0;color:#b4361f;font-size:12px}
+.pz-view{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0}
+.pz-view-label{font-size:12px;font-weight:600}
+.pz-view img{width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid #dfe4e1}
+.pz-view-note{color:#5d6a62;font-size:12px;font-style:italic;overflow-wrap:anywhere}

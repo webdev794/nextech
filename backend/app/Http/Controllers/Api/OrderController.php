@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Support\LiveTracking;
+use App\Support\SellerProgress;
 use App\Models\Order;
 use App\Support\SellerOrders;
 use App\Models\Setting;
@@ -119,6 +120,10 @@ class OrderController extends Controller
 
         if ($validated['payment_method'] === 'cod' && ! Setting::get('cod_enabled', false)) {
             return response()->json(['message' => 'Cash on delivery is not available right now.'], 422);
+        }
+        if ($validated['payment_method'] === 'cod'
+            && ($blocked = SellerProgress::codBlockedReason($order->items()->with('product.shop')->get()->pluck('product'), (string) $order->market))) {
+            return response()->json(['message' => $blocked], 422);
         }
 
         $order->update([

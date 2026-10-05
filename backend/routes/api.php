@@ -27,6 +27,9 @@ use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\GeocodeController;
 use App\Http\Controllers\Api\GiftCardController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\FavoriteController;
+use App\Http\Controllers\Api\DigitalDownloadController;
+use App\Http\Controllers\Api\SellerDigitalController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PaymentController;
@@ -70,9 +73,12 @@ Route::middleware('throttle:12,1')->group(function () {
 });
 
 Route::get('/config', ConfigController::class);
+Route::get('/geo', [ConfigController::class, 'geo'])->middleware('throttle:30,1');
 
 // Public media stream — /api/media/file/{path} always hits PHP (unlike /storage/* on this host).
 Route::get('/media/file/{path}', [MediaController::class, 'show'])->where('path', '.*');
+// A purchased digital file through its signed, 10-minute link (DigitalDownloadController::link).
+Route::get('/digital/{item}/{file}', [DigitalDownloadController::class, 'download'])->middleware('signed')->name('digital.download');
 Route::get('/delivery-eta', DeliveryController::class);
 
 Route::middleware('throttle:30,1')->group(function () {
@@ -134,8 +140,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/support/attachments', [MediaController::class, 'storeSupportAttachment']);
     // Writing reviews (with photos) and marking others' reviews helpful.
     Route::post('/review-images', [MediaController::class, 'storeReviewImage']);
+    Route::post('/personalization-images', [MediaController::class, 'storePersonalizationImage']);
     Route::post('/orders/{order}/items/{item}/review', [ReviewController::class, 'store']);
     Route::post('/reviews/{review}/helpful', [ReviewController::class, 'helpful']);
+    Route::get('/my/reviews', [ReviewController::class, 'mine']);
+    // My favourites.
+    Route::get('/favorites', [CatalogController::class, 'favorites']);
+    Route::get('/favorites/ids', [FavoriteController::class, 'ids']);
+    Route::post('/favorites/{product}', [FavoriteController::class, 'toggle'])->whereNumber('product');
+    // Digital products the buyer bought: list + a short-lived link per file.
+    Route::get('/downloads', [DigitalDownloadController::class, 'index']);
+    Route::post('/downloads/{item}/files/{file}/link', [DigitalDownloadController::class, 'link']);
     Route::post('/orders/{order}/packages/{package}/received', [ShippingQuoteController::class, 'received']);
 });
 
@@ -314,6 +329,14 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
+    // Digital products: download files (chunked upload or hosted link) and license keys.
+    Route::get('/seller/products/{product}/digital', [SellerDigitalController::class, 'show']);
+    Route::post('/seller/products/{product}/files/chunk', [SellerDigitalController::class, 'chunk']);
+    Route::post('/seller/products/{product}/files/link', [SellerDigitalController::class, 'storeLink']);
+    Route::patch('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'updateFile']);
+    Route::delete('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'destroyFile']);
+    Route::post('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'addKeys']);
+    Route::delete('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'clearKeys']);
     Route::post('/seller/product-video', [MediaController::class, 'storeSellerProductVideo']);
     // Temu-style listing: categories / details / compliance config, drafts, compliance, bulk upload.
     Route::get('/seller/catalog-config', [SellerProductController::class, 'catalogConfig']);
@@ -366,6 +389,8 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/fulfillment/packages/{package}', [SellerFulfillmentController::class, 'updatePackage']);
     Route::post('/seller/fulfillment/packages/bulk', [SellerFulfillmentController::class, 'bulkUpdate']);
     Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
+    Route::post('/seller/fulfillment/packages/{package}/progress', [SellerFulfillmentController::class, 'progress']);
+    Route::post('/seller/fulfillment/orders/{order}/packed', [SellerFulfillmentController::class, 'packed']);
     Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
     Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);

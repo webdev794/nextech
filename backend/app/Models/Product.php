@@ -18,6 +18,8 @@ class Product extends Model
         'category_id',
         'shop_id',
         'market',
+        'product_type',
+        'digital_settings',
         'name',
         'slug',
         'description',
@@ -43,10 +45,12 @@ class Product extends Model
         'units_sold',
         'status',
         'rejection_reason',
+        'followup_items',
+        'followup_requested_at',
         'suggested_category_name',
         // Seller listing (Temu-style Add product; see App\Support\ProductCatalog).
         'seller_code', 'trademark_id', 'bullet_points', 'detail_images', 'detail_video_url', 'product_details',
-        'variation_theme', 'size_chart', 'handling_days', 'compliance', 'price_references',
+        'variation_theme', 'size_chart', 'handling_days', 'compliance', 'price_references', 'personalization', 'info_sections',
     ];
 
     protected function casts(): array
@@ -66,10 +70,15 @@ class Product extends Model
             'bullet_points' => 'array',
             'detail_images' => 'array',
             'product_details' => 'array',
+            'followup_items' => 'array',
+            'followup_requested_at' => 'datetime',
             'variation_theme' => 'array',
             'size_chart' => 'array',
             'handling_days' => 'integer',
             'compliance' => 'array',
+            'personalization' => 'array',
+            'info_sections' => 'array',
+            'digital_settings' => 'array',
             'price_references' => 'array',
         ];
     }
@@ -126,6 +135,47 @@ class Product extends Model
     public function scopeInMarket(Builder $query, string $market): Builder
     {
         return $query->where($query->qualifyColumn('market'), $market);
+    }
+
+    /**
+     * Products a shopper in this market can buy: the market's own, plus those
+     * of other countries' sellers who ship here (Shop::shipsTo).
+     */
+    public function scopeAvailableIn(Builder $query, string $market): Builder
+    {
+        $market = strtoupper($market);
+
+        return $query->where(fn ($q) => $q->where($q->qualifyColumn('market'), $market)
+            ->orWhereHas('shop', fn ($shop) => $shop->where('fulfillment_mode', 'self')
+                ->where('market', '!=', $market)
+                ->whereNotNull("intl_shipping->{$market}")));
+    }
+
+    /** Shipped in from another country for a buyer in $market: the shop's terms for it, else null. */
+    public function crossBorderTerms(string $market): ?array
+    {
+        if ($this->shop_id === null || $this->market === strtoupper($market)) {
+            return null;
+        }
+        $shop = $this->relationLoaded('shop') ? $this->shop : $this->shop()->first();
+
+        return $shop?->shipsTo($market);
+    }
+
+    /** Downloaded instead of shipped (games, software, e-books…). */
+    public function isDigital(): bool
+    {
+        return $this->product_type === 'digital';
+    }
+
+    public function files(): HasMany
+    {
+        return $this->hasMany(ProductFile::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function licenseKeys(): HasMany
+    {
+        return $this->hasMany(ProductLicenseKey::class);
     }
 
     public function category(): BelongsTo

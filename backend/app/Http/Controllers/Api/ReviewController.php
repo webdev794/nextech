@@ -51,6 +51,21 @@ class ReviewController extends Controller
         ]);
     }
 
+    /** The signed-in buyer's own reviews, including ones still waiting for approval. */
+    public function mine(Request $request): JsonResponse
+    {
+        $page = ProductReview::where('user_id', $request->user()->id)
+            ->with(['user:id,name', 'product' => fn ($q) => $q->with('shop:id,is_active')])
+            ->latest()
+            ->paginate(self::PER_PAGE);
+
+        return response()->json([
+            'data' => $page->getCollection()->map(fn (ProductReview $r) => Reviews::present($r) + ['status' => $r->status])->values(),
+            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total()],
+            'profile_id' => $request->user()->id,
+        ]);
+    }
+
     /** Write a review for an item the buyer received. One per order item; it waits for approval. */
     public function store(Request $request, Order $order, OrderItem $item): JsonResponse
     {

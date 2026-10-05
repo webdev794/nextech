@@ -10,6 +10,7 @@ use App\Support\CheckoutFees;
 use App\Support\Country;
 use App\Support\CourierCredentials;
 use App\Support\FooterConfig;
+use App\Support\Fx;
 use App\Support\Market;
 use App\Support\Payments;
 use App\Support\RiderLedger;
@@ -227,6 +228,11 @@ class AdminSettingController extends Controller
                 'grievance_officer.email' => ['sometimes', 'nullable', 'email', 'max:190'],
                 'grievance_officer.phone' => ['sometimes', 'nullable', 'string', 'max:32'],
                 'grievance_officer.address' => ['sometimes', 'nullable', 'string', 'max:500'],
+                // Cross-border currency conversion (Fx): platform margin, and optional fixed rates per 1 USD.
+                'fx_margin_bps' => ['sometimes', 'integer', 'min:0', 'max:2000'],
+                'fx_manual' => ['sometimes', 'array'],
+                'fx_manual.*' => ['nullable', 'numeric', 'gt:0', 'max:100000'],
+                'fx_refresh' => ['sometimes', 'boolean'],
             ]
             + collect(self::FEE_RULES)->mapWithKeys(fn ($rules, $key) => ['market_fees.'.$key => $rules])->all()
             + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
@@ -279,6 +285,20 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('home_market', $validated)) {
             Setting::put('home_market', strtoupper($validated['home_market']));
+        }
+
+        if (array_key_exists('fx_margin_bps', $validated) || array_key_exists('fx_manual', $validated)) {
+            $fx = Fx::settings();
+            if (array_key_exists('fx_margin_bps', $validated)) {
+                $fx['margin_bps'] = (int) $validated['fx_margin_bps'];
+            }
+            foreach ((array) ($validated['fx_manual'] ?? []) as $currency => $rate) {
+                $fx['manual'][strtolower((string) $currency)] = $rate !== null && $rate !== '' ? (float) $rate : null;
+            }
+            Setting::put('fx', $fx);
+        }
+        if (! empty($validated['fx_refresh'])) {
+            Fx::refresh();
         }
 
         if (array_key_exists('grievance_officer', $validated)) {
@@ -352,6 +372,7 @@ class AdminSettingController extends Controller
             'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),
             'decoration_spot_check_rate' => \App\Support\StoreDecorations::spotCheckRate(),
             'active_countries' => Country::active(),
+            'fx' => Fx::status(),
             'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
             // The US forms (original settings keys).
             'commission_rate_bps' => SellerLedger::rate('US'),

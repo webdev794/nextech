@@ -23,9 +23,11 @@ class Shop extends Model
         'description',
         'is_active',
         'fulfillment_mode',
+        'accepts_cod',
         'ships_saturday',
         'ships_sunday',
         'working_holidays',
+        'intl_shipping',
         'free_shipping_accepted_at',
         'label_template_id',
     ];
@@ -36,10 +38,12 @@ class Shop extends Model
             'decoration_terms_accepted_at' => 'datetime',
             'requirements' => 'array',
             'is_active' => 'boolean',
+            'accepts_cod' => 'boolean',
             'next_product_seq' => 'integer',
             'ships_saturday' => 'boolean',
             'ships_sunday' => 'boolean',
             'working_holidays' => 'array',
+            'intl_shipping' => 'array',
             'free_shipping_accepted_at' => 'datetime',
         ];
     }
@@ -110,6 +114,21 @@ class Shop extends Model
     public function shipsItself(): bool
     {
         return in_array($this->fulfillment_mode, ['self', 'label'], true);
+    }
+
+    /**
+     * Its shipping terms to another country's buyers — ['fee_cents' (shop
+     * currency), 'transit_min_days', 'transit_max_days'] — or null when it
+     * doesn't ship there. Only sellers shipping with their own courier can.
+     */
+    public function shipsTo(string $market): ?array
+    {
+        if ($this->fulfillment_mode !== 'self' || strtoupper($market) === $this->market) {
+            return null;
+        }
+        $terms = ((array) $this->intl_shipping)[strtoupper($market)] ?? null;
+
+        return is_array($terms) && in_array(strtoupper($market), Market::codes(), true) ? $terms : null;
     }
 
     /** Running balance owed to this shop — always summed from the ledger, never a stored column. */

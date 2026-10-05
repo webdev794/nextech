@@ -49,10 +49,11 @@ export function ListingReview({ product, currency, authHeaders, jsonHeaders, vie
         <h3>{product.name}</h3>
         <p className="muted">{product.shop?.name} · {product.category?.name ?? 'No category'} · <span className={`pill pill-${product.status}`}>{product.status}</span>{product.trademark?.name ? ` · Brand: ${product.trademark.name}` : ''}</p>
 
-        {(product.missing_compliance ?? []).length > 0 && <p className="admin-cash-holding overdue">Compliance documents missing: {product.missing_compliance.join(', ')} — it can’t be approved until the seller uploads them.</p>}
-        {product.shop_id && product.status === 'pending' && (
+        {(product.followups?.later ?? []).length > 0 && <div className="admin-cash-holding overdue"><b>{product.status === 'approved' ? 'Live — the seller still has to add:' : 'Still missing (you can approve anyway; the seller is asked to add these soon):'}</b><ul>{product.followups.later.map((m) => <li key={m}>{m}</li>)}</ul></div>}
+        {(product.followups?.blocking ?? []).length > 0 && <p className="admin-cash-holding overdue">Can’t go live yet: {product.followups.blocking.join(' ')}</p>}
+        {product.shop_id && ['pending', 'draft'].includes(product.status) && (
           <div className="admin-form-actions">
-            <button className="act" type="button" disabled={busy || (product.missing_compliance ?? []).length > 0} onClick={() => onAction('approve')}>Approve after price assessment</button>
+            <button className="act" type="button" disabled={busy || (product.followups?.blocking ?? []).length > 0} onClick={() => onAction('approve')}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve after price assessment'}</button>
             <button className="act danger" type="button" disabled={busy} onClick={() => onAction('reject')}>Reject</button>
           </div>
         )}

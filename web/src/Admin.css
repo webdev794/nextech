@@ -6,7 +6,7 @@
 .admin-menu-toggle{flex:0 0 auto;width:34px;height:34px;border:1px solid #3a4433;border-radius:12px;background:transparent;color:#f3f5ef;font-size:15px;line-height:1;cursor:pointer;transition:background .12s ease,border-color .12s ease}
 .admin-menu-toggle:hover{background:#2e7d32;border-color:#2e7d32}
 .admin-brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.02em;margin-right:auto}
-.admin-brand span{display:grid;place-items:center;width:24px;height:24px;border-radius:7px;background:#8bd08f;color:#141a12}
+
 .admin-bar-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
 .admin-top-tab{padding:9px 15px;border:1px solid #3a4433;border-radius:12px;background:transparent;color:#cdd6c8;font:11px 'Okra',sans-serif;text-transform:uppercase;letter-spacing:.06em;cursor:pointer;transition:background .12s ease,color .12s ease}
 .admin-top-tab:hover{background:#2e7d32;color:#fff;border-color:#2e7d32}
@@ -563,3 +563,29 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-order-seller + .admin-order-seller{margin-top:4px}
 .admin-seller-ship .admin-pkg{margin:4px 0}
 .admin-seller-ship .admin-pkg .link{margin-right:10px}
+.admin-fx-row{margin:6px 0;padding:10px 12px;border:1px solid #e1e4e8;border-radius:8px;background:#fafbfc}
+.admin-fx-row p{margin:0 0 8px}
+.admin-fx-note{max-width:none;white-space:normal}
+.nav-badge{margin-left:auto;min-width:20px;padding:1px 6px;border-radius:999px;background:#d8572a;color:#fff;font-size:12px;font-weight:700;text-align:center}
+.admin-rv-toolbar input[type=search]{min-width:240px}
+.admin-rv-list{display:flex;flex-direction:column;gap:12px}
+.admin-rv{display:grid;grid-template-columns:220px 1fr auto;gap:16px;padding:14px;border:1px solid #e1e4e8;border-radius:10px;background:#fff}
+.admin-rv-pending{border-left:4px solid #f5a623}
+.admin-rv-rejected{opacity:.75}
+.admin-rv-product{display:flex;gap:10px;align-items:flex-start;font-size:14px}
+.admin-rv-product img{width:56px;height:56px;object-fit:cover;border-radius:8px}
+.admin-rv-product div{display:flex;flex-direction:column;gap:2px}
+.admin-rv-meta{margin:0 0 6px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.admin-rv-body{margin:0 0 6px;white-space:pre-line;overflow-wrap:anywhere}
+.admin-rv-photos{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.admin-rv-photos img{width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid #e1e4e8}
+.admin-rv-state{margin:0;font-size:12px}
+.admin-rv-actions{display:flex;flex-direction:column;gap:6px;align-items:stretch;min-width:170px}
+@media (max-width:900px){.admin-rv{grid-template-columns:1fr}.admin-rv-actions{flex-direction:row;flex-wrap:wrap}}
+.admin-rv-actions .danger{color:#b4361f}
+.pill-stale{background:#fff1e0;color:#a35a00}
+.admin-req{color:#c0392b}
+.pill-digital{margin-left:6px;background:#eef4ff;color:#1d3a6e}
+.admin-prod-quick{margin-bottom:10px}
+.chip-count{display:inline-block;min-width:20px;margin-left:6px;padding:0 6px;border-radius:999px;background:#eef0f2;color:#4b5563;font-size:12px;text-align:center}
+.chip-count.hot{background:#fff1e0;color:#a35a00;font-weight:700}

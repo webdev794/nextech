@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
+import { DigitalFiles } from './SellerDigitalFiles'
+import { InfoSectionsEditor } from './InfoSections'
 import { checkProductImage } from './productImageCheck'
 import { currencySymbol } from './money'
 
@@ -75,12 +77,15 @@ function formFrom(product, config) {
   return {
     id: p.id ?? null,
     status: p.status ?? null,
+    product_type: p.product_type ?? 'physical',
+    digital_settings: { download_limit: 5, instructions: '', license_keys: false, ...(p.digital_settings ?? {}) },
     name: p.name ?? '',
     category_id: p.category_id ? String(p.category_id) : '',
     suggested_category_name: p.suggested_category_name ?? '',
     seller_code: p.seller_code ?? '',
     description: p.description ?? '',
     bullet_points: [...(p.bullet_points ?? []), '', '', ''].slice(0, Math.max(3, (p.bullet_points ?? []).length)),
+    info_sections: p.info_sections ?? [],
     images: (p.images ?? []).map((i) => i.url ?? i).filter(Boolean),
     video_url: p.video_url ?? '',
     detail_video_url: p.detail_video_url ?? '',
@@ -98,6 +103,7 @@ function formFrom(product, config) {
     price_references: [...(p.price_references ?? []), ''].slice(0, Math.max(1, (p.price_references ?? []).length)),
     size_chart: p.size_chart ?? { size_family: Object.keys(config?.size_families ?? {})[0] ?? '', sub_size_family: config?.sub_size_families?.[0] ?? '', rows: [] },
     handling_days: p.handling_days ? String(p.handling_days) : '',
+    personalization: { enabled: false, required: true, max_photos: 1, instructions: '', note_label: '', ...(p.personalization ?? {}) },
     shipping_template_id: p.shipping_template_id ? String(p.shipping_template_id) : '',
     return_days: p.return_days ?? '',
     country_of_origin: p.country_of_origin ?? '',
@@ -200,7 +206,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
   }
 
   function payload(submit) {
-    const variants = form.has_variations
+    const variants = form.has_variations && form.product_type !== 'digital'
       ? [
           ...liveVariants.map((v, i) => ({
             ...(v.id ? { id: v.id } : {}),
@@ -218,14 +224,18 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           ...form.removed_ids.map((id) => ({ id, _delete: true, label: 'x', price_cents: 0 })),
         ]
       : form.variants.filter((v) => v.id).map((v) => ({ id: v.id, _delete: true, label: 'x', price_cents: 0 }))
+    const digital = form.product_type === 'digital'
     return {
       submit,
+      product_type: form.product_type,
+      digital_settings: digital ? { download_limit: Number(form.digital_settings.download_limit) || 0, instructions: form.digital_settings.instructions?.trim() || null, license_keys: !!form.digital_settings.license_keys } : null,
       name: form.name.trim(),
       category_id: form.category_id ? Number(form.category_id) : null,
       suggested_category_name: form.suggested_category_name.trim() || null,
       seller_code: form.seller_code.trim() || null,
       description: form.description,
       bullet_points: form.bullet_points,
+      info_sections: form.info_sections.filter((x) => x.title.trim() && x.body.trim()).map((x) => ({ kind: x.kind, title: x.title.trim(), body: x.body.trim() })),
       images: form.images,
       video_url: form.video_url || null,
       detail_video_url: form.detail_video_url || null,
@@ -244,6 +254,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       return_days: String(form.return_days).trim() === '' ? null : Number(form.return_days),
       country_of_origin: form.country_of_origin || null,
       compliance: { documents: form.documents },
+      personalization: form.personalization.enabled ? { enabled: true, required: !!form.personalization.required, max_photos: Number(form.personalization.max_photos) || 1, instructions: form.personalization.instructions?.trim() || null, note_label: form.personalization.note_label?.trim() || null } : null,
       ...(inclusive ? { hsn_code: form.hsn_code || null, gst_rate_bps: form.gst_rate_bps === '' ? null : Number(form.gst_rate_bps), manufacturer_info: form.manufacturer_info || null } : {}),
     }
   }
@@ -284,8 +295,10 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
     )
   }
 
-  const attrs = category?.attributes ?? []
-  const docs = (category?.compliance ?? []).filter((d) => applies(d, form.product_details))
+  // A digital download gets its own fields (type, platforms, version…) instead of the category's physical ones.
+  const isDigital = form.product_type === 'digital'
+  const attrs = isDigital ? (config.digital_attributes ?? []) : (category?.attributes ?? [])
+  const docs = isDigital ? [] : (category?.compliance ?? []).filter((d) => applies(d, form.product_details))
   const sizes = form.variation_values.Size ?? []
 
   return (
@@ -299,10 +312,19 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       {step === 0 && (
         <div className="sc-card wz-card">
           <h2 className="sc-h2">Getting started: name &amp; category</h2>
-          <p className="sc-muted">Pick the most relevant, accurate category so buyers can find your product.</p>
-          <label>Product name<input value={form.name} maxLength="160" placeholder="e.g. Wireless earbuds with charging case" onChange={(e) => set({ name: e.target.value })} />{err('name')}</label>
+          <p className="sc-muted">Pick the most relevant, accurate category so buyers can find your product. Fields marked <b className="wz-req">*</b> are required — a product can’t go live without a name, category, image and price.</p>
+          <div className="wz-type" role="radiogroup" aria-label="Product type">
+            {[['physical', '📦 Physical product', 'Shipped to the buyer'], ['digital', '⬇ Digital download', 'Games, software, e-books, music, templates — buyers download it after paying']].map(([value, title, text]) => (
+              <label key={value} className={`wz-type-opt${form.product_type === value ? ' on' : ''}`}>
+                <input type="radio" name="wz-type" checked={form.product_type === value} onChange={() => set({ product_type: value, ...(value === 'digital' ? { has_variations: false } : {}) })} />
+                <b>{title}</b><small>{text}</small>
+              </label>
+            ))}
+          </div>
+          <label>Product name<b className="wz-req" title="Required"> *</b><input value={form.name} maxLength="160" placeholder="e.g. Wireless earbuds with charging case" onChange={(e) => set({ name: e.target.value })} />{err('name')}</label>
           {recommended.length > 0 && <div className="wz-chips"><span className="sc-muted">Recommended categories:</span>{recommended.map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
           {config.recent_category_ids?.length > 0 && <div className="wz-chips"><span className="sc-muted">Previously used:</span>{config.recent_category_ids.map((id) => config.categories.find((c) => c.id === id)).filter(Boolean).map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
+          <span className="wz-label">Category<b className="wz-req" title="Required"> *</b></span>
           <label>Search categories<input value={search} placeholder="Type to filter" onChange={(e) => setSearch(e.target.value)} /></label>
           <div className="wz-cat-list">
             {config.categories.filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()) || c.keywords.some((k) => k.includes(search.trim().toLowerCase()))).map((c) => (
@@ -318,7 +340,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
         <div className="sc-card wz-card">
           <h2 className="sc-h2">01 Product description</h2>
           <p className="sc-muted">A detailed description helps buyers understand the product and decide to buy — it also counts for search results.</p>
-          <label>Product name<input value={form.name} maxLength="160" onChange={(e) => set({ name: e.target.value })} /></label>
+          <label>Product name<b className="wz-req" title="Required"> *</b><input value={form.name} maxLength="160" onChange={(e) => set({ name: e.target.value })} /></label>
           <label>Description<textarea rows="5" maxLength="5000" value={form.description} onChange={(e) => set({ description: e.target.value })} />{err('description')}</label>
           <div className="wz-field">
             <span className="wz-label">Bullet points <small className="sc-muted">key selling points, shown near the top of the page</small></span>
@@ -326,7 +348,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             {form.bullet_points.length < 6 && <button type="button" className="sc-link" onClick={() => set({ bullet_points: [...form.bullet_points, ''] })}>+ Add bullet point</button>}
           </div>
           <div className="wz-field">
-            <span className="wz-label">Product images <small className="sc-muted">up to {config.max_images} · square (1:1), JPEG/PNG, 3 MB max · the first is the main image</small></span>
+            <span className="wz-label">Product images<b className="wz-req" title="Required"> *</b> <small className="sc-muted">up to {config.max_images} · square (1:1), JPEG/PNG, 3 MB max · the first is the main image</small></span>
             <div className="seller-gallery">
               {form.images.map((url, i) => <div className="seller-gallery-item" key={url + i}><img src={mediaUrl(url)} alt="" /><button type="button" onClick={() => set({ images: form.images.filter((_, j) => j !== i) })}>&times;</button></div>)}
               {form.images.length < config.max_images && <label className="seller-gallery-add">{busy === 'image' ? '…' : '+ Add'}<input type="file" accept="image/jpeg,image/png" disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; upload('image', f, (url) => setForm((x) => ({ ...x, images: [...x.images, url] }))) }} /></label>}
@@ -362,6 +384,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             {err('trademark_id')}
           </label>
           <p className="sc-muted">Select a trademark if the product is made by a specific brand — it improves the price assessment and search matching. No trademark yet? <button type="button" className="sc-link" onClick={() => go('account-health')}>Register one under Account health</button> and wait for NexTech to review it.</p>
+          <InfoSectionsEditor value={form.info_sections} onChange={(v) => set({ info_sections: v })} />
           <label>Your product code (Contribution Goods, optional)<input value={form.seller_code} maxLength="60" onChange={(e) => set({ seller_code: e.target.value })} /></label>
         </div>
       )}
@@ -369,7 +392,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       {step === 2 && (
         <div className="sc-card wz-card">
           <h2 className="sc-h2">02 Product details</h2>
-          <p className="sc-muted">Key attributes such as material and specifications — used for accurate classification and price assessment, to answer buyers’ questions, and for search ranking.</p>
+          {isDigital ? <p className="sc-muted">What buyers need to know about your download — what it is, what it runs on, version and requirements. Used for search and to answer buyers&rsquo; questions.</p> : <p className="sc-muted">Key attributes such as material and specifications — used for accurate classification and price assessment, to answer buyers’ questions, and for search ranking.</p>}
           {!category ? <p className="ob-missing">Choose a category first (Getting started).</p> : (
             <div className="wz-grid">
               {attrs.map((f) => {
@@ -384,7 +407,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                     ) : f.type === 'multiselect' ? (
                       <div className="wz-multi">{f.options.map((o) => <label key={o} className="sc-check"><input type="checkbox" checked={[].concat(value ?? []).includes(o)} onChange={(e) => setDetail(f.key, e.target.checked ? [...[].concat(value ?? []), o] : [].concat(value ?? []).filter((x) => x !== o))} />{o}</label>)}</div>
                     ) : (
-                      <input type={f.type === 'number' ? 'number' : 'text'} step="any" value={value ?? ''} onChange={(e) => setDetail(f.key, e.target.value)} />
+                      <input type={f.type === 'number' ? 'number' : 'text'} step="any" value={value ?? ''} placeholder={f.placeholder ?? undefined} onChange={(e) => setDetail(f.key, e.target.value)} />
                     )}
                     {err(`product_details.${f.key}`)}
                   </div>
@@ -392,7 +415,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
               })}
             </div>
           )}
-          <p className="sc-muted">Fields with an orange edge appear because of an earlier answer — e.g. battery details once a battery power source is chosen.</p>
+          {!isDigital && <p className="sc-muted">Fields with an orange edge appear because of an earlier answer — e.g. battery details once a battery power source is chosen.</p>}
         </div>
       )}
 
@@ -400,10 +423,19 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
         <div className="sc-card wz-card">
           <h2 className="sc-h2">03 Variations &amp; SKUs</h2>
           <p className="sc-muted">Variations are versions of the same product (e.g. black or blue, 128 GB or 256 GB). Each SKU — the smallest selling unit — gets its own stock, price and image.</p>
+          {form.product_type === 'digital' ? (
+            <>
+              <p className="sc-muted">Digital downloads have one price and no stock to count — every buyer gets a copy (or one per license key if you sell keys).</p>
+              <div className="wz-grid">
+                <label>{inclusive ? `Price (${sym}, incl. GST)` : `Price (${sym})`}<b className="wz-req" title="Required"> *</b><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set({ price: e.target.value })} />{err('price_cents')}</label>
+                <label>{inclusive ? `MRP (${sym})` : `Regular price (${sym}, optional)`}<input type="number" min="0" step="0.01" value={form.compare_at} onChange={(e) => set({ compare_at: e.target.value })} /></label>
+              </div>
+            </>
+          ) : <>
           <label className="sc-check"><input type="checkbox" checked={form.has_variations} onChange={(e) => set({ has_variations: e.target.checked })} /> This product has variations</label>
           {!form.has_variations ? (
             <div className="wz-grid">
-              <label>{inclusive ? `Base price (${sym}, incl. GST)` : `Base price (${sym})`}<input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set({ price: e.target.value })} />{err('price_cents')}</label>
+              <label>{inclusive ? `Base price (${sym}, incl. GST)` : `Base price (${sym})`}<b className="wz-req" title="Required"> *</b><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set({ price: e.target.value })} />{err('price_cents')}</label>
               <label>{inclusive ? `MRP (${sym})` : `Regular price (${sym}, optional)`}<input type="number" min="0" step="0.01" value={form.compare_at} onChange={(e) => set({ compare_at: e.target.value })} /></label>
               <label>Quantity in stock<input type="number" min="0" value={form.stock} onChange={(e) => set({ stock: e.target.value })} /></label>
             </div>
@@ -480,6 +512,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
               )}
             </>
           )}
+          </>}
           <div className="wz-field">
             <span className="wz-label">Same product on other sites <small className="sc-muted">optional links that back up your price</small></span>
             {form.price_references.map((u, i) => <input key={i} type="url" value={u} placeholder="https://" onChange={(e) => set({ price_references: form.price_references.map((x, j) => (j === i ? e.target.value : x)) })} />)}
@@ -493,6 +526,22 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
         <div className="sc-card wz-card">
           <h2 className="sc-h2">04 Fulfillment</h2>
           <p className="sc-muted">Your commitment from order to dispatch.</p>
+          {form.product_type === 'digital' ? (
+            <div className="wz-digital">
+              <p>⬇ <b>Digital download</b> — nothing to ship. Buyers download it from &ldquo;Your downloads&rdquo; right after paying; it can&rsquo;t be returned.</p>
+              {form.id ? (
+                <DigitalFiles headers={headers} productId={form.id} licenseKeys={!!form.digital_settings.license_keys} />
+              ) : (
+                <div className="sc-alert warn"><span>Save a draft first, then upload the download file here.</span><button type="button" disabled={busy === 'save'} onClick={() => save(false)}>Save draft</button></div>
+              )}
+              <div className="wz-grid">
+                <label>Downloads allowed per copy <small className="sc-muted">0 = unlimited</small><input type="number" min="0" max="100" value={form.digital_settings.download_limit} onChange={(e) => set({ digital_settings: { ...form.digital_settings, download_limit: e.target.value } })} /></label>
+                <label className="sc-check"><input type="checkbox" checked={!!form.digital_settings.license_keys} onChange={(e) => set({ digital_settings: { ...form.digital_settings, license_keys: e.target.checked } })} /> I sell license / activation keys (one per copy)</label>
+                <label className="wz-wide">Installation or activation instructions <small className="sc-muted">shown to the buyer with the download</small><textarea rows={3} maxLength={2000} value={form.digital_settings.instructions ?? ''} placeholder="e.g. Run setup.exe, then enter your license key when asked. Needs Windows 10 or later." onChange={(e) => set({ digital_settings: { ...form.digital_settings, instructions: e.target.value } })} /></label>
+              </div>
+              {form.digital_settings.license_keys && form.id && <p className="sc-muted">Save the product after ticking this, so the key settings apply.</p>}
+            </div>
+          ) : <>
           {config.ships_itself ? (
             <div className="wz-grid">
               <label>Handling time <small className="sc-muted">order placed → shipped</small>
@@ -505,7 +554,20 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           ) : <p>NexTech collects and delivers this product — no handling time or shipping template needed.</p>}
           {config.ships_itself && <p className="sc-muted">No suitable template, or this product needs its own shipping? <button type="button" className="sc-link" onClick={() => go('shipping')}>Add shipping template</button></p>}
           <p className="sc-muted">Delivery method: {{ nextech: 'NexTech collects & delivers', self: 'You ship with your own courier', label: 'You ship on a NexTech label' }[config.fulfillment_mode] ?? config.fulfillment_mode}</p>
+          <div className="wz-pz">
+            <label className="sc-check"><input type="checkbox" checked={form.personalization.enabled} onChange={(e) => set({ personalization: { ...form.personalization, enabled: e.target.checked } })} /> <b>Buyers upload a photo</b> <small className="sc-muted">for personalized products — printed mugs, photo cases, custom portraits…</small></label>
+            {form.personalization.enabled && (
+              <div className="wz-grid">
+                <label className="sc-check"><input type="checkbox" checked={form.personalization.required} onChange={(e) => set({ personalization: { ...form.personalization, required: e.target.checked } })} /> Photo is required to order</label>
+                <label>Photos per item<select value={form.personalization.max_photos} onChange={(e) => set({ personalization: { ...form.personalization, max_photos: Number(e.target.value) } })}>{[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>
+                <label className="wz-wide">Instructions for the buyer <small className="sc-muted">optional — e.g. size, orientation, best quality</small><textarea rows={2} maxLength={500} value={form.personalization.instructions ?? ''} placeholder="Upload a clear, well-lit photo, at least 1000 × 1000 pixels. Faces centred work best." onChange={(e) => set({ personalization: { ...form.personalization, instructions: e.target.value } })} /></label>
+                <label className="wz-wide">Ask for text too <small className="sc-muted">optional — leave blank for photos only</small><input maxLength={60} value={form.personalization.note_label ?? ''} placeholder="e.g. Name to print, Message on the card" onChange={(e) => set({ personalization: { ...form.personalization, note_label: e.target.value } })} /></label>
+              </div>
+            )}
+            {form.personalization.enabled && <p className="sc-muted">You&rsquo;ll see the buyer&rsquo;s photos (to download) on the order in Manage orders and Ship orders. Personalized items usually can&rsquo;t be returned — consider a return window of 0.</p>}
+          </div>
           <label>Return window (days, max {maxReturnDays})<input type="number" min="0" max={maxReturnDays} placeholder={`default ${defaultReturnDays} · 0 = non-returnable`} value={form.return_days} onChange={(e) => set({ return_days: e.target.value })} /></label>
+          </>}
         </div>
       )}
 
@@ -513,13 +575,13 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
         <div className="sc-card wz-card">
           <h2 className="sc-h2">05 Safety &amp; compliance</h2>
           <p className="sc-alert warn">Make sure everything is accurate. Incorrect or false information can lead to penalties, compensation to buyers and legal consequences.</p>
-          <label>Country/Region of origin<input list="wz-countries" value={form.country_of_origin} onChange={(e) => set({ country_of_origin: e.target.value })} />{err('country_of_origin')}</label>
+          {!isDigital && <label>Country/Region of origin<input list="wz-countries" value={form.country_of_origin} onChange={(e) => set({ country_of_origin: e.target.value })} />{err('country_of_origin')}</label>}
           <datalist id="wz-countries">{COUNTRY_NAMES.map((c) => <option key={c} value={c} />)}</datalist>
           {inclusive && (
             <div className="wz-grid">
               <label>HSN code{config.requirements?.gst_details ? '' : ' (optional)'}<input inputMode="numeric" value={form.hsn_code} onChange={(e) => set({ hsn_code: e.target.value.trim() })} />{err('hsn_code')}</label>
               <label>GST rate{config.requirements?.gst_details ? '' : ' (optional)'}<select value={form.gst_rate_bps} onChange={(e) => set({ gst_rate_bps: e.target.value })}><option value="">Select…</option>{(gstRates ?? []).map((r) => <option key={r} value={r}>{r / 100}%</option>)}</select>{err('gst_rate_bps')}</label>
-              <label>Manufacturer / packer / importer (name &amp; address)<input value={form.manufacturer_info} onChange={(e) => set({ manufacturer_info: e.target.value })} />{err('manufacturer_info')}</label>
+              {!isDigital && <label>Manufacturer / packer / importer (name &amp; address)<input value={form.manufacturer_info} onChange={(e) => set({ manufacturer_info: e.target.value })} />{err('manufacturer_info')}</label>}
             </div>
           )}
           <div className="wz-field">

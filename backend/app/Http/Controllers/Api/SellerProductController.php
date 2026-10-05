@@ -7,6 +7,8 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\Shop;
 use App\Support\Market;
+use App\Support\DigitalProducts;
+use App\Support\Personalization;
 use App\Support\ProductCatalog;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
@@ -69,7 +71,8 @@ class SellerProductController extends Controller
     {
         $shop = $this->shop($request);
         $submit = $request->boolean('submit', true);
-        if ($submit && SellerRequirements::on($shop, 'shipping_setup')) {
+        // Digital downloads don't ship, so they don't need shipping set up.
+        if ($submit && $request->input('product_type') !== 'digital' && SellerRequirements::on($shop, 'shipping_setup')) {
             // Like Temu: a seller who ships themselves needs a shipping template before listing.
             abort_if($shop->shipsItself() && ! $shop->shippingTemplates()->exists(), 422, 'Create a shipping template in Shipping settings before adding products.');
             // With NexTech pickup switched off, new listings need the seller's own shipping.
@@ -78,6 +81,11 @@ class SellerProductController extends Controller
         $data = $this->validated($request, $shop, null, $submit);
         $variants = $this->pullVariants($data);
         $images = $this->pullImages($data);
+        if (($data['product_type'] ?? 'physical') === 'digital') {
+            $variants = null; // digital products have no variations
+            // Needs its download file first — save as a draft, upload, then submit.
+            abort_if($submit, 422, 'Save the digital product as a draft first, upload its download file, then submit it for review.');
+        }
         if ($submit) {
             $this->assertListable($data, $variants ?? [], $images ?? [], $shop);
         }
@@ -95,6 +103,7 @@ class SellerProductController extends Controller
             $product = Product::create($data);
             ProductVariants::sync($product, $variants);
             ProductImages::sync($product, $images);
+            DigitalProducts::syncStock($product);
 
             return $product;
         });
@@ -113,8 +122,14 @@ class SellerProductController extends Controller
         $data = $this->validated($request, $shop, $product, $submit);
         $variants = $this->pullVariants($data);
         $images = $this->pullImages($data);
+        $digital = ($data['product_type'] ?? $product->product_type) === 'digital';
+        if ($digital) {
+            // Digital products have no variations: drop any left from before.
+            $variants = $product->variants()->exists() ? $product->variants()->pluck('id')->map(fn ($id) => ['id' => $id, '_delete' => true])->all() : null;
+            abort_if($submit && ! $product->files()->exists(), 422, 'Upload the download file (or add a download link) before submitting.');
+        }
         if ($submit) {
-            $merged = $data + $product->only(['name', 'category_id', 'description', 'price_cents', 'country_of_origin', 'handling_days', 'product_details', 'variation_theme', 'size_chart']);
+            $merged = $data + $product->only(['name', 'category_id', 'description', 'price_cents', 'country_of_origin', 'handling_days', 'product_details', 'variation_theme', 'size_chart', 'product_type']);
             $liveVariants = $variants !== null
                 ? array_values(array_filter($variants, fn ($v) => empty($v['_delete'])))
                 : $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all();
@@ -124,14 +139,24 @@ class SellerProductController extends Controller
         // Deliberately simple rule: no partial-change detection — any submit
         // goes back through review; saving an unsubmitted listing keeps it a draft.
         $data['status'] = $submit ? 'pending' : ($product->status === 'draft' ? 'draft' : $product->status);
+        // Approved by admin with details still to add: filling them in keeps it live.
+        $completingFollowups = $product->status === 'approved' && $product->followup_requested_at !== null;
+        if ($completingFollowups) {
+            $data['status'] = 'approved';
+        }
         if ($submit) {
             $data['rejection_reason'] = null;
         }
 
-        DB::transaction(function () use ($product, $data, $variants, $images): void {
+        DB::transaction(function () use ($product, $data, $variants, $images, $completingFollowups): void {
             $product->update($data);
             ProductVariants::sync($product, $variants);
             ProductImages::sync($product, $images);
+            DigitalProducts::syncStock($product->fresh());
+            if ($completingFollowups) {
+                $left = ProductCatalog::followups($product->fresh())['later'];
+                $product->forceFill(['followup_items' => $left ?: null, 'followup_requested_at' => $left ? $product->followup_requested_at : null])->save();
+            }
         });
 
         return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
@@ -230,7 +255,8 @@ class SellerProductController extends Controller
     private function assertListable(array $data, array $variants, array $images, Shop $shop): void
     {
         $live = array_values(array_filter($variants, fn ($v) => empty($v['_delete'])));
-        $errors = ProductCatalog::listingErrors($data, Category::find($data['category_id'] ?? null), $live, array_values(array_filter($images)), $shop->shipsItself(), SellerRequirements::on($shop, 'listing_details'));
+        $digital = ($data['product_type'] ?? 'physical') === 'digital';
+        $errors = ProductCatalog::listingErrors($data, Category::find($data['category_id'] ?? null), $digital ? [] : $live, array_values(array_filter($images)), $shop->shipsItself() && ! $digital, SellerRequirements::on($shop, 'listing_details'));
         if ($errors) {
             throw ValidationException::withMessages($errors);
         }
@@ -323,7 +349,7 @@ class SellerProductController extends Controller
             'variants.*.height_mm' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000'],
             'variants.*.sort_order' => ['sometimes', 'integer', 'min:0'],
             'variants.*.is_active' => ['sometimes', 'boolean'],
-        ] + Market::productRules($market, $product === null && $submit && SellerRequirements::on($shop, 'listing_details'), SellerRequirements::on($shop, 'gst_details')));
+        ] + Market::productRules($market, $product === null && $submit && SellerRequirements::on($shop, 'listing_details') && $request->input('product_type', $product?->product_type) !== 'digital', SellerRequirements::on($shop, 'gst_details')) + Personalization::settingsRules() + Personalization::infoSectionRules() + DigitalProducts::settingsRules());
 
         foreach (['bullet_points', 'price_references', 'detail_images'] as $list) {
             if (array_key_exists($list, $data) && is_array($data[$list])) {

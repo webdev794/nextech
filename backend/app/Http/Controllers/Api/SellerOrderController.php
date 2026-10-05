@@ -9,6 +9,7 @@ use App\Models\SellerLedgerEntry;
 use App\Models\Shop;
 use App\Support\Privacy;
 use App\Support\SellerOrders;
+use App\Support\SellerProgress;
 use App\Support\SellerShipping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -188,6 +189,7 @@ class SellerOrderController extends Controller
                 'sku' => $i->sku,
                 'product_name' => $i->product_name,
                 'variant_label' => $i->variant_label,
+                'personalization' => $i->personalization,
                 'quantity' => $i->quantity,
                 'line_total_cents' => $i->line_total_cents,
                 'fulfilled_by' => $i->fulfilled_by,
@@ -267,6 +269,8 @@ class SellerOrderController extends Controller
         return response()->json(['data' => [
             'latest_order_id' => $recent->first()['id'] ?? null,
             'to_ship' => $toShip,
+            // Orders waiting on the seller's next update (packed / shipped / cash collected ...).
+            'needs_update' => SellerProgress::needsUpdate($shop),
             'recent' => $recent,
         ]]);
     }

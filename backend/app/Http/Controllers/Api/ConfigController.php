@@ -14,6 +14,7 @@ use App\Support\FooterConfig;
 use App\Support\Market;
 use App\Support\Payments;
 use App\Support\SellerLedger;
+use App\Support\VisitorCountry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -58,6 +59,18 @@ class ConfigController extends Controller
                 'home_tiles' => $this->homeTiles(),
             ],
         ]);
+    }
+
+    /**
+     * The visitor's country from their IP and the country store it maps to
+     * (null when unknown or not one we sell in). Called once, on a first visit.
+     */
+    public function geo(Request $request): JsonResponse
+    {
+        return response()->json(['data' => [
+            'country' => VisitorCountry::detect($request),
+            'market' => VisitorCountry::market($request),
+        ]]);
     }
 
     /**

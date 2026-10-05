@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { storeMoney } from './money'
+import { PersonalizationView } from './Personalization'
 
 // Seller Center -> Manage orders (modelled on Temu's): Pending / Unshipped /
 // Shipped / Canceled tabs, "action needed" filters, a date range (last 30
@@ -214,7 +215,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             </dl>
             <table className="sc-table">
               <thead><tr><th>Item</th><th>Goods ID</th><th>SKU ID</th><th>Order item ID</th><th>Qty</th><th>Total</th></tr></thead>
-              <tbody>{detail.items.map((i) => <tr key={i.id}><td>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}</td><td>{i.product_id ?? '—'}</td><td>{i.sku ?? '—'}</td><td>{i.id}</td><td>{i.quantity}</td><td>{money(i.line_total_cents)}</td></tr>)}</tbody>
+              <tbody>{detail.items.map((i) => <tr key={i.id}><td>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}<PersonalizationView value={i.personalization} download /></td><td>{i.product_id ?? '—'}</td><td>{i.sku ?? '—'}</td><td>{i.id}</td><td>{i.quantity}</td><td>{money(i.line_total_cents)}</td></tr>)}</tbody>
             </table>
             {detail.packages.length > 0 && (
               <>

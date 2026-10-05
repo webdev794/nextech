@@ -114,7 +114,7 @@ class LiveTracking
             return;
         }
         collect($packages)
-            ->filter(fn (OrderPackage $p) => $p->label_source === 'own' && in_array($p->status, ['shipped', 'in_transit'], true)
+            ->filter(fn (OrderPackage $p) => $p->label_source === 'own' && in_array($p->status, SellerProgress::MOVING, true)
                 && (! $p->tracking_synced_at || $p->tracking_synced_at->lt(now()->subMinutes(self::STALE_MINUTES))))
             ->take($limit)
             ->each(fn (OrderPackage $p) => self::refresh($p));
@@ -158,11 +158,18 @@ class LiveTracking
 
         $status = match ($tag) {
             'Delivered' => 'delivered',
-            'InTransit', 'OutForDelivery', 'AvailableForPickup', 'AttemptFail', 'Exception' => 'in_transit',
+            'OutForDelivery' => 'out_for_delivery',
+            'InTransit', 'AvailableForPickup', 'AttemptFail', 'Exception' => 'in_transit',
             default => $package->status,
         };
-        if ($package->status === 'delivered' || ! in_array($package->status, ['shipped', 'in_transit', 'delivered'], true)) {
+        // Only forwards, and never past delivered / returned / lost.
+        $steps = SellerProgress::STEPS;
+        if (! in_array($package->status, SellerProgress::MOVING, true) || array_search($status, $steps, true) < array_search($package->status, $steps, true)) {
             $status = $package->status;
+        }
+        $history = (array) $package->status_history;
+        if ($status !== $package->status) {
+            $history[] = SellerProgress::entry($status, 'courier');
         }
         $previousTag = $package->tracking_tag;
 
@@ -174,6 +181,8 @@ class LiveTracking
             'tracking_events' => $events ?: $package->tracking_events,
             'tracking_synced_at' => now(),
             'status' => $status,
+            'status_history' => $history,
+            'progress_updated_at' => $status !== $package->status ? now() : $package->progress_updated_at,
             'delivered_at' => $status === 'delivered' ? ($package->delivered_at ?? now()) : $package->delivered_at,
         ])->save();
 

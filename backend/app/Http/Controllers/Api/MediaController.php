@@ -39,9 +39,9 @@ class MediaController extends Controller
         $validated = $request->validate([
             'file' => array_merge(
                 ['required', 'file'],
-                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', 'max:4096']
+                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', $folder === 'personalization' ? 'max:15360' : 'max:4096']
             ),
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support,reviews'],
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support,reviews,personalization'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';
@@ -115,6 +115,14 @@ class MediaController extends Controller
     public function storeReviewImage(Request $request): JsonResponse
     {
         $request->merge(['folder' => 'reviews']);
+
+        return $this->store($request);
+    }
+
+    /** A buyer's photo for a personalized product (shown to the seller with the order). */
+    public function storePersonalizationImage(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'personalization']);
 
         return $this->store($request);
     }

@@ -11,7 +11,12 @@ import './StorefrontBase.css'
 import './Storefront.css'
 import './Checkout.css'
 import { CustomerChatDock } from './SurfaceChats'
-import { TrackingTimeline } from './TrackingTimeline'
+import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
+import { PersonalizationPicker, PersonalizationView } from './Personalization'
+import { personalizationReady } from './personalizationUtils'
+import { MyDownloads } from './Downloads'
+import { InfoSections } from './InfoSections'
+import { MyReviews, OrderItemReviews, ProductReviews, ReviewerPage } from './Reviews'
 import { openChat } from './chatDockUtils'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -22,35 +27,6 @@ const FEEDBACK_OPTIONS = [
   { value: 4, label: 'Good' },
   { value: 5, label: 'Excellent' },
 ]
-const REVIEW_NAMES = ['Alex P.', 'Jordan K.', 'Sam R.', 'Taylor M.', 'Morgan D.', 'Casey L.', 'Riley B.', 'Jamie S.', 'Drew C.', 'Avery N.', 'Quinn T.', 'Reese W.']
-const REVIEW_TEXTS = {
-  5: ['Exactly as described, works great and arrived quickly.', 'Really happy with this purchase, would buy again.', 'Great quality for the price, highly recommend.', 'Exceeded my expectations, five stars.'],
-  4: ['Good product overall, does what it says.', 'Solid value, a couple of minor nitpicks but happy with it.', 'Works well, packaging could be better.', 'Pretty good, would consider buying again.'],
-  3: ["It's okay, does the job but nothing special.", 'Average quality, expected a bit more for the price.', 'Works fine but instructions were unclear.', 'Decent, though delivery took longer than expected.'],
-}
-// Deterministic per-product review placeholders — same product always renders
-// the same reviews, no backend review table needed for this display-only list.
-function generateReviews(product) {
-  let seed = (Number(product.id) * 2654435761) >>> 0
-  const rand = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
-  const base = Number(product.rating_avg) || 4.5
-  const count = product.rating_count > 0 ? 8 : 4
-  return Array.from({ length: count }, (_, i) => {
-    const wobble = Math.round((rand() - 0.5) * 2)
-    const rating = Math.max(3, Math.min(5, Math.round(base) + wobble))
-    const daysAgo = 3 + Math.floor(rand() * 180)
-    const date = new Date(Date.now() - daysAgo * 86400000)
-    const texts = REVIEW_TEXTS[rating] ?? REVIEW_TEXTS[3]
-    return {
-      id: i,
-      name: REVIEW_NAMES[Math.floor(rand() * REVIEW_NAMES.length)],
-      rating,
-      verified: rand() > 0.15,
-      date: date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }),
-      text: texts[Math.floor(rand() * texts.length)],
-    }
-  })
-}
 // The publishable key comes from GET /api/config (backend .env or admin
 // Settings → Payments); VITE_STRIPE_PUBLISHABLE_KEY is only a local fallback.
 // loadStripe must run once per key, so promises are cached.
@@ -108,6 +84,8 @@ const MENU_ICON_PATHS = {
   truck: <><rect x="1" y="7" width="14" height="10" rx="1" /><path d="M15 10h4l3 3v4h-7z" /><circle cx="6" cy="19" r="2" /><circle cx="17" cy="19" r="2" /></>,
   signout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></>,
   support: <><path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.5 8.5 0 0 1-4-1L3 20l1-5.5a8.4 8.4 0 0 1-1-3A8.5 8.5 0 0 1 11.5 3 8.4 8.4 0 0 1 21 11.5z" /><path d="M8.5 12.5a4 4 0 0 0 7 0" /></>,
+  download: <><path d="M12 3v12" /><polyline points="7 10 12 15 17 10" /><path d="M4 17v3h16v-3" /></>,
+  heart: <><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z" /></>,
   reviews: <><rect x="3" y="3" width="18" height="18" rx="3" /><path d="M12 7.5l1.3 2.7 3 .4-2.2 2.1.5 3-2.6-1.4-2.6 1.4.5-3-2.2-2.1 3-.4z" /></>,
   coupon: <><path d="M3 8a2 2 0 0 0 2-2h14a2 2 0 0 0 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 0-2 2H5a2 2 0 0 0-2-2v-2a2 2 0 0 0 0-4z" /><line x1="9" y1="9" x2="9" y2="15" strokeDasharray="2 2" /></>,
   wallet: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><circle cx="16.5" cy="14.5" r="1.2" /></>,
@@ -134,6 +112,8 @@ function orderInFilter(order, filter) {
 // The buyer account (Temu's "Orders & Account"): [key, label, icon, guests allowed].
 const ACCOUNT_SECTIONS = [
   ['orders', 'Your orders', 'orders', false],
+  ['downloads', 'Your downloads', 'download', false],
+  ['favorites', 'My favourites', 'heart', false],
   ['reviews', 'Your reviews', 'reviews', false],
   ['profile', 'Your profile', 'profile', false],
   ['coupons', 'Coupons & offers', 'coupon', false],
@@ -394,7 +374,7 @@ function ChatRating({ thread, onSaved }) {
   )
 }
 
-function PaymentForm({ clientSecret, onComplete, savedCards = [] }) {
+function PaymentForm({ clientSecret, onComplete, savedCards = [], billing = null }) {
   const stripe = useStripe()
   const elements = useElements()
   const [message, setMessage] = useState('')
@@ -412,7 +392,8 @@ function PaymentForm({ clientSecret, onComplete, savedCards = [] }) {
     setMessage('')
     const confirmData = usingSaved
       ? { payment_method: choice }
-      : { payment_method: { card: elements.getElement(CardElement) }, ...(saveCard ? { setup_future_usage: 'off_session' } : {}) }
+      // The card's postal code comes from the delivery address (already entered) instead of a second field.
+      : { payment_method: { card: elements.getElement(CardElement), ...(billing ? { billing_details: billing } : {}) }, ...(saveCard ? { setup_future_usage: 'off_session' } : {}) }
     const result = await stripe.confirmCardPayment(clientSecret, confirmData)
     if (result.error) setMessage(result.error.message)
     else if (result.paymentIntent?.status === 'succeeded') onComplete(result.paymentIntent.id)
@@ -434,7 +415,7 @@ function PaymentForm({ clientSecret, onComplete, savedCards = [] }) {
       </label>
     </div>}
     {!usingSaved && <>
-      <label>Card details<CardElement options={{ style: { base: { fontSize: '16px', color: '#20291f', fontFamily: 'Okra, sans-serif' } } }} /></label>
+      <label>Card details<CardElement options={{ hidePostalCode: true, style: { base: { fontSize: '16px', color: '#20291f', fontFamily: 'Okra, sans-serif' } } }} /></label>
       <label className="account-check"><input type="checkbox" checked={saveCard} onChange={(event) => setSaveCard(event.target.checked)} /> Save this card for next time</label>
     </>}
     <button className="checkout-button" type="submit" disabled={submitting || !stripe}>{submitting ? 'Processing...' : 'Pay securely'} <span>&rarr;</span></button>
@@ -531,7 +512,10 @@ export default function Storefront() {
   const [productView, setProductView] = useState(null) // product | 'loading' | null
   const [galleryIndex, setGalleryIndex] = useState(0)
   const [showVideo, setShowVideo] = useState(false)
-  const [reviewsExpanded, setReviewsExpanded] = useState(false)
+  // Personalized products: the photos/note being prepared on a product page, per product.
+  const [pzDraft, setPzDraft] = useState({})
+  // A reviewer's public page: #/reviewer/<id>.
+  const [reviewerId, setReviewerId] = useState(null)
   const [loading, setLoading] = useState(true)
   const [offline, setOffline] = useState(false)
   const [pages, setPages] = useState([])
@@ -572,7 +556,9 @@ export default function Storefront() {
   const mainRef = useRef(null)
   const dealsCatsWrapRef = useRef(null)
   const dealsExclusiveWrapRef = useRef(null)
-  const [branding, setBranding] = useState(null)
+  // Remembered from the last visit, so the logo image shows straight away on a
+  // refresh instead of the text logo flashing first.
+  const [branding, setBranding] = useState(() => { try { return JSON.parse(localStorage.getItem('nextech_branding') ?? 'null') } catch { return null } })
   const [footer, setFooter] = useState(null)
   const mapRef = useRef(null)
   const markerRef = useRef(null)
@@ -606,8 +592,10 @@ export default function Storefront() {
   const [giftCard, setGiftCard] = useState({ code: '', pin: '', checked: null })
   // Market = the country store being browsed (US / India …): its products,
   // currency, fees and address format. Empty = the platform's home market.
-  // First visit: guess from the device time zone (India → India store); after
-  // that the delivery location decides, and the header picker overrides.
+  // First visit: the visitor's country from their IP (GET /geo), with the
+  // device time zone as the instant guess until it answers (India → India
+  // store); after that the delivery location decides, and the header picker
+  // overrides.
   const [market, setMarket] = useState(() => {
     try {
       const saved = localStorage.getItem('nextech_market')
@@ -621,6 +609,9 @@ export default function Storefront() {
   const [fees, setFees] = useState({ tax_rate_bps: 0, delivery_mode: 'fixed', delivery_fee_cents: 0, delivery_near_fee_cents: 0, delivery_far_fee_cents: 0, free_delivery_threshold_cents: 0, handling_fee_cents: 0, small_cart_fee_cents: 0, small_cart_min_cents: 0 })
   // The country store being shown (declared early — hooks below depend on it).
   const activeMarket = (market && (markets.length === 0 || markets.some((m) => m.code === market)) ? market : null) || fees.market || 'US'
+  // For the product page fetch (a hash listener that outlives renders).
+  const activeMarketRef = useRef(activeMarket)
+  useEffect(() => { activeMarketRef.current = activeMarket }, [activeMarket])
   const marketProfile = markets.find((m) => m.code === activeMarket) ?? null
   const taxInclusive = marketProfile?.tax_mode === 'inclusive'
   const marketName = (code) => markets.find((m) => m.code === code)?.name ?? code
@@ -639,6 +630,48 @@ export default function Storefront() {
   const [selectedAddressId, setSelectedAddressId] = useState('')
   const [accountOpen, setAccountOpen] = useState(false)
   const [accountTab, setAccountTab] = useState('profile')
+  // My favourites: ids of saved products (for the heart buttons) and the list for the account tab.
+  const [favIds, setFavIds] = useState(() => new Set())
+  const [favList, setFavList] = useState(null)
+  const favVersion = useRef(0)
+  useEffect(() => {
+    const token = localStorage.getItem('gdp_token')
+    if (!token) { Promise.resolve().then(() => setFavIds(new Set())); return }
+    const version = favVersion.current
+    fetch(`${API_URL}/favorites/ids`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      // A heart tapped while this was loading wins over the older list.
+      .then(responseJson).then((d) => { if (favVersion.current === version) setFavIds(new Set(d.data ?? [])) }).catch(() => {})
+  }, [currentUser])
+  // Cart → "Save for later": into My favourites (if not there yet) and out of the cart.
+  async function saveForLater(item) {
+    if (!localStorage.getItem('gdp_token')) { setAuthMode('login'); setAuthMessage('Sign in to save products for later.'); return }
+    if (!favIds.has(item.id)) await toggleFavorite({ id: item.id })
+    setCart((current) => current.filter((line) => line.key !== item.key))
+  }
+
+  async function toggleFavorite(product) {
+    const token = localStorage.getItem('gdp_token')
+    if (!token) { setAuthMode('login'); setAuthMessage('Sign in to save products to My favourites.'); return }
+    const saving = !favIds.has(product.id)
+    favVersion.current += 1
+    setFavIds((cur) => { const next = new Set(cur); if (saving) next.add(product.id); else next.delete(product.id); return next })
+    try {
+      const res = await fetch(`${API_URL}/favorites/${product.id}`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error()
+      if (!saving) setFavList((list) => (list ? list.filter((p) => p.id !== product.id) : list))
+      else setFavList(null)
+    } catch {
+      setFavIds((cur) => { const next = new Set(cur); if (saving) next.delete(product.id); else next.add(product.id); return next })
+    }
+  }
+  useEffect(() => {
+    if (accountTab !== 'favorites' || !accountOpen || favList !== null) return
+    const token = localStorage.getItem('gdp_token')
+    if (!token) return
+    fetch(`${API_URL}/favorites?market=${encodeURIComponent(activeMarket)}`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      .then(responseJson).then((d) => setFavList(d.data ?? [])).catch(() => setFavList([]))
+  }, [accountTab, accountOpen, favList, activeMarket])
+
   const [accountMsg, setAccountMsg] = useState('')
   const [profileForm, setProfileForm] = useState({ name: '', phone: '' })
   const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
@@ -699,9 +732,13 @@ export default function Storefront() {
       .catch(() => setAddresses([]))
   }, [checkoutOpen, locationOpen, accountOpen])
 
+  // Opening the account clears old messages; the profile form follows the
+  // account as it loads or is saved (without wiping "Profile saved.").
+  useEffect(() => {
+    if (accountOpen) setAccountMsg('')
+  }, [accountOpen])
   useEffect(() => {
     if (!accountOpen) return
-    setAccountMsg('')
     setProfileForm({ name: currentUser?.name ?? '', phone: currentUser?.phone ?? '' })
   }, [accountOpen, currentUser])
 
@@ -739,11 +776,27 @@ export default function Storefront() {
       .finally(() => setOrdersLoading(false))
   }, [ordersOpen])
 
+  // First visit only (no country chosen yet): open the store for the visitor's country.
+  useEffect(() => {
+    try { if (localStorage.getItem('nextech_market')) return } catch { return }
+    let cancelled = false
+    fetch(`${API_URL}/geo`, { headers: { Accept: 'application/json' } })
+      .then(responseJson)
+      .then((data) => {
+        const code = data.data?.market
+        if (cancelled || !code) return
+        try { if (localStorage.getItem('nextech_market')) return; localStorage.setItem('nextech_market', code) } catch { /* private mode */ }
+        setMarket(code)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
   useEffect(() => {
     fetch(`${API_URL}/config`, { headers: { Accept: 'application/json', ...(market ? { 'X-Market': market } : {}) } })
       .then(responseJson)
-      .then((data) => { setMarkets(data.data?.markets ?? []); setGrievanceOfficer(data.data?.grievance_officer ?? null); setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? null); setFooter(data.data?.footer ?? null); if (data.data?.stripe_publishable_key) setStripeKey(data.data.stripe_publishable_key); if (data.data) setFees(data.data) })
-      .catch(() => { setCodEnabled(false); setStores([]); setBanners([]); setHomeTiles([]) })
+      .then((data) => { setMarkets(data.data?.markets ?? []); setGrievanceOfficer(data.data?.grievance_officer ?? null); setCodEnabled(!!data.data?.cod_enabled); setStores(data.data?.stores ?? []); setBanners(data.data?.banners ?? []); setHomeTiles(data.data?.home_tiles ?? []); setBranding(data.data?.branding ?? {}); try { localStorage.setItem('nextech_branding', JSON.stringify(data.data?.branding ?? {})) } catch { /* private mode */ } setFooter(data.data?.footer ?? null); if (data.data?.stripe_publishable_key) setStripeKey(data.data.stripe_publishable_key); if (data.data) setFees(data.data) })
+      .catch(() => { setCodEnabled(false); setStores([]); setBanners([]); setHomeTiles([]); setBranding((b) => b ?? {}) })
   }, [market])
 
   // Apply admin-configured branding: theme palette, accent colours, tab title
@@ -1044,6 +1097,18 @@ export default function Storefront() {
     return () => window.removeEventListener('hashchange', sync)
   }, [categories])
 
+  // Reviewer's public page: #/reviewer/<id>.
+  useEffect(() => {
+    const sync = () => {
+      const match = window.location.hash.match(/^#\/reviewer\/(\d+)$/)
+      setReviewerId(match ? Number(match[1]) : null)
+      if (match) window.scrollTo(0, 0)
+    }
+    sync()
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+
   // Product detail page: #/product/<slug>.
   useEffect(() => {
     const sync = () => {
@@ -1053,8 +1118,7 @@ export default function Storefront() {
       setProductView((current) => (current && current !== 'loading' && current.slug === slug ? current : 'loading'))
       setGalleryIndex(0)
       setShowVideo(false)
-      setReviewsExpanded(false)
-      fetch(`${API_URL}/products/${slug}`, { headers: { Accept: 'application/json' } })
+      fetch(`${API_URL}/products/${slug}?market=${encodeURIComponent(activeMarketRef.current)}`, { headers: { Accept: 'application/json' } })
         .then(responseJson)
         .then((data) => {
           setProductView(data.data ?? null)
@@ -1161,8 +1225,10 @@ export default function Storefront() {
   const deliveryMode = editAddress ? 'form' : locationUsable ? 'location' : defaultAddress ? 'saved' : 'form'
 
   const outOfArea = !!(serviceable && serviceable.configured && !serviceable.deliverable)
-  const needsPhone = !phone.trim()
-  const blockCheckout = (outOfArea && deliveryMode === 'location') || needsPhone
+  // A cart of digital downloads only: nothing to deliver, so no address or phone.
+  const allDigital = cart.length > 0 && cart.every((item) => item.digital)
+  const needsPhone = !phone.trim() && !allDigital
+  const blockCheckout = ((outOfArea && deliveryMode === 'location') || needsPhone) && !allDigital
   const UNSERVICEABLE_MSG = "We don't deliver to your area yet — we're expanding fast and will reach you soon."
   const selectedAddress = addresses.find((address) => String(address.id) === String(selectedAddressId))
   const deliveryAddressSummary = deliveryMode === 'location'
@@ -1172,7 +1238,8 @@ export default function Storefront() {
       : selectedAddress
         ? `${selectedAddress.line1}, ${selectedAddress.city}`
         : [checkoutForm.line1, checkoutForm.city, checkoutForm.state].filter(Boolean).join(', ') || 'New address'
-  // Promo bar columns, each a small set of messages that swap on promoTick.
+  // Promo bar columns. Like Temu, the first, third and fourth are fixed and
+  // only the second rotates (on promoTick) through a few messages.
   // Only real, currently-live features are advertised here.
   const appStoreUrl = footer?.app_store_url || footer?.play_store_url || null
   const promoColumns = useMemo(() => {
@@ -1182,27 +1249,34 @@ export default function Storefront() {
     const phoneGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="2" width="12" height="20" rx="2" /><line x1="11" y1="18" x2="13" y2="18" /></svg>
     const headsetGlyph = <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 18 0" /><path d="M3 12v5a2 2 0 0 0 2 2h1v-7H4a1 1 0 0 0-1 1z" /><path d="M21 12v5a2 2 0 0 1-2 2h-1v-7h2a1 1 0 0 1 1 1z" /></svg>
 
+    const returnDays = Number(fees.return_window_days) || 0
     const columns = [
       {
         icon: truckGlyph,
-        messages: fees.free_delivery_threshold_cents > 0
-          ? [{ title: 'Free shipping', sub: `On orders over ${price(fees.free_delivery_threshold_cents)}` }, { title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }]
-          : [{ title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }],
+        messages: [fees.free_delivery_threshold_cents > 0
+          ? { title: 'Free shipping', sub: `On orders over ${price(fees.free_delivery_threshold_cents)}` }
+          : { title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }],
         onClick: () => openPage('shipping-info'),
       },
       {
+        // Like Temu: only this section changes, cycling through what we promise.
+        rotate: true,
         icon: shieldGlyph,
-        messages: [{ title: 'Purchase protection', sub: 'Refund for any issues' }, { title: 'Easy returns', sub: 'Simple return & refund policy' }],
+        messages: [
+          { title: 'Purchase protection', sub: 'Refund for any issues' },
+          { title: returnDays ? 'Free returns' : 'Easy returns', sub: returnDays ? `Within ${returnDays} days of delivery` : 'Simple return & refund policy' },
+          ...(codEnabled ? [{ title: 'Cash on delivery', sub: 'Pay when it arrives' }] : []),
+          { title: 'Delivery updates', sub: 'Track every order, step by step' },
+          ...(fees.free_delivery_threshold_cents > 0 ? [{ title: 'Fast delivery', sub: 'Tracked door-to-door delivery' }] : []),
+        ],
         onClick: () => openPage('purchase-protection'),
       },
+      {
+        icon: cashGlyph,
+        messages: [{ title: 'Secure payments', sub: 'Your details stay protected' }],
+        onClick: () => openPage('faqs'),
+      },
     ]
-    columns.push({
-      icon: cashGlyph,
-      messages: codEnabled
-        ? [{ title: 'Cash on delivery', sub: 'Pay when it arrives' }, { title: 'Secure payments', sub: 'Your details stay protected' }]
-        : [{ title: 'Secure payments', sub: 'Your details stay protected' }],
-      onClick: () => openPage('faqs'),
-    })
     if (appStoreUrl) columns.push({
       icon: phoneGlyph,
       messages: [{ title: `Get the ${branding?.store_name || 'NexTech'} App`, sub: 'Shop faster on mobile' }],
@@ -1213,7 +1287,7 @@ export default function Storefront() {
       onClick: () => openPage('support-center'),
     })
     return columns
-  }, [fees.free_delivery_threshold_cents, codEnabled, appStoreUrl, branding?.store_name])
+  }, [fees.free_delivery_threshold_cents, fees.return_window_days, codEnabled, appStoreUrl, branding?.store_name])
 
   // Filtering (category / search) now happens server-side, page by page —
   // `products` already holds exactly the rows for the active filter.
@@ -1270,11 +1344,14 @@ export default function Storefront() {
 
   const sellerShippedIds = sellerQuote?.seller_shipped_product_ids ?? []
   const hasSellerShipped = cart.some((item) => sellerShippedIds.includes(item.id))
+  // Cash on delivery: NexTech's own items, or a cart from one seller who accepts it
+  // (the shipping quote says why not otherwise).
+  const codAvailable = codEnabled && (!hasSellerShipped || sellerQuote?.cod_blocked === null)
 
   // Client-side estimate of the fee breakdown; the server total is authoritative.
   const est = useMemo(() => {
     const sub = cartTotal
-    const nextechSub = cart.filter((item) => !sellerShippedIds.includes(item.id)).reduce((sum, item) => sum + item.price_cents * item.quantity, 0)
+    const nextechSub = cart.filter((item) => !sellerShippedIds.includes(item.id) && !item.digital).reduce((sum, item) => sum + item.price_cents * item.quantity, 0)
     const sellerShipping = sellerQuote?.total_cents ?? 0
     const tax = Math.round((sub * fees.tax_rate_bps) / 10000)
     // Distance mode: the fee for the current pin comes from /api/delivery-eta,
@@ -1307,12 +1384,20 @@ export default function Storefront() {
     return `${productId}:${variantId ?? ''}`
   }
 
-  function add(product, variant) {
-    if (product.market && product.market !== activeMarket) {
+  function add(product, variant, personalization = null) {
+    // Personalized product without its photo (e.g. the quick-add on a card): open the product page to upload it.
+    if (product.personalization?.enabled && !personalizationReady(product.personalization, personalization)) {
+      openProduct(product)
+      return
+    }
+    // Shipped in from another country's seller (ships_from) is fine; other countries' stock isn't.
+    if (product.market && product.market !== activeMarket && !product.ships_from) {
       window.alert(`This item is sold in the ${marketName(product.market)} store — switch country at the top of the page to buy it.`)
       return
     }
-    const key = lineKey(product.id, variant?.id)
+    // Different photos = a separate cart line.
+    const pz = personalization && ((personalization.photos ?? []).length || personalization.note?.trim()) ? { photos: personalization.photos ?? [], note: personalization.note?.trim() || null } : null
+    const key = lineKey(product.id, variant?.id) + (pz ? `:p${[...JSON.stringify(pz)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7)}` : '')
     setCart((current) => {
       const found = current.find((item) => item.key === key)
       if (found) return current.map((item) => item.key === key ? { ...item, quantity: item.quantity + 1 } : item)
@@ -1325,6 +1410,10 @@ export default function Storefront() {
         price_cents: variant?.price_cents ?? product.price_cents,
         compare_at_price_cents: (variant ? variant.compare_at_price_cents : product.compare_at_price_cents) ?? null,
         image_url: variant?.image_url || product.image_url,
+        ships_from: product.ships_from ?? null,
+        ships_from_name: product.ships_from_name ?? null,
+        personalization: pz,
+        digital: product.product_type === 'digital',
         quantity: 1,
       }]
     })
@@ -1527,7 +1616,19 @@ export default function Storefront() {
     } catch { setGiftCard((g) => ({ ...g, checked: { error: 'Could not check right now.' } })) }
   }
 
+  // One order at a time: a double click mustn't sync the cart twice (doubling
+  // quantities) or place a second order.
+  const placingRef = useRef(false)
+  const [placing, setPlacing] = useState(false)
   async function submitCheckout(event) {
+    event.preventDefault()
+    if (placingRef.current) return
+    placingRef.current = true
+    setPlacing(true)
+    try { await placeOrder(event) } finally { placingRef.current = false; setPlacing(false) }
+  }
+
+  async function placeOrder(event) {
     event.preventDefault()
     setCheckoutMessage('')
     setOrdersMessage('')
@@ -1546,10 +1647,12 @@ export default function Storefront() {
       // The local cart is the source of truth — clear any leftovers server-side first.
       await fetch(`${API_URL}/cart`, { method: 'DELETE', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
       for (const item of cart) {
-        await fetch(`${API_URL}/cart/items`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ product_id: item.id, product_variant_id: item.variantId ?? null, quantity: item.quantity, ...here }) })
+        await fetch(`${API_URL}/cart/items`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}`, 'X-Market': activeMarket }, body: JSON.stringify({ product_id: item.id, product_variant_id: item.variantId ?? null, quantity: item.quantity, personalization: item.personalization ?? null, ...here }) })
       }
       let checkoutBody
-      if (deliveryMode !== 'location' && selectedAddressId) {
+      if (allDigital) {
+        checkoutBody = {}
+      } else if (deliveryMode !== 'location' && selectedAddressId) {
         checkoutBody = { address_id: Number(selectedAddressId) }
       } else if (deliveryMode === 'saved' && defaultAddress) {
         checkoutBody = { address_id: defaultAddress.id }
@@ -1579,7 +1682,7 @@ export default function Storefront() {
         if (!addressResponse.ok) throw new Error(addressData.message ?? 'Address could not be saved.')
         checkoutBody = { address_id: addressData.data.id }
       }
-      const method = codEnabled && !hasSellerShipped ? paymentMethod : 'card'
+      const method = codAvailable ? paymentMethod : 'card'
       const trimmedPhone = phone.trim()
       const gc = giftCard.code.trim() && giftCard.pin.trim()
         ? { gift_card_code: giftCard.code.trim(), gift_card_pin: giftCard.pin.trim() }
@@ -1603,7 +1706,7 @@ export default function Storefront() {
         const paymentResponse = await fetch(`${API_URL}/orders/${data.data.id}/payment-intent`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
         const paymentData = await responseJson(paymentResponse)
         if (!paymentResponse.ok) throw new Error(paymentData.message ?? 'Payment setup could not be completed.')
-        setOrder({ ...data.data, clientSecret: paymentData.data.client_secret })
+        setOrder({ ...data.data, clientSecret: paymentData.data.client_secret, cartSnapshot: cart })
       }
       setCart([])
       setCartOpen(false)
@@ -1963,6 +2066,46 @@ export default function Storefront() {
     return () => clearInterval(timer)
   }, [activeThreadId])
 
+  // Address step -> payment step, only once every required field (street, city,
+  // state, postal code, phone) is filled in — so nothing is missing later at
+  // payment. Shows the browser's own hint on the first empty field.
+  function continueFromAddress(event) {
+    const modal = event.currentTarget.closest('.checkout-modal')
+    const missing = [...(modal?.querySelectorAll('input[required], select[required], textarea[required]') ?? [])].find((field) => !field.checkValidity())
+    if (missing) { missing.reportValidity(); missing.focus(); return }
+    setCheckoutMessage('')
+    setCheckoutStep('checkout')
+  }
+
+  // Card billing details from the order's delivery address (Stripe's postal-code check).
+  function billingFor(entry) {
+    const a = entry?.delivery_address ?? {}
+    const address = Object.fromEntries(Object.entries({ line1: a.line1, line2: a.line2, city: a.city, state: a.state, postal_code: a.postal_code, country: entry?.market }).filter(([, v]) => v))
+    return { ...(a.name ? { name: a.name } : {}), ...(a.phone ? { phone: a.phone } : {}), ...(Object.keys(address).length ? { address } : {}) }
+  }
+
+  // Leave the card step: cancel this unpaid order (its stock goes back), put
+  // the items back in the cart and reopen checkout at the payment choice.
+  async function backToCheckout() {
+    const current = order
+    const token = localStorage.getItem('gdp_token')
+    if (!token || !current) return
+    try {
+      const response = await fetch(`${API_URL}/orders/${current.id}/cancel`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      const data = await responseJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not go back — try again, or pay later from Order history.')
+    } catch (error) { setOrder((o) => (o ? { ...o, switchError: error.message } : o)); return }
+    setCart(current.cartSnapshot ?? (current.items ?? []).filter((it) => it.product_id).map((it) => ({
+      key: lineKey(it.product_id, it.product_variant_id), id: it.product_id, variantId: it.product_variant_id ?? null, variantLabel: it.variant_label ?? null,
+      name: it.product_name, price_cents: it.unit_price_cents, compare_at_price_cents: it.compare_at_price_cents ?? null, image_url: null, quantity: it.quantity,
+    })))
+    setOrders([])
+    setOrder(null)
+    setCheckoutMessage('')
+    setCheckoutStep('checkout')
+    setCheckoutOpen(true)
+  }
+
   async function switchToCashOnDelivery() {
     const current = order
     const token = localStorage.getItem('gdp_token')
@@ -2215,7 +2358,7 @@ export default function Storefront() {
           <video className="pcard-video" src={mediaUrl(product.video_url)} muted loop playsInline preload="none" />
           <span className="pcard-play-badge" aria-hidden><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></span>
         </>}{product.description && <span className="pcard-desc-tip">{product.description}</span>}</button>
-      <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}</p>
+      <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}{product.ships_from && <span className="pcard-intl"> · ✈ from {product.ships_from_name}</span>}{product.product_type === 'digital' && <span className="pcard-intl"> · ⬇ Digital</span>}</p>
       <h3>{variantTitle(product.name, variant?.label)}</h3>
       {hasVariants && <select className="pcard-variant" aria-label={`${product.name} option`} value={String(chosen?.id ?? '')} onChange={(event) => setPickedVariant((current) => ({ ...current, [product.id]: event.target.value }))}>{options.map((o) => <option key={o.id === '' ? 'base' : o.id} value={String(o.id)}>{o.label} — {price(o.price_cents)}</option>)}</select>}
       <div className="pcard-foot"><span className="pcard-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><span className="pcard-compare-at">Compare at: <s>{price(compareAt)}</s> <i className="pcard-info" title="The higher of the manufacturer's list price or a recent selling price on NexTech.">?</i></span></> : <strong>{price(unitPrice)}</strong>}</span>{qty === 0
@@ -2300,21 +2443,17 @@ export default function Storefront() {
       <div className="promo-bar">
         <div className="promo-bar-items">
           {promoColumns.map((column, index) => {
-            const message = column.messages[promoTick % column.messages.length]
+            const message = column.rotate ? column.messages[promoTick % column.messages.length] : column.messages[0]
+            const copy = <span className={`promo-bar-item-copy${column.rotate ? ' rotating' : ''}`} key={column.rotate ? `${promoTick}-${message.title}` : 'fixed'} aria-live={column.rotate ? 'polite' : undefined}><b>{message.title}</b><small>{message.sub}</small></span>
+            const className = `promo-bar-item${column.rotate ? ' promo-bar-rotating' : ''}`
             return column.href
-              ? <a key={index} className="promo-bar-item" href={column.href} target="_blank" rel="noopener noreferrer">
-                {column.icon}
-                <span className="promo-bar-item-copy" key={message.title}><b>{message.title}</b><small>{message.sub}</small></span>
-              </a>
-              : <button key={index} type="button" className="promo-bar-item" onClick={column.onClick}>
-                {column.icon}
-                <span className="promo-bar-item-copy" key={message.title}><b>{message.title}</b><small>{message.sub}</small></span>
-              </button>
+              ? <a key={index} className={className} href={column.href} target="_blank" rel="noopener noreferrer">{column.icon}{copy}</a>
+              : <button key={index} type="button" className={className} onClick={column.onClick}>{column.icon}{copy}</button>
           })}
         </div>
       </div>
       <div className="topbar-row">
-        <a className="brand" href={import.meta.env.BASE_URL || '/'} aria-label={`${branding?.store_name || 'NexTech'} home`}>{branding?.logo_url
+        <a className="brand" href={import.meta.env.BASE_URL || '/'} aria-label={`${branding?.store_name || 'NexTech'} home`}>{branding === null ? <span className="brand-placeholder" aria-hidden /> : branding?.logo_url
           ? <img className="brand-logo" src={mediaUrl(branding.logo_url)} alt={branding?.store_name || 'NexTech'} />
           : <><span className="brand-mark">{(branding?.store_name || 'n').trim().charAt(0).toLowerCase() || 'n'}</span>{(branding?.store_name || 'nextech').toLowerCase()}</>}</a>
         <nav className="topbar-quicklinks" aria-label="Quick browse">
@@ -2526,7 +2665,7 @@ export default function Storefront() {
             {!dealsHasMore && dealsProducts.length > 0 && <p className="no-more-items"><i /><span>No more items.</span><i /></p>}
           </>}
         </article>
-      })() : productView ? (() => {
+      })() : reviewerId ? <ReviewerPage userId={reviewerId} onBack={() => window.history.back()} onProduct={(slug) => { window.location.hash = `#/product/${slug}` }} /> : productView ? (() => {
         if (productView === 'loading') return <article className="product-page"><div className="empty-state">Loading…</div></article>
         const product = productView
         const { hasVariants, options, chosen, variant, unitPrice, compareAt, onSale, pctOff, stock, key, qty } = variantView(product)
@@ -2537,8 +2676,6 @@ export default function Storefront() {
           const idx = opt.image_url ? images.indexOf(opt.image_url) : -1
           if (idx >= 0) { setGalleryIndex(idx); setShowVideo(false) }
         }
-        const reviews = generateReviews(product)
-        const shownReviews = reviewsExpanded ? reviews : reviews.slice(0, 4)
         return <article className="product-page">
           <button type="button" className="page-back" onClick={closeProduct}>&larr; Back to shopping</button>
           <nav className="deals-breadcrumb" aria-label="Breadcrumb">
@@ -2561,21 +2698,8 @@ export default function Storefront() {
                   : activeImg && <img src={mediaUrl(activeImg)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div>
               </div>
 
-              {product.rating_count > 0 && <section className="pdp-reviews">
-                <h2>Ratings &amp; reviews</h2>
-                <div className="pdp-reviews-summary">
-                  <span className="pdp-reviews-score">{Number(product.rating_avg).toFixed(1)}</span>
-                  <span className="pcard-rating-single pdp-reviews-stars">{starIcons(Number(product.rating_avg), `pdpsum-${product.id}`)}</span>
-                  <span className="muted">{product.rating_count} reviews &middot; verified purchases</span>
-                </div>
-                <div className="pdp-review-grid">{shownReviews.map((r) => <div className="pdp-review" key={r.id}>
-                  <div className="pdp-review-head"><strong>{r.name}</strong><span className="pdp-review-date">{r.date}</span></div>
-                  <span className="pcard-rating-single">{starIcons(r.rating, `pdprev-${product.id}-${r.id}`)}</span>
-                  {r.verified && <span className="pdp-verified">Verified purchase</span>}
-                  <p>{r.text}</p>
-                </div>)}</div>
-                {!reviewsExpanded && reviews.length > 4 && <button type="button" className="switch-auth pdp-see-all" onClick={() => setReviewsExpanded(true)}>See all {reviews.length} reviews</button>}
-              </section>}
+              <InfoSections sections={product.info_sections} />
+              <ProductReviews key={product.id} productId={product.id} onReviewer={(id) => { window.location.hash = `#/reviewer/${id}` }} />
 
               <section className="pdp-details">
                 <h2>Product details</h2>
@@ -2613,16 +2737,22 @@ export default function Storefront() {
                   {product.units_sold > 0 && product.rating_count > 0 && <span className="pcard-rating-sep">|</span>}
                   {product.rating_count > 0 && <span className="pcard-rating-single">{starIcons(Number(product.rating_avg), `pdpstar-${product.id}`)}<b>{Number(product.rating_avg).toFixed(1)}</b> ({product.rating_count})</span>}
                 </p>}
-                <div className="pm-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong>{taxInclusive ? <span className="pdp-mrp">MRP <s>{price(compareAt)}</s></span> : <s>{price(compareAt)}</s>}</> : <strong>{price(unitPrice)}</strong>}</div>{taxInclusive && <p className="pdp-tax-note">Inclusive of all taxes</p>}
+                <div className="pm-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong>{taxInclusive ? <span className="pdp-mrp">MRP <s>{price(compareAt)}</s></span> : <s>{price(compareAt)}</s>}</> : <strong>{price(unitPrice)}</strong>}</div>{taxInclusive && !product.ships_from && <p className="pdp-tax-note">Inclusive of all taxes</p>}
+                {product.product_type === 'digital' && <p className="pdp-digital">⬇ <b>Digital download</b> — instant access after payment in Your downloads{product.digital_settings?.license_keys ? ', with your license key' : ''}. Not returnable.</p>}
+                {product.ships_from && <p className="pdp-intl">✈ Ships from {product.ships_from_name} · {product.intl_shipping?.fee_cents ? `${price(product.intl_shipping.fee_cents)} shipping` : 'free shipping'} · arrives in {product.intl_shipping?.transit_min_days}–{product.intl_shipping?.transit_max_days} days<small>Import duties and taxes may be charged on delivery.</small></p>}
                 {hasVariants && <div className="pdp-swatches" role="radiogroup" aria-label="Choose an option">{options.map((o) => <button type="button" key={o.id === '' ? 'base' : o.id} className={String(chosen?.id ?? '') === String(o.id) ? 'pdp-swatch active' : 'pdp-swatch'} onClick={() => pickVariant(o)} title={`${o.label} — ${price(o.price_cents)}`}>
                   <span className="pdp-swatch-img">{(o.image_url || product.image_url) && <img src={mediaUrl(o.image_url || product.image_url)} alt="" />}</span>
                   <span className="pdp-swatch-label">{o.label}</span>
                 </button>)}</div>}
                 {(product.bullet_points ?? []).length > 0 && <ul className="pdp-bullets">{product.bullet_points.map((b) => <li key={b}>{b}</li>)}</ul>}
                 <p className="pm-desc">{product.description || 'No description available yet.'}</p>
-                {qty === 0
+                {product.personalization?.enabled && <PersonalizationPicker settings={product.personalization} value={pzDraft[product.id] ?? {}} onChange={(v) => setPzDraft((d) => ({ ...d, [product.id]: v }))} signedIn={!!currentUser} onSignIn={() => { setAuthMode('login'); setAuthMessage('Sign in to upload your photo — then add it to your cart.') }} />}
+                {product.personalization?.enabled ? (
+                  <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0 || !personalizationReady(product.personalization, pzDraft[product.id])} onClick={() => { add(product, variant, pzDraft[product.id]); setPzDraft((d) => ({ ...d, [product.id]: {} })); setCartOpen(true) }}>{stock === 0 ? 'OUT OF STOCK' : personalizationReady(product.personalization, pzDraft[product.id]) ? 'ADD TO CART' : 'UPLOAD YOUR PHOTO FIRST'}</button>
+                ) : qty === 0
                   ? <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0} onClick={() => add(product, variant)}>{stock === 0 ? 'OUT OF STOCK' : 'ADD TO CART'}</button>
                   : <span className="stepper pm-add pdp-add"><button type="button" aria-label="Remove one" onClick={() => updateQuantity(key, -1)}>&minus;</button><b>{qty}</b><button type="button" aria-label="Add one" disabled={stock != null && qty >= stock} onClick={() => updateQuantity(key, 1)}>+</button></span>}
+                <button type="button" className={`pdp-fav${favIds.has(product.id) ? ' on' : ''}`} aria-pressed={favIds.has(product.id)} onClick={() => toggleFavorite(product)}>{favIds.has(product.id) ? '♥ In My favourites' : '♡ Add to favourites'}</button>
               </div>
             </div>
           </div>
@@ -2714,7 +2844,7 @@ export default function Storefront() {
       </>}
     </div></div>}
     {cartCount > 0 && <aside className={`cart-tray${trayDragging ? ' dragging' : ''}`} aria-live="polite" style={{ transform: `translateX(-50%) translateY(${trayLift}px)` }} onPointerDown={trayPointerDown} onPointerMove={trayPointerMove} onPointerUp={trayPointerUp} onPointerCancel={trayPointerUp}><div><strong>{cartCount} {cartCount === 1 ? 'item' : 'items'} in your cart</strong><span>{price(cartTotal)} subtotal</span></div><button type="button" onClick={() => setCartOpen(true)}>View cart <span>&rarr;</span></button></aside>}
-    {cartOpen && <div className="overlay" role="presentation" onClick={() => setCartOpen(false)}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><p className="eyebrow">Ready when you are</p><h2 id="cart-title">Your cart</h2></div><button className="close-button" type="button" onClick={() => setCartOpen(false)} aria-label="Close cart">x</button></div>{cart.length ? <><div className="drawer-items">{cartView.map((item) => <div className="drawer-item" key={item.key}><div className="mini-visual" aria-hidden>{imgPlaceholder()}{item.image_url && <img src={mediaUrl(item.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div className="drawer-item-copy"><strong>{variantTitle(item.name, item.variantLabel)}</strong><span>{item.onSale ? <><strong className="on-sale">{price(item.unit)}</strong> <s>{price(item.reg)}</s></> : price(item.unit)}{item.quantity > 1 && <> &middot; {item.quantity} pcs = {item.onSale ? <><strong className="on-sale">{price(item.unit * item.quantity)}</strong> <s>{price(item.lineReg)}</s></> : price(item.unit * item.quantity)}</>}</span></div><div className="quantity"><button type="button" onClick={() => updateQuantity(item.key, -1)}>-</button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)}>+</button></div></div>)}</div><div className="drawer-summary"><div><span>Subtotal</span><span>{cartRegularTotal > est.sub ? <><s className="on-sale">{price(cartRegularTotal)}</s> {price(est.sub)}</> : price(est.sub)}</span></div><div><span>Delivery</span><span>{est.delivery === 0 ? 'FREE' : price(est.delivery)}</span></div>{hasSellerShipped && <div><span>Shipping from sellers</span><span>{est.sellerShipping === 0 ? 'FREE' : price(est.sellerShipping)}</span></div>}<div><span>Handling</span><span>{price(est.handling)}</span></div>{est.smallCart > 0 && <div><span>Small cart fee</span><span>{price(est.smallCart)}</span></div>}{taxInclusive ? <div><span>{marketProfile?.tax_label ?? 'Tax'}</span><span>Included in prices</span></div> : <div><span>Tax</span><span>{price(est.tax)}</span></div>}<div className="drawer-summary-total"><strong>Estimated total</strong><strong>{price(est.total)}</strong></div></div>{fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents == null && <p className="drawer-nudge">Delivery fee is based on distance — set your location for the exact amount.</p>}{est.toFreeDelivery > 0 && <p className="drawer-nudge">Add {price(est.toFreeDelivery)} more for free delivery.</p>}{est.toNoSmallCart > 0 && <p className="drawer-nudge">Add {price(est.toNoSmallCart)} more to drop the {price(est.smallCart)} small-cart fee.</p>}{hasSellerShipped && (sellerQuote?.shops ?? []).map((q) => <p key={q.shop_id} className="drawer-nudge">Ships from {q.shop_name} · {q.free_shipping ? 'free shipping' : price(q.fee_cents)} · arrives {new Date(q.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–{new Date(q.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}{sellerQuote.state_known ? '' : ' (estimate — add your address for exact shipping)'}</p>)}{(sellerQuote?.unshippable ?? []).length > 0 && sellerQuote.state_known && <p className="drawer-nudge">The seller can&rsquo;t ship {sellerQuote.unshippable.join(', ')} to your state.</p>}<button className="checkout-button" type="button" onClick={() => { setCartOpen(false); setCheckoutOpen(true); setCheckoutStep('address'); setCheckoutMessage('') }}>Continue to checkout <span>&rarr;</span></button></> : <div className="empty-cart"><div className="empty-cart-mark">+</div><h3>Your cart is empty</h3><p>Find something good in the essentials below.</p><button type="button" onClick={() => setCartOpen(false)}>Keep shopping</button></div>}</aside></div>}
+    {cartOpen && <div className="overlay" role="presentation" onClick={() => setCartOpen(false)}><aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="cart-title" onClick={(event) => event.stopPropagation()}><div className="drawer-header"><div><p className="eyebrow">Ready when you are</p><h2 id="cart-title">Your cart</h2></div><button className="close-button" type="button" onClick={() => setCartOpen(false)} aria-label="Close cart">x</button></div>{cart.length ? <><div className="drawer-items">{cartView.map((item) => <div className="drawer-item" key={item.key}><div className="mini-visual" aria-hidden>{imgPlaceholder()}{item.image_url && <img src={mediaUrl(item.image_url)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}</div><div className="drawer-item-copy"><strong>{variantTitle(item.name, item.variantLabel)}</strong>{item.personalization && <small className="drawer-pz">📷 {(item.personalization.photos ?? []).length} photo{(item.personalization.photos ?? []).length === 1 ? '' : 's'} attached</small>}<span>{item.onSale ? <><strong className="on-sale">{price(item.unit)}</strong> <s>{price(item.reg)}</s></> : price(item.unit)}{item.quantity > 1 && <> &middot; {item.quantity} pcs = {item.onSale ? <><strong className="on-sale">{price(item.unit * item.quantity)}</strong> <s>{price(item.lineReg)}</s></> : price(item.unit * item.quantity)}</>}</span><button type="button" className="drawer-later" onClick={() => saveForLater(item)}>♡ Save for later</button></div><div className="quantity"><button type="button" onClick={() => updateQuantity(item.key, -1)}>-</button><span>{item.quantity}</span><button type="button" onClick={() => updateQuantity(item.key, 1)}>+</button></div></div>)}</div><div className="drawer-summary"><div><span>Subtotal</span><span>{cartRegularTotal > est.sub ? <><s className="on-sale">{price(cartRegularTotal)}</s> {price(est.sub)}</> : price(est.sub)}</span></div><div><span>Delivery</span><span>{est.delivery === 0 ? 'FREE' : price(est.delivery)}</span></div>{hasSellerShipped && <div><span>Shipping from sellers</span><span>{est.sellerShipping === 0 ? 'FREE' : price(est.sellerShipping)}</span></div>}<div><span>Handling</span><span>{price(est.handling)}</span></div>{est.smallCart > 0 && <div><span>Small cart fee</span><span>{price(est.smallCart)}</span></div>}{taxInclusive ? <div><span>{marketProfile?.tax_label ?? 'Tax'}</span><span>Included in prices</span></div> : <div><span>Tax</span><span>{price(est.tax)}</span></div>}<div className="drawer-summary-total"><strong>Estimated total</strong><strong>{price(est.total)}</strong></div></div>{fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents == null && <p className="drawer-nudge">Delivery fee is based on distance — set your location for the exact amount.</p>}{est.toFreeDelivery > 0 && <p className="drawer-nudge">Add {price(est.toFreeDelivery)} more for free delivery.</p>}{est.toNoSmallCart > 0 && <p className="drawer-nudge">Add {price(est.toNoSmallCart)} more to drop the {price(est.smallCart)} small-cart fee.</p>}{hasSellerShipped && (sellerQuote?.shops ?? []).map((q) => <p key={q.shop_id} className="drawer-nudge">Ships from {q.shop_name} · {q.free_shipping ? 'free shipping' : price(q.fee_cents)} · arrives {new Date(q.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–{new Date(q.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}{sellerQuote.state_known ? '' : ' (estimate — add your address for exact shipping)'}{q.ships_from ? ` · international, from ${marketName(q.ships_from)} — import duties and taxes may be charged on delivery` : ''}</p>)}{(sellerQuote?.unshippable ?? []).length > 0 && sellerQuote.state_known && <p className="drawer-nudge">The seller can&rsquo;t ship {sellerQuote.unshippable.join(', ')} to your state.</p>}<button className="checkout-button" type="button" onClick={() => { setCartOpen(false); setCheckoutOpen(true); setCheckoutStep(allDigital ? 'checkout' : 'address'); setCheckoutMessage('') }}>Continue to checkout <span>&rarr;</span></button></> : <div className="empty-cart"><div className="empty-cart-mark">+</div><h3>Your cart is empty</h3><p>Find something good in the essentials below.</p><button type="button" onClick={() => setCartOpen(false)}>Keep shopping</button></div>}</aside></div>}
     {authMode && <div className="overlay" role="presentation" onClick={() => { setAuthMode(null); setOtpStage(null); setAuthTab('code'); setPwMode('signin') }}><div className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setAuthMode(null); setOtpStage(null); setAuthTab('code'); setPwMode('signin') }} aria-label="Close authentication">x</button><p className="eyebrow">A better way to shop tech</p>{otpStage ? <><h2 id="auth-title">Enter your code</h2><p className="auth-intro">We emailed a 6-digit code to {otpStage.email}. It expires in 10 minutes.</p><form onSubmit={submitOtp}><input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength="8" placeholder="6-digit code" value={otpCode} onChange={(event) => setOtpCode(event.target.value.replace(/[^0-9]/g, ''))} /><button className="checkout-button" type="submit">Verify <span>&rarr;</span></button></form>{authMessage && <p className="auth-message">{authMessage}</p>}<button className="switch-auth" type="button" onClick={resendOtp}>Resend code</button><button className="switch-auth" type="button" onClick={() => { setOtpStage(null); setAuthMessage('') }}>Use a different email</button></> : <><h2 id="auth-title">Sign in or sign up</h2><div className="auth-tabs" role="tablist"><button type="button" role="tab" aria-selected={authTab === 'code'} className={authTab === 'code' ? 'auth-tab active' : 'auth-tab'} onClick={() => { setAuthTab('code'); setAuthMessage('') }}>Email code</button><button type="button" role="tab" aria-selected={authTab === 'password'} className={authTab === 'password' ? 'auth-tab active' : 'auth-tab'} onClick={() => { setAuthTab('password'); setAuthMessage('') }}>Password</button></div>{authTab === 'password' ? (() => {
         const forgot = pwMode === 'forgot'
         const signup = pwMode === 'signup'
@@ -2734,8 +2864,8 @@ export default function Storefront() {
           <button className="switch-auth" type="button" onClick={() => { setPwMode(pwMode === 'signin' ? 'signup' : 'signin'); setResetSent(false); setAuthMessage('') }}>{signup ? 'Already have an account? Sign in' : forgot ? 'Back to sign in' : 'New here? Create an account'}</button>
         </>
       })() : <><p className="auth-intro">Enter your email and we&rsquo;ll send a 6-digit code. No password needed &mdash; if you&rsquo;re new, your account is created automatically.</p><form onSubmit={submitAuth}><input required type="email" autoComplete="email" placeholder="Email address" value={authForm.email} onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })} /><button className="checkout-button" type="submit">Continue <span>&rarr;</span></button></form></>}{authMessage && <p className="auth-message">{authMessage}</p>}</>}</div></div>}
-    {checkoutOpen && <div className="overlay" role="presentation" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }}><div className="auth-modal checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }} aria-label="Close checkout">x</button><p className="eyebrow">Almost there</p>{checkoutStep === 'address' ? <><h2 id="checkout-title">{deliveryMode === 'form' ? 'Where should we deliver?' : 'Confirm delivery address'}</h2><p className="auth-intro">Your total will be calculated and confirmed securely by the server.</p>{deliveryMode === 'location' ? <><div className="loc-current"><strong>Deliver to</strong> {location.full || location.label}</div><input placeholder="Flat / house / building &amp; street" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => setEditAddress(true)}>Edit full address</button></div></> : deliveryMode === 'saved' ? <><div className="loc-current"><strong>Deliver to</strong> {defaultAddress.line1}, {defaultAddress.city} {defaultAddress.state} {defaultAddress.postal_code}</div>{addresses.length > 1 && <label className="address-picker">Choose address<select value={selectedAddressId || String(defaultAddress.id)} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}</select></label>}<div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => { setSelectedAddressId(''); setEditAddress(true) }}>Enter a new address</button></div></> : <>{addresses.length > 0 && <label className="address-picker">Saved address<select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}<option value="">Use a new address</option></select></label>}<form onSubmit={(event) => { event.preventDefault(); if (!blockCheckout) setCheckoutStep('checkout') }}>{!selectedAddressId && <><input required placeholder="Full name" value={checkoutForm.name} onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })} /><input required placeholder="Street address" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="form-row"><input required placeholder="City" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /><input required maxLength="60" list="market-states" placeholder="State" value={checkoutForm.state} onChange={(event) => setCheckoutForm({ ...checkoutForm, state: event.target.value })} /><datalist id="market-states">{Object.entries(marketProfile?.states ?? {}).map(([code, name]) => <option key={code} value={name} />)}</datalist></div><input required maxLength="12" placeholder={marketProfile?.postal_label ?? 'ZIP code'} value={checkoutForm.postal_code} onChange={(event) => setCheckoutForm({ ...checkoutForm, postal_code: event.target.value })} /></>}</form></>}<label className="checkout-phone"><span>Phone number{currentUser?.phone ? '' : ' — the delivery rider may call you'}</span><input type="tel" required maxLength="32" placeholder={activeMarket === 'IN' ? 'e.g. +91 98765 43210' : 'e.g. +1 555 987 6543'} value={phone} onChange={(event) => setPhone(event.target.value)} /></label><textarea className="delivery-note" rows="2" maxLength="500" placeholder="Delivery instructions (optional) — e.g. leave at the gate, call on arrival" value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} /><button className="checkout-button" type="button" onClick={() => setCheckoutStep('checkout')} disabled={blockCheckout}>Continue to checkout <span>&rarr;</span></button>{blockCheckout && <p className="auth-message">{outOfArea && deliveryMode === 'location' ? UNSERVICEABLE_MSG : 'Add a phone number so your delivery rider can reach you.'}</p>}</> : <><h2 id="checkout-title">Checkout</h2><p className="auth-intro">Have a gift card, or want to pay another way? Do it here — then place your order.</p><div className="loc-current"><strong>Deliver to</strong> {deliveryAddressSummary}</div><button type="button" className="switch-auth" onClick={() => setCheckoutStep('address')}>&larr; Edit delivery address</button><details className="gift-card-field"><summary>Have a refund gift card?</summary><div className="form-row"><input placeholder="Gift card (GC-XXXX-XXXX)" value={giftCard.code} onChange={(event) => setGiftCard({ ...giftCard, code: event.target.value, checked: null })} /><input placeholder="Password" value={giftCard.pin} onChange={(event) => setGiftCard({ ...giftCard, pin: event.target.value, checked: null })} /></div><button type="button" className="switch-auth" onClick={checkGiftCard}>Check balance</button>{giftCard.checked?.error && <span className="auth-message">{giftCard.checked.error}</span>}{giftCard.checked?.balance_cents != null && <span className="gift-card-ok">Balance {price(giftCard.checked.balance_cents)} — applied at checkout (any remainder stays on the card).</span>}</details>{codEnabled && hasSellerShipped && <p className="drawer-nudge">Cash on delivery isn&rsquo;t available for items shipped directly by sellers — you&rsquo;ll pay by card.</p>}{codEnabled && !hasSellerShipped && <><p className="pay-methods-label">How would you like to pay?</p><div className="pay-methods" role="radiogroup" aria-label="Payment method"><button type="button" role="radio" aria-checked={paymentMethod === 'card'} className={paymentMethod === 'card' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('card')}><strong>Pay online</strong><span>Card via Stripe</span></button><button type="button" role="radio" aria-checked={paymentMethod === 'cod'} className={paymentMethod === 'cod' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('cod')}><strong>Cash on delivery</strong><span>Pay when it arrives</span></button></div></>}<button className="checkout-button" type="button" onClick={submitCheckout} disabled={blockCheckout}>{codEnabled && paymentMethod === 'cod' && !hasSellerShipped ? 'Place order' : 'Review order'} <span>&rarr;</span></button>{checkoutMessage && <p className="auth-message">{checkoutMessage}</p>}</>}</div></div>}
-    {order?.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal checkout-modal payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrder(null)} aria-label="Close payment">x</button><p className="eyebrow">Secure payment</p><h2 id="payment-title">Finish your order.</h2><p className="auth-intro">Order #{order.id} · {price(order.total_cents, order.currency)} USD</p><Elements stripe={stripePromise}><PaymentForm clientSecret={order.clientSecret} onComplete={finalizePayment} savedCards={cards ?? []} /></Elements>{codEnabled && <button className="switch-auth" type="button" onClick={switchToCashOnDelivery}>Pay with cash on delivery instead</button>}<button className="switch-auth" type="button" onClick={() => setOrder(null)}>Pay later from Order history</button>{order.switchError && <p className="auth-message">{order.switchError}</p>}</div></div>}
+    {checkoutOpen && <div className="overlay" role="presentation" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }}><div className="auth-modal checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => { setCheckoutOpen(false); setCheckoutStep('address') }} aria-label="Close checkout">x</button>{checkoutStep !== 'address' && !allDigital && <button className="modal-back" type="button" onClick={() => setCheckoutStep('address')} aria-label="Back to delivery address" title="Back to delivery address">&larr;</button>}<p className="eyebrow">Almost there</p>{checkoutStep === 'address' ? <><h2 id="checkout-title">{deliveryMode === 'form' ? 'Where should we deliver?' : 'Confirm delivery address'}</h2><p className="auth-intro">Your total will be calculated and confirmed securely by the server.</p>{deliveryMode === 'location' ? <><div className="loc-current"><strong>Deliver to</strong> {location.full || location.label}</div><input placeholder="Flat / house / building &amp; street" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => setEditAddress(true)}>Edit full address</button></div></> : deliveryMode === 'saved' ? <><div className="loc-current"><strong>Deliver to</strong> {defaultAddress.line1}, {defaultAddress.city} {defaultAddress.state} {defaultAddress.postal_code}</div>{addresses.length > 1 && <label className="address-picker">Choose address<select value={selectedAddressId || String(defaultAddress.id)} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}</select></label>}<div className="checkout-links"><button type="button" className="switch-auth" onClick={() => { setCheckoutOpen(false); setLocationOpen(true) }}>Change location</button><button type="button" className="switch-auth" onClick={() => { setSelectedAddressId(''); setEditAddress(true) }}>Enter a new address</button></div></> : <>{addresses.length > 0 && <label className="address-picker">Saved address<select value={selectedAddressId} onChange={(event) => setSelectedAddressId(event.target.value)}>{addresses.map((address) => <option key={address.id} value={address.id}>{address.label} - {address.line1}, {address.city}</option>)}<option value="">Use a new address</option></select></label>}<form onSubmit={(event) => { event.preventDefault(); if (!blockCheckout) setCheckoutStep('checkout') }}>{!selectedAddressId && <><input required placeholder="Full name" value={checkoutForm.name} onChange={(event) => setCheckoutForm({ ...checkoutForm, name: event.target.value })} /><input required placeholder="Street address" value={checkoutForm.line1} onChange={(event) => setCheckoutForm({ ...checkoutForm, line1: event.target.value })} /><div className="form-row"><input required placeholder="City" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /><input required maxLength="60" list="market-states" placeholder="State" value={checkoutForm.state} onChange={(event) => setCheckoutForm({ ...checkoutForm, state: event.target.value })} /><datalist id="market-states">{Object.entries(marketProfile?.states ?? {}).map(([code, name]) => <option key={code} value={name} />)}</datalist></div><input required maxLength="12" placeholder={marketProfile?.postal_label ?? 'ZIP code'} value={checkoutForm.postal_code} onChange={(event) => setCheckoutForm({ ...checkoutForm, postal_code: event.target.value })} /></>}</form></>}<label className="checkout-phone"><span>Phone number{currentUser?.phone ? '' : ' — the delivery rider may call you'}</span><input type="tel" required maxLength="32" placeholder={activeMarket === 'IN' ? 'e.g. +91 98765 43210' : 'e.g. +1 555 987 6543'} value={phone} onChange={(event) => setPhone(event.target.value)} /></label><textarea className="delivery-note" rows="2" maxLength="500" placeholder="Delivery instructions (optional) — e.g. leave at the gate, call on arrival" value={deliveryNote} onChange={(event) => setDeliveryNote(event.target.value)} /><button className="checkout-button" type="button" onClick={continueFromAddress} disabled={blockCheckout}>Continue to checkout <span>&rarr;</span></button>{blockCheckout && <p className="auth-message">{outOfArea && deliveryMode === 'location' ? UNSERVICEABLE_MSG : 'Add a phone number so your delivery rider can reach you.'}</p>}</> : <><h2 id="checkout-title">Checkout</h2><p className="auth-intro">Have a gift card, or want to pay another way? Do it here — then place your order.</p>{allDigital ? <div className="loc-current"><strong>Delivery</strong> ⬇ Digital download — ready in Your downloads right after payment</div> : <div className="loc-current"><strong>Deliver to</strong> {deliveryAddressSummary}</div>}<details className="gift-card-field"><summary>Have a refund gift card?</summary><div className="form-row"><input placeholder="Gift card (GC-XXXX-XXXX)" value={giftCard.code} onChange={(event) => setGiftCard({ ...giftCard, code: event.target.value, checked: null })} /><input placeholder="Password" value={giftCard.pin} onChange={(event) => setGiftCard({ ...giftCard, pin: event.target.value, checked: null })} /></div><button type="button" className="switch-auth" onClick={checkGiftCard}>Check balance</button>{giftCard.checked?.error && <span className="auth-message">{giftCard.checked.error}</span>}{giftCard.checked?.balance_cents != null && <span className="gift-card-ok">Balance {price(giftCard.checked.balance_cents)} — applied at checkout (any remainder stays on the card).</span>}</details>{codEnabled && !codAvailable && <p className="drawer-nudge">{sellerQuote?.cod_blocked ?? 'Cash on delivery isn’t available for this cart — you’ll pay by card.'}</p>}{codAvailable && <><p className="pay-methods-label">How would you like to pay?</p><div className="pay-methods" role="radiogroup" aria-label="Payment method"><button type="button" role="radio" aria-checked={paymentMethod === 'card'} className={paymentMethod === 'card' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('card')}><strong>Pay online</strong><span>Card via Stripe</span></button><button type="button" role="radio" aria-checked={paymentMethod === 'cod'} className={paymentMethod === 'cod' ? 'pay-method active' : 'pay-method'} onClick={() => setPaymentMethod('cod')}><strong>Cash on delivery</strong><span>Pay when it arrives</span></button></div></>}<button className="checkout-button" type="button" onClick={submitCheckout} disabled={blockCheckout || placing}>{placing ? 'Placing order…' : codAvailable && paymentMethod === 'cod' ? 'Place order' : 'Review order'} <span>&rarr;</span></button>{checkoutMessage && <p className="auth-message">{checkoutMessage}</p>}</>}</div></div>}
+    {order?.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal checkout-modal payment-modal" role="dialog" aria-modal="true" aria-labelledby="payment-title" onClick={(event) => event.stopPropagation()}><button className="close-button" type="button" onClick={() => setOrder(null)} aria-label="Close payment">x</button><button className="modal-back" type="button" onClick={backToCheckout} aria-label="Back to checkout — change payment method or address" title="Back to checkout">&larr;</button><p className="eyebrow">Secure payment</p><h2 id="payment-title">Finish your order.</h2><p className="auth-intro">Order #{order.id} · {price(order.total_cents, order.currency)}</p><Elements stripe={stripePromise}><PaymentForm clientSecret={order.clientSecret} onComplete={finalizePayment} savedCards={cards ?? []} billing={billingFor(order)} /></Elements>{codEnabled && <button className="switch-auth" type="button" onClick={switchToCashOnDelivery}>Pay with cash on delivery instead</button>}<button className="switch-auth" type="button" onClick={() => setOrder(null)}>Pay later from Order history</button>{order.switchError && <p className="auth-message">{order.switchError}</p>}</div></div>}
     {order && !order.clientSecret && <div className="overlay" role="presentation" onClick={() => setOrder(null)}><div className="auth-modal order-modal" role="dialog" aria-modal="true" aria-labelledby="order-title" onClick={(event) => event.stopPropagation()}><p className="eyebrow">{order.cod ? 'Order confirmed' : order.paid ? 'Payment submitted' : 'Payment setup needed'}</p><h2 id="order-title">{order.cod || order.paid ? 'You’re all set.' : 'Order created.'}</h2><p className="auth-intro">{order.cod ? `Order #${order.id} is confirmed. Pay with cash when your order arrives.` : `Order #${order.id} is ${order.paid ? 'being confirmed by Stripe.' : 'waiting for Stripe test keys.'}`}</p><div className="order-breakdown"><div><span>Subtotal</span><span>{price(order.subtotal_cents, order.currency)}</span></div><div><span>Delivery</span><span>{order.delivery_fee_cents === 0 ? 'FREE' : price(order.delivery_fee_cents, order.currency)}</span></div><div><span>Handling</span><span>{price(order.handling_fee_cents ?? 0)}</span></div>{order.small_cart_fee_cents > 0 && <div><span>Small cart fee</span><span>{price(order.small_cart_fee_cents, order.currency)}</span></div>}{order.tax_included_cents > 0 ? <div><span>Includes GST</span><span>{price(order.tax_included_cents, order.currency)}</span></div> : <div><span>Tax</span><span>{price(order.tax_cents, order.currency)}</span></div>}{order.gift_card_discount_cents > 0 && <div><span>Gift card</span><span>&minus;{price(order.gift_card_discount_cents, order.currency)}</span></div>}</div>{order.delivery_instructions && <p className="auth-intro" style={{ margin: '12px 0 0' }}>Note to courier: &ldquo;{order.delivery_instructions}&rdquo;</p>}<div className="order-total"><span>{order.paid ? 'Paid' : order.cod ? 'Pay on delivery' : 'Order total'}</span><strong>{price(order.total_cents, order.currency)}</strong></div>{(order.cod || order.paid) && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(order.id)}>Download bill (PDF)</button>}<button className="checkout-button" type="button" onClick={() => setOrder(null)}>Keep shopping <span>&rarr;</span></button>{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div></div>}
     {accountOpen && <section className="account-page" aria-labelledby="account-title">
         <nav className="account-crumbs" aria-label="Breadcrumb">
@@ -2798,7 +2928,9 @@ export default function Storefront() {
           </div>
         )}
 
-        {accountTab === 'reviews' && <p className="account-hint">Your product reviews will appear here. For now, you can rate each delivery from <button type="button" className="text-button" onClick={() => openOrders()}>Your orders</button> once it arrives.</p>}
+        {accountTab === 'favorites' && (favList === null ? <p className="account-hint">Loading your favourites…</p> : favList.length === 0 ? <p className="account-hint">No favourites yet. Tap <b>♡ Add to favourites</b> on any product to save it here.</p> : <div className="product-grid account-favs">{favList.map(productCard)}</div>)}
+        {accountTab === 'downloads' && <MyDownloads onProduct={(slug) => { window.location.hash = `#/product/${slug}` }} onShop={() => { window.location.hash = '#/' }} />}
+        {accountTab === 'reviews' && <MyReviews onProduct={(slug) => { window.location.hash = `#/product/${slug}` }} onOrders={() => openOrders()} onProfile={(id) => { window.location.hash = `#/reviewer/${id}` }} />}
         {accountTab === 'coupons' && <p className="account-hint">No coupons or offers right now. Sale prices and deals are applied automatically — look for the Lightning deals and Unbeatable deals on the homepage.</p>}
         {accountTab === 'following' && <p className="account-hint">You aren&rsquo;t following any stores yet. Following stores is coming soon — until then, open a seller&rsquo;s shop from any product&rsquo;s &ldquo;Sold by&rdquo; link.</p>}
 
@@ -2838,13 +2970,32 @@ export default function Storefront() {
           </div>
         )}
 
-        {accountTab === 'profile' && (
+        {accountTab === 'profile' && !currentUser?.email && <p className="account-hint">Loading your profile…</p>}
+        {accountTab === 'profile' && currentUser?.email && (
+          <>
+          <div className="account-profile-card">
+            <span className="account-avatar" aria-hidden>{(currentUser?.name || currentUser?.email || '?').trim().charAt(0).toUpperCase()}</span>
+            <div>
+              <h3>{currentUser?.name || 'Your account'}</h3>
+              <p>{currentUser?.email}{currentUser?.phone ? ` · ${currentUser.phone}` : ''}</p>
+              {currentUser?.created_at && <p>Member since {new Date(currentUser.created_at).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>}
+            </div>
+          </div>
+          <div className="account-shortcuts">
+            <button type="button" onClick={() => openOrders()}><strong>Your orders</strong><span>Track, return or buy again</span></button>
+            <button type="button" onClick={() => openAccount('reviews')}><strong>Your reviews</strong><span>Reviews you&rsquo;ve written</span></button>
+            <button type="button" onClick={() => openAccount('addresses')}><strong>Addresses</strong><span>{addresses.length ? `${addresses.length} saved` : 'Add a delivery address'}</span></button>
+            <button type="button" onClick={() => openAccount('security')}><strong>Security</strong><span>Change your password</span></button>
+          </div>
+          <h3 className="account-sub">Edit profile</h3>
           <form className="account-form" onSubmit={saveProfile}>
             <label>Name<input required value={profileForm.name} onChange={(event) => setProfileForm({ ...profileForm, name: event.target.value })} /></label>
             <label>Phone<input type="tel" maxLength="32" placeholder="+1 555 987 6543" value={profileForm.phone} onChange={(event) => setProfileForm({ ...profileForm, phone: event.target.value })} /></label>
             {!currentUser?.is_admin && <p className="account-hint">Email is used to sign in and can&rsquo;t be changed here — contact support to update it.</p>}
-            <button className="checkout-button" type="submit">Save profile</button>
+            <button className="checkout-button" type="submit" disabled={profileForm.name.trim() === (currentUser?.name ?? '') && profileForm.phone.trim() === (currentUser?.phone ?? '')}>Save profile</button>
+            {accountMsg && <p className="auth-message account-inline-msg">{accountMsg}</p>}
           </form>
+          </>
         )}
 
         {accountTab === 'security' && (
@@ -2918,8 +3069,8 @@ export default function Storefront() {
           </>
         ))}
 
-        {accountMsg && <p className="auth-message">{accountMsg}</p>}
-    {accountTab === 'orders' && <div className="account-orders"><h2 id="account-title" className="visually-hidden">Your orders</h2><div className="orders-toolbar"><div className="orders-tabs" role="tablist">{ORDER_FILTERS.map(([fkey, flabel]) => <button key={fkey} type="button" role="tab" aria-selected={ordersFilter === fkey} className={ordersFilter === fkey ? 'active' : ''} onClick={() => openOrders(fkey)}>{flabel}</button>)}</div><label className="orders-search"><input type="search" placeholder="Item name / Order ID / Tracking No." value={ordersQuery} onChange={(event) => setOrdersQuery(event.target.value)} /><svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></svg></label></div>{ordersFilter === 'all' && !ordersQuery.trim() && <p className="orders-guarantee"><b>Order guarantee</b> | Return if item damaged · Refund if it never arrives · Delivery updates by email</p>}{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : visibleOrders().length === 0 ? <><div className="orders-empty"><svg aria-hidden width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"><path d="M3 10h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="M6 10V4h12v6" strokeDasharray="2 1.5" /><path d="M10 5.5l4 3M14 5.5l-4 3" /></svg><p>{ordersQuery.trim() ? 'No orders match your search' : ordersFilter === 'all' ? 'You don’t have any orders' : `You don’t have any ${ORDER_FILTERS.find(([k]) => k === ordersFilter)?.[1].toLowerCase()} orders`}</p></div><h3 className="orders-help-h">Can&rsquo;t find your order?</h3><div className="orders-help"><button type="button" onClick={switchAccounts}><span>Try signing in with another account</span><span aria-hidden>&rsaquo;</span></button><button type="button" onClick={() => openSupport()}><span>Self-service to find order</span><span aria-hidden>&rsaquo;</span></button>{otherOrdersMarket() && <button type="button" onClick={() => switchMarket(otherOrdersMarket())}><span>Switch countries to view orders in {marketName(otherOrdersMarket())}</span><span aria-hidden>&rsaquo;</span></button>}</div></> : <ul className="orders-list">{visibleOrders().map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents, entry.currency)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(() => { const change = entry.address_changes?.[0]; if (change?.status === 'pending') return <p className="order-track-note">Address change requested — waiting for confirmation.</p>; return <>{change?.status === 'declined' && <p className="order-track-note">Your address change wasn&rsquo;t accepted{change.note ? `: ${change.note}` : '.'}</p>}{change?.status === 'approved' && <p className="order-track-note">Shipping address updated.</p>}{ADDRESS_CHANGE_STAGES.includes(entry.status) && !(entry.packages ?? []).length && <button className="text-button order-cancel" type="button" onClick={() => openAddressChange(entry)}>Change shipping address</button>}</> })()}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}{(entry.shop_shipping ?? []).map((ss) => { const pk = (entry.packages ?? []).filter((p) => p.shop_id === ss.shop_id); return <div key={ss.id} className="order-seller-ship"><strong>Shipped by {ss.shop?.name ?? 'the seller'}</strong>{pk.length === 0 ? <span>{entry.status === 'cancelled' ? 'Cancelled' : `Ships by ${new Date(ss.ship_by).toLocaleDateString()} · arrives ${new Date(ss.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–${new Date(ss.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}</span> : pk.map((p) => <span key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status === 'delivered' ? `delivered ${new Date(p.delivered_at).toLocaleDateString()}` : (p.tracking_label ?? p.status.replace('_', ' '))}{p.status !== 'delivered' && ['shipped', 'in_transit'].includes(p.status) && <button type="button" className="text-button" onClick={() => confirmPackageReceived(entry, p)}>Confirm received</button>}<TrackingTimeline pkg={p} /></span>)}</div> })}<button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div>}
+        {accountMsg && accountTab !== 'profile' && <p className="auth-message">{accountMsg}</p>}
+    {accountTab === 'orders' && <div className="account-orders"><h2 id="account-title" className="visually-hidden">Your orders</h2><div className="orders-toolbar"><div className="orders-tabs" role="tablist">{ORDER_FILTERS.map(([fkey, flabel]) => <button key={fkey} type="button" role="tab" aria-selected={ordersFilter === fkey} className={ordersFilter === fkey ? 'active' : ''} onClick={() => openOrders(fkey)}>{flabel}</button>)}</div><label className="orders-search"><input type="search" placeholder="Item name / Order ID / Tracking No." value={ordersQuery} onChange={(event) => setOrdersQuery(event.target.value)} /><svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></svg></label></div>{ordersFilter === 'all' && !ordersQuery.trim() && <p className="orders-guarantee"><b>Order guarantee</b> | Return if item damaged · Refund if it never arrives · Delivery updates by email</p>}{ordersLoading ? <p className="auth-intro">Loading your orders...</p> : visibleOrders().length === 0 ? <><div className="orders-empty"><svg aria-hidden width="84" height="84" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"><path d="M3 10h18v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="M6 10V4h12v6" strokeDasharray="2 1.5" /><path d="M10 5.5l4 3M14 5.5l-4 3" /></svg><p>{ordersQuery.trim() ? 'No orders match your search' : ordersFilter === 'all' ? 'You don’t have any orders' : `You don’t have any ${ORDER_FILTERS.find(([k]) => k === ordersFilter)?.[1].toLowerCase()} orders`}</p></div><h3 className="orders-help-h">Can&rsquo;t find your order?</h3><div className="orders-help"><button type="button" onClick={switchAccounts}><span>Try signing in with another account</span><span aria-hidden>&rsaquo;</span></button><button type="button" onClick={() => openSupport()}><span>Self-service to find order</span><span aria-hidden>&rsaquo;</span></button>{otherOrdersMarket() && <button type="button" onClick={() => switchMarket(otherOrdersMarket())}><span>Switch countries to view orders in {marketName(otherOrdersMarket())}</span><span aria-hidden>&rsaquo;</span></button>}</div></> : <ul className="orders-list">{visibleOrders().map((entry) => <li className="order-row" key={entry.id}><div className="order-row-head"><strong>Order #{entry.id}</strong><span className={`order-badge order-badge-${entry.payment_status}`}>{orderLabel(entry)}</span></div><div className="order-row-meta"><span>{new Date(entry.created_at).toLocaleDateString()}</span><span>{entry.items?.length ?? 0} {entry.items?.length === 1 ? 'item' : 'items'}</span><strong>{price(entry.total_cents, entry.currency)}</strong></div>{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && DELIVERY_STAGES.includes(entry.status) && <div className="order-track" aria-label={`Delivery status: ${DELIVERY_LABELS[entry.status]}`}>{DELIVERY_STAGES.map((stage, index) => <span key={stage} className={index <= DELIVERY_STAGES.indexOf(entry.status) ? 'track-step done' : 'track-step'} title={DELIVERY_LABELS[stage]} />)}<em>{DELIVERY_LABELS[entry.status]}</em></div>}{entry.status === 'cancelled' && <p className="order-track-note">Cancelled</p>}{entry.status === 'out_for_delivery' && entry.delivery_code && new Date(entry.delivery_code_expires_at) > new Date() && <p className="order-handover">Delivery code <b>{entry.delivery_code}</b> — read this to your rider to confirm you got the order.</p>}{entry.payment_method !== 'cod' && entry.status !== 'cancelled' && entry.payment_status !== 'paid' && entry.payment_status !== 'cancelled' && <button className="text-button order-pay" type="button" onClick={() => resumePayment(entry)}>Complete payment <span>&rarr;</span></button>}{CANCELLABLE_STAGES.includes(entry.status) && <button className="text-button order-cancel" type="button" onClick={() => cancelOrder(entry)}>Cancel order</button>}{(() => { const change = entry.address_changes?.[0]; if (change?.status === 'pending') return <p className="order-track-note">Address change requested — waiting for confirmation.</p>; return <>{change?.status === 'declined' && <p className="order-track-note">Your address change wasn&rsquo;t accepted{change.note ? `: ${change.note}` : '.'}</p>}{change?.status === 'approved' && <p className="order-track-note">Shipping address updated.</p>}{ADDRESS_CHANGE_STAGES.includes(entry.status) && !(entry.packages ?? []).length && <button className="text-button order-cancel" type="button" onClick={() => openAddressChange(entry)}>Change shipping address</button>}</> })()}{(entry.payment_status === 'paid' || entry.payment_method === 'cod') && entry.status !== 'cancelled' && <button className="text-button order-receipt" type="button" onClick={() => downloadReceipt(entry.id)}>Download bill (PDF)</button>}{(entry.shop_shipping ?? []).map((ss) => { const pk = (entry.packages ?? []).filter((p) => p.shop_id === ss.shop_id); return <div key={ss.id} className="order-seller-ship"><strong>Shipped by {ss.shop?.name ?? 'the seller'}</strong>{pk.length === 0 ? <><span>{entry.status === 'cancelled' ? 'Cancelled' : `Ships by ${new Date(ss.ship_by).toLocaleDateString()} · arrives ${new Date(ss.deliver_from).toLocaleDateString([], { month: 'short', day: 'numeric' })}–${new Date(ss.deliver_by).toLocaleDateString([], { month: 'short', day: 'numeric' })}`}</span>{entry.status !== 'cancelled' && <PackageProgress packedAt={ss.packed_at} cod={entry.payment_method === 'cod'} />}</> : pk.map((p) => <div key={p.id} className="order-seller-pkg">{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.status === 'delivered' ? `delivered ${new Date(p.delivered_at).toLocaleDateString()}` : (p.tracking_label ?? p.status.replace('_', ' '))}{['shipped', 'in_transit', 'out_for_delivery'].includes(p.status) && <button type="button" className="text-button" onClick={() => confirmPackageReceived(entry, p)}>Confirm received</button>}<PackageProgress pkg={p} packedAt={ss.packed_at} cod={entry.payment_method === 'cod'} /><TrackingTimeline pkg={p} /></div>)}</div> })}{(entry.items ?? []).filter((it) => it.personalization).map((it) => <div key={`pz-${it.id}`} className="order-pz"><span>{it.product_name}{it.variant_label ? ` (${it.variant_label})` : ''}</span><PersonalizationView value={it.personalization} /></div>)}<OrderItemReviews order={entry} onReviewed={(orderId, itemId, review) => setOrders((current) => current.map((row) => row.id === orderId ? { ...row, items: row.items.map((it) => it.id === itemId ? { ...it, review } : it) } : row))} /><button className="text-button order-help" type="button" onClick={() => { setOrdersOpen(false); openSupport(entry) }}>Get help</button>{entry.status === 'completed' && entry.delivery_partner_id && <RiderRating orderId={entry.id} existing={entry.rider_review} source="delivery" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, rider_review: rv } : row))} />}</li>)}</ul>}{ordersMessage && <p className="auth-message">{ordersMessage}</p>}</div>}
         </div>
         </div>
     </section>}

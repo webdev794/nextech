@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
 import './Admin.css'
 import './Rider.css'
 
@@ -132,6 +133,7 @@ export default function RiderEntry() {
   return (
     <div className="admin-gate">
       <form className="admin-gate-card" onSubmit={otp ? submitCode : signup ? submitSignup : submitPassword}>
+        <div className="entry-logo"><BrandLogo /></div>
         <h1>{signup ? 'Become a rider' : 'Rider sign-in'}</h1>
         <p className="admin-gate-sub">{otp
           ? `Enter the 6-digit code sent to ${otp.email}.`

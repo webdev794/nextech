@@ -11,8 +11,8 @@ class OrderShopShipping extends Model
     protected $table = 'order_shop_shipping';
 
     protected $fillable = [
-        'order_id', 'shop_id', 'mode', 'fee_cents', 'free_shipping', 'transit_min_days', 'transit_max_days',
-        'ship_by', 'deliver_from', 'deliver_by',
+        'order_id', 'shop_id', 'mode', 'fee_cents', 'seller_fee_cents', 'free_shipping', 'transit_min_days', 'transit_max_days',
+        'ship_by', 'deliver_from', 'deliver_by', 'packed_at',
     ];
 
     protected function casts(): array
@@ -21,6 +21,7 @@ class OrderShopShipping extends Model
             'fee_cents' => 'integer',
             'free_shipping' => 'boolean',
             'ship_by' => 'date',
+            'packed_at' => 'datetime',
             'deliver_from' => 'date',
             'deliver_by' => 'date',
         ];

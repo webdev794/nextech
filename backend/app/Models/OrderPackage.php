@@ -16,7 +16,7 @@ class OrderPackage extends Model
 
     protected $fillable = [
         'order_id', 'shop_id', 'ship_from_address_id', 'label_source', 'carrier', 'tracking_number', 'label_url', 'label_path',
-        'label_cost_cents', 'status', 'shipped_at', 'delivered_at', 'edit_count', 'last_edited_at',
+        'label_cost_cents', 'status', 'status_history', 'progress_updated_at', 'cash_collected_at', 'shipped_at', 'delivered_at', 'edit_count', 'last_edited_at',
     ];
 
     protected $hidden = ['label_path'];
@@ -30,6 +30,9 @@ class OrderPackage extends Model
             'edit_count' => 'integer',
             'shipped_at' => 'datetime',
             'delivered_at' => 'datetime',
+            'status_history' => 'array',
+            'progress_updated_at' => 'datetime',
+            'cash_collected_at' => 'datetime',
             'last_edited_at' => 'datetime',
             'tracking_eta' => 'date',
             'tracking_events' => 'array',
@@ -72,7 +75,7 @@ class OrderPackage extends Model
     /** Tracking can be corrected until delivered/returned/lost, up to MAX_EDITS times. */
     public function getCanEditAttribute(): bool
     {
-        return in_array($this->status, ['shipped', 'in_transit'], true)
+        return in_array($this->status, \App\Support\SellerProgress::MOVING, true)
             && $this->edit_count < self::MAX_EDITS
             && $this->label_source === 'own';
     }

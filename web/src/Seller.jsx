@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
+import { useBranding } from './useBranding'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { renderMarkdown } from './markdown'
@@ -61,7 +63,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -220,6 +222,7 @@ export default function Seller({ token, onSignOut }) {
   const supportThreadRef = useRef(null)
 
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
+  const brand = useBranding()
 
   useEffect(() => {
     let cancelled = false
@@ -231,6 +234,16 @@ export default function Seller({ token, onSignOut }) {
         setCountries(list)
         setSiteConfig(res?.data ?? null)
         setForm((f) => (f.country ? f : { ...f, country: list[0]?.code ?? '', registered_country: list[0]?.code ?? '' }))
+        // New application: start on the visitor's country (from their IP) when we sell there.
+        if (!me?.market) {
+          fetch(`${API_URL}/geo`, { headers: { Accept: 'application/json' } }).then(readJson)
+            .then((geo) => {
+              const code = geo?.data?.country
+              if (cancelled || !code || !list.some((c) => c.code === code)) return
+              setForm((f) => (f.country && f.country !== list[0]?.code ? f : { ...f, country: code, registered_country: code }))
+            })
+            .catch(() => {})
+        }
       })
       .catch(() => {})
     fetch(`${API_URL}/categories`, { headers: { Accept: 'application/json' } }).then(readJson)
@@ -833,7 +846,7 @@ export default function Seller({ token, onSignOut }) {
     return (
       <div className="sc-shell">
         <header className="sc-top">
-          <a className="sc-brand" href={STORE_URL}><span className="sc-brand-mark">N</span><span>NexTech<small>Seller Center</small></span></a>
+          <a className="sc-brand" href={STORE_URL}><BrandLogo onDark fallback={(brand?.store_name || 'N').charAt(0).toUpperCase()} className="sc-brand-logo" /><span>{brand?.store_name || 'NexTech'}<small>Seller Center</small></span></a>
           <form className="sc-search" onSubmit={(event) => { event.preventDefault(); go('products'); setProductTab('all') }}>
             <input placeholder="Search your products by name or SKU" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} />
             <button type="submit" aria-label="Search">⌕</button>
@@ -873,6 +886,12 @@ export default function Seller({ token, onSignOut }) {
           </nav>
 
           <main className="sc-main">
+            {(orderAlerts?.needs_update ?? []).length > 0 && section !== 'ship-orders' && (
+              <div className="sc-new-order sc-needs-update" role="status">
+                <span>⏰ <b>{orderAlerts.needs_update.length === 1 ? `Order #${orderAlerts.needs_update[0].order_id} needs your update` : `${orderAlerts.needs_update.length} orders need your update`}</b> — {orderAlerts.needs_update[0].reason}</span>
+                <button type="button" className="sc-primary" onClick={() => go('ship-orders')}>Update orders</button>
+              </div>
+            )}
             {newOrders.length > 0 && (
               <div className="sc-new-order" role="status">
                 <span>🛒 <b>{newOrders.length === 1 ? `New order #${newOrders[0].id}` : `${newOrders.length} new orders`}</b>
@@ -956,6 +975,7 @@ export default function Seller({ token, onSignOut }) {
                                 {st === 'draft' && Object.keys(product.listing_errors ?? {}).length > 0 && <span className="sc-reason" title={Object.values(product.listing_errors).join('\n')}>ⓘ {Object.keys(product.listing_errors).length} thing{Object.keys(product.listing_errors).length === 1 ? '' : 's'} to finish</span>}
                                 {(product.missing_compliance ?? []).length > 0 && st !== 'draft' && <button type="button" className="sc-reason sc-link" title={product.missing_compliance.join('\n')} onClick={() => go('compliance-products')}>ⓘ Compliance documents missing</button>}
                                 {product.status === 'rejected' && product.rejection_reason && <span className="sc-reason" title={product.rejection_reason}>ⓘ {product.rejection_reason}</span>}
+                                {product.status === 'approved' && (product.followup_items ?? []).length > 0 && <button type="button" className="sc-reason sc-link sc-followup" title={product.followup_items.join(' · ')} onClick={() => editProduct(product)}>⚠ Live — please add {product.followup_items.length} missing detail{product.followup_items.length === 1 ? '' : 's'} soon</button>}
                                 <small className="sc-muted">{new Date(product.updated_at ?? product.created_at).toLocaleDateString()}</small>
                               </td>
                               <td>
