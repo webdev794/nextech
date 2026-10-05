@@ -264,7 +264,9 @@ s.sc-muted{display:inline}
 .sc-filter{display:flex;gap:8px;padding:14px 16px;border-bottom:1px solid #eef0f2}
 .sc-filter input{flex:0 1 320px;padding:9px 12px;border:1px solid #d9dde1;border-radius:8px;font:14px 'Okra',sans-serif}
 .sc-filter button{padding:8px 12px;border:1px solid #d9dde1;border-radius:8px;background:#fff;cursor:pointer;font:12px 'Okra',sans-serif}
-.sc-table-wrap{overflow-x:auto}
+.sc-table-wrap{overflow:auto;max-height:calc(100vh - 140px)}
+/* Wide tables: the box fits the screen so its sideways scrollbar is always in reach; the header row stays put. */
+.sc-table-wrap .sc-table thead th{position:sticky;top:0;z-index:2}
 .sc-table{width:100%;border-collapse:collapse}
 .sc-table th{padding:12px 16px;text-align:left;font-size:12px;font-weight:600;color:#1f2328;background:#fafbfc;border-bottom:1px solid #eef0f2;white-space:nowrap}
 .sc-table td{padding:14px 16px;vertical-align:top;border-bottom:1px solid #f1f2f4}
