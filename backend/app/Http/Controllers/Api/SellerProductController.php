@@ -42,6 +42,7 @@ class SellerProductController extends Controller
         $shop = $this->shop($request);
 
         $products = $shop->products()
+            ->whereNull('archived_at')
             ->with([...self::RELATIONS, 'salesBoostOffers' => fn ($q) => $q->where('status', 'pending')])
             ->orderByDesc('created_at')
             ->orderByDesc('id')
@@ -120,10 +121,31 @@ class SellerProductController extends Controller
         $shop = $this->shop($request);
         abort_unless($product->shop_id === $shop->id, 403);
         $active = (bool) $request->validate(['active' => ['required', 'boolean']])['active'];
-        abort_unless($product->status === 'approved', 422, 'Only approved products can be deactivated or relisted.');
+        abort_if($product->status === 'draft' || $product->archived_at !== null, 422, 'This product can\'t be deactivated or relisted.');
         abort_if($active && $product->deactivated_by === 'admin', 422, 'NexTech took this product off sale — message NexTech to relist it.');
+        abort_if($active && $product->deletion_requested_at !== null, 422, 'You asked NexTech to remove this product — message NexTech if you want to keep selling it.');
 
-        $product->forceFill(['is_active' => $active, 'deactivated_by' => $active ? null : 'seller'])->save();
+        // Already hidden by NexTech: stays NexTech's to relist.
+        $product->forceFill(['is_active' => $active, 'deactivated_by' => $active ? null : ($product->deactivated_by === 'admin' ? 'admin' : 'seller')])->save();
+
+        return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
+    }
+
+    /**
+     * The seller doesn't have this product anymore but it's on past orders, so
+     * it can't be deleted: hide it now and ask NexTech to remove it.
+     */
+    public function requestDeletion(Request $request, Product $product): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($product->shop_id === $shop->id, 403);
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        $product->forceFill([
+            'is_active' => false,
+            'deactivated_by' => $product->deactivated_by === 'admin' ? 'admin' : 'seller',
+            'deletion_requested_at' => now(),
+            'deletion_reason' => $data['reason'] ?? null,
+        ])->save();
 
         return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
     }
@@ -239,7 +261,8 @@ class SellerProductController extends Controller
             $product->delete();
         } catch (QueryException) {
             return response()->json([
-                'message' => 'This product belongs to existing orders. Deactivate it instead of deleting.',
+                'message' => 'This product is on past orders, so it can\'t be deleted. Hide it and ask NexTech to remove it instead.',
+                'can_request_deletion' => true,
             ], 409);
         }
 

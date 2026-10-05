@@ -239,8 +239,8 @@ function orderSellers(order) {
 
 const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended', 'removed']
 const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Deactivated', removed: 'Removed' }
-const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved']
-const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing' }
+const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved', 'deletion']
+const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing', deletion: 'Removal requested' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
 const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
@@ -1759,6 +1759,20 @@ export default function Admin({ token, onClose }) {
     } catch (error) { fail(error) } finally { setImgBusy(false) }
   }
 
+  // A seller asked to remove a product (it's already hidden). Remove = deleted,
+  // or archived when it's on past orders; Keep = stays hidden, request cleared.
+  async function decideDeletion(product, decision) {
+    if (decision === 'remove' && !window.confirm(`Remove ${product.name}? It's taken out of the catalog and the seller's list. ${product.support_until ? `Past buyers are still under returns/warranty until ${new Date(product.support_until).toLocaleDateString()} — they keep a "no longer sold" page and the seller still owes them support.` : 'Past orders keep their record.'}`)) return
+    setMessage('')
+    setBusyId(product.id)
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/deletion`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not update the product.')
+      setMessage(decision === 'remove' ? `${product.name} removed.` : `${product.name} kept (still hidden).`)
+      loadProducts()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
   async function removeProduct(product) {
     if (!window.confirm(`Delete ${product.name}?`)) return
     setMessage('')
@@ -2711,7 +2725,7 @@ Reason:`, '')
         <section className="admin-panel">
           {/* Quick filters: what still needs work, with counts. */}
           <div className="admin-filters admin-prod-quick">
-            {[['all', 'All products'], ['unapproved', 'Not approved yet'], ['pending', 'Waiting for review'], ['draft', 'Drafts'], ['rejected', 'Rejected'], ['followups', 'Live — details missing']].map(([value, label]) => {
+            {[['all', 'All products'], ['unapproved', 'Not approved yet'], ['pending', 'Waiting for review'], ['draft', 'Drafts'], ['rejected', 'Rejected'], ['followups', 'Live — details missing'], ['deletion', 'Removal requested']].map(([value, label]) => {
               const n = value === 'all' ? null : productsMeta?.status_counts?.[value]
               return (
                 <button key={value} type="button" className={productStatus === value ? 'chip active' : 'chip'} onClick={() => { setProductStatus(value); setProductsPage(1); setProductForm(null) }}>
@@ -2941,7 +2955,7 @@ Reason:`, '')
                     <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
-                    <td>{product.is_active ? 'Yes' : 'No'}</td>
+                    <td>{product.is_active ? 'Yes' : 'No'}{product.deletion_requested_at && <span className="pill pill-rejected" title={product.deletion_reason ? `Seller: ${product.deletion_reason}` : 'The seller no longer has this product'}>Removal requested</span>}{product.support_until && <span className="admin-note">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>}</td>
                     <td>
                       <select className={`admin-demo-select${product.is_demo ? ' on' : ''}`} value={product.is_demo ? 'demo' : 'real'} aria-label="Demo product" onChange={(event) => setProductDemoFlag(product, event.target.value === 'demo')}>
                         <option value="real">Not demo</option>
@@ -2957,7 +2971,10 @@ Reason:`, '')
                       </>}
                       {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
                       {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => approveProduct(product)}>Approve</button>}
-                      <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>
+                      {product.deletion_requested_at ? <>
+                        <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'remove')}>Remove</button>
+                        <button className="act ghost" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'decline')}>Keep</button>
+                      </> : <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>}
                     </td>
                   </tr>
                 )})}

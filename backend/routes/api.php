@@ -265,6 +265,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/trademarks/{trademark}/review', [AdminCatalogReviewController::class, 'reviewTrademark']);
     Route::post('/products/{product}/reject', [AdminProductController::class, 'reject']);
     Route::delete('/products/{product}', [AdminProductController::class, 'destroy']);
+    Route::post('/products/{product}/deletion', [AdminProductController::class, 'decideDeletion']);
 
     Route::post('/media', [MediaController::class, 'store']);
 
@@ -332,6 +333,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/products', [SellerProductController::class, 'store']);
     Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
     Route::post('/seller/products/{product}/active', [SellerProductController::class, 'setActive']);
+    Route::post('/seller/products/{product}/request-deletion', [SellerProductController::class, 'requestDeletion']);
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
     // Digital products: download files (chunked upload or hosted link) and license keys.

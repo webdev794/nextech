@@ -27,7 +27,7 @@ class AdminProductController extends Controller
             'search' => ['sometimes', 'string', 'max:100'],
             'category_id' => ['sometimes', 'integer', 'exists:categories,id'],
             'store_id' => ['sometimes', 'integer', 'exists:stores,id'],
-            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft', 'unapproved', 'followups'])],
+            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected', 'draft', 'unapproved', 'followups', 'deletion'])],
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'demo' => ['sometimes', Rule::in(['only', 'none'])],
@@ -38,6 +38,7 @@ class AdminProductController extends Controller
 
         $products = Product::query()
             ->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))
+            ->whereNull('products.archived_at')
             ->with(['category:id,name,slug', 'shop:id,name', 'variants', 'storeInventory', 'images', 'trademark:id,name'])
             ->withCount(['salesBoostOffers as low_traffic_offers' => fn ($q) => $q->where('status', 'pending')])
             // When filtering by store, `effective_stock` is that store's on-hand
@@ -66,6 +67,10 @@ class AdminProductController extends Controller
         // Required compliance documents a seller product still lacks — it can't be approved until they're in.
         foreach ($products->items() as $item) {
             $item->setAttribute('missing_compliance', $item->shop_id ? ProductCatalog::missingCompliance($item) : []);
+            // Removal requested: until when past buyers may still need it (returns / warranty).
+            if ($item->deletion_requested_at) {
+                $item->setAttribute('support_until', ProductCatalog::supportUntil($item)?->toDateString());
+            }
             // Waiting on admin, or live with details still to add: what's missing.
             if ($item->shop_id && $item->status !== 'rejected') {
                 $item->setAttribute('followups', ProductCatalog::followups($item));
@@ -99,6 +104,7 @@ class AdminProductController extends Controller
             null => $query->where('products.status', '!=', 'draft'),
             'unapproved' => $query->whereIn('products.status', ['pending', 'draft', 'rejected']),
             'followups' => $query->where('products.status', 'approved')->whereNotNull('products.followup_requested_at'),
+            'deletion' => $query->whereNotNull('products.deletion_requested_at'),
             default => $query->where('products.status', $status),
         };
     }
@@ -116,7 +122,7 @@ class AdminProductController extends Controller
     /** @return array<string, int> */
     private static function statusCounts(Request $request): array
     {
-        $base = fn () => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m));
+        $base = fn () => Product::query()->whereNull('archived_at')->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m));
         $byStatus = $base()->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
 
         return [
@@ -125,6 +131,7 @@ class AdminProductController extends Controller
             'rejected' => (int) ($byStatus['rejected'] ?? 0),
             'unapproved' => (int) (($byStatus['pending'] ?? 0) + ($byStatus['draft'] ?? 0) + ($byStatus['rejected'] ?? 0)),
             'followups' => $base()->where('status', 'approved')->whereNotNull('followup_requested_at')->count(),
+            'deletion' => $base()->whereNotNull('deletion_requested_at')->count(),
         ];
     }
 
@@ -283,6 +290,29 @@ class AdminProductController extends Controller
         $product->forceFill(['status' => 'rejected', 'rejection_reason' => $data['reason']])->save();
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+    }
+
+    /**
+     * A seller's deletion request: remove (deleted, or archived when it's on
+     * past orders — gone from the catalog and the seller's list) or decline
+     * (it stays hidden; the seller can message NexTech).
+     */
+    public function decideDeletion(Request $request, Product $product): JsonResponse
+    {
+        $decision = $request->validate(['decision' => ['required', Rule::in(['remove', 'decline'])]])['decision'];
+        abort_if($product->deletion_requested_at === null, 422, 'No deletion request on this product.');
+        if ($decision === 'decline') {
+            $product->forceFill(['deletion_requested_at' => null, 'deletion_reason' => null])->save();
+
+            return response()->json(['data' => ['removed' => false]]);
+        }
+        try {
+            $product->delete();
+        } catch (QueryException) {
+            $product->forceFill(['archived_at' => now(), 'is_active' => false, 'deactivated_by' => 'admin', 'deletion_requested_at' => null])->save();
+        }
+
+        return response()->json(['data' => ['removed' => true]]);
     }
 
     public function destroy(Product $product): JsonResponse

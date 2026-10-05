@@ -751,7 +751,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (137, '2026_10_05_000045_add_guides_to_products', 77),
 (138, '2026_10_05_000046_add_commission_rate_to_shops', 78),
 (139, '2026_10_05_000047_create_sales_tax_rates', 79),
-(140, '2026_10_05_000048_add_deactivated_by_to_products', 80);
+(140, '2026_10_05_000048_add_deactivated_by_to_products', 80),
+(141, '2026_10_05_000049_add_deletion_request_to_products', 81);
 
 -- --------------------------------------------------------
 
@@ -1315,6 +1316,9 @@ CREATE TABLE `products` (
   `units_sold` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
   `deactivated_by` varchar(10) DEFAULT NULL,
+  `deletion_requested_at` timestamp NULL DEFAULT NULL,
+  `deletion_reason` varchar(500) DEFAULT NULL,
+  `archived_at` timestamp NULL DEFAULT NULL,
   `deal_type` varchar(255) DEFAULT NULL,
   `is_exclusive_offer` tinyint(1) NOT NULL DEFAULT 0,
   `is_demo` tinyint(1) NOT NULL DEFAULT 0,
@@ -3172,7 +3176,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=141;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=142;
 
 --
 -- AUTO_INCREMENT for table `orders`

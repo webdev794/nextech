@@ -781,14 +781,31 @@ export default function Seller({ token, onSignOut }) {
     setProductMsg('')
     try {
       const response = await fetch(`${API_URL}/seller/products/${product.id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!response.ok && response.status !== 204) throw new Error((await readJson(response)).message ?? 'Could not delete the product.')
+      if (!response.ok && response.status !== 204) {
+        const data = await readJson(response)
+        // On past orders: offer to hide it and ask NexTech to remove it.
+        if (data.can_request_deletion) { requestDeletion(product, data.message); return }
+        throw new Error(data.message ?? 'Could not delete the product.')
+      }
       loadProducts()
     } catch (error) {
       setProductMsg(error.message)
     }
   }
 
-  // Deactivate / relist a live product (no review needed).
+  async function requestDeletion(product, why) {
+    const reason = window.prompt(`${why ?? ''}\n\nIt'll be hidden from buyers right away. Why remove it? (optional — e.g. no longer in stock, discontinued)`, '')
+    if (reason === null) return
+    try {
+      const response = await fetch(`${API_URL}/seller/products/${product.id}/request-deletion`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ reason: reason.trim() || null }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not send the request.')
+      setProducts((list) => list.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
+      setProductMsg(`${product.name} is hidden — NexTech will remove it shortly.`)
+    } catch (error) { setProductMsg(error.message) }
+  }
+
+  // Deactivate / relist a product (no review needed).
   async function setProductActive(product, active) {
     if (!active && !window.confirm(`Deactivate ${product.name}? Buyers won't see it until you relist it.`)) return
     setProductMsg('')
@@ -814,7 +831,7 @@ export default function Seller({ token, onSignOut }) {
   // a time (layout modelled on Temu's Seller Center).
   // ---------------------------------------------------------------------------
   if (me && me.status === 'approved' && !editingApplication) {
-    const productStatus = (product) => (!product.is_active && product.status === 'approved' ? 'hidden' : product.status)
+    const productStatus = (product) => (!product.is_active && product.status !== 'draft' ? 'hidden' : product.status)
     const PRODUCT_TABS = [['all', 'All'], ['approved', 'Live'], ['pending', 'Pending review'], ['draft', 'Incomplete'], ['rejected', 'Rejected'], ['hidden', 'Hidden']]
     const tabCount = (tab) => (tab === 'all' ? products.length : products.filter((p) => productStatus(p) === tab).length)
     const needle = productSearch.trim().toLowerCase()
@@ -984,7 +1001,7 @@ export default function Seller({ token, onSignOut }) {
                           return (
                             <tr key={product.id}>
                               <td>
-                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? (product.deactivated_by === 'admin' ? 'Hidden by NexTech' : 'Deactivated') : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
+                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? (product.deletion_requested_at ? 'Removal requested' : product.deactivated_by === 'admin' ? 'Hidden by NexTech' : 'Deactivated') : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
                                 {st === 'draft' && Object.keys(product.listing_errors ?? {}).length > 0 && <span className="sc-reason" title={Object.values(product.listing_errors).join('\n')}>ⓘ {Object.keys(product.listing_errors).length} thing{Object.keys(product.listing_errors).length === 1 ? '' : 's'} to finish</span>}
                                 {(product.missing_compliance ?? []).length > 0 && st !== 'draft' && <button type="button" className="sc-reason sc-link" title={product.missing_compliance.join('\n')} onClick={() => go('compliance-products')}>ⓘ Compliance documents missing</button>}
                                 {product.status === 'rejected' && product.rejection_reason && <span className="sc-reason" title={product.rejection_reason}>ⓘ {product.rejection_reason}</span>}
@@ -1003,11 +1020,13 @@ export default function Seller({ token, onSignOut }) {
                               <td className="sc-actions">
                                 <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>
                                 {st === 'approved' && shopUrl && <a href={`${import.meta.env.BASE_URL || '/'}#/product/${product.slug}`} target="_blank" rel="noreferrer">View</a>}
-                                {st === 'approved' && <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>}
-                                {st === 'hidden' && (product.deactivated_by === 'admin'
-                                  ? <span className="sc-muted" title="NexTech took this product off sale — message NexTech to relist it">Hidden by NexTech</span>
-                                  : <button type="button" className="sc-primary" onClick={() => setProductActive(product, true)}>Relist</button>)}
-                                <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>
+                                {['approved', 'pending', 'rejected'].includes(st) && <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>}
+                                {st === 'hidden' && (product.deletion_requested_at
+                                  ? <span className="sc-muted" title="Waiting for NexTech to remove it">Removal requested</span>
+                                  : product.deactivated_by === 'admin'
+                                    ? <span className="sc-muted" title="NexTech took this product off sale — message NexTech to relist it">Hidden by NexTech</span>
+                                    : <button type="button" className="sc-primary" onClick={() => setProductActive(product, true)}>Relist</button>)}
+                                {!product.deletion_requested_at && <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>}
                               </td>
                             </tr>
                           )

@@ -94,6 +94,41 @@ class ProductCatalog
      *
      * @return array{blocking: list<string>, later: list<string>}
      */
+    /** Warranty in months from the seller's "Warranty" detail (0 = none). */
+    public static function warrantyMonths(Product $product): int
+    {
+        $w = strtolower((string) (((array) $product->product_details)['warranty'] ?? ''));
+
+        return match (true) {
+            str_contains($w, '6 month') => 6,
+            str_contains($w, '1 year') => 12,
+            str_contains($w, '2 year') => 24,
+            str_contains($w, '3 year') => 36,
+            default => 0,
+        };
+    }
+
+    /**
+     * Until when buyers of this product may still need it — the latest
+     * non-cancelled order plus the longer of its return window and warranty.
+     * Null when nobody bought it (or it's all over).
+     */
+    public static function supportUntil(Product $product): ?\Illuminate\Support\Carbon
+    {
+        $last = \App\Models\OrderItem::where('product_id', $product->id)
+            ->whereHas('order', fn ($q) => $q->where('status', '!=', 'cancelled'))
+            ->latest('id')->first(['id', 'created_at', 'return_days']);
+        if (! $last) {
+            return null;
+        }
+        $bought = $last->created_at ?? now();
+        $returns = $bought->copy()->addDays((int) $last->return_days);
+        $warranty = $bought->copy()->addMonths(self::warrantyMonths($product));
+        $until = $returns->max($warranty);
+
+        return $until->isFuture() ? $until : null;
+    }
+
     public static function followups(Product $product): array
     {
         $product->loadMissing(['category', 'variants', 'images', 'shop.seller']);

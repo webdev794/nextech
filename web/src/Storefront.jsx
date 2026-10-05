@@ -1446,7 +1446,8 @@ export default function Storefront() {
     const compareAt = chosen ? chosen.compare_at_price_cents : product.compare_at_price_cents
     const onSale = compareAt != null && compareAt > unitPrice
     const pctOff = onSale ? Math.round((1 - unitPrice / compareAt) * 100) : 0
-    const stock = chosen ? chosen.inventory_quantity : product.inventory_quantity
+    // No longer sold (seller took it off sale): shown to past buyers, never buyable.
+    const stock = product.no_longer_sold ? 0 : (chosen ? chosen.inventory_quantity : product.inventory_quantity)
     const key = lineKey(product.id, variant?.id)
     const qty = cartQty[key] ?? 0
     const img = (chosen?.image_url) || product.image_url
@@ -2757,6 +2758,7 @@ export default function Storefront() {
                   {product.rating_count > 0 && <span className="pcard-rating-single">{starIcons(Number(product.rating_avg), `pdpstar-${product.id}`)}<b>{Number(product.rating_avg).toFixed(1)}</b> ({product.rating_count})</span>}
                 </p>}
                 <div className="pm-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong>{taxInclusive ? <span className="pdp-mrp">MRP <s>{price(compareAt)}</s></span> : <s>{price(compareAt)}</s>}</> : <strong>{price(unitPrice)}</strong>}</div>{taxInclusive && !product.ships_from && <p className="pdp-tax-note">Inclusive of all taxes</p>}
+                {product.no_longer_sold && <p className="pdp-digital pdp-gone">This item is no longer sold.{product.support_until ? ` Returns and warranty support for past orders continue until ${new Date(product.support_until).toLocaleDateString()} — use Get help on your order.` : ' Past orders can still get help from Your orders.'}</p>}
                 {product.product_type === 'digital' && <p className="pdp-digital">⬇ <b>Digital download</b> — instant access after payment in Your downloads{product.digital_settings?.license_keys ? ', with your license key' : ''}. Not returnable.</p>}
                 {product.ships_from && <p className="pdp-intl">✈ Ships from {product.ships_from_name} · {product.intl_shipping?.fee_cents ? `${price(product.intl_shipping.fee_cents)} shipping` : 'free shipping'} · arrives in {product.intl_shipping?.transit_min_days}–{product.intl_shipping?.transit_max_days} days<small>Import duties and taxes may be charged on delivery.</small></p>}
                 {hasVariants && <div className="pdp-swatches" role="radiogroup" aria-label="Choose an option">{options.map((o) => <button type="button" key={o.id === '' ? 'base' : o.id} className={String(chosen?.id ?? '') === String(o.id) ? 'pdp-swatch active' : 'pdp-swatch'} onClick={() => pickVariant(o)} title={`${o.label} — ${price(o.price_cents)}`}>

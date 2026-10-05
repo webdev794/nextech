@@ -311,8 +311,13 @@ class CatalogController extends Controller
             'trademark:id,name,logo_url',
         ]);
 
+        // Taken off sale by the seller, or removed after they asked: past
+        // buyers can still open it (warranty, reviews) — it just can't be bought.
+        $noLongerSold = ! $product->is_active && $product->status === 'approved'
+            && ($product->deactivated_by === 'seller' || $product->archived_at !== null);
+
         abort_unless(
-            $product->is_active
+            ($product->is_active || $noLongerSold)
                 && $product->status === 'approved'
                 && ! $product->hiddenFromShoppers()
                 && $product->category?->is_active
@@ -324,9 +329,13 @@ class CatalogController extends Controller
             404
         );
 
-        return response()->json([
-            'data' => $this->present($product, $storeId, Market::fromRequest($request), keepShop: true),
-        ]);
+        $data = $this->present($product, $storeId, Market::fromRequest($request), keepShop: true);
+        if ($noLongerSold) {
+            $data->setAttribute('no_longer_sold', true);
+            $data->setAttribute('support_until', ProductCatalog::supportUntil($product)?->toDateString());
+        }
+
+        return response()->json(['data' => $data]);
     }
 
     /**
