@@ -111,6 +111,23 @@ class SellerProductController extends Controller
         return response()->json(['data' => $this->present($product->load(self::RELATIONS), $shop)], 201);
     }
 
+    /**
+     * Deactivate / relist a live product (Temu-style), without going back
+     * through review. A product NexTech hid can only be relisted by NexTech.
+     */
+    public function setActive(Request $request, Product $product): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($product->shop_id === $shop->id, 403);
+        $active = (bool) $request->validate(['active' => ['required', 'boolean']])['active'];
+        abort_unless($product->status === 'approved', 422, 'Only approved products can be deactivated or relisted.');
+        abort_if($active && $product->deactivated_by === 'admin', 422, 'NexTech took this product off sale — message NexTech to relist it.');
+
+        $product->forceFill(['is_active' => $active, 'deactivated_by' => $active ? null : 'seller'])->save();
+
+        return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
+    }
+
     public function update(Request $request, Product $product): JsonResponse
     {
         $shop = $this->shop($request);
@@ -120,6 +137,7 @@ class SellerProductController extends Controller
         $submit = $request->boolean('submit', true) || $product->status !== 'draft';
 
         $data = $this->validated($request, $shop, $product, $submit);
+        unset($data['is_active']); // on / off sale goes through setActive()
         $variants = $this->pullVariants($data);
         $images = $this->pullImages($data);
         $digital = ($data['product_type'] ?? $product->product_type) === 'digital';

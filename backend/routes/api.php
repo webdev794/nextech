@@ -331,6 +331,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::get('/seller/products', [SellerProductController::class, 'index']);
     Route::post('/seller/products', [SellerProductController::class, 'store']);
     Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
+    Route::post('/seller/products/{product}/active', [SellerProductController::class, 'setActive']);
     Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
     Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
     // Digital products: download files (chunked upload or hosted link) and license keys.

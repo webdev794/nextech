@@ -37,6 +37,7 @@ class Product extends Model
         'image_url',
         'video_url',
         'is_active',
+        'deactivated_by',
         'deal_type',
         'is_exclusive_offer',
         'is_demo',

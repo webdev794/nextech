@@ -788,6 +788,19 @@ export default function Seller({ token, onSignOut }) {
     }
   }
 
+  // Deactivate / relist a live product (no review needed).
+  async function setProductActive(product, active) {
+    if (!active && !window.confirm(`Deactivate ${product.name}? Buyers won't see it until you relist it.`)) return
+    setProductMsg('')
+    try {
+      const response = await fetch(`${API_URL}/seller/products/${product.id}/active`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the product.')
+      setProducts((list) => list.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
+      setProductMsg(active ? `${product.name} is live again.` : `${product.name} is deactivated — relist it any time from the Hidden tab.`)
+    } catch (error) { setProductMsg(error.message) }
+  }
+
   function signOut() {
     fetch(`${API_URL}/auth/logout`, { method: 'POST', headers: authHeaders() }).catch(() => {})
     onSignOut()
@@ -971,7 +984,7 @@ export default function Seller({ token, onSignOut }) {
                           return (
                             <tr key={product.id}>
                               <td>
-                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? 'Hidden' : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
+                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? (product.deactivated_by === 'admin' ? 'Hidden by NexTech' : 'Deactivated') : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
                                 {st === 'draft' && Object.keys(product.listing_errors ?? {}).length > 0 && <span className="sc-reason" title={Object.values(product.listing_errors).join('\n')}>ⓘ {Object.keys(product.listing_errors).length} thing{Object.keys(product.listing_errors).length === 1 ? '' : 's'} to finish</span>}
                                 {(product.missing_compliance ?? []).length > 0 && st !== 'draft' && <button type="button" className="sc-reason sc-link" title={product.missing_compliance.join('\n')} onClick={() => go('compliance-products')}>ⓘ Compliance documents missing</button>}
                                 {product.status === 'rejected' && product.rejection_reason && <span className="sc-reason" title={product.rejection_reason}>ⓘ {product.rejection_reason}</span>}
@@ -990,6 +1003,10 @@ export default function Seller({ token, onSignOut }) {
                               <td className="sc-actions">
                                 <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>
                                 {st === 'approved' && shopUrl && <a href={`${import.meta.env.BASE_URL || '/'}#/product/${product.slug}`} target="_blank" rel="noreferrer">View</a>}
+                                {st === 'approved' && <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>}
+                                {st === 'hidden' && (product.deactivated_by === 'admin'
+                                  ? <span className="sc-muted" title="NexTech took this product off sale — message NexTech to relist it">Hidden by NexTech</span>
+                                  : <button type="button" className="sc-primary" onClick={() => setProductActive(product, true)}>Relist</button>)}
                                 <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>
                               </td>
                             </tr>

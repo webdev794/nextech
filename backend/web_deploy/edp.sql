@@ -750,7 +750,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (136, '2026_10_05_000044_add_info_sections_to_products', 76),
 (137, '2026_10_05_000045_add_guides_to_products', 77),
 (138, '2026_10_05_000046_add_commission_rate_to_shops', 78),
-(139, '2026_10_05_000047_create_sales_tax_rates', 79);
+(139, '2026_10_05_000047_create_sales_tax_rates', 79),
+(140, '2026_10_05_000048_add_deactivated_by_to_products', 80);
 
 -- --------------------------------------------------------
 
@@ -1313,6 +1314,7 @@ CREATE TABLE `products` (
   `rating_count` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `units_sold` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `deactivated_by` varchar(10) DEFAULT NULL,
   `deal_type` varchar(255) DEFAULT NULL,
   `is_exclusive_offer` tinyint(1) NOT NULL DEFAULT 0,
   `is_demo` tinyint(1) NOT NULL DEFAULT 0,
@@ -3170,7 +3172,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=140;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=141;
 
 --
 -- AUTO_INCREMENT for table `orders`

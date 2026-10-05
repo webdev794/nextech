@@ -218,6 +218,10 @@ class AdminProductController extends Controller
         $storeStock = $this->pullStoreStock($data);
         $images = $this->pullImages($data);
         $data['status'] = 'approved';
+        // Hidden by NexTech: the seller can't relist it themselves.
+        if (array_key_exists('is_active', $data) && (bool) $data['is_active'] !== (bool) $product->is_active) {
+            $data['deactivated_by'] = $data['is_active'] ? null : 'admin';
+        }
         if (trim((string) ($data['sku'] ?? '')) === '') {
             unset($data['sku']);
         }
