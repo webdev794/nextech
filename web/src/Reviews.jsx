@@ -230,8 +230,11 @@ function WriteReview({ order, item, onClose, onSaved }) {
 export function OrderItemReviews({ order, onReviewed }) {
   const [writing, setWriting] = useState(null)
   const deliveredItem = (item) => order.status === 'completed'
+    || (item.fulfilled_by === 'digital' && order.payment_status === 'paid' && !!item.digital_ready_at)
     || (order.packages ?? []).some((p) => p.status === 'delivered' && (p.items ?? []).some((pi) => pi.order_item_id === item.id))
-  const items = (order.items ?? []).filter((item) => item.product_id && (item.review || deliveredItem(item)))
+  // Paid (or cash on delivery) and still on its way: say when a review opens up.
+  const awaiting = order.status !== 'cancelled' && (order.payment_status === 'paid' || order.payment_method === 'cod')
+  const items = (order.items ?? []).filter((item) => item.product_id && (item.review || deliveredItem(item) || awaiting))
   if (!items.length) return null
   const label = { pending: 'Review submitted — waiting for approval', approved: 'Reviewed', rejected: 'Review not published' }
   return (
@@ -241,7 +244,9 @@ export function OrderItemReviews({ order, onReviewed }) {
           <span>{item.product_name}{item.variant_label ? ` (${item.variant_label})` : ''}</span>
           {item.review
             ? <span className={`rv-status rv-status-${item.review.status}`}><Stars value={item.review.rating} size={12} /> {label[item.review.status] ?? item.review.status}</span>
-            : <button type="button" className="text-button" onClick={() => setWriting(item)}>Write a review</button>}
+            : deliveredItem(item)
+              ? <button type="button" className="text-button" onClick={() => setWriting(item)}>Write a review</button>
+              : <span className="rv-status">You can review it once it&rsquo;s delivered</span>}
         </div>
       ))}
       {writing && <WriteReview order={order} item={writing} onClose={() => setWriting(null)} onSaved={(review) => { setWriting(null); onReviewed(order.id, writing.id, review) }} />}

@@ -22,11 +22,14 @@ class Reviews
         return $parts[0].(count($parts) > 1 ? ' '.mb_strtoupper(mb_substr(end($parts), 0, 1)).'.' : '');
     }
 
-    /** The buyer has the item: the order was delivered, or the seller's package with it was. */
+    /** The buyer has the item: the order was delivered, the seller's package with it was, or it's a paid download. */
     public static function received(Order $order, OrderItem $item): bool
     {
         if ($order->status === 'completed') {
             return true;
+        }
+        if ($item->fulfilled_by === 'digital') {
+            return $order->payment_status === 'paid' && $item->digital_ready_at !== null;
         }
 
         return $order->packages()->where('status', 'delivered')->whereHas('items', fn ($q) => $q->where('order_item_id', $item->id))->exists();
