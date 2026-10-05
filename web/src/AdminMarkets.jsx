@@ -53,7 +53,7 @@ export function MarketSettings({ settings, save, onSaved, only }) {
     const market_fees = Object.fromEntries(FEE_FIELDS.map(([key]) => [key, toCents(form[`fees.${key}`])]))
     const market_payouts = Object.fromEntries([...PAYOUT_FIELDS, ...PCT_FIELDS].map(([key]) => [key, toCents(form[`payouts.${key}`])]))
     const market_rider_pay = Object.fromEntries(RIDER_FIELDS.map(([key]) => [key, toCents(form[`rider.${key}`])]))
-    const patch = { market: market.code, market_fees: { ...market_fees, delivery_near_fee_cents: market_fees.delivery_fee_cents, delivery_far_fee_cents: market_fees.delivery_fee_cents }, market_payouts, market_rider_pay }
+    const patch = { commission_apply_existing: !!form.apply_existing, market: market.code, market_fees: { ...market_fees, delivery_near_fee_cents: market_fees.delivery_fee_cents, delivery_far_fee_cents: market_fees.delivery_fee_cents }, market_payouts, market_rider_pay }
     if (market.code === 'IN') patch.grievance_officer = officer
     const saved = await save(patch)
     if (saved) {
@@ -81,6 +81,7 @@ export function MarketSettings({ settings, save, onSaved, only }) {
         <h4>Seller commission &amp; payouts</h4>
         <div className="admin-form-grid">
           {PCT_FIELDS.map(([key, label]) => <label key={key}>{label}<input type="number" min="0" max="100" step="0.01" value={form[`payouts.${key}`]} onChange={(event) => set(`payouts.${key}`, event.target.value)} /></label>)}
+          <label className="admin-check"><input type="checkbox" checked={!!form.apply_existing} onChange={(event) => set('apply_existing', event.target.checked)} /> Apply a rate change to existing sellers too{settings?.kept_rate_sellers?.[market.code] ? ` (${settings.kept_rate_sellers[market.code]} on an older rate)` : ''}</label>
           {PAYOUT_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`payouts.${key}`]} onChange={(event) => set(`payouts.${key}`, event.target.value)} /></label>)}
         </div>
         <h4>Rider pay</h4>

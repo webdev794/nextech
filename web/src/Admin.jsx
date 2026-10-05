@@ -11,6 +11,7 @@ import { EmailsPanel } from './AdminEmails'
 import { AdminReviews } from './AdminReviews'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { MarketSettings } from './AdminMarkets'
+import { KeptRates } from './AdminKeptRates'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
@@ -471,6 +472,7 @@ function formToFees(f) {
     small_cart_min_cents: toCents(f.small_cart_min),
     tax_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.tax_rate_pct || 0) * 100))),
     commission_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.commission_rate_pct || 0) * 100))),
+    commission_apply_existing: !!f.commission_apply_existing,
     min_payout_cents: toCents(f.min_payout),
     max_payout_cents: toCents(f.max_payout),
     daily_payout_cap_cents: toCents(f.daily_payout_cap),
@@ -671,6 +673,7 @@ export default function Admin({ token, onClose }) {
 
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}`, ...(adminMarket ? { 'X-Market': adminMarket } : {}) }), [token, adminMarket])
   const jsonHeaders = useCallback(() => ({ ...authHeaders(), 'Content-Type': 'application/json' }), [authHeaders])
+  const secureHeaders = useCallback(() => ({ ...jsonHeaders(), 'X-Secure-Access': secureToken }), [jsonHeaders, secureToken])
 
   const fail = (error) => setMessage(error?.message ?? 'Something went wrong.')
 
@@ -3779,6 +3782,8 @@ Reason:`, '')
                 </form>
               )}
 
+              <KeptRates headers={secureHeaders} onMessage={setMessage} onError={fail} />
+
               {paymentsForm && settings && (
                 <form className="admin-form" onSubmit={savePayments}>
                   <h3>Payments — Stripe</h3>
@@ -3935,6 +3940,7 @@ Reason:`, '')
                 <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
                 <div className="admin-form-grid">
                   <label>Commission rate — established sellers (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
+                  <label className="admin-check"><input type="checkbox" checked={!!feesForm.commission_apply_existing} onChange={(event) => setFeesForm({ ...feesForm, commission_apply_existing: event.target.checked })} /> Apply a rate change to existing sellers too{settings.kept_rate_sellers?.[settings.home_market] ? ` (${settings.kept_rate_sellers[settings.home_market]} on an older rate)` : ''} — unticked, they keep their current rate; move chosen ones later in Secure access</label>
                   <label>Minimum payout ($)<input type="number" min="0" step="0.01" value={feesForm.min_payout} onChange={(event) => setFeesForm({ ...feesForm, min_payout: event.target.value })} /></label>
                   <label>Maximum per payout ($)<input type="number" min="0" step="0.01" value={feesForm.max_payout} onChange={(event) => setFeesForm({ ...feesForm, max_payout: event.target.value })} /></label>
                   <label>Daily payout cap, all sellers ($)<input type="number" min="0" step="0.01" placeholder="0 = no cap" value={feesForm.daily_payout_cap} onChange={(event) => setFeesForm({ ...feesForm, daily_payout_cap: event.target.value })} /></label>

@@ -169,6 +169,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/secure-access/challenge', [AdminSettingController::class, 'secureAccessChallenge'])->middleware('throttle:6,1');
     Route::post('/secure-access/unlock', [AdminSettingController::class, 'secureAccessUnlock'])->middleware('throttle:10,1');
     Route::patch('/secure-access/account', [AdminSettingController::class, 'updateAccount']);
+    // Sellers kept on an older commission rate; move chosen ones to the current rate.
+    Route::get('/secure-access/kept-rates', [AdminSettingController::class, 'keptRates']);
+    Route::post('/secure-access/kept-rates/release', [AdminSettingController::class, 'releaseKeptRates']);
     Route::get('/customers', [AdminController::class, 'customers']);
     Route::get('/customers/{user}', [AdminCrmController::class, 'customer']);
     Route::post('/customers/{user}/email', [AdminCrmController::class, 'emailCustomer']);

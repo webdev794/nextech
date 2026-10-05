@@ -748,7 +748,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (134, '2026_10_05_000042_create_digital_products', 74),
 (135, '2026_10_05_000043_create_favorites', 75),
 (136, '2026_10_05_000044_add_info_sections_to_products', 76),
-(137, '2026_10_05_000045_add_guides_to_products', 77);
+(137, '2026_10_05_000045_add_guides_to_products', 77),
+(138, '2026_10_05_000046_add_commission_rate_to_shops', 78);
 
 -- --------------------------------------------------------
 
@@ -2111,6 +2112,7 @@ CREATE TABLE `shops` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `seller_id` bigint(20) UNSIGNED NOT NULL,
   `market` varchar(2) NOT NULL DEFAULT 'US',
+  `commission_rate_bps` smallint(5) UNSIGNED DEFAULT NULL,
   `name` varchar(160) NOT NULL,
   `slug` varchar(180) NOT NULL,
   `shop_code` varchar(8) DEFAULT NULL,
@@ -3146,7 +3148,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=138;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=139;
 
 --
 -- AUTO_INCREMENT for table `orders`

@@ -162,6 +162,32 @@ class AdminSettingController extends Controller
      * Change the signed-in admin's own name / e-mail / phone. Requires the
      * Secure access unlock token.
      */
+    /** Secure access: sellers kept on an older commission rate, with their market's current rate. */
+    public function keptRates(Request $request): JsonResponse
+    {
+        $this->assertUnlocked($request);
+        $rates = SellerLedger::marketRates();
+        $shops = \App\Models\Shop::whereNotNull('commission_rate_bps')->orderBy('name')->get(['id', 'name', 'market', 'commission_rate_bps']);
+
+        return response()->json(['data' => $shops->map(fn ($shop) => [
+            'id' => $shop->id,
+            'name' => $shop->name,
+            'market' => $shop->market,
+            'kept_rate_bps' => (int) $shop->commission_rate_bps,
+            'current_rate_bps' => $rates[$shop->market] ?? SellerLedger::rate($shop->market),
+        ])->values()]);
+    }
+
+    /** Secure access: move the chosen sellers off their kept rate onto their market's current one. */
+    public function releaseKeptRates(Request $request): JsonResponse
+    {
+        $this->assertUnlocked($request);
+        $data = $request->validate(['shop_ids' => ['required', 'array', 'min:1', 'max:1000'], 'shop_ids.*' => ['integer']]);
+        $moved = \App\Models\Shop::whereIn('id', $data['shop_ids'])->whereNotNull('commission_rate_bps')->update(['commission_rate_bps' => null]);
+
+        return response()->json(['data' => ['moved' => $moved]]);
+    }
+
     public function updateAccount(Request $request): JsonResponse
     {
         $this->assertUnlocked($request);
@@ -198,6 +224,8 @@ class AdminSettingController extends Controller
                 // New-seller commission (Secure access): null = same rate as established sellers.
                 'new_seller_commission_rate_bps' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:10000'],
                 'new_seller_days' => ['sometimes', 'integer', 'min:1', 'max:3650'],
+                // With a commission change: also move existing sellers to it (default: they keep their rate).
+                'commission_apply_existing' => ['sometimes', 'boolean'],
                 'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'max_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
@@ -240,6 +268,8 @@ class AdminSettingController extends Controller
             + collect(self::FEE_RULES)->mapWithKeys(fn ($rules, $key) => ['market_fees.'.$key => $rules])->all()
             + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
+
+        $ratesBefore = SellerLedger::marketRates();
 
         if (array_key_exists('cod_enabled', $validated)) {
             Setting::put('cod_enabled', (bool) $validated['cod_enabled']);
@@ -354,6 +384,17 @@ class AdminSettingController extends Controller
         }
         $this->mergeInto('courier', $courier);
 
+        // Commission changed: existing sellers keep their rate unless the admin applies it to them too.
+        $apply = (bool) ($validated['commission_apply_existing'] ?? false);
+        $forced = [];
+        if ($apply && array_key_exists('commission_rate_bps', $validated)) {
+            $forced = array_values(array_filter(Market::codes(), fn ($code) => Market::usesLegacySettings($code) || ! isset(((array) Setting::get('payouts_'.$code, []))['commission_rate_bps'])));
+        }
+        if ($apply && isset($validated['market_payouts']['commission_rate_bps'], $validated['market'])) {
+            $forced[] = strtoupper($validated['market']);
+        }
+        SellerLedger::lockShopRates($ratesBefore, $apply, $forced);
+
         return response()->json(['data' => $this->payload()]);
     }
 
@@ -392,6 +433,8 @@ class AdminSettingController extends Controller
             'commission_rate_bps' => SellerLedger::rate('US'),
             'new_seller_commission_rate_bps' => SellerLedger::newSellerRateBps(),
             'new_seller_days' => SellerLedger::newSellerDays(),
+            // Sellers kept on an older commission rate, per market.
+            'kept_rate_sellers' => \App\Models\Shop::whereNotNull('commission_rate_bps')->selectRaw('market, count(*) as n')->groupBy('market')->pluck('n', 'market'),
             'min_payout_cents' => SellerLedger::minPayoutCents('US'),
             'max_payout_cents' => SellerLedger::maxPayoutCents('US'),
             'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents('US'),

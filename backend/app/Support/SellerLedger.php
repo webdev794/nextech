@@ -427,17 +427,46 @@ class SellerLedger
      */
     public static function shopRate(Order $order, int $shopId): int
     {
-        $newRate = self::newSellerRateBps();
-        if ($newRate === null) {
-            return self::rate(self::commissionMarket($order, $shopId));
-        }
         $shop = Shop::with('seller:id,reviewed_at')->find($shopId);
-        $joined = $shop?->seller?->reviewed_at ?? $shop?->created_at;
-        $at = $order->created_at ?? now();
+        $newRate = self::newSellerRateBps();
+        if ($newRate !== null) {
+            $joined = $shop?->seller?->reviewed_at ?? $shop?->created_at;
+            $at = $order->created_at ?? now();
+            if ($joined && $at->lt($joined->copy()->addDays(self::newSellerDays()))) {
+                return $newRate;
+            }
+        }
 
-        return $joined && $at->lt($joined->copy()->addDays(self::newSellerDays()))
-            ? $newRate
-            : self::rate(self::commissionMarket($order, $shopId));
+        // A rate kept from before an admin change (see lockShopRates), else the market's.
+        return $shop?->commission_rate_bps ?? self::rate(self::commissionMarket($order, $shopId));
+    }
+
+    /** Every market's current commission rate, e.g. ['US' => 1000, 'IN' => 1200]. */
+    public static function marketRates(): array
+    {
+        return collect(Market::codes())->mapWithKeys(fn ($code) => [$code => self::rate($code)])->all();
+    }
+
+    /**
+     * After the admin changes commission: in each market whose rate moved,
+     * existing shops either keep the rate they had ($applyToExisting false —
+     * it's saved on the shop) or move to the new one (their kept rate is
+     * cleared). Shops that join later always get the market's current rate.
+     *
+     * @param  array<string,int>  $before  marketRates() before the change
+     * @param  list<string>  $forced  markets to move onto the current rate even if unchanged
+     */
+    public static function lockShopRates(array $before, bool $applyToExisting, array $forced = []): void
+    {
+        $after = self::marketRates();
+        foreach ($after as $code => $rate) {
+            $changed = isset($before[$code]) && $before[$code] !== $rate;
+            if ($applyToExisting && ($changed || in_array($code, $forced, true))) {
+                Shop::where('market', $code)->whereNotNull('commission_rate_bps')->update(['commission_rate_bps' => null]);
+            } elseif (! $applyToExisting && $changed) {
+                Shop::where('market', $code)->whereNull('commission_rate_bps')->update(['commission_rate_bps' => $before[$code]]);
+            }
+        }
     }
 
     /** Commission for new sellers (all markets); null = same as everyone else. */

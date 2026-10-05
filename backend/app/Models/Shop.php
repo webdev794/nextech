@@ -13,6 +13,7 @@ class Shop extends Model
     protected $fillable = [
         'seller_id',
         'market',
+        'commission_rate_bps',
         'name',
         'slug',
         'shop_code',
