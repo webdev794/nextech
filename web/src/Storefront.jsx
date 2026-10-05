@@ -1698,7 +1698,8 @@ export default function Storefront() {
       setGiftCard({ code: '', pin: '', checked: null })
       if (data.data.payment_status === 'paid' && method !== 'cod') {
         // Gift card covered the whole order — nothing to pay online.
-        setOrder({ ...data.data, paid: true })
+        if (isDigitalOrder(data.data)) openDownloads()
+        else setOrder({ ...data.data, paid: true })
       } else if (method === 'cod') {
         setOrder({ ...data.data, cod: true })
       } else {
@@ -1728,6 +1729,7 @@ export default function Storefront() {
       if (!response.ok) throw new Error(data.message ?? 'Payment could not be started.')
       if (data.data.payment_status === 'paid' || !data.data.client_secret) {
         setOrders((current) => current.map((row) => row.id === entry.id ? { ...row, payment_status: 'paid', status: 'confirmed' } : row))
+        if (data.data.payment_status === 'paid' && isDigitalOrder(entry)) openDownloads()
         return
       }
       setOrder({ ...entry, clientSecret: data.data.client_secret })
@@ -2129,6 +2131,19 @@ export default function Storefront() {
     // CLI webhook listener is not running.
     await fetch(`${API_URL}/orders/${paid.id}/payment-intent`, { method: 'POST', headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }).catch(() => {})
     setOrders([])
+    if (isDigitalOrder(paid)) openDownloads()
+  }
+
+  // An order of downloads only: once paid, skip the receipt modal and take the
+  // buyer straight to Your downloads to start downloading.
+  function isDigitalOrder(entry) {
+    const items = entry?.items?.length ? entry.items.map((it) => it.fulfilled_by === 'digital') : (entry?.cartSnapshot ?? []).map((it) => !!it.digital)
+    return items.length > 0 && items.every(Boolean)
+  }
+
+  function openDownloads() {
+    setOrder(null)
+    window.location.hash = '#/account/downloads'
   }
 
   function applyLocation(address, { close = true } = {}) {
