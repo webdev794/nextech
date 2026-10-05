@@ -749,7 +749,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (135, '2026_10_05_000043_create_favorites', 75),
 (136, '2026_10_05_000044_add_info_sections_to_products', 76),
 (137, '2026_10_05_000045_add_guides_to_products', 77),
-(138, '2026_10_05_000046_add_commission_rate_to_shops', 78);
+(138, '2026_10_05_000046_add_commission_rate_to_shops', 78),
+(139, '2026_10_05_000047_create_sales_tax_rates', 79);
 
 -- --------------------------------------------------------
 
@@ -1853,6 +1854,21 @@ CREATE TABLE `sales_boost_offers` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `sales_tax_rates`
+--
+
+CREATE TABLE `sales_tax_rates` (
+  `zip_code` varchar(5) NOT NULL,
+  `rate_bps` smallint(5) UNSIGNED NOT NULL,
+  `source` varchar(30) DEFAULT NULL,
+  `fetched_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `sellers`
 --
 
@@ -2895,6 +2911,12 @@ ALTER TABLE `sales_boost_offers`
   ADD KEY `sales_boost_offers_product_id_status_index` (`product_id`,`status`);
 
 --
+-- Indexes for table `sales_tax_rates`
+--
+ALTER TABLE `sales_tax_rates`
+  ADD PRIMARY KEY (`zip_code`);
+
+--
 -- Indexes for table `sellers`
 --
 ALTER TABLE `sellers`
@@ -3148,7 +3170,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=139;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=140;
 
 --
 -- AUTO_INCREMENT for table `orders`

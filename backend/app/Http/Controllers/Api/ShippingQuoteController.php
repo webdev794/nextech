@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\OrderPackage;
 use App\Models\Product;
+use App\Support\CheckoutFees;
 use App\Support\Market;
+use App\Support\SalesTax;
 use App\Support\SellerFulfillment;
 use App\Support\SellerProgress;
 use App\Support\SellerShipping;
@@ -27,6 +29,7 @@ class ShippingQuoteController extends Controller
             'line1' => ['sometimes', 'nullable', 'string', 'max:255'],
             'line2' => ['sometimes', 'nullable', 'string', 'max:255'],
             'city' => ['sometimes', 'nullable', 'string', 'max:100'],
+            'postal_code' => ['sometimes', 'nullable', 'string', 'max:12'],
             'lines' => ['required', 'array', 'max:100'],
             'lines.*.product_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
@@ -52,6 +55,8 @@ class ShippingQuoteController extends Controller
             // Cash on delivery for this cart: null = allowed, otherwise why not.
             'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request)),
             'state_known' => SellerShipping::stateCode($data['state'] ?? null, Market::fromRequest($request)) !== null,
+            // Sales tax for this address, for the cart's estimate (checkout recalculates it).
+            'tax_rate_bps' => SalesTax::rateBps(Market::fromRequest($request), $data['state'] ?? null, $data['postal_code'] ?? null, (int) CheckoutFees::current(Market::fromRequest($request))['tax_rate_bps']),
         ]]);
     }
 

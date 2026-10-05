@@ -14,6 +14,7 @@ use App\Support\Fx;
 use App\Support\Market;
 use App\Support\Payments;
 use App\Support\RiderLedger;
+use App\Support\SalesTax;
 use App\Support\SellerFulfillment;
 use App\Support\SellerLedger;
 use App\Support\SellerShipping;
@@ -162,6 +163,14 @@ class AdminSettingController extends Controller
      * Change the signed-in admin's own name / e-mail / phone. Requires the
      * Secure access unlock token.
      */
+    /** Settings → Charges → "Fetch automatically": fill the US state tax table from the lookup. */
+    public function fetchSalesTaxStates(): JsonResponse
+    {
+        $result = SalesTax::fetchStateRates();
+
+        return response()->json(['data' => $this->payload(), 'result' => $result]);
+    }
+
     /** Secure access: sellers kept on an older commission rate, with their market's current rate. */
     public function keptRates(Request $request): JsonResponse
     {
@@ -226,6 +235,13 @@ class AdminSettingController extends Controller
                 'new_seller_days' => ['sometimes', 'integer', 'min:1', 'max:3650'],
                 // With a commission change: also move existing sellers to it (default: they keep their rate).
                 'commission_apply_existing' => ['sometimes', 'boolean'],
+                // US sales tax: by state/ZIP or one flat rate; per-state edits; ZIP-lookup key (Secure access).
+                'sales_tax_mode' => ['sometimes', Rule::in(['state', 'flat'])],
+                'sales_tax_states' => ['sometimes', 'array'],
+                'sales_tax_states.*' => ['nullable', 'integer', 'min:0', 'max:10000'],
+                'sales_tax_reset_states' => ['sometimes', 'boolean'],
+                'sales_tax_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'sales_tax_clear_cache' => ['sometimes', 'boolean'],
                 'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'max_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
@@ -299,6 +315,27 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('commission_rate_bps', $validated)) {
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        if (array_key_exists('sales_tax_mode', $validated)) {
+            Setting::put('sales_tax_mode', $validated['sales_tax_mode']);
+        }
+        if (array_key_exists('sales_tax_states', $validated)) {
+            // Blank = null: that state uses the default rate.
+            $known = array_keys((array) config('sales_tax.states', []));
+            Setting::put('sales_tax_states', collect($validated['sales_tax_states'])->only($known)->map(fn ($v) => $v === null ? null : (int) $v)->all());
+        }
+        if (! empty($validated['sales_tax_reset_states'])) {
+            Setting::put('sales_tax_states', []);
+        }
+        if (array_key_exists('sales_tax_api_key', $validated) || ! empty($validated['sales_tax_clear_cache'])) {
+            $this->assertUnlocked($request);
+            if (array_key_exists('sales_tax_api_key', $validated) && trim((string) $validated['sales_tax_api_key']) !== '') {
+                Setting::put('sales_tax_api_key', trim((string) $validated['sales_tax_api_key']));
+            }
+            if (! empty($validated['sales_tax_clear_cache'])) {
+                \App\Models\SalesTaxRate::query()->delete();
+            }
         }
 
         // New-seller commission lives behind the Secure access unlock.
@@ -433,6 +470,7 @@ class AdminSettingController extends Controller
             'commission_rate_bps' => SellerLedger::rate('US'),
             'new_seller_commission_rate_bps' => SellerLedger::newSellerRateBps(),
             'new_seller_days' => SellerLedger::newSellerDays(),
+            'sales_tax' => SalesTax::adminPayload(),
             // Sellers kept on an older commission rate, per market.
             'kept_rate_sellers' => \App\Models\Shop::whereNotNull('commission_rate_bps')->selectRaw('market, count(*) as n')->groupBy('market')->pluck('n', 'market'),
             'min_payout_cents' => SellerLedger::minPayoutCents('US'),

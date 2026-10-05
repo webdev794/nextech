@@ -16,6 +16,7 @@ use App\Support\Geo;
 use App\Support\Market;
 use App\Support\Personalization;
 use App\Support\Purchasable;
+use App\Support\SalesTax;
 use App\Support\SellerLedger;
 use App\Support\SellerProgress;
 use App\Support\SellerShipping;
@@ -297,7 +298,9 @@ class CheckoutController extends Controller
 
             // Tax on top (US sales tax), or nothing extra where prices already include it (India GST).
             // Imports aren't taxed here — duties/taxes are paid at customs.
-            $tax = Market::taxInclusive($market) ? 0 : (int) round(($subtotal - $importedSubtotal) * $fees['tax_rate_bps'] / 10000);
+            // US: by the delivery address (ZIP lookup or state rate, see SalesTax).
+            $taxRate = SalesTax::rateBps($market, $address['state'] ?? null, $address['postal_code'] ?? null, (int) $fees['tax_rate_bps']);
+            $tax = Market::taxInclusive($market) ? 0 : (int) round(($subtotal - $importedSubtotal) * $taxRate / 10000);
             // NexTech's delivery fee covers only what NexTech delivers. The
             // online-courier path charges the flat courier quote instead of
             // the near/far distance fee; the own-rider path is unchanged.

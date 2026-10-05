@@ -12,6 +12,7 @@ import { AdminReviews } from './AdminReviews'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { MarketSettings } from './AdminMarkets'
 import { KeptRates } from './AdminKeptRates'
+import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
@@ -3784,6 +3785,8 @@ Reason:`, '')
 
               <KeptRates headers={secureHeaders} onMessage={setMessage} onError={fail} />
 
+              <SalesTaxKey settings={settings} save={(patch) => saveSetting(patch, { 'X-Secure-Access': secureToken })} />
+
               {paymentsForm && settings && (
                 <form className="admin-form" onSubmit={savePayments}>
                   <h3>Payments — Stripe</h3>
@@ -4006,12 +4009,13 @@ Reason:`, '')
                     <label>Handling fee ($)<input type="number" min="0" step="0.01" value={feesForm.handling_fee} onChange={(event) => setFeesForm({ ...feesForm, handling_fee: event.target.value })} /></label>
                     <label>Small-cart fee ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_fee} onChange={(event) => setFeesForm({ ...feesForm, small_cart_fee: event.target.value })} /></label>
                     <label>…applied below ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_min} onChange={(event) => setFeesForm({ ...feesForm, small_cart_min: event.target.value })} /></label>
-                    <label>Tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
+                    <label>Default tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
                   </div>
                 </fieldset>
 
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
+              {settings?.sales_tax && <SalesTaxSettings key={settings.sales_tax.mode + JSON.stringify(settings.sales_tax.states.map((x) => x.rate_bps))} settings={settings} save={saveSetting} headers={jsonHeaders} onSettings={setSettings} onMessage={setMessage} onError={fail} />}
                 </>}
             </>
           )}

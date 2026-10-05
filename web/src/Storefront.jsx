@@ -1332,11 +1332,12 @@ export default function Storefront() {
   // Items from sellers who ship themselves are charged the seller's own
   // shipping (template fee + delivery dates) instead of NexTech's delivery fee.
   const shipState = checkoutForm.state || location?.state || defaultAddress?.state || ''
-  const quoteKey = JSON.stringify([market, shipState, checkoutForm.line1, checkoutForm.line2, checkoutForm.city, cart.map((item) => [item.id, item.quantity, item.price_cents])])
+  const shipZip = checkoutForm.postal_code || location?.postal_code || defaultAddress?.postal_code || ''
+  const quoteKey = JSON.stringify([market, shipState, shipZip, checkoutForm.line1, checkoutForm.line2, checkoutForm.city, cart.map((item) => [item.id, item.quantity, item.price_cents])])
   useEffect(() => {
     if (!cart.length) { Promise.resolve().then(() => setSellerQuote(null)); return undefined }
     let cancelled = false
-    fetch(`${API_URL}/shipping/quote`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Market': activeMarket }, body: JSON.stringify({ state: shipState || null, line1: checkoutForm.line1 || null, line2: checkoutForm.line2 || null, city: checkoutForm.city || null, lines: cart.map((item) => ({ product_id: item.id, quantity: item.quantity, price_cents: item.price_cents })) }) })
+    fetch(`${API_URL}/shipping/quote`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-Market': activeMarket }, body: JSON.stringify({ state: shipState || null, postal_code: shipZip || null, line1: checkoutForm.line1 || null, line2: checkoutForm.line2 || null, city: checkoutForm.city || null, lines: cart.map((item) => ({ product_id: item.id, quantity: item.quantity, price_cents: item.price_cents })) }) })
       .then(responseJson)
       .then((data) => { if (!cancelled) setSellerQuote(data.data ?? null) })
       .catch(() => { if (!cancelled) setSellerQuote(null) })
@@ -1354,7 +1355,8 @@ export default function Storefront() {
     const sub = cartTotal
     const nextechSub = cart.filter((item) => !sellerShippedIds.includes(item.id) && !item.digital).reduce((sum, item) => sum + item.price_cents * item.quantity, 0)
     const sellerShipping = sellerQuote?.total_cents ?? 0
-    const tax = Math.round((sub * fees.tax_rate_bps) / 10000)
+    // The address's sales tax (state / ZIP) from the quote, else the store's default rate.
+    const tax = Math.round((sub * (sellerQuote?.tax_rate_bps ?? fees.tax_rate_bps)) / 10000)
     // Distance mode: the fee for the current pin comes from /api/delivery-eta,
     // which re-fires as the pin moves. Otherwise the flat fee.
     const baseDelivery = fees.delivery_mode === 'distance' && serviceable?.delivery_fee_cents != null

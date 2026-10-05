@@ -166,6 +166,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/notifications', [AdminController::class, 'notifications']);
     Route::get('/settings', [AdminSettingController::class, 'index']);
     Route::patch('/settings', [AdminSettingController::class, 'update']);
+    Route::post('/settings/sales-tax/fetch', [AdminSettingController::class, 'fetchSalesTaxStates'])->middleware('throttle:6,1');
     Route::post('/secure-access/challenge', [AdminSettingController::class, 'secureAccessChallenge'])->middleware('throttle:6,1');
     Route::post('/secure-access/unlock', [AdminSettingController::class, 'secureAccessUnlock'])->middleware('throttle:10,1');
     Route::patch('/secure-access/account', [AdminSettingController::class, 'updateAccount']);
