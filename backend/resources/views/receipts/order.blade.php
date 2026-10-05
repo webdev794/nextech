@@ -1,6 +1,10 @@
 @php
     /** @var \App\Models\Order $order */
-    $money = fn ($cents) => '$' . number_format(((int) $cents) / 100, 2);
+    $currency = $order->currency ?: 'usd';
+    $money = fn ($cents) => \App\Support\Money::format((int) $cents, $currency);
+    // India etc.: prices already include tax (GST) — show what's included instead of "Tax 0".
+    $taxLabel = \App\Support\Market::profile($order->market)['tax']['label'] ?? 'Tax';
+    $taxInclusive = \App\Support\Market::taxInclusive($order->market);
     $brandName = $branding['store_name'] !== '' ? $branding['store_name'] : config('app.name');
     $accent = $branding['color_brand'] ?? '#1f7a3d';
 
@@ -184,10 +188,17 @@
             <td class="num">{{ $money($order->small_cart_fee_cents) }}</td>
         </tr>
         @endif
+        @if($taxInclusive)
         <tr>
-            <td>Tax</td>
+            <td>Includes {{ $taxLabel }}</td>
+            <td class="num">{{ $money($order->tax_included_cents ?? 0) }}</td>
+        </tr>
+        @else
+        <tr>
+            <td>{{ $taxLabel }}</td>
             <td class="num">{{ $money($order->tax_cents) }}</td>
         </tr>
+        @endif
         @if(($order->gift_card_discount_cents ?? 0) > 0)
         <tr>
             <td>Gift card</td>
@@ -206,7 +217,7 @@
 
     <div class="foot">
         This is a system-generated bill for order #{{ $order->id }} placed on
-        {{ $order->created_at?->format('d M Y') }}. Prices are in USD and include the amounts charged at checkout.
+        {{ $order->created_at?->format('d M Y') }}. Prices are in {{ strtoupper($currency) }} and include the amounts charged at checkout.
         Thank you for shopping with {{ $brandName }}.
     </div>
 </div>
