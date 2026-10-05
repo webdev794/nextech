@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { DigitalFiles } from './SellerDigitalFiles'
 import { InfoSectionsEditor } from './InfoSections'
+import { ProductDocumentsEditor } from './ProductDocuments'
 import { checkProductImage } from './productImageCheck'
 import { currencySymbol } from './money'
 
@@ -86,6 +87,7 @@ function formFrom(product, config) {
     description: p.description ?? '',
     bullet_points: [...(p.bullet_points ?? []), '', '', ''].slice(0, Math.max(3, (p.bullet_points ?? []).length)),
     info_sections: p.info_sections ?? [],
+    guides: p.guides ?? [],
     images: (p.images ?? []).map((i) => i.url ?? i).filter(Boolean),
     video_url: p.video_url ?? '',
     detail_video_url: p.detail_video_url ?? '',
@@ -236,6 +238,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       description: form.description,
       bullet_points: form.bullet_points,
       info_sections: form.info_sections.filter((x) => x.title.trim() && x.body.trim()).map((x) => ({ kind: x.kind, title: x.title.trim(), body: x.body.trim() })),
+      guides: form.guides.map((d) => ({ title: d.title.trim() || 'User manual', language: d.language?.trim() || null, url: d.url, size_bytes: d.size_bytes ?? null })),
       images: form.images,
       video_url: form.video_url || null,
       detail_video_url: form.detail_video_url || null,
@@ -385,6 +388,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           </label>
           <p className="sc-muted">Select a trademark if the product is made by a specific brand — it improves the price assessment and search matching. No trademark yet? <button type="button" className="sc-link" onClick={() => go('account-health')}>Register one under Account health</button> and wait for NexTech to review it.</p>
           <InfoSectionsEditor value={form.info_sections} onChange={(v) => set({ info_sections: v })} />
+          <ProductDocumentsEditor value={form.guides} onChange={(v) => set({ guides: v })} onUpload={(file) => uploadFile(headers, '/seller/product-document', file)} />
           <label>Your product code (Contribution Goods, optional)<input value={form.seller_code} maxLength="60" onChange={(e) => set({ seller_code: e.target.value })} /></label>
         </div>
       )}

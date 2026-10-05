@@ -747,7 +747,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (133, '2026_10_05_000041_add_buyer_photo_personalization', 73),
 (134, '2026_10_05_000042_create_digital_products', 74),
 (135, '2026_10_05_000043_create_favorites', 75),
-(136, '2026_10_05_000044_add_info_sections_to_products', 76);
+(136, '2026_10_05_000044_add_info_sections_to_products', 76),
+(137, '2026_10_05_000045_add_guides_to_products', 77);
 
 -- --------------------------------------------------------
 
@@ -1281,6 +1282,7 @@ CREATE TABLE `products` (
   `description` text DEFAULT NULL,
   `bullet_points` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`bullet_points`)),
   `info_sections` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`info_sections`)),
+  `guides` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`guides`)),
   `detail_images` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`detail_images`)),
   `product_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`product_details`)),
   `variation_theme` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`variation_theme`)),
@@ -3144,7 +3146,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=137;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=138;
 
 --
 -- AUTO_INCREMENT for table `orders`

@@ -43,6 +43,18 @@ class Personalization
         ];
     }
 
+    /** "Product guides and documents": PDFs uploaded through /seller/product-document. */
+    public static function guideRules(): array
+    {
+        return [
+            'guides' => ['sometimes', 'nullable', 'array', 'max:10'],
+            'guides.*.title' => ['required', 'string', 'max:80'],
+            'guides.*.language' => ['sometimes', 'nullable', 'string', 'max:40'],
+            'guides.*.url' => ['required', 'string', 'max:500', 'regex:#^/api/media/file/product-documents/[A-Za-z0-9._-]+\.pdf$#'],
+            'guides.*.size_bytes' => ['sometimes', 'nullable', 'integer', 'min:0'],
+        ];
+    }
+
     /** A product's settings, normalised; null when off. */
     public static function settings(?Product $product): ?array
     {

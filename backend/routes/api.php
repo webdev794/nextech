@@ -338,6 +338,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'addKeys']);
     Route::delete('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'clearKeys']);
     Route::post('/seller/product-video', [MediaController::class, 'storeSellerProductVideo']);
+    Route::post('/seller/product-document', [MediaController::class, 'storeSellerProductDocument']);
     // Temu-style listing: categories / details / compliance config, drafts, compliance, bulk upload.
     Route::get('/seller/catalog-config', [SellerProductController::class, 'catalogConfig']);
     Route::patch('/seller/products/{product}/compliance', [SellerProductController::class, 'updateCompliance']);

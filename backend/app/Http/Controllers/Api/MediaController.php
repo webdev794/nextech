@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
@@ -97,6 +98,17 @@ class MediaController extends Controller
         abort_unless($path && Storage::disk('public')->exists($path), 500, 'Could not save the video.');
 
         return response()->json(['data' => ['url' => '/api/media/file/'.$path, 'path' => $path]], 201);
+    }
+
+    /** Product guides and documents (user manuals etc.): PDF up to 20 MB, public like product photos. */
+    public function storeSellerProductDocument(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:20480']]);
+        $file = $request->file('file');
+        $path = $file->storeAs('product-documents', Str::random(32).'.pdf', 'public');
+        abort_unless($path && Storage::disk('public')->exists($path), 500, 'Could not save the document.');
+
+        return response()->json(['data' => ['url' => '/api/media/file/'.$path, 'path' => $path, 'size_bytes' => $file->getSize()]], 201);
     }
 
     public function storeShopAsset(Request $request): JsonResponse

@@ -50,7 +50,7 @@ class Product extends Model
         'suggested_category_name',
         // Seller listing (Temu-style Add product; see App\Support\ProductCatalog).
         'seller_code', 'trademark_id', 'bullet_points', 'detail_images', 'detail_video_url', 'product_details',
-        'variation_theme', 'size_chart', 'handling_days', 'compliance', 'price_references', 'personalization', 'info_sections',
+        'variation_theme', 'size_chart', 'handling_days', 'compliance', 'price_references', 'personalization', 'info_sections', 'guides',
     ];
 
     protected function casts(): array
@@ -78,6 +78,7 @@ class Product extends Model
             'compliance' => 'array',
             'personalization' => 'array',
             'info_sections' => 'array',
+            'guides' => 'array',
             'digital_settings' => 'array',
             'price_references' => 'array',
         ];

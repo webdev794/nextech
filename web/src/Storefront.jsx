@@ -15,6 +15,7 @@ import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
 import { PersonalizationPicker, PersonalizationView } from './Personalization'
 import { personalizationReady } from './personalizationUtils'
 import { MyDownloads } from './Downloads'
+import { ProductDocuments } from './ProductDocuments'
 import { InfoSections } from './InfoSections'
 import { MyReviews, OrderItemReviews, ProductReviews, ReviewerPage } from './Reviews'
 import { openChat } from './chatDockUtils'
@@ -2727,6 +2728,7 @@ export default function Storefront() {
                   {product.manufacturer_info && <div><dt>Manufacturer / importer</dt><dd>{product.manufacturer_info}</dd></div>}
                   <div><dt>Availability</dt><dd>{stock === 0 ? 'Out of stock' : 'In stock'}</dd></div>
                 </dl>
+                <ProductDocuments documents={product.guides} />
               </section>
 
               {product.detail_video_url && <section className="pdp-detail-video"><video src={mediaUrl(product.detail_video_url)} controls playsInline preload="metadata" /></section>}
