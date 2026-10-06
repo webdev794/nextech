@@ -49,7 +49,8 @@ return new class extends Migration
                 DB::table('shops')->where('id', $row->id)->update(['market' => $country]);
             }
         }
-        DB::statement('UPDATE products p JOIN shops s ON s.id = p.shop_id SET p.market = s.market');
+        // Portable form (MySQL and the SQLite test database): a shop's products follow its market.
+        DB::statement('UPDATE products SET market = (SELECT shops.market FROM shops WHERE shops.id = products.shop_id) WHERE shop_id IS NOT NULL');
     }
 
     public function down(): void

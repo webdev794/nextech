@@ -441,6 +441,15 @@ class SellerLedger
         return $shop?->commission_rate_bps ?? self::rate(self::commissionMarket($order, $shopId));
     }
 
+    /** The commission rate this shop would pay on a sale made today (new-seller, kept or market rate). */
+    public static function currentRateFor(Shop $shop): int
+    {
+        $order = new Order(['market' => $shop->market]);
+        $order->created_at = now();
+
+        return self::shopRate($order, $shop->id);
+    }
+
     /** Every market's current commission rate, e.g. ['US' => 1000, 'IN' => 1200]. */
     public static function marketRates(): array
     {

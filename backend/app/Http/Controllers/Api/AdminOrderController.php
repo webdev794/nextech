@@ -17,6 +17,7 @@ use App\Support\CustomerNames;
 use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
 use App\Support\SellerLedger;
+use App\Support\CourierTracking;
 use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,7 +50,10 @@ class AdminOrderController extends Controller
                 'giftCards.issuedBy:id,name',
                 'refunds.creator:id,name',
             ])
-            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            // 'open' = not finished yet (anything short of delivered or cancelled).
+            ->when($validated['status'] ?? null, fn ($query, $status) => $status === 'open'
+                ? $query->open()
+                : $query->where('status', $status))
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
         LiveTracking::refreshOrders($orders->getCollection());
@@ -289,18 +293,7 @@ class AdminOrderController extends Controller
             return response()->json(['message' => 'This order has no online-courier shipment to track.'], 422);
         }
 
-        $shipment = Courier::track($order->shipment);
-
-        if ($shipment->status === 'delivered' && $order->canTransitionTo('completed')) {
-            $order->forceFill([
-                'status' => 'completed',
-                'delivered_at' => now(),
-                'delivery_verified' => false,
-                'delivery_note' => "Delivered by online courier ({$shipment->carrier} {$shipment->tracking_number}).",
-                'rider_offer_expires_at' => null,
-            ])->save();
-            $order->refresh()->sendDeliveredReceiptIfReady();
-        }
+        CourierTracking::sync($order);
 
         return response()->json(['data' => $this->detail($order)]);
     }

@@ -190,6 +190,14 @@ class MediaController extends Controller
 
         abort_unless(is_file($file) && is_readable($file), 404);
 
+        // ?download=<name>: save it as a file instead of opening it (e.g. a product's PDF manual).
+        $name = trim((string) request()->query('download', ''));
+        if ($name !== '') {
+            $name = preg_replace('/[^\pL\pN ()._-]+/u', '', $name) ?: 'download';
+
+            return response()->download($file, str_ends_with(strtolower($name), '.'.strtolower(pathinfo($file, PATHINFO_EXTENSION))) ? $name : $name.'.'.pathinfo($file, PATHINFO_EXTENSION));
+        }
+
         return response()->file($file, [
             'Cache-Control' => 'public, max-age=31536000, immutable',
         ]);

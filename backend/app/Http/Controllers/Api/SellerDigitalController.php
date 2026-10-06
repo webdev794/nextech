@@ -8,6 +8,7 @@ use App\Models\ProductFile;
 use App\Models\ProductLicenseKey;
 use App\Models\Shop;
 use App\Support\DigitalProducts;
+use App\Support\DownloadLinkCheck;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -44,6 +45,15 @@ class SellerDigitalController extends Controller
         ]);
         abort_if($data['index'] >= $data['total'], 422, 'Bad chunk.');
         $dir = "digital-chunks/{$product->id}/{$data['upload_id']}";
+        // Stop an over-limit upload as soon as it's over, not after it's all on disk.
+        $received = collect(Storage::disk('local')->files($dir))->sum(fn ($part) => Storage::disk('local')->size($part)) + (int) $request->file('chunk')->getSize();
+        $used = (int) $product->files()->whereNull('external_url')->sum('size_bytes');
+        if ($received > DigitalProducts::maxFileBytes() || $used + $received > DigitalProducts::maxProductBytes()) {
+            Storage::disk('local')->deleteDirectory($dir);
+            abort(422, $received > DigitalProducts::maxFileBytes()
+                ? 'Files can be up to '.$this->mb(DigitalProducts::maxFileBytes()).' here — for a bigger file, add a download link to where you host it.'
+                : 'This product\'s uploads can total '.$this->mb(DigitalProducts::maxProductBytes()).' — remove a file, or add a download link instead.');
+        }
         Storage::disk('local')->putFileAs($dir, $request->file('chunk'), str_pad((string) $data['index'], 6, '0', STR_PAD_LEFT));
 
         $have = count(Storage::disk('local')->files($dir));
@@ -65,9 +75,9 @@ class SellerDigitalController extends Controller
         }
         fclose($out);
         $disk->deleteDirectory($dir);
-        if ($size > DigitalProducts::MAX_FILE_BYTES) {
+        if ($size > DigitalProducts::maxFileBytes()) {
             $disk->delete($target);
-            abort(422, 'Files can be up to 4 GB.');
+            abort(422, 'Files can be up to '.$this->mb(DigitalProducts::maxFileBytes()).'.');
         }
 
         $file = $product->files()->create([
@@ -89,9 +99,27 @@ class SellerDigitalController extends Controller
             'name' => ['required', 'string', 'max:160'],
             'external_url' => ['required', 'url:https', 'max:1000'],
         ]);
-        $product->files()->create($data + ['sort_order' => (int) $product->files()->max('sort_order') + 1]);
+        // Share links become direct downloads; a link that's broken or asks to sign in is refused.
+        $data['external_url'] = DownloadLinkCheck::normalize($data['external_url']);
+        $check = DownloadLinkCheck::check($data['external_url']);
+        abort_if($check['status'] === 'broken', 422, (string) $check['note']);
+        $product->files()->create($data + [
+            'link_status' => $check['status'], 'link_note' => $check['note'], 'link_checked_at' => now(),
+            'size_bytes' => $check['size'],
+            'sort_order' => (int) $product->files()->max('sort_order') + 1,
+        ]);
 
-        return response()->json(['data' => $this->payload($product)], 201);
+        return response()->json(['data' => $this->payload($product), 'check' => $check], 201);
+    }
+
+    /** Re-check a hosted link (it may have been moved or unshared since). */
+    public function checkLink(Request $request, Product $product, ProductFile $file): JsonResponse
+    {
+        $this->own($request, $product);
+        abort_unless($file->product_id === $product->id && $file->external_url, 404);
+        DigitalProducts::recheckLink($file);
+
+        return response()->json(['data' => $this->payload($product)]);
     }
 
     public function updateFile(Request $request, Product $product, ProductFile $file): JsonResponse
@@ -142,12 +170,14 @@ class SellerDigitalController extends Controller
         return [
             'files' => $product->files()->get()->map(fn (ProductFile $f) => [
                 'id' => $f->id, 'name' => $f->name, 'original_name' => $f->original_name, 'size_bytes' => $f->size_bytes,
-                'external_url' => $f->external_url, 'created_at' => $f->created_at,
+                'external_url' => $f->external_url, 'link_status' => $f->link_status, 'link_note' => $f->link_note, 'link_checked_at' => $f->link_checked_at, 'created_at' => $f->created_at,
             ])->values(),
             'keys_available' => $product->licenseKeys()->whereNull('order_item_id')->count(),
             'keys_assigned' => $product->licenseKeys()->whereNotNull('order_item_id')->count(),
             'chunk_bytes' => DigitalProducts::chunkBytes(),
-            'max_file_bytes' => DigitalProducts::MAX_FILE_BYTES,
+            'max_file_bytes' => DigitalProducts::maxFileBytes(),
+            'max_product_bytes' => DigitalProducts::maxProductBytes(),
+            'used_bytes' => (int) $product->files()->whereNull('external_url')->sum('size_bytes'),
         ];
     }
 
@@ -158,5 +188,10 @@ class SellerDigitalController extends Controller
         abort_unless($product->shop_id === $seller->shop->id, 404);
 
         return $seller->shop;
+    }
+
+    private function mb(int $bytes): string
+    {
+        return $bytes >= 1024 * 1024 * 1024 ? round($bytes / 1024 ** 3, 1).' GB' : round($bytes / 1024 ** 2).' MB';
     }
 }

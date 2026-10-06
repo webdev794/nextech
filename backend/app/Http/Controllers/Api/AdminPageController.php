@@ -27,8 +27,10 @@ class AdminPageController extends Controller
     {
         $data = $this->validated($request, $page);
 
+        // A page keeps its URL (links to it are already shared); for another URL, create a new page.
         if (array_key_exists('slug', $data)) {
-            $data['slug'] = $this->uniqueSlug($data['slug'] ?: null, $data['title'] ?? $page->title, $page->id);
+            abort_if(($data['slug'] ?: $page->slug) !== $page->slug, 422, "A page's URL can't be changed — create a new page with the URL you want (and delete this one if it's no longer needed).");
+            unset($data['slug']);
         }
 
         $page->update($data);
@@ -87,6 +89,13 @@ class AdminPageController extends Controller
     private function uniqueSlug(?string $slug, string $title, ?int $ignoreId = null): string
     {
         $base = Str::slug($slug ?: $title) ?: 'page';
+        // A URL the admin typed is kept exactly — say so if another page has it.
+        if ($slug) {
+            $taken = Page::query()->where('slug', $base)->when($ignoreId, fn ($query) => $query->whereKeyNot($ignoreId))->first();
+            abort_if($taken !== null, 422, "The URL \"{$base}\" is already used by the page \"{$taken?->title}\" — choose another.");
+
+            return $base;
+        }
         $candidate = $base;
         $suffix = 2;
 

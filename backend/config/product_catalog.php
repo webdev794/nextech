@@ -33,6 +33,8 @@ return [
         ['key' => 'connectivity', 'label' => 'Connectivity', 'type' => 'multiselect', 'options' => ['Bluetooth', 'Wi-Fi', 'NFC', 'Cellular 4G', 'Cellular 5G', 'USB-C', 'Lightning', 'Micro-USB', '3.5 mm jack', 'HDMI', 'Ethernet', 'None']],
         ['key' => 'bluetooth_version', 'label' => 'Bluetooth version', 'type' => 'select', 'options' => ['4.2', '5.0', '5.1', '5.2', '5.3', '5.4'], 'when' => ['connectivity' => ['Bluetooth']]],
         ['key' => 'warranty', 'label' => 'Warranty', 'type' => 'select', 'options' => ['No warranty', '6 months', '1 year', '2 years', '3 years or more'], 'required' => true],
+        // With a warranty, the seller must say what it covers and how to claim it.
+        ['key' => 'warranty_terms', 'label' => 'Warranty conditions', 'type' => 'text', 'required' => true, 'when' => ['warranty' => ['6 months', '1 year', '2 years', '3 years or more']], 'placeholder' => 'e.g. Covers manufacturing defects and the item stopping working in normal use. Not covered: drops, cracks, liquid damage, tampering. Claim with your order via Get help.'],
         ['key' => 'special_features', 'label' => 'Special features', 'type' => 'text'],
         ['key' => 'package_contents', 'label' => 'What’s in the box', 'type' => 'text'],
     ],

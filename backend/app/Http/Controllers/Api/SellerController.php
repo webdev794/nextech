@@ -113,6 +113,7 @@ class SellerController extends Controller
                     'reviewed_by' => null,
                     'reviewed_at' => null,
                     'rejection_reason' => null,
+                    'change_items' => null,
                 ])->save();
                 $seller = $existing;
             } else {

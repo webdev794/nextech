@@ -42,6 +42,7 @@ export function DigitalFiles({ headers, productId, licenseKeys }) {
   async function upload(file) {
     if (!file || !data) return
     if (file.size > data.max_file_bytes) { setMsg(`Files can be up to ${formatBytes(data.max_file_bytes)} — for bigger ones, add a download link instead.`); return }
+    if (data.max_product_bytes && (data.used_bytes ?? 0) + file.size > data.max_product_bytes) { setMsg(`This product's uploads can total ${formatBytes(data.max_product_bytes)} (${formatBytes(data.used_bytes ?? 0)} used) — remove a file, or add a download link instead.`); return }
     setMsg('')
     const size = data.chunk_bytes
     const total = Math.max(1, Math.ceil(file.size / size))
@@ -72,7 +73,7 @@ export function DigitalFiles({ headers, productId, licenseKeys }) {
   return (
     <div className="dg">
       <h3 className="ss-sub">Download files <b className="wz-req" title="Required"> *</b></h3>
-      <p className="sc-muted">What buyers download after paying — installers, game files, e-books, ZIPs… Up to {formatBytes(data.max_file_bytes)} each; files stay private. For bigger files, add a link to where you host them.</p>
+      <p className="sc-muted">What buyers download after paying — installers, game files, e-books, ZIPs… Up to {formatBytes(data.max_file_bytes)} each{data.max_product_bytes ? `, ${formatBytes(data.max_product_bytes)} in total (${formatBytes(data.used_bytes ?? 0)} used)` : ''}; files stay private. For bigger files (large games, ZIPs), add a download link to where you host them — e.g. Google Drive, Dropbox or your own server.</p>
       {data.files.length > 0 && (
         <table className="sc-table dg-files">
           <thead><tr><th>Name buyers see</th><th>File</th><th>Size</th><th></th></tr></thead>
@@ -80,9 +81,9 @@ export function DigitalFiles({ headers, productId, licenseKeys }) {
             {data.files.map((f) => (
               <tr key={f.id}>
                 <td><input defaultValue={f.name} maxLength={160} onBlur={(e) => { if (e.target.value.trim() && e.target.value !== f.name) act(() => call(`/files/${f.id}`, 'PATCH', { name: e.target.value.trim() }), 'Renamed.') }} /></td>
-                <td>{f.external_url ? <a href={f.external_url} target="_blank" rel="noreferrer">Hosted link</a> : f.original_name}</td>
-                <td>{f.external_url ? '—' : formatBytes(f.size_bytes)}</td>
-                <td className="sc-actions"><button type="button" className="danger" onClick={() => { if (window.confirm(`Remove "${f.name}"? Buyers who already bought it lose this download.`)) act(() => call(`/files/${f.id}`, 'DELETE'), 'Removed.') }}>Remove</button></td>
+                <td>{f.external_url ? <><a href={f.external_url} target="_blank" rel="noreferrer">Hosted link</a><LinkStatus file={f} /></> : f.original_name}</td>
+                <td>{f.size_bytes ? formatBytes(f.size_bytes) : '—'}</td>
+                <td className="sc-actions">{f.external_url && <button type="button" onClick={() => act(() => call(`/files/${f.id}/check`, 'POST'), 'Link checked.')}>Re-check</button>}<button type="button" className="danger" onClick={() => { if (window.confirm(`Remove "${f.name}"? Buyers who already bought it lose this download.`)) act(() => call(`/files/${f.id}`, 'DELETE'), 'Removed.') }}>Remove</button></td>
               </tr>
             ))}
           </tbody>
@@ -94,6 +95,7 @@ export function DigitalFiles({ headers, productId, licenseKeys }) {
         ) : (
           <label className="sc-primary dg-upload">⬆ Upload a file<input type="file" hidden onChange={(e) => { upload(e.target.files?.[0]); e.target.value = '' }} /></label>
         )}
+        <p className="sc-muted dg-or"><b>Or add a download link</b> instead of uploading — Google Drive, Dropbox or your own server. Buyers only get it after paying, in Your downloads; make sure the link opens without asking them to sign in.</p>
         <form className="dg-link" onSubmit={(e) => { e.preventDefault(); act(() => call('/files/link', 'POST', { name: link.name.trim(), external_url: link.url.trim() }), 'Link added.').then(() => setLink({ name: '', url: '' })) }}>
           <input placeholder="Name (e.g. Mac version)" value={link.name} maxLength={160} required onChange={(e) => setLink({ ...link, name: e.target.value })} />
           <input type="url" placeholder="https://… your download link" value={link.url} required onChange={(e) => setLink({ ...link, url: e.target.value })} />
@@ -115,4 +117,11 @@ export function DigitalFiles({ headers, productId, licenseKeys }) {
       {msg && <p className="sc-alert warn"><span>{msg}</span></p>}
     </div>
   )
+}
+
+// A hosted link's last check: works (a file), opens a page, or broken.
+export function LinkStatus({ file }) {
+  if (!file.external_url || !file.link_status) return null
+  const label = { ok: '✓ Link works', page: '⚠ Opens a page', broken: '✕ Link broken' }[file.link_status] ?? file.link_status
+  return <span className={`dg-link-status ${file.link_status}`} title={file.link_checked_at ? `Checked ${new Date(file.link_checked_at).toLocaleString()}` : undefined}>{label}{file.link_note ? ` — ${file.link_note}` : ''}</span>
 }

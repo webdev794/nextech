@@ -352,7 +352,7 @@ button{cursor:pointer}
 .pcard-compare-at s{text-decoration-thickness:1px}
 .pcard-info{display:inline-grid;place-items:center;flex:0 0 auto;width:13px;height:13px;border-radius:50%;border:1px solid var(--muted);font-size:9px;font-style:normal;line-height:1;cursor:help}
 .pcard-off{position:absolute;top:6px;left:6px;z-index:1;background:#c02b0a;color:#fff;font:800 10px 'Okra',sans-serif;letter-spacing:.02em;padding:3px 7px;border-radius:7px}
-.pcard-oos{position:absolute;top:6px;left:6px;z-index:1;background:#5b6560;color:#fff;font:800 10px 'Okra',sans-serif;letter-spacing:.02em;padding:3px 7px;border-radius:7px}
+.pcard-oos{position:absolute;top:6px;left:6px;z-index:1;background:#c62828;color:#fff;font:800 12px 'Okra',sans-serif;letter-spacing:.02em;padding:3px 7px;border-radius:7px}
 .pcard-desc-tip{position:absolute;inset:0;z-index:2;display:flex;align-items:center;justify-content:center;padding:10px;background:rgba(255,255,255,.5);color:#20291f;font:11px/1.4 'Okra',sans-serif;text-align:center;overflow:hidden;opacity:0;pointer-events:none;transition:opacity .15s ease}
 .pcard-img:hover .pcard-desc-tip{opacity:1}
 .pcard.sold-out .pcard-img,.pcard.sold-out h3,.pcard.sold-out .pcard-price{opacity:.5}

@@ -91,7 +91,7 @@ export function ProductDocuments({ documents }) {
             <iframe className="pdoc-frame" key={href} src={href} title={label(doc)} />
             <div className="pdoc-actions">
               <a href={href} target="_blank" rel="noreferrer">Open in new tab</a>
-              <a className="pdoc-download" href={href} download={`${label(doc)}.pdf`}>Download{doc.size_bytes ? ` (${size(doc.size_bytes)})` : ''}</a>
+              <a className="pdoc-download" href={`${href}${href.includes('?') ? '&' : '?'}download=${encodeURIComponent(label(doc))}`} download={`${label(doc)}.pdf`}>Download{doc.size_bytes ? ` (${size(doc.size_bytes)})` : ''}</a>
             </div>
           </div>
         </div>

@@ -1,39 +1,42 @@
 # Tasks Done Today
 
-## Selling across countries
-- **Country from IP address:** a first visit opens the visitor's country store (India / USA); the seller application starts on their country; rider sign-up lists stores in their country first. Anyone can still switch country.
-- **Buying from another country:** sellers who ship with their own courier can ship to the other country (their own fee and delivery days). Those products appear in that store in the buyer's currency, marked "✈ from India" with "import duties may apply". The seller is paid exactly their listed price in their own currency plus the shipping fee.
-- **Exchange rate:** fetched daily from two free sources and cross-checked; buyers pay the rate plus a 3% margin kept by NexTech. Admin → Settings → Currency conversion: see the rate, set a fixed rate or margin, update now. Each order keeps its rate.
+## Orders
+- **Open orders in the admin top bar:** a red count of orders not delivered or cancelled yet; one click opens Orders filtered to them (also an **Open** filter on the Orders page). It also counts orders whose seller package is still on its way after NexTech's part arrived.
+- **Courier orders complete on their own:** tracking is checked every 30 minutes and delivered parcels mark the order delivered (the admin "Sync tracking" button still works).
+- **Long customer / seller names** wrap onto two lines instead of widening the Orders table.
 
-## Digital downloads (games, software, e-books…)
-- Sellers choose **Digital download** when adding a product: its own fields (Type, Works on, Version, File format, Languages, System requirements, License, Age rating) instead of physical ones like RAM or colour.
-- Sellers upload files (in small pieces, up to 4 GB each) or add a hosted link; files stay private. Optional license keys (one per copy; stock follows the keys left), download limit and install instructions.
-- Buyers: no address or phone at checkout, card only, not returnable. Once paid, the order completes, the buyer gets an email, and **Your downloads** shows the file, license key and instructions; private 10-minute download links.
+## Bills
+- **Only charges that apply:** no zero-value Handling or Tax lines, and no Delivery line for downloads.
+- **Who sold what (like Amazon):** "Sold by" shows each seller's legal name and registered address, plus their GSTIN (India) when they have one. Missing optional details are simply left off — nothing blocks an order.
+- **NexTech's own details:** new **Admin → Settings → Business & tax details** — legal name, registered address and GSTIN per country, printed on bills for NexTech's own products.
+
+## Sellers
+- **Request changes item by item (like Temu):** the admin ticks what the seller must fix (business type, tax ID, ID document, pickup address…), each with an optional note. The seller sees "2 items to update", red "!" on those steps and the fields outlined in red.
+- **"You receive" on the price step:** sellers see what they get per unit after NexTech's commission (and TCS / TDS in India), with a tip to set one all-in price.
+- **Compliance sent back** now says so clearly on the Bank account step.
+- **Category requests reach the admin:** a new **"New categories sellers asked for"** section in the 🔔 bell; one click opens a new category with the name filled in. It clears once the category exists.
 
 ## Products
-- **Buyer photo upload:** sellers can let buyers upload photos (and optional text) for personalized products; the seller and admin see and download them with the order.
-- **Product page sections:** sellers can add FAQs, Specifications, System requirements or their own sections; buyers see each on a coloured card.
-- **Required fields** (name, category, image, price) marked with a red * for sellers and admin; admin can't save a product without an image.
-- **Admin "Approve anyway":** approve a product even if details like HSN / GST rate or documents are missing; the seller is emailed what to add and it stays live while they fill it in.
-- **Admin → Products quick filters** with counts: Not approved yet, Waiting for review, Drafts, Rejected, Live — details missing. Search also finds products by seller name or seller product code.
+- **Can't be taken down while buyers are covered:** while past buyers are inside the return window or warranty, sellers can't deactivate, delete or ask to remove the product, and admin can't remove it — set stock to 0 instead.
+- **Out of stock** shows in red on product cards and the product page.
+- **Return conditions:** sellers and admin tick when returns are accepted (stopped working, arrived damaged, wrong item…) and when not (dropped, liquid damage, misuse…), plus a note. Buyers see a **Returns & warranty** box on the product page.
+- **Warranty conditions required** whenever a warranty is chosen.
+- **Return & warranty policy link** next to "Download bill" in Your orders, only for items with returns or a warranty.
 
-## Reviews, favourites, account
-- **Product reviews:** real buyer reviews on product pages (the made-up sample reviews are gone) with stars, photos, filters and "Helpful"; reviewer pages; "Write a review" on delivered items in Your orders; Admin → Reviews to approve, reject or delete.
-- **My favourites:** "♡ Add to favourites" next to Add to cart, a My favourites page, and "Save for later" in the cart.
-- **Your profile page** with details and shortcuts; **Your reviews** page with each review's status.
+## Digital downloads
+- **Upload limits:** **Admin → Settings → Digital downloads** — default 50 MB per file and 200 MB per product (was 4 GB), so the hosting isn't filled with big ZIPs. Bigger files go up as a download link.
+- **Download links checked:** Google Drive / Dropbox share links are turned into direct downloads and tested; broken links or links that ask buyers to sign in are refused. Sellers see ✓ / ⚠ / ✕ with **Re-check**; all links are re-checked every night. Buyers only get the link after paying.
+- **Admin → Products → Files:** see a digital product's files, links (status, re-check), download counts, license keys and settings, and download uploaded files to inspect them.
+- **PDF guides** download with their own name.
 
-## Orders, payment and delivery
-- **Cash on delivery** switched on; also available for orders sellers ship themselves (seller opts in, one-seller carts). Sellers update each step — Packed, Picked up, In transit, Out for delivery, Delivered & cash collected — buyers and admin see the timeline; daily reminder emails for stale orders; commission taken from the seller's balance.
-- **Sellers now receive the shipping fee** buyers pay when the seller ships the order.
-- **Checkout:** back arrow at the top left of the checkout and payment popups; the address is checked before payment; the card form no longer asks for a separate postal code; correct currency shown.
+## Admin screens
+- **Products and Categories submenus (like WordPress):** All products / + Add new product, All categories / + Add new category. While editing, only the form shows, with **← All**. Clicking the menu again folds the submenu.
+- **Product form in boxes:** Product details, Images, Video, Description, Variants, Store stock, then Return conditions at the bottom. **Video upload** button added.
+- **Easier to read, in every admin form:** headings and field names bold (12px), help text small and italic.
+- **Page URL:** set a custom URL when creating a page; it can't be changed afterwards (create a new page for a new URL).
 
-## Look and feel
-- **Strip above the menu (like Temu):** only the 2nd section changes; the others stay fixed.
-- **Store logo everywhere:** the logo from Store settings shows in the storefront, admin, Seller Center, rider screen and sign-in pages, and updates everywhere when changed; no old/text logo flash on refresh.
+## Buyers
+- **Write a review** is now a clear button on delivered items in Your orders.
 
 ## Fixed
-- Cancelled orders now put their stock back.
-- Double-clicking "Review order" could double quantities or create a second order.
-- Saving the profile while the page was loading could wipe the phone number.
-- "Pay with cash on delivery instead" skipped the seller rules.
-- Seller product pages showed "not found" in the storefront.
+- All backend tests pass again (405): two old migrations didn't run on the test database, new stores now get a country, and six tests were updated for features that had changed.

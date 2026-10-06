@@ -269,6 +269,15 @@ class AdminSettingController extends Controller
                 'market_rider_pay.per_mile_cents' => ['sometimes', 'integer', 'min:0'],
                 'market_rider_pay.min_payout_cents' => ['sometimes', 'integer', 'min:0'],
                 'market_rider_pay.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                // NexTech's own legal identity per country, printed as "Sold by" on bills for its own items.
+                // Digital downloads: upload limits (MB) — keep small on shared hosting.
+                'digital_max_file_mb' => ['sometimes', 'integer', 'min:1', 'max:4096'],
+                'digital_max_product_mb' => ['sometimes', 'integer', 'min:1', 'max:20480'],
+                'business_details' => ['sometimes', 'array'],
+                'business_details.*' => ['nullable', 'array'],
+                'business_details.*.legal_name' => ['nullable', 'string', 'max:160'],
+                'business_details.*.address' => ['nullable', 'string', 'max:500'],
+                'business_details.*.tax_number' => ['nullable', 'string', 'max:40'],
                 'grievance_officer' => ['sometimes', 'nullable', 'array'],
                 'grievance_officer.name' => ['sometimes', 'nullable', 'string', 'max:120'],
                 'grievance_officer.designation' => ['sometimes', 'nullable', 'string', 'max:120'],
@@ -382,6 +391,25 @@ class AdminSettingController extends Controller
             Fx::refresh();
         }
 
+        foreach (['digital_max_file_mb', 'digital_max_product_mb'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, (int) $validated[$key]);
+            }
+        }
+        if (array_key_exists('business_details', $validated)) {
+            $details = (array) Setting::get('business_details', []);
+            foreach ((array) $validated['business_details'] as $code => $row) {
+                $code = strtoupper((string) $code);
+                abort_unless(in_array($code, Market::codes(), true), 422, 'Unknown country.');
+                $row = array_filter(array_map(fn ($v) => is_string($v) ? trim($v) : $v, (array) $row), fn ($v) => $v !== null && $v !== '');
+                if ($row) {
+                    $details[$code] = $row;
+                } else {
+                    unset($details[$code]);
+                }
+            }
+            Setting::put('business_details', $details ?: null);
+        }
         if (array_key_exists('grievance_officer', $validated)) {
             $officer = array_filter((array) $validated['grievance_officer'], fn ($v) => $v !== null && $v !== '');
             Setting::put('grievance_officer', $officer ?: null);
@@ -513,6 +541,9 @@ class AdminSettingController extends Controller
                 ],
             ])->values(),
             'grievance_officer' => Setting::get('grievance_officer'),
+            'business_details' => (object) (Setting::get('business_details') ?? []),
+            'digital_max_file_mb' => (int) Setting::get('digital_max_file_mb', 50),
+            'digital_max_product_mb' => (int) Setting::get('digital_max_product_mb', 200),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),
             'secure_access' => ['method' => $this->unlockMethod()],

@@ -245,7 +245,7 @@ export function OrderItemReviews({ order, onReviewed }) {
           {item.review
             ? <span className={`rv-status rv-status-${item.review.status}`}><Stars value={item.review.rating} size={12} /> {label[item.review.status] ?? item.review.status}</span>
             : deliveredItem(item)
-              ? <button type="button" className="text-button" onClick={() => setWriting(item)}>Write a review</button>
+              ? <button type="button" className="rv-write-btn" onClick={() => setWriting(item)}><span aria-hidden>★</span> Write a review</button>
               : <span className="rv-status">You can review it once it&rsquo;s delivered</span>}
         </div>
       ))}

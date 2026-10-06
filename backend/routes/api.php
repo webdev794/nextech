@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\FavoriteController;
 use App\Http\Controllers\Api\DigitalDownloadController;
 use App\Http\Controllers\Api\SellerDigitalController;
+use App\Http\Controllers\Api\AdminDigitalController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PaymentController;
@@ -250,6 +251,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/label-requests/{labelRequest}/replace', [AdminLabelRequestController::class, 'replace']);
 
     Route::get('/products', [AdminProductController::class, 'index']);
+    // A digital product's files, hosted links and download settings, for checking.
+    Route::get('/products/{product}/digital', [AdminDigitalController::class, 'show']);
+    Route::post('/products/{product}/files/{file}/check', [AdminDigitalController::class, 'checkLink']);
+    Route::get('/products/{product}/files/{file}/download', [AdminDigitalController::class, 'download']);
     // Demo products: mark them, and show / hide them all on the store.
     Route::post('/products/demo', [AdminProductController::class, 'bulkDemo']);
     Route::post('/products/demo-visibility', [AdminProductController::class, 'demoVisibility']);
@@ -268,6 +273,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/products/{product}/deletion', [AdminProductController::class, 'decideDeletion']);
 
     Route::post('/media', [MediaController::class, 'store']);
+    Route::post('/media/video', [MediaController::class, 'storeSellerProductVideo']); // product videos (same rules as sellers')
 
     Route::get('/banners', [AdminBannerController::class, 'index']);
     Route::post('/banners', [AdminBannerController::class, 'store']);
@@ -341,6 +347,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/products/{product}/files/chunk', [SellerDigitalController::class, 'chunk']);
     Route::post('/seller/products/{product}/files/link', [SellerDigitalController::class, 'storeLink']);
     Route::patch('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'updateFile']);
+    Route::post('/seller/products/{product}/files/{file}/check', [SellerDigitalController::class, 'checkLink']);
     Route::delete('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'destroyFile']);
     Route::post('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'addKeys']);
     Route::delete('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'clearKeys']);

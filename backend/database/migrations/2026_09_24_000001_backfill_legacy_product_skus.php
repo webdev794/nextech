@@ -13,6 +13,11 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // Only real (MySQL) databases have legacy SKUs to fix; SQLite (the test
+        // database) has no REGEXP and nothing to backfill.
+        if (DB::getDriverName() === 'sqlite') {
+            return;
+        }
         DB::transaction(function () {
             $products = DB::table('products')
                 ->where('sku', 'not regexp', '^(ADM[0-9]{6}|SLR[A-Z0-9]{4,}[0-9]{4})$')

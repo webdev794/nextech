@@ -19,7 +19,7 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $orders = $request->user()->orders()
-            ->with(['items.review:id,order_item_id,rating,status', 'riderReview', 'packages.items', 'shopShipping.shop:id,name', 'addressChanges'])
+            ->with(['items.review:id,order_item_id,rating,status', 'items.product:id,slug,product_details,return_policy', 'riderReview', 'packages.items', 'shopShipping.shop:id,name', 'addressChanges'])
             ->latest()
             ->paginate(20);
         LiveTracking::refreshOrders($orders->getCollection());

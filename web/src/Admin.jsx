@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { setBranding as setSharedBranding } from './useBranding'
 import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
@@ -10,7 +10,10 @@ import { CustomerCrm } from './AdminCustomer'
 import { EmailsPanel } from './AdminEmails'
 import { AdminReviews } from './AdminReviews'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
-import { MarketSettings } from './AdminMarkets'
+import { BusinessDetails, MarketSettings } from './AdminMarkets'
+import { CHANGE_ITEMS } from './sellerChangeItems'
+import { ReturnPolicyFields } from './returnPolicy'
+import { AdminDigitalFiles } from './AdminDigitalFiles'
 import { KeptRates } from './AdminKeptRates'
 import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
@@ -89,7 +92,14 @@ const NEXT_ACTIONS = {
   cancelled: [],
 }
 
-const STATUS_FILTERS = ['all', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
+// Pages: the storefront address a page lives at, and turning typed text into a URL slug.
+const STORE_PAGE_BASE = `${window.location.origin}${import.meta.env.BASE_URL || '/'}#/p/`
+const toSlug = (text, typing = false) => {
+  const s = String(text ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '')
+  return typing ? s.slice(0, 160) : s.replace(/-+$/, '').slice(0, 160)
+}
+
+const STATUS_FILTERS = ['all', 'open', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
 const PAGE_SIZES = [5, 10, 20, 50, 100, 500, 1000]
 
 // Rows-per-page + page nav shown under a list. `total`/`pageCount` come from the
@@ -610,6 +620,11 @@ export default function Admin({ token, onClose }) {
   const [sellerStatus, setSellerStatus] = useState('all')
   const [sellersElsewhere, setSellersElsewhere] = useState({}) // other countries' seller counts, for the empty list
   const [sellerDetail, setSellerDetail] = useState(null)
+  // "Request changes": { seller, picked: { itemKey: note }, reason }
+  const [changeRequest, setChangeRequest] = useState(null)
+  const [digitalFilesOf, setDigitalFilesOf] = useState(null) // Products → Files panel
+  // Products / Categories submenus: clicking the open section again folds its submenu.
+  const [subnavFolded, setSubnavFolded] = useState(false)
   const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [riderReport, setRiderReport] = useState(null)
@@ -624,6 +639,7 @@ export default function Admin({ token, onClose }) {
   const [sellerRateForm, setSellerRateForm] = useState(null)
   const [courierForm, setCourierForm] = useState(null)
   const [pendingReviews, setPendingReviews] = useState(0)
+  const [openOrders, setOpenOrders] = useState(0)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
   const [secureGate, setSecureGate] = useState('locked') // locked | code | unlocked
   const [secureSecret, setSecureSecret] = useState('') // password or OTP code
@@ -837,6 +853,16 @@ export default function Admin({ token, onClose }) {
   useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
   useEffect(() => { if (tab === 'customers') loadCustomers() }, [tab, loadCustomers])
+  // Orders not finished yet (awaiting payment through out for delivery), for the
+  // count in the top bar; refreshed with the orders list and every minute.
+  useEffect(() => {
+    let stopped = false
+    const check = () => fetch(`${API_URL}/admin/orders?status=open&per_page=1`, { headers: authHeaders() }).then(readJson)
+      .then((d) => { if (!stopped && typeof d.meta?.total === 'number') setOpenOrders(d.meta.total) }).catch(() => {})
+    check()
+    const timer = setInterval(check, 60000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [authHeaders, orders])
   // Reviews waiting for approval, for the badge on the Reviews menu item.
   useEffect(() => {
     let stopped = false
@@ -1740,6 +1766,23 @@ export default function Admin({ token, onClose }) {
   // server holds to a stricter bar (square, JPEG/PNG, 800KB) than category,
   // banner, page, or branding images, so only that folder gets the client-side
   // pre-check too.
+  // Product video: MP4 / WebM / MOV up to 100 MB (same as sellers').
+  async function uploadVideo(file) {
+    if (!file) return
+    setMessage('')
+    if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type)) { fail(new Error('Videos must be MP4, WebM or MOV.')); return }
+    if (file.size > 100 * 1024 * 1024) { fail(new Error('Videos can be up to 100 MB.')); return }
+    setImgBusy(true)
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      const response = await fetch(`${API_URL}/admin/media/video`, { method: 'POST', headers: authHeaders(), body })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Upload failed.')
+      setProductForm((form) => ({ ...form, video_url: data.data.url }))
+    } catch (error) { fail(error) } finally { setImgBusy(false) }
+  }
+
   async function uploadImage(file, apply, folder = 'products') {
     if (!file) return
     setMessage('')
@@ -1844,7 +1887,8 @@ export default function Admin({ token, onClose }) {
       if (action === 'payout' || action === 'payout-request/reject') {
         setNotifications((cur) => ({ ...cur, payout_requests: (cur.payout_requests ?? []).filter((r) => r.seller_id !== seller.id) }))
       }
-    } catch (error) { fail(error) } finally { setBusyId(null) }
+      return true
+    } catch (error) { fail(error); return false } finally { setBusyId(null) }
   }
 
   // Seller Center onboarding tasks (tax information, compliance information, bank account).
@@ -1937,9 +1981,17 @@ Reason:`, '')
     openSellerChat(seller)
   }
 
+  // Temu-style: tick the items the seller must fix (each with an optional note).
   function requestSellerChanges(seller) {
-    const reason = window.prompt(`What does ${seller.shop?.name ?? 'this seller'} need to change? (sent to them as a message, and reopens the application for editing)`, '')
-    if (reason) sellerAction(seller, 'request-changes', { reason })
+    setChangeRequest({ seller, picked: {}, reason: '' })
+  }
+
+  async function sendChangeRequest(event) {
+    event.preventDefault()
+    const { seller, picked, reason } = changeRequest
+    const items = Object.entries(picked).map(([key, note]) => ({ key, note }))
+    if (items.length === 0 && !reason.trim()) return
+    if (await sellerAction(seller, 'request-changes', { items, reason: reason.trim() || null })) setChangeRequest(null)
   }
 
   // KYC documents live on the private disk, gated by auth — not a plain <a
@@ -2097,7 +2149,9 @@ Reason:`, '')
   const riderPayoutRequests = notifications.rider_payout_requests ?? []
   const riderApplications = notifications.rider_applications ?? []
   const sellerApplications = notifications.seller_applications ?? []
+  const categorySuggestions = notifications.category_suggestions ?? []
   const notificationCount = payoutRequests.length
+    + categorySuggestions.length
     + labelRequests.length
     + sellerApplications.length
     + riderPayoutRequests.length
@@ -2163,6 +2217,11 @@ Reason:`, '')
               {marketOptions.map((m) => <option key={m.code} value={m.code}>{currencySymbol(m.currency)} {m.currency.toUpperCase()} · {m.name}</option>)}
             </select>
           )}
+          {openOrders > 0 && (
+            <button type="button" className={`admin-top-tab${tab === 'orders' && statusFilter === 'open' ? ' active' : ''}`} title="Orders not delivered or cancelled yet" onClick={() => { goTab('orders'); setStatusFilter('open'); setOrdersPage(1) }}>
+              Open orders<span className="tab-badge">{openOrders > 99 ? '99+' : openOrders}</span>
+            </button>
+          )}
           {TOP_TABS.map((name) => (
             <button key={name} type="button" className={`admin-top-tab${tab === name ? ' active' : ''}`} onClick={() => goTab(name)}>
               {TAB_LABELS[name]}{name === 'support' && supportBadge > 0 && <span className="tab-badge">{supportBadge}</span>}
@@ -2177,6 +2236,21 @@ Reason:`, '')
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {categorySuggestions.length > 0 && (
+                      <section>
+                        <h5>New categories sellers asked for</h5>
+                        {categorySuggestions.slice(0, BELL_ITEM_CAP).map((c) => (
+                          <div className="admin-bell-row" key={`cat-${c.name}`}>
+                            <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
+                              🗂️ &ldquo;{c.name}&rdquo; — {c.shop_name ?? 'Seller'}, {c.products > 1 ? `${c.products} products` : c.product_name} · {new Date(c.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {categorySuggestions.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('products') }}>+{categorySuggestions.length - BELL_ITEM_CAP} more — see Products</button>
+                        )}
+                      </section>
+                    )}
                     {labelRequests.length > 0 && (
                       <section>
                         <h5>Shipping labels to upload</h5>
@@ -2402,13 +2476,29 @@ Reason:`, '')
 
       <div className="admin-body">
         <nav className="admin-sidebar" aria-label="Admin sections">
-          {PRIMARY_TABS.map((name) => (
-            <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => goTab(name)}>
+          {PRIMARY_TABS.map((name) => (<Fragment key={name}>
+            <button type="button" className={tab === name ? 'active' : ''} aria-expanded={['products', 'categories'].includes(name) ? (tab === name && !subnavFolded) : undefined}
+              onClick={() => { if (tab === name && ['products', 'categories'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
               <span className="nav-ico" aria-hidden>{TAB_ICONS[name]}</span>
               <span className="nav-label">{TAB_LABELS[name]}</span>
               {name === 'reviews' && pendingReviews > 0 && <span className="nav-badge">{pendingReviews}</span>}
+              {['products', 'categories'].includes(name) && <span className="nav-caret" aria-hidden>{tab === name && !subnavFolded ? '▾' : '▸'}</span>}
             </button>
-          ))}
+            {name === 'categories' && tab === 'categories' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={!categoryForm ? 'active' : ''} onClick={() => setCategoryForm(null)}>All categories</button>
+                <button type="button" className={categoryForm && !categoryForm.id ? 'active nav-sub-add' : 'nav-sub-add'} onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY }); scrollAdminTop() }}>+ Add new category</button>
+                {categoryForm?.id && <button type="button" className="active">Editing #{categoryForm.id}</button>}
+              </div>
+            )}
+            {name === 'products' && tab === 'products' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={!productForm ? 'active' : ''} onClick={() => setProductForm(null)}>All products</button>
+                <button type="button" className={productForm && !productForm.id ? 'active nav-sub-add' : 'nav-sub-add'} onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollAdminTop() }}>+ Add new product</button>
+                {productForm?.id && <button type="button" className="active">Editing #{productForm.id}</button>}
+              </div>
+            )}
+          </Fragment>))}
 
           {(() => { const inGroup = tab === 'pages' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
           <button type="button" className={`nav-group-toggle${inGroup ? ' active' : ''}`} aria-expanded={open} onClick={() => setPagesExpanded((v) => !v)}>
@@ -2641,7 +2731,7 @@ Reason:`, '')
           <div className="admin-filters">
             {STATUS_FILTERS.map((value) => (
               <button key={value} type="button" className={statusFilter === value ? 'chip active' : 'chip'} onClick={() => { setStatusFilter(value); setOrdersPage(1) }}>
-                {value === 'all' ? 'All' : STATUS_LABELS[value]}
+                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : STATUS_LABELS[value]}
               </button>
             ))}
           </div>
@@ -2653,8 +2743,8 @@ Reason:`, '')
                 {orders.map((order) => { const feedback = orderFeedbackTone(order); return (
                   <tr key={order.id}>
                     <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button>{countryBadge(order.market)}</td>
-                    <td>{order.user?.display_name ?? '—'}</td>
-                    <td>{orderSellers(order)}</td>
+                    <td className="admin-td-name">{order.user?.display_name ?? '—'}</td>
+                    <td className="admin-td-name">{orderSellers(order)}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
                     <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
                     <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
@@ -2723,6 +2813,8 @@ Reason:`, '')
 
       {tab === 'products' && (
         <section className="admin-panel">
+          {/* While a product is open, just its form — back via Products → All products (WordPress-style). */}
+          {!productForm && <>
           {/* Quick filters: what still needs work, with counts. */}
           <div className="admin-filters admin-prod-quick">
             {[['all', 'All products'], ['unapproved', 'Not approved yet'], ['pending', 'Waiting for review'], ['draft', 'Drafts'], ['rejected', 'Rejected'], ['followups', 'Live — details missing'], ['deletion', 'Removal requested']].map(([value, label]) => {
@@ -2776,10 +2868,13 @@ Reason:`, '')
             </label>
             <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollFormIntoView('admin-product-form') }}>New product</button>
           </div>
+          </>}
 
           {productForm && (
             <form id="admin-product-form" className="admin-form" onSubmit={saveProduct}>
+              <button type="button" className="act ghost admin-back" onClick={() => setProductForm(null)}>&larr; All products</button>
               <h3>{productForm.id ? `Edit product #${productForm.id}` : 'New product'}</h3>
+              <section className="admin-form-section"><h4>Product details</h4>
               <div className="admin-form-grid">
                 <label>Category<b className="admin-req" title="Required"> *</b>
                   <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
@@ -2819,6 +2914,8 @@ Reason:`, '')
                 </label>
                 <label className="admin-check"><input type="checkbox" checked={!!productForm.is_exclusive_offer} onChange={(event) => setProductForm({ ...productForm, is_exclusive_offer: event.target.checked })} /> Exclusive Offer</label>
               </div>
+              </section>
+              <section className="admin-form-section"><h4>Images</h4>
               <label>Image<b className="admin-req" title="Required"> *</b> <span className="muted">(a product can&rsquo;t go live without a name, category, image and price)</span>
                 <div className="admin-image-field">
                   {productForm.image_url && <img src={mediaUrl(productForm.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
@@ -2851,14 +2948,20 @@ Reason:`, '')
                   )}
                 </div>
               </div>
+              </section>
+              <section className="admin-form-section"><h4>Video</h4>
               <label>Video <span className="muted">(optional — plays on hover over the product image)</span>
                 <div className="admin-image-field">
                   {productForm.video_url && <video src={mediaUrl(productForm.video_url)} className="admin-image-preview" muted loop onError={(event) => { event.currentTarget.style.display = 'none' }} />}
-                  <input placeholder="Video URL (mp4)" value={productForm.video_url ?? ''} onChange={(event) => setProductForm({ ...productForm, video_url: event.target.value })} />
+                  <input placeholder="Video URL (mp4), or upload →" value={productForm.video_url ?? ''} onChange={(event) => setProductForm({ ...productForm, video_url: event.target.value })} />
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={imgBusy} onChange={(event) => { uploadVideo(event.target.files?.[0]); event.target.value = '' }} />
                   {productForm.video_url && <button type="button" className="act ghost" onClick={() => setProductForm({ ...productForm, video_url: '' })}>Clear</button>}
                 </div>
               </label>
+              </section>
+              <section className="admin-form-section"><h4>Description</h4>
               <label>Description<textarea rows="2" value={productForm.description ?? ''} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} /></label>
+              </section>
 
               <fieldset className="admin-fieldset">
                 <legend>Options / variants</legend>
@@ -2924,6 +3027,8 @@ Reason:`, '')
                       </>}
               </fieldset>
 
+              {/* Last: return conditions don't apply to every product (e.g. downloads). */}
+              {String(productForm.return_days ?? '') !== '0' && <ReturnPolicyFields value={productForm.return_policy} onChange={(return_policy) => setProductForm({ ...productForm, return_policy })} />}
               <div className="admin-form-actions">
                 <button className="act" type="submit">Save</button>
                 <button className="act ghost" type="button" onClick={() => setProductForm(null)}>Cancel</button>
@@ -2931,6 +3036,7 @@ Reason:`, '')
             </form>
           )}
 
+          {!productForm && <>
           {productsMeta && (
             <div className={`admin-demo-bar${productsMeta.demos_hidden ? ' hidden' : ''}`}>
               <span><b>Demo products:</b> {productsMeta.demo_count} · {productsMeta.demos_hidden ? 'hidden from the store' : 'shown on the store'}</span>
@@ -2963,7 +3069,8 @@ Reason:`, '')
                       </select>
                     </td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      {product.product_type === 'digital' && <button className="act ghost" type="button" onClick={() => setDigitalFilesOf(product)}>Files</button>}
                       {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
                       {product.shop_id && ['pending', 'draft'].includes(product.status) && <>
                         <button className="act" type="button" disabled={busyId === product.id} title={(product.followups?.later ?? []).length ? `Still missing: ${product.followups.later.join(' ')}` : undefined} onClick={() => approveProduct(product)}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve'}</button>
@@ -2972,7 +3079,7 @@ Reason:`, '')
                       {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
                       {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => approveProduct(product)}>Approve</button>}
                       {product.deletion_requested_at ? <>
-                        <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'remove')}>Remove</button>
+                        {product.support_until ? <span className="muted" title="Past buyers are covered by returns / warranty — it can be removed after this date">Can remove after {new Date(product.support_until).toLocaleDateString()}</span> : <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'remove')}>Remove</button>}
                         <button className="act ghost" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'decline')}>Keep</button>
                       </> : <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>}
                     </td>
@@ -2982,17 +3089,22 @@ Reason:`, '')
             </table>
           )}
           <Pager page={productsMeta?.current_page ?? productsPage} pageCount={productsMeta?.last_page ?? 1} total={productsMeta?.total ?? products.length} onPage={setProductsPage} pageSize={pageSize} onPageSize={setPageSize} />
+          </>}
         </section>
       )}
 
       {tab === 'categories' && (
         <section className="admin-panel">
+          {/* While a category is open, just its form — back via Categories → All categories. */}
+          {!categoryForm && <>
           <div className="admin-toolbar">
             <button className="act" type="button" onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY }); scrollFormIntoView('admin-category-form') }}>New category</button>
           </div>
+          </>}
 
           {categoryForm && (
             <form id="admin-category-form" className="admin-form" onSubmit={saveCategory}>
+              <button type="button" className="act ghost admin-back" onClick={() => setCategoryForm(null)}>&larr; All categories</button>
               <h3>{categoryForm.id ? `Edit category #${categoryForm.id}` : 'New category'}</h3>
               <div className="admin-image-field">
                 {categoryForm.image_url
@@ -3019,6 +3131,7 @@ Reason:`, '')
             </form>
           )}
 
+          {!categoryForm && <>
           {listBusy.categories && categories.length === 0 ? <Loading>Loading categories…</Loading> : categories.length === 0 ? <p className="admin-empty">No categories.</p> : (
             <table className="admin-table">
               <thead><tr><th>Image</th><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
@@ -3042,6 +3155,7 @@ Reason:`, '')
             </table>
           )}
           <Pager page={categoriesPage} pageCount={Math.max(1, Math.ceil(categories.length / pageSize))} total={categories.length} onPage={setCategoriesPage} pageSize={pageSize} onPageSize={setPageSize} />
+          </>}
         </section>
       )}
 
@@ -3352,6 +3466,18 @@ Reason:`, '')
               <label className="admin-page-title-field">Title
                 <input required maxLength="160" value={pageForm.title} onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })} placeholder="Page title" />
               </label>
+              {/* Custom page URL: letters, numbers and dashes; blank = made from the title. */}
+              <label className="admin-page-url-field">Page URL
+                <span className="admin-url-row">
+                  <span className="admin-url-prefix">{STORE_PAGE_BASE}</span>
+                  <input value={pageForm.slug} maxLength={160} placeholder={toSlug(pageForm.title) || 'made-from-the-title'} readOnly={!!pageForm.id}
+                    onChange={(event) => setPageForm({ ...pageForm, slug: toSlug(event.target.value, true) })}
+                    onBlur={() => setPageForm((f) => ({ ...f, slug: toSlug(f.slug) }))} />
+                </span>
+                <span className="muted">{pageForm.id
+                  ? 'A page’s URL can’t be changed once it’s created. For a different URL, create a new page with it (and delete this one if it’s no longer needed).'
+                  : 'Leave blank to make it from the title. Letters, numbers and dashes only — it can’t be changed after the page is created.'}</span>
+              </label>
 
               <div className="admin-fieldset admin-collapsible-box">
                 <div className="admin-collapsible-header">
@@ -3363,7 +3489,6 @@ Reason:`, '')
                 {pageSettingsOpen && (
                   <div className="admin-collapsible-body">
                     <div className="admin-form-grid">
-                      <label>Slug (optional)<input value={pageForm.slug} placeholder="auto from title" onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })} /></label>
                       <label>Parent page (optional)
                         <input list="admin-page-slugs" value={pageForm.parent_slug ?? ''} placeholder="e.g. seller-services-agreement" onChange={(event) => setPageForm({ ...pageForm, parent_slug: event.target.value })} />
                         <datalist id="admin-page-slugs">{pages.filter((p) => p.slug !== pageForm.slug).map((p) => <option key={p.slug} value={p.slug}>{p.title}</option>)}</datalist>
@@ -3921,6 +4046,15 @@ Reason:`, '')
               <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
 
               <div className="admin-form">
+                <h3>Digital downloads</h3>
+                <div className="admin-form-grid">
+                  <label>Largest file a seller can upload (MB)<input type="number" min="1" max="4096" defaultValue={settings.digital_max_file_mb ?? 50} onBlur={(event) => saveSetting({ digital_max_file_mb: Math.max(1, Number(event.target.value) || 50) })} /></label>
+                  <label>All uploads of one product, total (MB)<input type="number" min="1" max="20480" defaultValue={settings.digital_max_product_mb ?? 200} onBlur={(event) => saveSetting({ digital_max_product_mb: Math.max(1, Number(event.target.value) || 200) })} /></label>
+                </div>
+                <p className="muted">Uploaded files sit on this server&rsquo;s disk — shared hosting may object to large ZIPs. Sellers add bigger files as a download link to where they host them (Google Drive, Dropbox, their own server).</p>
+              </div>
+
+              <div className="admin-form">
                 <h3>Store decoration</h3>
                 <div className="admin-form-grid">
                   <label>Live products a store needs before its design shows<input type="number" min="0" max="1000" defaultValue={settings.decoration_min_products ?? 30} onBlur={(event) => saveSetting({ decoration_min_products: Number(event.target.value) || 0 })} /></label>
@@ -3950,6 +4084,8 @@ Reason:`, '')
                 </label>
                 <p className="muted">Every country can have its own NexTech stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
               </div>
+
+              <BusinessDetails settings={settings} save={saveSetting} onSaved={setMessage} />
 
               <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === workMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
               {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
@@ -4121,6 +4257,37 @@ Reason:`, '')
           onReload={() => openCustomer(customerDetail.id)}
           onMessage={setMessage}
         />
+      )}
+
+      {digitalFilesOf && <AdminDigitalFiles product={digitalFilesOf} authHeaders={authHeaders} onClose={() => setDigitalFilesOf(null)} />}
+
+      {changeRequest && (
+        <div className="admin-change-overlay" role="dialog" aria-modal="true" aria-label="Request changes">
+          <form className="admin-change-box" onSubmit={sendChangeRequest}>
+            <h3>Request changes — {changeRequest.seller.shop?.name ?? changeRequest.seller.company_name}</h3>
+            <p className="muted">Tick what the seller needs to fix. They see these items highlighted in their application and get them as a message.</p>
+            <div className="admin-change-items">
+              {CHANGE_ITEMS.map(([key, label]) => {
+                const on = key in changeRequest.picked
+                return (
+                  <div key={key} className={on ? 'admin-change-item on' : 'admin-change-item'}>
+                    <label className="admin-check"><input type="checkbox" checked={on} onChange={(event) => setChangeRequest((c) => {
+                      const picked = { ...c.picked }
+                      if (event.target.checked) picked[key] = ''; else delete picked[key]
+                      return { ...c, picked }
+                    })} /> {label}</label>
+                    {on && <input placeholder="What's wrong (optional)" maxLength={500} value={changeRequest.picked[key]} onChange={(event) => setChangeRequest((c) => ({ ...c, picked: { ...c.picked, [key]: event.target.value } }))} />}
+                  </div>
+                )
+              })}
+            </div>
+            <label>Message to the seller (optional)<textarea rows={3} maxLength={2000} value={changeRequest.reason} onChange={(event) => setChangeRequest((c) => ({ ...c, reason: event.target.value }))} /></label>
+            <div className="admin-form-actions">
+              <button className="act" type="submit" disabled={busyId === changeRequest.seller.id || (Object.keys(changeRequest.picked).length === 0 && !changeRequest.reason.trim())}>Send back {Object.keys(changeRequest.picked).length > 0 ? `(${Object.keys(changeRequest.picked).length} item${Object.keys(changeRequest.picked).length === 1 ? '' : 's'})` : ''}</button>
+              <button className="act ghost" type="button" onClick={() => setChangeRequest(null)}>Cancel</button>
+            </div>
+          </form>
+        </div>
       )}
 
       {sellerDetail && (

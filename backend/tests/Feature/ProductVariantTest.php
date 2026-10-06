@@ -115,6 +115,7 @@ class ProductVariantTest extends TestCase
             'name' => 'Basmati Rice',
             'sku' => 'RICE-BASE',
             'price_cents' => 0,
+            'image_url' => '/api/media/file/products/rice.png', // a product needs an image
             'variants' => [
                 ['label' => '1 kg', 'sku' => 'RICE-1KG', 'price_cents' => 400, 'inventory_quantity' => 20],
                 ['label' => '5 kg', 'sku' => 'RICE-5KG', 'price_cents' => 1800, 'inventory_quantity' => 8],

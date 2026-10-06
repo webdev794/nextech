@@ -5,11 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\User;
+use App\Notifications\AdminCategorySuggested;
+use Illuminate\Support\Facades\Notification;
 use App\Models\Shop;
 use App\Support\Market;
 use App\Support\DigitalProducts;
 use App\Support\Personalization;
 use App\Support\ProductCatalog;
+use App\Support\ReturnPolicy;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
@@ -65,6 +69,10 @@ class SellerProductController extends Controller
             'fulfillment_mode' => $shop->fulfillment_mode,
             'market' => $shop->market,
             'requirements' => SellerRequirements::all($shop),
+            // For "You receive" under the price: this shop's commission today, and the
+            // tax withheld from sellers in its market (India: TCS + TDS on the price before GST).
+            'commission_rate_bps' => SellerLedger::currentRateFor($shop),
+            'withholding' => collect((array) (Market::profile($shop->market)['withholding'] ?? []))->map(fn ($r) => ['label' => $r['label'], 'rate_bps' => (int) $r['rate_bps']])->values(),
         ]]);
     }
 
@@ -109,6 +117,8 @@ class SellerProductController extends Controller
             return $product;
         });
 
+        $this->notifyCategorySuggestion($product, null);
+
         return response()->json(['data' => $this->present($product->load(self::RELATIONS), $shop)], 201);
     }
 
@@ -125,6 +135,11 @@ class SellerProductController extends Controller
         abort_if($active && $product->deactivated_by === 'admin', 422, 'NexTech took this product off sale — message NexTech to relist it.');
         abort_if($active && $product->deletion_requested_at !== null, 422, 'You asked NexTech to remove this product — message NexTech if you want to keep selling it.');
 
+        // Buyers still under returns / warranty: it stays listed (out of stock at worst)
+        // so they can check its details and get support.
+        if (! $active) {
+            $this->assertNoBuyersCovered($product);
+        }
         // Already hidden by NexTech: stays NexTech's to relist.
         $product->forceFill(['is_active' => $active, 'deactivated_by' => $active ? null : ($product->deactivated_by === 'admin' ? 'admin' : 'seller')])->save();
 
@@ -140,6 +155,7 @@ class SellerProductController extends Controller
         $shop = $this->shop($request);
         abort_unless($product->shop_id === $shop->id, 403);
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        $this->assertNoBuyersCovered($product);
         $product->forceFill([
             'is_active' => false,
             'deactivated_by' => $product->deactivated_by === 'admin' ? 'admin' : 'seller',
@@ -154,6 +170,7 @@ class SellerProductController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($product->shop_id === $shop->id, 403);
+        $previousSuggestion = $product->suggested_category_name;
         // Only a draft can be saved without submitting; any change to a
         // submitted or live listing goes back through review.
         $submit = $request->boolean('submit', true) || $product->status !== 'draft';
@@ -198,6 +215,7 @@ class SellerProductController extends Controller
                 $product->forceFill(['followup_items' => $left ?: null, 'followup_requested_at' => $left ? $product->followup_requested_at : null])->save();
             }
         });
+        $this->notifyCategorySuggestion($product->fresh(), $previousSuggestion);
 
         return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
     }
@@ -269,15 +287,38 @@ class SellerProductController extends Controller
         return response()->json(status: 204);
     }
 
+    /** Email admins when a seller suggests a new (or different) category. */
+    private function notifyCategorySuggestion(Product $product, ?string $before): void
+    {
+        $name = trim((string) $product->suggested_category_name);
+        if ($name === '' || $name === trim((string) $before)) {
+            return;
+        }
+        try {
+            Notification::send(User::where('is_admin', true)->get(), new AdminCategorySuggested($product->loadMissing('shop')));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
+
     /**
      * A product row for the seller: what's still missing for a draft, which
      * compliance documents it lacks, and whether it's "Low traffic".
      *
      * @return array<string, mixed>
      */
+    /** A product past buyers are still covered on (returns / warranty) can't be taken down. */
+    private function assertNoBuyersCovered(Product $product): void
+    {
+        if ($until = ProductCatalog::supportUntil($product)) {
+            abort(422, 'Buyers of this product are covered by returns / warranty until '.$until->format('j M Y').', so it stays listed for them to check its details. Set its stock to 0 instead — it shows as Out of stock.');
+        }
+    }
+
     private function present(Product $product, Shop $shop): array
     {
         $row = $product->toArray();
+        $row['support_until'] = $product->status === 'draft' ? null : ProductCatalog::supportUntil($product)?->toDateString();
         $row['listing_errors'] = $product->status === 'draft'
             ? ProductCatalog::listingErrors($product->toArray(), $product->category, $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all(), $product->images->pluck('url')->all(), $shop->shipsItself(), SellerRequirements::on($shop, 'listing_details'))
             : [];
@@ -339,6 +380,7 @@ class SellerProductController extends Controller
             'price_references.*' => ['nullable', 'url', 'max:500'],
             // Days after delivery the item can be returned; null = platform default, 0 = non-returnable.
             'return_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.SellerLedger::maxReturnDays()],
+            ...ReturnPolicy::rules(),
             // Which of the shop's shipping templates this ships under (null = the default).
             'shipping_template_id' => ['sometimes', 'nullable', 'integer', Rule::exists('shipping_templates', 'id')->where('shop_id', $shop->id)],
             'handling_days' => ['sometimes', 'nullable', 'integer', Rule::in((array) config('product_catalog.handling_days'))],

@@ -266,21 +266,54 @@ class AdminSellerController extends Controller
      * seller's message thread so it isn't just a status change with no
      * explanation of what to fix.
      */
+    /** Application items an admin can send back for fixing (keys shared with the web app). */
+    private const CHANGE_ITEMS = [
+        'business_type' => 'Business type',
+        'company_name' => 'Company / registered name',
+        'tax_id' => 'Tax ID',
+        'registered_address' => 'Registered address',
+        'contact_name' => 'Contact / legal name',
+        'id_details' => 'ID type & number',
+        'date_of_birth' => 'Date of birth',
+        'id_document' => 'ID document',
+        'shop_name' => 'Shop name',
+        'shop_logo' => 'Shop logo',
+        'shop_category' => 'Primary category',
+        'shop_description' => 'Shop description',
+        'pickup_address' => 'Pickup address & phone',
+        'business_document' => 'Business document',
+    ];
+
     public function requestChanges(Request $request, Seller $seller): JsonResponse
     {
         abort_unless(in_array($seller->status, ['pending', 'rejected'], true), 422, 'Changes can only be requested on a pending or rejected application.');
 
-        $data = $request->validate(['reason' => ['required', 'string', 'max:2000']]);
+        // The items to fix (Temu-style), each with an optional note, and/or a general message.
+        $data = $request->validate([
+            'reason' => ['nullable', 'string', 'max:2000', 'required_without:items'],
+            'items' => ['sometimes', 'array', 'max:20'],
+            'items.*.key' => ['required', 'string', Rule::in(array_keys(self::CHANGE_ITEMS))],
+            'items.*.note' => ['nullable', 'string', 'max:500'],
+        ], ['reason.required_without' => 'Tick the items to fix, or say what needs changing.']);
 
-        DB::transaction(function () use ($seller, $data, $request): void {
+        $items = collect($data['items'] ?? [])->unique('key')
+            ->map(fn ($i) => ['key' => $i['key'], 'note' => trim((string) ($i['note'] ?? '')) ?: null])->values()->all();
+        $reason = trim((string) ($data['reason'] ?? ''));
+        $message = collect([
+            $reason !== '' ? $reason : null,
+            $items ? "Please update:\n".collect($items)->map(fn ($i) => '• '.self::CHANGE_ITEMS[$i['key']].($i['note'] ? " — {$i['note']}" : ''))->implode("\n") : null,
+        ])->filter()->implode("\n\n");
+
+        DB::transaction(function () use ($seller, $request, $items, $reason, $message): void {
             $seller->forceFill([
                 'status' => 'needs_changes',
-                'rejection_reason' => $data['reason'],
+                'rejection_reason' => $reason !== '' ? $reason : null,
+                'change_items' => $items ?: null,
                 'reviewed_by' => $request->user()->id,
                 'reviewed_at' => now(),
             ])->save();
 
-            $this->postToSellerThread($seller, $request->user(), $data['reason']);
+            $this->postToSellerThread($seller, $request->user(), $message);
         });
 
         return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
@@ -423,6 +456,7 @@ class AdminSellerController extends Controller
             'company_name' => $seller->company_name,
             'status' => $seller->status,
             'rejection_reason' => $seller->rejection_reason,
+            'change_items' => $seller->change_items,
             'submitted_at' => $seller->submitted_at,
             'reviewed_at' => $seller->reviewed_at,
             'tax_status' => $seller->tax_status,

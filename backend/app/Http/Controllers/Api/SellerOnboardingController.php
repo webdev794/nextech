@@ -192,7 +192,9 @@ class SellerOnboardingController extends Controller
     public function saveBank(Request $request): JsonResponse
     {
         $seller = $this->seller($request);
-        abort_unless(in_array($seller->compliance_status, ['pending', 'approved'], true), 422, 'Add your additional compliance information first.');
+        abort_unless(in_array($seller->compliance_status, ['pending', 'approved'], true), 422, $seller->compliance_status === 'rejected'
+            ? 'Your compliance information was sent back — update it and submit again first.'
+            : 'Add your additional compliance information first.');
         $bank = SellerOnboarding::config($seller)['bank'] ?? [];
         $oldest = now()->subDays(SellerOnboarding::BANK_DOCUMENT_MAX_AGE_DAYS)->toDateString();
 

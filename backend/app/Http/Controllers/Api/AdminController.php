@@ -289,7 +289,23 @@ class AdminController extends Controller
                 'at' => $s->submitted_at ?? $s->created_at,
             ]);
 
+        // New categories sellers asked for on their products, until one by that name exists.
+        $existing = \App\Models\Category::query()->pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all();
+        $categorySuggestions = Product::query()
+            ->whereNotNull('suggested_category_name')->where('suggested_category_name', '!=', '')->whereNull('archived_at')
+            ->with('shop:id,name')->latest('updated_at')->get(['id', 'name', 'shop_id', 'suggested_category_name', 'updated_at'])
+            ->reject(fn (Product $p) => in_array(mb_strtolower(trim($p->suggested_category_name)), $existing, true))
+            ->groupBy(fn (Product $p) => mb_strtolower(trim($p->suggested_category_name)))
+            ->map(fn ($group) => [
+                'name' => trim($group->first()->suggested_category_name),
+                'products' => $group->count(),
+                'product_name' => $group->first()->name,
+                'shop_name' => $group->first()->shop?->name,
+                'at' => $group->first()->updated_at,
+            ])->values();
+
         return response()->json(['data' => [
+            'category_suggestions' => $categorySuggestions,
             'seller_applications' => $sellerApplications,
             'awaiting_packing' => $awaitingPacking,
             'payout_requests' => $payoutRequests,

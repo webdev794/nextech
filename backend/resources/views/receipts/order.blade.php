@@ -8,6 +8,7 @@
     $brandName = $branding['store_name'] !== '' ? $branding['store_name'] : config('app.name');
     $accent = $branding['color_brand'] ?? '#1f7a3d';
 
+    $sellers ??= \App\Support\OrderReceipt::sellers($order->loadMissing('items.shop.seller'), $store ?? null);
     $addr = $order->delivery_address ?? [];
     $deliveryLines = array_values(array_filter([
         $addr['name'] ?? null,
@@ -15,12 +16,6 @@
         $addr['line2'] ?? null,
         trim(implode(', ', array_filter([$addr['city'] ?? null, $addr['state'] ?? null, $addr['postal_code'] ?? null]))),
     ]));
-
-    $storeLines = $store ? array_values(array_filter([
-        $store->line1,
-        $store->line2,
-        trim(implode(', ', array_filter([$store->city, $store->state, $store->postal_code]))),
-    ])) : [];
 
     $regularOf = function ($line) {
         $reg = $line->compare_at_price_cents
@@ -104,12 +99,14 @@
             <td>
                 <strong>Sold by</strong>
                 <div class="box">
-                    <div><b>{{ $store?->name ?? $brandName }}</b></div>
-                    @forelse($storeLines as $l)
-                        <div class="muted">{{ $l }}</div>
-                    @empty
-                        <div class="muted">Address not set</div>
-                    @endforelse
+                    {{-- Each seller with their address and tax number (GSTIN in India), as on Amazon invoices. --}}
+                    @foreach($sellers as $s)
+                        <div @if(! $loop->first) style="margin-top: 10px" @endif><b>{{ $s['name'] }}</b>@if($s['shop'] && $s['shop'] !== $s['name'])<span class="muted"> ({{ $s['shop'] }})</span>@endif</div>
+                        @foreach($s['lines'] as $l)
+                            <div class="muted">{{ $l }}</div>
+                        @endforeach
+                        @if($s['tax_number'])<div class="muted">{{ $s['tax_label'] }}: {{ $s['tax_number'] }}</div>@endif
+                    @endforeach
                 </div>
             </td>
             <td>
@@ -149,6 +146,7 @@
                     {{ $line->product_name }}
                     @if($line->variant_label)<span class="muted"> &mdash; {{ $line->variant_label }}</span>@endif
                     @if($line->sku)<div class="muted">SKU: {{ $line->sku }}</div>@endif
+                    @if(count($sellers) > 1)<div class="muted">Sold by {{ $sellers[$line->shop_id ? (string) $line->shop_id : 'nextech']['name'] ?? '' }}</div>@endif
                 </td>
                 <td class="num">{{ $line->quantity }}</td>
                 <td class="num">@if($onSale)<span class="was">{{ $money($reg) }}</span>@else&mdash;@endif</td>
@@ -174,26 +172,31 @@
             <td class="num">&minus;{{ $money($savings) }}</td>
         </tr>
         @endif
+        {{-- Only charges that apply: no zero lines, no delivery line for downloads. --}}
+        @if($order->delivery_method !== 'digital')
         <tr>
             <td>Delivery fee</td>
             <td class="num">{{ $order->delivery_fee_cents === 0 ? 'FREE' : $money($order->delivery_fee_cents) }}</td>
         </tr>
+        @endif
+        @if(($order->handling_fee_cents ?? 0) > 0)
         <tr>
             <td>Handling fee</td>
             <td class="num">{{ $money($order->handling_fee_cents) }}</td>
         </tr>
+        @endif
         @if($order->small_cart_fee_cents > 0)
         <tr>
             <td>Small cart fee</td>
             <td class="num">{{ $money($order->small_cart_fee_cents) }}</td>
         </tr>
         @endif
-        @if($taxInclusive)
+        @if($taxInclusive && ($order->tax_included_cents ?? 0) > 0)
         <tr>
             <td>Includes {{ $taxLabel }}</td>
-            <td class="num">{{ $money($order->tax_included_cents ?? 0) }}</td>
+            <td class="num">{{ $money($order->tax_included_cents) }}</td>
         </tr>
-        @else
+        @elseif(! $taxInclusive && ($order->tax_cents ?? 0) > 0)
         <tr>
             <td>{{ $taxLabel }}</td>
             <td class="num">{{ $money($order->tax_cents) }}</td>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ReturnPolicyFields } from './returnPolicy'
 import { mediaUrl } from './mediaUrl'
 import { DigitalFiles } from './SellerDigitalFiles'
 import { InfoSectionsEditor } from './InfoSections'
@@ -108,6 +109,7 @@ function formFrom(product, config) {
     personalization: { enabled: false, required: true, max_photos: 1, instructions: '', note_label: '', ...(p.personalization ?? {}) },
     shipping_template_id: p.shipping_template_id ? String(p.shipping_template_id) : '',
     return_days: p.return_days ?? '',
+    return_policy: p.return_policy ?? null,
     country_of_origin: p.country_of_origin ?? '',
     hsn_code: p.hsn_code ?? '',
     gst_rate_bps: p.gst_rate_bps ?? '',
@@ -128,6 +130,36 @@ const COUNTRY_NAMES = (() => {
     return [...new Set(out)].sort()
   } catch { return ['China', 'India', 'United States'] }
 })()
+
+// Under the price: one all-in price (sellers build their own costs into it),
+// and what the seller receives from it after NexTech's commission and — in
+// India — the TCS/TDS withheld on the price before GST.
+function PayoutPreview({ price, gstRateBps, inclusive, config, sym }) {
+  const rate = Number(config?.commission_rate_bps ?? 0)
+  const withholding = config?.withholding ?? []
+  const valid = Number.isFinite(price) && price > 0
+  const fmt = (n) => `${sym}${n.toFixed(2)}`
+  const commission = valid ? price * rate / 10000 : 0
+  const taxable = valid && inclusive && gstRateBps ? price / (1 + gstRateBps / 10000) : (valid ? price : 0)
+  const held = withholding.map((w) => ({ label: w.label, amount: taxable * w.rate_bps / 10000, pct: w.rate_bps / 100 }))
+  const receive = valid ? price - commission - held.reduce((n, w) => n + w.amount, 0) : 0
+  return (
+    <div className="wz-payout">
+      <p className="wz-payout-tip"><b>Set one all-in price.</b> Include your packaging, handling and any other costs in it — buyers see just this price (delivery and {inclusive ? 'GST are' : 'tax is'} added or shown by NexTech, the same for every seller). NexTech&rsquo;s fees come out of it, not on top of it.{config?.ships_itself ? ' The shipping fee you set in your shipping templates is paid to you separately.' : ''}</p>
+      {valid ? (
+        <table className="wz-payout-table">
+          <tbody>
+            <tr><td>Price buyers pay{inclusive ? ' (incl. GST)' : ''}</td><td>{fmt(price)}</td></tr>
+            <tr><td>NexTech commission ({rate / 100}%)</td><td>−{fmt(commission)}</td></tr>
+            {held.map((w) => <tr key={w.label}><td>{w.label} ({w.pct}% of the price before GST)</td><td>−{fmt(w.amount)}</td></tr>)}
+            <tr className="wz-payout-total"><td>You receive (per unit)</td><td>{fmt(receive)}</td></tr>
+          </tbody>
+        </table>
+      ) : <p className="sc-muted">Enter a price to see what you receive after NexTech&rsquo;s commission.</p>}
+      {inclusive && valid && !gstRateBps && <p className="sc-muted">Choose the GST rate (step 05) for an exact TCS/TDS figure.</p>}
+    </div>
+  )
+}
 
 export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusive, gstRates, shipTemplates, maxReturnDays, defaultReturnDays }) {
   const [config, setConfig] = useState(null)
@@ -255,6 +287,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       handling_days: form.handling_days ? Number(form.handling_days) : null,
       shipping_template_id: form.shipping_template_id ? Number(form.shipping_template_id) : null,
       return_days: String(form.return_days).trim() === '' ? null : Number(form.return_days),
+      return_policy: form.return_policy,
       country_of_origin: form.country_of_origin || null,
       compliance: { documents: form.documents },
       personalization: form.personalization.enabled ? { enabled: true, required: !!form.personalization.required, max_photos: Number(form.personalization.max_photos) || 1, instructions: form.personalization.instructions?.trim() || null, note_label: form.personalization.note_label?.trim() || null } : null,
@@ -517,6 +550,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             </>
           )}
           </>}
+          <PayoutPreview price={form.has_variations && form.product_type !== 'digital' ? Math.min(...liveVariants.map((v) => Number(v.price) || Infinity)) : Number(form.price)} gstRateBps={inclusive && form.gst_rate_bps !== '' ? Number(form.gst_rate_bps) : null} inclusive={inclusive} config={config} sym={sym} />
           <div className="wz-field">
             <span className="wz-label">Same product on other sites <small className="sc-muted">optional links that back up your price</small></span>
             {form.price_references.map((u, i) => <input key={i} type="url" value={u} placeholder="https://" onChange={(e) => set({ price_references: form.price_references.map((x, j) => (j === i ? e.target.value : x)) })} />)}
@@ -571,6 +605,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             {form.personalization.enabled && <p className="sc-muted">You&rsquo;ll see the buyer&rsquo;s photos (to download) on the order in Manage orders and Ship orders. Personalized items usually can&rsquo;t be returned — consider a return window of 0.</p>}
           </div>
           <label>Return window (days, max {maxReturnDays})<input type="number" min="0" max={maxReturnDays} placeholder={`default ${defaultReturnDays} · 0 = non-returnable`} value={form.return_days} onChange={(e) => set({ return_days: e.target.value })} /></label>
+          {String(form.return_days) !== '0' && <ReturnPolicyFields value={form.return_policy} onChange={(return_policy) => set({ return_policy })} />}
           </>}
         </div>
       )}

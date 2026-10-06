@@ -32,6 +32,7 @@ class Product extends Model
         'price_cents',
         'compare_at_price_cents',
         'return_days',
+        'return_policy',
         'shipping_template_id',
         'inventory_quantity',
         'image_url',
@@ -60,6 +61,7 @@ class Product extends Model
     protected function casts(): array
     {
         return [
+            'return_policy' => 'array',
             'price_cents' => 'integer',
             'gst_rate_bps' => 'integer',
             'next_variant_seq' => 'integer',
@@ -93,6 +95,10 @@ class Product extends Model
         // A seller product's market is its shop's; NexTech's own products are
         // in the market the admin created them in.
         static::saving(function (Product $product): void {
+            // Return conditions are stored tidy (known keys only; null when empty).
+            if ($product->isDirty('return_policy')) {
+                $product->return_policy = \App\Support\ReturnPolicy::clean($product->return_policy);
+            }
             // Seller products follow their shop; NexTech's own keep the market
             // the admin created them in (default: home).
             if ($product->shop_id && ($product->isDirty('shop_id') || ! $product->exists)) {

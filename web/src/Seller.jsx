@@ -9,6 +9,7 @@ import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
 import { ManageOrders } from './SellerOrders'
+import { changeItemLabel, changeItemStep } from './sellerChangeItems'
 import { StoreDecoration } from './SellerDecoration'
 import { ProductWizard } from './SellerProductWizard'
 import { AccountHealth, BulkUpload, PricingHealth, ProductCompliance, SalesBoostPopup } from './SellerCatalogTools'
@@ -223,6 +224,11 @@ export default function Seller({ token, onSignOut }) {
 
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
   const brand = useBranding()
+  // Items NexTech sent back for fixing ("Request changes"), highlighted in the application.
+  const changeItems = me?.status === 'needs_changes' ? (me.change_items ?? []) : []
+  const flagged = (key) => changeItems.find((c) => c.key === key)
+  const flagClass = (key, base = '') => (flagged(key) ? `${base} seller-flagged`.trim() : base || undefined)
+  const flagNote = (key) => flagged(key) && <span className="seller-flag-note">Needs update{flagged(key).note ? `: ${flagged(key).note}` : ''}</span>
 
   useEffect(() => {
     let cancelled = false
@@ -761,7 +767,8 @@ export default function Seller({ token, onSignOut }) {
 
   function editApplication() {
     setForm(formFromSeller(me))
-    setStep(1)
+    // Open on the first step with an item NexTech asked to fix.
+    setStep(changeItems.length ? Math.min(...changeItems.map((c) => changeItemStep(c.key))) : 1)
     setMaxStepSeen(4)
     setStepError('')
     setEditingApplication(true)
@@ -1020,13 +1027,15 @@ export default function Seller({ token, onSignOut }) {
                               <td className="sc-actions">
                                 <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>
                                 {st === 'approved' && shopUrl && <a href={`${import.meta.env.BASE_URL || '/'}#/product/${product.slug}`} target="_blank" rel="noreferrer">View</a>}
-                                {['approved', 'pending', 'rejected'].includes(st) && <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>}
+                                {['approved', 'pending', 'rejected'].includes(st) && (product.support_until
+                                  ? <span className="sc-muted" title="Buyers can still check its details and get returns / warranty support. Set stock to 0 to stop sales — it shows as Out of stock.">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>
+                                  : <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>)}
                                 {st === 'hidden' && (product.deletion_requested_at
                                   ? <span className="sc-muted" title="Waiting for NexTech to remove it">Removal requested</span>
                                   : product.deactivated_by === 'admin'
                                     ? <span className="sc-muted" title="NexTech took this product off sale — message NexTech to relist it">Hidden by NexTech</span>
                                     : <button type="button" className="sc-primary" onClick={() => setProductActive(product, true)}>Relist</button>)}
-                                {!product.deletion_requested_at && <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>}
+                                {!product.deletion_requested_at && !product.support_until && <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>}
                               </td>
                             </tr>
                           )
@@ -1453,7 +1462,7 @@ export default function Seller({ token, onSignOut }) {
                 return (
                   <li key={label} className={n === step ? 'active' : n < step ? 'done' : ''}>
                     <button type="button" disabled={n > maxStepSeen} onClick={() => goToStep(n)}>
-                      <span className="seller-step-circle">{n < step ? '✓' : n}</span>
+                      <span className={changeItems.some((c) => changeItemStep(c.key) === n) ? 'seller-step-circle flagged' : 'seller-step-circle'}>{changeItems.some((c) => changeItemStep(c.key) === n) ? '!' : n < step ? '✓' : n}</span>
                       <span className="seller-step-label">{label}</span>
                     </button>
                   </li>
@@ -1472,7 +1481,8 @@ export default function Seller({ token, onSignOut }) {
                   </label>
 
                   <p className="seller-field-label">Business type</p>
-                  <div className="seller-type-cards">
+                  {flagNote('business_type')}
+                  <div className={flagClass('business_type', 'seller-type-cards')}>
                     {businessTypes.map((bt) => (
                       <label key={bt.value} className={`seller-type-card${form.business_type === bt.value ? ' selected' : ''}`}>
                         <input type="radio" name="business_type" value={bt.value} checked={form.business_type === bt.value} onChange={() => setForm((f) => ({ ...f, business_type: bt.value }))} />
@@ -1482,19 +1492,20 @@ export default function Seller({ token, onSignOut }) {
                     ))}
                   </div>
 
-                  <label>Company / registered name
+                  <label className={flagClass('company_name')}>Company / registered name{flagNote('company_name')}
                     <input value={form.company_name} onChange={(event) => setForm({ ...form, company_name: event.target.value })} placeholder="e.g. Acme Electronics LLC" />
                   </label>
 
-                  <label>{taxId.label}
+                  <label className={flagClass('tax_id')}>{taxId.label}{flagNote('tax_id')}
                     <input value={form.tax_id} onChange={(event) => setForm({ ...form, tax_id: event.target.value })} placeholder={taxId.placeholder} />
                   </label>
                   {taxId.regex && form.tax_id.trim() && !new RegExp(taxId.regex).test(form.tax_id.trim()) && (
                     <p className="seller-inline-error">That doesn&rsquo;t look like a valid {taxId.label}.{taxId.help_url && <> <a href={taxId.help_url} target="_blank" rel="noreferrer">Learn more ↗</a></>}</p>
                   )}
 
-                  <fieldset className="seller-address">
+                  <fieldset className={flagClass('registered_address', 'seller-address')}>
                     <legend>Registered address</legend>
+                    {flagNote('registered_address')}
                     <p className="seller-banner-amber">This address must match your official business documents.</p>
                     <label>Country / region
                       <select value={form.registered_country} onChange={(event) => setForm({ ...form, registered_country: event.target.value })}>
@@ -1525,22 +1536,23 @@ export default function Seller({ token, onSignOut }) {
               {step === 2 && (
                 <section>
                   <h2>Seller information</h2>
-                  <label>Contact / legal name
+                  <label className={flagClass('contact_name')}>Contact / legal name{flagNote('contact_name')}
                     <input value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} />
                   </label>
-                  <label>ID type
+                  {flagNote('id_details')}
+                  <label className={flagClass('id_details')}>ID type
                     <select value={form.id_type} onChange={(event) => setForm({ ...form, id_type: event.target.value })}>
                       <option value="" disabled>Choose…</option>
                       {idTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
                   </label>
-                  <label>ID number
+                  <label className={flagClass('id_details')}>ID number
                     <input value={form.id_number} onChange={(event) => setForm({ ...form, id_number: event.target.value })} />
                   </label>
-                  <label>Date of birth
+                  <label className={flagClass('date_of_birth')}>Date of birth{flagNote('date_of_birth')}
                     <input type="date" value={form.date_of_birth} onChange={(event) => setForm({ ...form, date_of_birth: event.target.value })} />
                   </label>
-                  <label>ID document (photo or PDF)
+                  <label className={flagClass('id_document')}>ID document (photo or PDF){flagNote('id_document')}
                     <input type="file" accept="image/jpeg,image/png,application/pdf" disabled={uploading === 'id'} onChange={(event) => uploadKyc('id_document', event.target.files?.[0])} />
                   </label>
                   {uploading === 'id' && <p className="seller-uploading">Uploading&hellip;</p>}
@@ -1551,28 +1563,29 @@ export default function Seller({ token, onSignOut }) {
               {step === 3 && (
                 <section>
                   <h2>Shop</h2>
-                  <label>Shop name
+                  <label className={flagClass('shop_name')}>Shop name{flagNote('shop_name')}
                     <input value={form.shop_name} onChange={(event) => setForm({ ...form, shop_name: event.target.value })} placeholder="What customers will see" />
                   </label>
-                  <label>Shop logo (optional)
+                  <label className={flagClass('shop_logo')}>Shop logo (optional){flagNote('shop_logo')}
                     <div className="seller-image-field">
                       {form.shop_logo_url && <img src={mediaUrl(form.shop_logo_url)} alt="" className="seller-logo-preview" />}
                       <input type="file" accept="image/*" disabled={uploading === 'logo'} onChange={(event) => uploadLogo(event.target.files?.[0])} />
                     </div>
                   </label>
                   {uploading === 'logo' && <p className="seller-uploading">Uploading&hellip;</p>}
-                  <label>Primary category
+                  <label className={flagClass('shop_category')}>Primary category{flagNote('shop_category')}
                     <select value={form.shop_category_id} onChange={(event) => setForm({ ...form, shop_category_id: event.target.value })}>
                       <option value="">— none —</option>
                       {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </label>
-                  <label>Shop description (optional)
+                  <label className={flagClass('shop_description')}>Shop description (optional){flagNote('shop_description')}
                     <textarea rows="3" value={form.shop_description} onChange={(event) => setForm({ ...form, shop_description: event.target.value })} />
                   </label>
 
-                  <fieldset className="seller-address">
+                  <fieldset className={flagClass('pickup_address', 'seller-address')}>
                     <legend>Pickup address</legend>
+                    {flagNote('pickup_address')}
                     <p className="seller-field-hint">Where a courier collects your orders from — this can differ from your registered business address above.</p>
                     <label className="seller-checkbox-row">
                       <input type="checkbox" checked={form.pickup_same_as_registered}
@@ -1641,7 +1654,7 @@ export default function Seller({ token, onSignOut }) {
                       : [form.pickup_line1, form.pickup_line2, form.pickup_city, form.pickup_state, form.pickup_postal_code].filter(Boolean).join(', ')}</p>
                   </div>
 
-                  <label>Business document (registration certificate, license, etc.)
+                  <label className={flagClass('business_document')}>Business document (registration certificate, license, etc.){flagNote('business_document')}
                     <input type="file" accept="image/jpeg,image/png,application/pdf" disabled={uploading === 'business'} onChange={(event) => uploadKyc('business_document', event.target.files?.[0])} />
                   </label>
                   {uploading === 'business' && <p className="seller-uploading">Uploading&hellip;</p>}
@@ -1667,7 +1680,16 @@ export default function Seller({ token, onSignOut }) {
             <p>{STATUS_COPY[me.status]?.body}</p>
             {me.status === 'rejected' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
             {me.status === 'suspended' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
-            {me.status === 'needs_changes' && me.rejection_reason && <p className="seller-reason">What to change: {me.rejection_reason}</p>}
+            {me.status === 'needs_changes' && me.rejection_reason && <p className="seller-reason">{changeItems.length ? 'Message from NexTech' : 'What to change'}: {me.rejection_reason}</p>}
+            {changeItems.length > 0 && (
+              <div className="seller-change-list">
+                <h3>{changeItems.length} item{changeItems.length === 1 ? '' : 's'} to update</h3>
+                <ul>
+                  {changeItems.map((c) => <li key={c.key}><b>{changeItemLabel(c.key)}</b>{c.note && <span> — {c.note}</span>}</li>)}
+                </ul>
+                <p className="seller-field-hint">They&rsquo;re highlighted in red in your application. Update them, then resubmit for review.</p>
+              </div>
+            )}
             <p className="seller-shopname">Shop: {me.shop?.name}</p>
 
             {me.status === 'needs_changes' && (

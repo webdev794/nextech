@@ -26,6 +26,7 @@ class AdminProductTest extends TestCase
             'name' => 'Cold Pressed Olive Oil',
             'sku' => 'GDP-OIL-01',
             'price_cents' => 1299,
+            'image_url' => '/api/media/file/products/oil.png', // a product needs an image
             'inventory_quantity' => 40,
         ])->assertCreated()
             ->assertJsonPath('data.slug', 'cold-pressed-olive-oil')

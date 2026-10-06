@@ -298,6 +298,22 @@ class Order extends Model
     }
 
     /** Every line ships from a seller — NexTech has nothing to pack or deliver. */
+    /**
+     * Orders still needing attention: not delivered or cancelled yet — or marked
+     * delivered (NexTech's part of a mixed cart arrived) while a seller still has
+     * items to ship or a package on its way.
+     */
+    public function scopeOpen($query)
+    {
+        return $query->where(fn ($q) => $q->whereNotIn('status', ['completed', 'cancelled'])
+            ->orWhere(fn ($q) => $q->where('status', 'completed')->where(fn ($q) => $q
+                ->whereExists(fn ($p) => $p->selectRaw('1')->from('order_packages')->whereColumn('order_packages.order_id', 'orders.id')
+                    ->whereIn('order_packages.status', ['shipped', 'in_transit', 'out_for_delivery']))
+                ->orWhereExists(fn ($i) => $i->selectRaw('1')->from('order_items')->whereColumn('order_items.order_id', 'orders.id')
+                    ->where('order_items.fulfilled_by', 'seller')
+                    ->whereRaw('order_items.quantity > (select coalesce(sum(order_package_items.quantity), 0) from order_package_items where order_package_items.order_item_id = order_items.id)')))));
+    }
+
     public function isSellerShippedOnly(): bool
     {
         return $this->delivery_method === 'seller';

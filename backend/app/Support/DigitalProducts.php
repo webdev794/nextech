@@ -26,8 +26,24 @@ class DigitalProducts
 
     public const DEFAULT_DOWNLOAD_LIMIT = 5;
 
-    /** Biggest single file a seller can upload (sent in chunks). */
+    /** Hard ceiling for one uploaded file (sent in chunks); the admin's limit below is usually far lower. */
     public const MAX_FILE_BYTES = 4 * 1024 * 1024 * 1024;
+
+    /**
+     * Admin-set upload limits (Settings → Digital downloads), kept small by
+     * default: shared hosting objects to big ZIPs on its disk. Bigger files go
+     * up as a download link the seller hosts elsewhere.
+     */
+    public static function maxFileBytes(): int
+    {
+        return min(self::MAX_FILE_BYTES, max(1, (int) \App\Models\Setting::get('digital_max_file_mb', 50)) * 1024 * 1024);
+    }
+
+    /** All uploaded files of one product together. */
+    public static function maxProductBytes(): int
+    {
+        return max(1, (int) \App\Models\Setting::get('digital_max_product_mb', 200)) * 1024 * 1024;
+    }
 
     /** Upload pieces are at most this big — smaller when the server's PHP upload limit is lower. */
     public const MAX_CHUNK_BYTES = 5 * 1024 * 1024;
@@ -211,5 +227,14 @@ class DigitalProducts
                 'used' => self::downloadsUsed($item, $f->id),
             ])->values() : [],
         ];
+    }
+
+    /** Check a hosted link again and record the result. */
+    public static function recheckLink(\App\Models\ProductFile $file): array
+    {
+        $check = DownloadLinkCheck::check((string) $file->external_url);
+        $file->forceFill(['link_status' => $check['status'], 'link_note' => $check['note'], 'link_checked_at' => now()] + ($check['size'] ? ['size_bytes' => $check['size']] : []))->save();
+
+        return $check;
     }
 }

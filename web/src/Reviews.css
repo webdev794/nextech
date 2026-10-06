@@ -57,3 +57,7 @@
 .rv-status-approved{color:var(--green)}
 .rv-status-rejected{color:#b4361f}
 .rv-mine-head{margin:0 0 12px;color:var(--muted);font-size:14px}
+.rv-write-btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid #f5a623;border-radius:999px;background:#fff8ec;color:#8a5a00;font:600 14px Okra,sans-serif;cursor:pointer}
+.rv-write-btn:hover{background:#f5a623;color:#fff}
+.rv-write-btn span{color:#f5a623;font-size:14px}
+.rv-write-btn:hover span{color:#fff}

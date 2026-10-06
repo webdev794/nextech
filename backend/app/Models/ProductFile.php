@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** A digital product's downloadable file (private storage) or seller-hosted link. */
 class ProductFile extends Model
 {
-    protected $fillable = ['product_id', 'name', 'original_name', 'path', 'external_url', 'size_bytes', 'sort_order'];
+    protected $fillable = ['product_id', 'name', 'original_name', 'path', 'external_url', 'link_status', 'link_note', 'link_checked_at', 'size_bytes', 'sort_order'];
 
     protected $hidden = ['path', 'external_url'];
 

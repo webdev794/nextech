@@ -481,8 +481,13 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
 
       {locked ? (
         <div className="sc-card">
-          <p>Add your bank account to request payment after adding additional compliance information.</p>
-          <button type="button" className="sc-primary" onClick={() => go('compliance')}>Add compliance information first</button>
+          {data.compliance.status === 'rejected' ? <>
+            <p>Your compliance information was sent back{data.compliance.note ? `: ${data.compliance.note}` : '.'} Update it and submit again — then you can add your bank account.</p>
+            <button type="button" className="sc-primary" onClick={() => go('compliance')}>Update compliance information</button>
+          </> : <>
+            <p>Add your bank account to request payment after adding additional compliance information.</p>
+            <button type="button" className="sc-primary" onClick={() => go('compliance')}>Add compliance information first</button>
+          </>}
         </div>
       ) : form ? (
         <form className="sc-card ob-form" onSubmit={(e) => { e.preventDefault(); setConfirming(true) }}>

@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Notifications\SellerProductFollowup;
 use App\Support\ProductCatalog;
+use App\Support\ReturnPolicy;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
@@ -301,6 +302,9 @@ class AdminProductController extends Controller
     {
         $decision = $request->validate(['decision' => ['required', Rule::in(['remove', 'decline'])]])['decision'];
         abort_if($product->deletion_requested_at === null, 422, 'No deletion request on this product.');
+        if ($decision === 'remove' && ($until = ProductCatalog::supportUntil($product))) {
+            abort(422, 'Past buyers are covered by returns / warranty until '.$until->format('j M Y').' — keep it until then (the seller can set stock to 0).');
+        }
         if ($decision === 'decline') {
             $product->forceFill(['deletion_requested_at' => null, 'deletion_reason' => null])->save();
 
@@ -345,6 +349,7 @@ class AdminProductController extends Controller
             'compare_at_price_cents' => ['sometimes', 'nullable', 'integer', 'min:0'],
             // Days after delivery the item can be returned; null = platform default, 0 = non-returnable.
             'return_days' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:'.SellerLedger::maxReturnDays()],
+            ...ReturnPolicy::rules(),
             'shipping_template_id' => ['sometimes', 'nullable', 'integer', 'exists:shipping_templates,id'],
             ...Market::productRules(null, false),
             'market' => ['sometimes', 'string', Rule::in(Market::codes())],

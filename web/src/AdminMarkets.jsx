@@ -100,3 +100,36 @@ export function MarketSettings({ settings, save, onSaved, only }) {
     )
   })
 }
+
+// Settings → Business & tax details: NexTech's own legal name, address and
+// GSTIN per country, printed as "Sold by" on bills for its own items (sellers'
+// items show the seller's). All optional — anything left empty is left off.
+export function BusinessDetails({ settings, save, onSaved }) {
+  const markets = settings?.all_markets ?? []
+  const [forms, setForms] = useState(() => Object.fromEntries(markets.map((m) => [m.code, { legal_name: '', address: '', tax_number: '', ...(settings?.business_details?.[m.code] ?? {}) }])))
+  if (markets.length === 0) return null
+  const set = (code, key, value) => setForms((current) => ({ ...current, [code]: { ...current[code], [key]: value } }))
+
+  async function submit(event) {
+    event.preventDefault()
+    if (await save({ business_details: forms })) onSaved?.('Business & tax details saved.')
+  }
+
+  return (
+    <form className="admin-form" onSubmit={submit}>
+      <h3>Business &amp; tax details</h3>
+      <p className="muted">Printed under &ldquo;Sold by&rdquo; on bills for NexTech&rsquo;s own products; sellers&rsquo; products show the seller&rsquo;s details. Empty fields are left off the bill (without a legal name or address, the store&rsquo;s name and address are used).</p>
+      {markets.map((m) => (
+        <div key={m.code}>
+          <h4>{m.name}</h4>
+          <div className="admin-form-grid">
+            <label>Legal business name<input value={forms[m.code]?.legal_name ?? ''} onChange={(event) => set(m.code, 'legal_name', event.target.value)} /></label>
+            {m.code === 'IN' && <label>GSTIN<input value={forms[m.code]?.tax_number ?? ''} maxLength={15} placeholder="e.g. 22AAAAA0000A1Z5" onChange={(event) => set(m.code, 'tax_number', event.target.value.toUpperCase())} /></label>}
+            <label>Registered address<textarea rows={3} value={forms[m.code]?.address ?? ''} onChange={(event) => set(m.code, 'address', event.target.value)} /></label>
+          </div>
+        </div>
+      ))}
+      <button className="act" type="submit">Save business details</button>
+    </form>
+  )
+}
