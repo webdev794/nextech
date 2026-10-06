@@ -10,9 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('shops', function (Blueprint $table) {
-            $table->unsignedSmallInteger('commission_rate_bps')->nullable()->after('market');
-        });
+        // Safe to run on a database that already has it (e.g. imported from edp.sql).
+        if (! Schema::hasColumn('shops', 'commission_rate_bps')) {
+            Schema::table('shops', function (Blueprint $table) {
+                $table->unsignedSmallInteger('commission_rate_bps')->nullable()->after('market');
+            });
+        }
     }
 
     public function down(): void

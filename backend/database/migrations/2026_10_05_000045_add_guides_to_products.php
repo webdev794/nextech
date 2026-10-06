@@ -10,9 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('products', function (Blueprint $table) {
-            $table->json('guides')->nullable()->after('info_sections');
-        });
+        // Safe to run on a database that already has it (e.g. imported from edp.sql).
+        if (! Schema::hasColumn('products', 'guides')) {
+            Schema::table('products', function (Blueprint $table) {
+                $table->json('guides')->nullable()->after('info_sections');
+            });
+        }
     }
 
     public function down(): void

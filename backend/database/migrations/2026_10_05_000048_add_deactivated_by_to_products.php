@@ -10,9 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('products', function (Blueprint $table) {
-            $table->string('deactivated_by', 10)->nullable()->after('is_active');
-        });
+        // Safe to run on a database that already has it (e.g. imported from edp.sql).
+        if (! Schema::hasColumn('products', 'deactivated_by')) {
+            Schema::table('products', function (Blueprint $table) {
+                $table->string('deactivated_by', 10)->nullable()->after('is_active');
+            });
+        }
     }
 
     public function down(): void

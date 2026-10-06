@@ -11,11 +11,14 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('products', function (Blueprint $table) {
-            $table->timestamp('deletion_requested_at')->nullable()->after('deactivated_by');
-            $table->string('deletion_reason', 500)->nullable()->after('deletion_requested_at');
-            $table->timestamp('archived_at')->nullable()->after('deletion_reason');
-        });
+        // Safe to run on a database that already has it (e.g. imported from edp.sql).
+        if (! Schema::hasColumn('products', 'deletion_requested_at')) {
+            Schema::table('products', function (Blueprint $table) {
+                $table->timestamp('deletion_requested_at')->nullable()->after('deactivated_by');
+                $table->string('deletion_reason', 500)->nullable()->after('deletion_requested_at');
+                $table->timestamp('archived_at')->nullable()->after('deletion_reason');
+            });
+        }
     }
 
     public function down(): void

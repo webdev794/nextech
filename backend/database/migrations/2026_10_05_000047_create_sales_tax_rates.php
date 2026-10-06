@@ -10,6 +10,9 @@ return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('sales_tax_rates')) {
+            return; // already there (e.g. imported from edp.sql)
+        }
         Schema::create('sales_tax_rates', function (Blueprint $table) {
             $table->string('zip_code', 5)->primary();
             $table->unsignedSmallInteger('rate_bps');
