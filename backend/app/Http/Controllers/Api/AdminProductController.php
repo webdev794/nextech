@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Setting;
 use App\Notifications\SellerProductFollowup;
 use App\Support\ProductCatalog;
+use App\Support\ProductPendingChanges;
 use App\Support\ReturnPolicy;
 use App\Support\SellerNotify;
 use App\Support\ProductImages;
@@ -107,6 +108,8 @@ class AdminProductController extends Controller
             'unapproved' => $query->whereIn('products.status', ['pending', 'draft', 'rejected']),
             'followups' => $query->where('products.status', 'approved')->whereNotNull('products.followup_requested_at'),
             'deletion' => $query->whereNotNull('products.deletion_requested_at'),
+            // Waiting for review includes live products with an edit waiting.
+            'pending' => $query->where(fn ($q) => $q->where('products.status', 'pending')->orWhereNotNull('products.pending_changes')),
             default => $query->where('products.status', $status),
         };
     }
@@ -128,7 +131,7 @@ class AdminProductController extends Controller
         $byStatus = $base()->selectRaw('status, COUNT(*) as n')->groupBy('status')->pluck('n', 'status');
 
         return [
-            'pending' => (int) ($byStatus['pending'] ?? 0),
+            'pending' => (int) ($byStatus['pending'] ?? 0) + $base()->where('status', '!=', 'pending')->whereNotNull('pending_changes')->count(),
             'draft' => (int) ($byStatus['draft'] ?? 0),
             'rejected' => (int) ($byStatus['rejected'] ?? 0),
             'unapproved' => (int) (($byStatus['pending'] ?? 0) + ($byStatus['draft'] ?? 0) + ($byStatus['rejected'] ?? 0)),
@@ -253,6 +256,16 @@ class AdminProductController extends Controller
     public function approve(Request $request, Product $product): JsonResponse
     {
         abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
+        // A live product's edit waiting for review: make it live, keep selling.
+        if ($product->pending_changes) {
+            DB::transaction(fn () => ProductPendingChanges::apply($product));
+            $product = $product->fresh();
+            if ($seller = $product->shop?->seller) {
+                SellerNotify::send($seller, $request->user(), "Changes to “{$product->name}” are approved", "Your changes to “{$product->name}” are approved and now live in the store.");
+            }
+
+            return response()->json(['data' => $product->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+        }
         $followups = ProductCatalog::followups($product);
         abort_if($followups['blocking'] !== [], 422, 'Can’t go live yet: '.implode(' ', $followups['blocking']));
         // Details still missing (e.g. HSN / GST rate, compliance documents): admin
@@ -290,6 +303,16 @@ class AdminProductController extends Controller
         abort_unless($product->shop_id !== null, 422, 'Only seller products go through review.');
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        // An edit to a live product: drop the edit, the live version keeps selling.
+        if ($product->pending_changes) {
+            ProductPendingChanges::discard($product, $data['reason']);
+            if ($seller = $product->shop?->seller) {
+                SellerNotify::send($seller, $request->user(), "Changes to “{$product->name}” weren’t approved", "Your changes to “{$product->name}” weren’t approved: {$data['reason']} The product stays live as it was — edit it and resubmit from Manage products.");
+            }
+
+            return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+        }
 
         $product->forceFill(['status' => 'rejected', 'rejection_reason' => $data['reason']])->save();
         if ($seller = $product->shop?->seller) {

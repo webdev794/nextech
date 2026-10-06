@@ -349,7 +349,7 @@ class AdminController extends Controller
             'sellers_owing' => $sellersOwing,
             'refunds_due' => $refundsDue,
             'seller_tasks' => $sellerTasks,
-            'products_waiting' => Product::query()->where('status', 'pending')->whereNotNull('shop_id')->count(),
+            'products_waiting' => Product::query()->whereNotNull('shop_id')->where(fn ($q) => $q->where('status', 'pending')->orWhereNotNull('pending_changes'))->count(),
             'removal_requests' => Product::query()->whereNotNull('deletion_requested_at')->whereNull('archived_at')->count(),
             'category_suggestions' => $categorySuggestions,
             'seller_applications' => $sellerApplications,

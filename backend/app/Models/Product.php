@@ -85,6 +85,8 @@ class Product extends Model
             'personalization' => 'array',
             'info_sections' => 'array',
             'guides' => 'array',
+            'pending_changes' => 'array',
+            'pending_submitted_at' => 'datetime',
             'digital_settings' => 'array',
             'price_references' => 'array',
         ];

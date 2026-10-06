@@ -375,6 +375,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           </div>
           {err('category_id')}
           <label>Nothing fits? Suggest a category <span className="sc-muted">({brandName()} reviews it — it doesn’t create a category)</span><input value={form.suggested_category_name} onChange={(e) => set({ suggested_category_name: e.target.value })} placeholder="e.g. Drone accessories" /></label>
+          {(() => { const typed = form.suggested_category_name.trim().toLowerCase(); const found = typed && config.categories.find((c) => c.name.trim().toLowerCase() === typed); return found ? <p className="sc-alert warn"><span>&ldquo;{found.name}&rdquo; already exists{found.path ? ` (${found.path})` : ''} — choose it in the list above. A suggestion is only sent for a new category.</span><button type="button" onClick={() => set({ suggested_category_name: '' })}>Clear</button></p> : null })()}
         </div>
       )}
 

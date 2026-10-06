@@ -93,11 +93,12 @@ class CatalogController extends Controller
                     'products',
                     fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->visibleAtStore($storeId),
                 ))
-                // Demo products hidden: drop categories that only had demo products.
-                ->when(Product::demosHidden(), fn ($query) => $query->whereHas(
+                // Only categories with something shoppers can see: a live, approved
+                // product from an active shop (demos dropped when they're hidden).
+                ->whereHas(
                     'products',
-                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->shownToShoppers(),
-                ))
+                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->shownToShoppers()->availableIn($market),
+                )
                 ->pluck('id')->all();
 
         // A parent stays listed when any of its subcategories has products; each

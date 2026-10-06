@@ -13,16 +13,21 @@ class CatalogTest extends TestCase
 
     public function test_customer_can_view_active_categories(): void
     {
-        Category::factory()->create([
+        $listed = Category::factory()->create([
             'name' => 'Fresh Produce',
             'slug' => 'fresh-produce',
             'sort_order' => 1,
         ]);
-        Category::factory()->create([
+        Product::factory()->create(['category_id' => $listed->id]);
+        $hidden = Category::factory()->create([
             'name' => 'Hidden Category',
             'slug' => 'hidden-category',
             'is_active' => false,
         ]);
+        Product::factory()->create(['category_id' => $hidden->id]);
+        // Nothing for sale in it (only an unlisted product): not shown.
+        $empty = Category::factory()->create(['name' => 'Empty', 'slug' => 'empty-category']);
+        Product::factory()->create(['category_id' => $empty->id, 'is_active' => false]);
 
         $this->getJson('/api/categories')
             ->assertOk()

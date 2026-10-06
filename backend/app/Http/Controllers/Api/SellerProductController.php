@@ -13,6 +13,7 @@ use App\Support\Market;
 use App\Support\DigitalProducts;
 use App\Support\Personalization;
 use App\Support\ProductCatalog;
+use App\Support\ProductPendingChanges;
 use App\Support\ProductSnapshot;
 use App\Support\ReturnPolicy;
 use App\Support\ProductImages;
@@ -89,6 +90,7 @@ class SellerProductController extends Controller
             abort_if(! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available', 422, \App\Support\Branding::name().' pickup isn\'t offered anymore — set up your own shipping in Shipping settings before adding products.');
         }
         $data = $this->validated($request, $shop, null, $submit);
+        self::dropExistingSuggestion($data);
         $variants = $this->pullVariants($data);
         $images = $this->pullImages($data);
         if (($data['product_type'] ?? 'physical') === 'digital') {
@@ -178,6 +180,7 @@ class SellerProductController extends Controller
 
         $data = $this->validated($request, $shop, $product, $submit);
         unset($data['is_active']); // on / off sale goes through setActive()
+        self::dropExistingSuggestion($data);
         // Sold already: name, category, type, brand and model stay as buyers bought them.
         abort_if($locked = ProductSnapshot::lockedChange($product, $data), 422, (string) $locked);
         $variants = $this->pullVariants($data);
@@ -206,6 +209,15 @@ class SellerProductController extends Controller
         }
         if ($submit) {
             $data['rejection_reason'] = null;
+        }
+
+        // A live product stays live while its edit waits for review: the
+        // change is held and shows only once NexTech approves it.
+        if ($product->status === 'approved' && $submit && ! $completingFollowups) {
+            DB::transaction(fn () => ProductPendingChanges::hold($product, $data, $variants, $images));
+            $this->notifyCategorySuggestion($product->fresh(), $previousSuggestion);
+
+            return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
         }
 
         DB::transaction(function () use ($product, $data, $variants, $images, $completingFollowups): void {
@@ -291,6 +303,15 @@ class SellerProductController extends Controller
     }
 
     /** Email admins when a seller suggests a new (or different) category. */
+    /** A suggested category that already exists isn't a request anymore — the seller just picks it. */
+    private static function dropExistingSuggestion(array &$data): void
+    {
+        $name = mb_strtolower(trim((string) ($data['suggested_category_name'] ?? '')));
+        if ($name !== '' && \App\Models\Category::query()->whereRaw('LOWER(TRIM(name)) = ?', [$name])->exists()) {
+            $data['suggested_category_name'] = null;
+        }
+    }
+
     private function notifyCategorySuggestion(Product $product, ?string $before): void
     {
         $name = trim((string) $product->suggested_category_name);
@@ -320,7 +341,8 @@ class SellerProductController extends Controller
 
     private function present(Product $product, Shop $shop): array
     {
-        $row = $product->toArray();
+        // The seller sees (and keeps editing) their edit waiting for review.
+        $row = ProductPendingChanges::overlay($product->toArray());
         $row['has_sales'] = $product->status !== 'draft' && ProductSnapshot::hasSold($product);
         $row['support_until'] = $product->status === 'draft' ? null : ProductCatalog::supportUntil($product)?->toDateString();
         $row['listing_errors'] = $product->status === 'draft'
