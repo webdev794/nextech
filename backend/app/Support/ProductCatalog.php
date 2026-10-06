@@ -18,10 +18,16 @@ class ProductCatalog
     public static function attributesFor(?Category $category, bool $digital = false): array
     {
         // A digital download has its own field set (type, platforms, version…), whatever its category.
-        if ($digital) {
+        if ($digital || $category?->kind === 'digital') {
             return (array) config('product_catalog.digital_attributes', []);
         }
-        $extra = $category ? (array) config('product_catalog.category_attributes.'.$category->slug, []) : [];
+        // A subcategory without its own field list uses its nearest parent's.
+        $extra = [];
+        foreach ($category ? array_reverse($category->lineage()) : [] as $c) {
+            if ($extra = (array) config('product_catalog.category_attributes.'.$c->slug, [])) {
+                break;
+            }
+        }
         $extraKeys = array_column($extra, 'key');
 
         // A category's own definition of a field replaces the common one.
@@ -263,13 +269,18 @@ class ProductCatalog
      */
     public static function clientConfig(?string $market): array
     {
-        $categories = Category::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get(['id', 'name', 'slug']);
+        // In tree order (Downloadable, Downloadable › Games, … › Arcade), so pickers can indent them.
+        $categories = Category::query()->where('is_active', true)->get()->sortBy(fn (Category $c) => implode('/', array_map(fn ($a) => sprintf('%05d', $a->sort_order).$a->name, $c->lineage())))->values();
 
         return [
             'categories' => $categories->map(fn (Category $c) => [
                 'id' => $c->id,
                 'name' => $c->name,
                 'slug' => $c->slug,
+                'parent_id' => $c->parent_id,
+                'kind' => $c->kind,
+                'path' => $c->path(),
+                'depth' => $c->depth(),
                 'apparel' => self::isApparel($c),
                 'attributes' => self::attributesFor($c),
                 'compliance' => self::complianceFor($market, $c),

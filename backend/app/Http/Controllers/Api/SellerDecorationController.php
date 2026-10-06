@@ -75,7 +75,7 @@ class SellerDecorationController extends Controller
         $shop = $this->shop($request);
         $this->own($shop, $decoration);
         abort_if($decoration->is_live, 422, 'This version is live — make a copy to change it.');
-        abort_if($decoration->status === 'in_review', 422, 'This version is being checked by NexTech — wait for the result or make a copy.');
+        abort_if($decoration->status === 'in_review', 422, 'This version is being checked by '.\App\Support\Branding::name().' — wait for the result or make a copy.');
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:80'],
             'page' => ['sometimes', 'array'],

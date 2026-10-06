@@ -249,6 +249,9 @@ class CheckoutController extends Controller
                     'hsn_code' => $product->hsn_code,
                     'gst_rate_bps' => $gstRate,
                     'variant_label' => $state['label'],
+                    // The product as sold (name, details, warranty, return terms) — what this
+                    // buyer's warranty and returns are judged on, whatever changes later.
+                    'product_snapshot' => \App\Support\ProductSnapshot::of($product, $variant),
                     'personalization' => $cartItem->personalization,
                     'quantity' => $cartItem->quantity,
                     'unit_price_cents' => $state['price_cents'],

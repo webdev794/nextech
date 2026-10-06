@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Notifications\SellerProductFollowup;
 use App\Support\ProductCatalog;
 use App\Support\ReturnPolicy;
+use App\Support\SellerNotify;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
 use App\Support\SellerLedger;
@@ -277,6 +278,8 @@ class AdminProductController extends Controller
             } catch (\Throwable $e) {
                 report($e);
             }
+        } elseif ($seller = $product->shop?->seller) {
+            SellerNotify::send($seller, $request->user(), "“{$product->name}” is approved", "Your product “{$product->name}” is approved and live in the store.");
         }
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
@@ -289,6 +292,9 @@ class AdminProductController extends Controller
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
 
         $product->forceFill(['status' => 'rejected', 'rejection_reason' => $data['reason']])->save();
+        if ($seller = $product->shop?->seller) {
+            SellerNotify::send($seller, $request->user(), "“{$product->name}” needs changes", "Your product “{$product->name}” wasn’t approved: {$data['reason']} Fix it and resubmit from Manage products.");
+        }
 
         return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
     }
@@ -304,6 +310,10 @@ class AdminProductController extends Controller
         abort_if($product->deletion_requested_at === null, 422, 'No deletion request on this product.');
         if ($decision === 'remove' && ($until = ProductCatalog::supportUntil($product))) {
             abort(422, 'Past buyers are covered by returns / warranty until '.$until->format('j M Y').' — keep it until then (the seller can set stock to 0).');
+        }
+        if ($seller = $product->shop?->seller) {
+            SellerNotify::send($seller, $request->user(), $decision === 'remove' ? "“{$product->name}” has been removed" : "“{$product->name}” stays in your list",
+                $decision === 'remove' ? "Your request is done — “{$product->name}” has been removed from the store and your product list." : \App\Support\Branding::name()." kept “{$product->name}” (it stays hidden from buyers). Reply here if you still want it removed.");
         }
         if ($decision === 'decline') {
             $product->forceFill(['deletion_requested_at' => null, 'deletion_reason' => null])->save();

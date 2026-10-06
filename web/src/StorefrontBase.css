@@ -60,7 +60,7 @@ button{cursor:pointer}
 
 /* Categories mega-menu: a left rail of groups, a right grid of that group's
    real categories (round images), matching Temu's two-panel hover pattern. */
-.categories-panel{min-width:640px;left:-420px}
+.categories-panel{min-width:min(640px,calc(100vw - 32px));left:0}
 .categories-panel-inner{flex-direction:row;padding:0;max-height:min(520px,70vh);overflow:hidden}
 .categories-panel-left{flex:0 0 220px;display:flex;flex-direction:column;gap:2px;padding:10px;border-right:1px solid var(--line);overflow-y:auto}
 .categories-group{display:flex;align-items:center;justify-content:space-between;gap:6px;border:0;background:0;padding:9px 10px;border-radius:8px;font:13px 'Okra',sans-serif;color:var(--ink);text-align:left;white-space:nowrap}

@@ -17,6 +17,12 @@ export function setBranding(branding) {
   listeners.forEach((fn) => fn(current))
 }
 
+// The store's name from Store settings — use it wherever the store names itself,
+// so renaming the store in admin renames it everywhere. ("NexTech" until set.)
+export function brandName() {
+  return (current?.store_name ?? '').trim() || 'NexTech'
+}
+
 export function useBranding() {
   const [branding, setState] = useState(current)
   useEffect(() => {

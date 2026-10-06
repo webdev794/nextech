@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { DecorationView, SectionView } from './StoreDecorationView'
+import { brandName } from './useBranding'
 
 // Seller Center -> My account -> Store decoration (modelled on Temu's):
 // versions of the store page for desktop and mobile, each built from
@@ -272,7 +273,7 @@ function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
     try {
       const d = await send(headers, `/seller/decorations/${version.id}/submit`, 'POST')
       onSaved(d.data)
-      setMsg(d.data.status === 'in_review' ? 'Submitted — NexTech is spot-checking this version. You can publish it once it’s approved.' : 'Submitted and approved — publish it from the version list.')
+      setMsg(d.data.status === 'in_review' ? `Submitted — ${brandName()} is spot-checking this version. You can publish it once it’s approved.` : 'Submitted and approved — publish it from the version list.')
     } catch (e) {
       if (e.problems) setProblems(e.problems)
       else setMsg(e.message)
@@ -298,7 +299,7 @@ function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
           <span className="de-spec">Drag onto the canvas, or click to add at the end.</span>
           {SECTION_TYPES.map(([type, label, hint, extra]) => (
             <button type="button" key={type} draggable={!readOnly} disabled={readOnly} onDragStart={() => setDrag({ add: type })} onDragEnd={() => { setDrag(null); setDropAt(null) }} onClick={() => add(type)}>
-              <span>{label}<small>{hint}</small></span>{extra && <span className="de-new">NexTech</span>}
+              <span>{label}<small>{hint}</small></span>{extra && <span className="de-new">{brandName()}</span>}
             </button>
           ))}
         </aside>
@@ -356,7 +357,7 @@ function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
                 {sections.map((s, i) => <li key={s.id} onClick={() => setSelected(s.id)}><span>{i + 1}. {TYPE_LABEL[s.type]}{s.title ? ` — ${s.title}` : ''}</span></li>)}
               </ul>
               {!sections.length && <p className="de-spec">Empty — drag sections from the left.</p>}
-              <p className="de-spec">Images must match the sizes shown when you add them. Only use logos, images, videos and text you have the rights to — NexTech removes content that breaks the rules.</p>
+              <p className="de-spec">Images must match the sizes shown when you add them. Only use logos, images, videos and text you have the rights to — {brandName()} removes content that breaks the rules.</p>
             </>
           )}
         </aside>
@@ -447,7 +448,7 @@ export function StoreDecoration({ headers }) {
                 </div>
               ))}
             </div>
-            <p className="sc-muted">Submitted versions are checked for missing content; NexTech also spot-checks some before they can be published.</p>
+            <p className="sc-muted">Submitted versions are checked for missing content; {brandName()} also spot-checks some before they can be published.</p>
           </div>
           <div className={`de-preview ${platform}`}>
             {selected && <DecorationView design={{ page: selected.page, sections: (selected.sections ?? []).map((s) => toDisplay(s, lookup)) }} platform={platform} shopName={data.shop.name} />}
@@ -459,7 +460,7 @@ export function StoreDecoration({ headers }) {
         <div className="ss-overlay" role="presentation">
           <div className="ss-modal">
             <h2 className="sc-h2">Data Processing Agreement</h2>
-            <p>Store decoration lets you upload images, videos and text that NexTech stores and shows to shoppers. By continuing you agree that NexTech processes this content under the <a href="#/p/global-data-protection-exhibit" target="_blank" rel="noreferrer">Data Processing Agreement</a>, and that everything you upload is yours to use and follows the law and the Seller Rules.</p>
+            <p>Store decoration lets you upload images, videos and text that {brandName()} stores and shows to shoppers. By continuing you agree that {brandName()} processes this content under the <a href="#/p/global-data-protection-exhibit" target="_blank" rel="noreferrer">Data Processing Agreement</a>, and that everything you upload is yours to use and follows the law and the Seller Rules.</p>
             <div className="ss-actions"><button type="button" className="sc-primary" onClick={() => act('/seller/decorations/accept-terms')}>I agree</button></div>
           </div>
         </div>

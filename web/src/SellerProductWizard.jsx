@@ -6,6 +6,7 @@ import { InfoSectionsEditor } from './InfoSections'
 import { ProductDocumentsEditor } from './ProductDocuments'
 import { checkProductImage } from './productImageCheck'
 import { currencySymbol } from './money'
+import { brandName } from './useBranding'
 
 // Seller Center -> Add products, step by step like Temu's Add product flow:
 // Getting started (name + category), 01 Product description, 02 Product
@@ -145,23 +146,25 @@ function PayoutPreview({ price, gstRateBps, inclusive, config, sym }) {
   const receive = valid ? price - commission - held.reduce((n, w) => n + w.amount, 0) : 0
   return (
     <div className="wz-payout">
-      <p className="wz-payout-tip"><b>Set one all-in price.</b> Include your packaging, handling and any other costs in it — buyers see just this price (delivery and {inclusive ? 'GST are' : 'tax is'} added or shown by NexTech, the same for every seller). NexTech&rsquo;s fees come out of it, not on top of it.{config?.ships_itself ? ' The shipping fee you set in your shipping templates is paid to you separately.' : ''}</p>
+      <p className="wz-payout-tip"><b>Set one all-in price.</b> Include your packaging, handling and any other costs in it — buyers see just this price (delivery and {inclusive ? 'GST are' : 'tax is'} added or shown by {brandName()}, the same for every seller). {brandName()}&rsquo;s fees come out of it, not on top of it.{config?.ships_itself ? ' The shipping fee you set in your shipping templates is paid to you separately.' : ''}</p>
       {valid ? (
         <table className="wz-payout-table">
           <tbody>
             <tr><td>Price buyers pay{inclusive ? ' (incl. GST)' : ''}</td><td>{fmt(price)}</td></tr>
-            <tr><td>NexTech commission ({rate / 100}%)</td><td>−{fmt(commission)}</td></tr>
+            <tr><td>{brandName()} commission ({rate / 100}%)</td><td>−{fmt(commission)}</td></tr>
             {held.map((w) => <tr key={w.label}><td>{w.label} ({w.pct}% of the price before GST)</td><td>−{fmt(w.amount)}</td></tr>)}
             <tr className="wz-payout-total"><td>You receive (per unit)</td><td>{fmt(receive)}</td></tr>
           </tbody>
         </table>
-      ) : <p className="sc-muted">Enter a price to see what you receive after NexTech&rsquo;s commission.</p>}
+      ) : <p className="sc-muted">Enter a price to see what you receive after {brandName()}&rsquo;s commission.</p>}
       {inclusive && valid && !gstRateBps && <p className="sc-muted">Choose the GST rate (step 05) for an exact TCS/TDS figure.</p>}
     </div>
   )
 }
 
 export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusive, gstRates, shipTemplates, maxReturnDays, defaultReturnDays }) {
+  // Already sold: its identity (type, name, category, brand, model) can't change — see ProductSnapshot on the server.
+  const sold = !!product?.has_sales
   const [config, setConfig] = useState(null)
   const [form, setForm] = useState(null)
   const [step, setStep] = useState(product?.id ? 1 : 0)
@@ -187,7 +190,9 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
   const category = config.categories.find((c) => String(c.id) === String(form.category_id)) ?? null
   const lowerName = form.name.trim().toLowerCase()
   // Recommended categories: ones whose keywords appear in the product name.
-  const recommended = lowerName ? config.categories.filter((c) => c.keywords.some((k) => lowerName.includes(k))).slice(0, 5) : []
+  // Only categories of this product's type: physical ones for shipped goods, digital ones for downloads.
+  const typeCats = config.categories.filter((c) => (c.kind ?? 'physical') === (form.product_type === 'digital' ? 'digital' : 'physical'))
+  const recommended = lowerName ? typeCats.filter((c) => c.keywords.some((k) => lowerName.includes(k))).slice(0, 5) : []
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
   const setDetail = (key, value) => setForm((f) => ({ ...f, product_details: { ...f.product_details, [key]: value } }))
@@ -324,7 +329,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       <div className="sc-card wz-done">
         <div className="wz-done-icon" aria-hidden>✓</div>
         <h2 className="sc-h2">New product submitted successfully!</h2>
-        <p>Check its progress under <b>Manage products</b>. It goes on sale once NexTech has assessed the price and approved the listing.</p>
+        <p>Check its progress under <b>Manage products</b>. It goes on sale once {brandName()} has assessed the price and approved the listing.</p>
         {done.missing_compliance?.length > 0 && <p className="sc-alert warn">Compliance documents are still needed before it can be listed: {done.missing_compliance.join(', ')}. Upload them under Products → Product compliance.</p>}
         <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => onCancel()}>Manage products</button><button type="button" className="sc-primary" onClick={() => { setDone(null); setForm(formFrom(null, config)); setStep(0) }}>Add another product</button></div>
       </div>
@@ -348,27 +353,28 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       {step === 0 && (
         <div className="sc-card wz-card">
           <h2 className="sc-h2">Getting started: name &amp; category</h2>
+          {sold && <p className="sc-alert">This product has been sold, so its <b>type, name, category, brand and model number</b> are locked — buyers&rsquo; orders and warranties refer to them. You can still change the price, stock, photos, description and other details. To sell a different product, add a new listing.</p>}
           <p className="sc-muted">Pick the most relevant, accurate category so buyers can find your product. Fields marked <b className="wz-req">*</b> are required — a product can’t go live without a name, category, image and price.</p>
           <div className="wz-type" role="radiogroup" aria-label="Product type">
             {[['physical', '📦 Physical product', 'Shipped to the buyer'], ['digital', '⬇ Digital download', 'Games, software, e-books, music, templates — buyers download it after paying']].map(([value, title, text]) => (
               <label key={value} className={`wz-type-opt${form.product_type === value ? ' on' : ''}`}>
-                <input type="radio" name="wz-type" checked={form.product_type === value} onChange={() => set({ product_type: value, ...(value === 'digital' ? { has_variations: false } : {}) })} />
+                <input type="radio" name="wz-type" disabled={sold} checked={form.product_type === value} onChange={() => set({ product_type: value, ...(value === 'digital' ? { has_variations: false } : {}), ...((category?.kind ?? 'physical') !== (value === 'digital' ? 'digital' : 'physical') ? { category_id: '' } : {}) })} />
                 <b>{title}</b><small>{text}</small>
               </label>
             ))}
           </div>
-          <label>Product name<b className="wz-req" title="Required"> *</b><input value={form.name} maxLength="160" placeholder="e.g. Wireless earbuds with charging case" onChange={(e) => set({ name: e.target.value })} />{err('name')}</label>
+          <label>Product name<b className="wz-req" title="Required"> *</b><input value={form.name} disabled={sold} maxLength="160" placeholder="e.g. Wireless earbuds with charging case" onChange={(e) => set({ name: e.target.value })} />{err('name')}</label>
           {recommended.length > 0 && <div className="wz-chips"><span className="sc-muted">Recommended categories:</span>{recommended.map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
-          {config.recent_category_ids?.length > 0 && <div className="wz-chips"><span className="sc-muted">Previously used:</span>{config.recent_category_ids.map((id) => config.categories.find((c) => c.id === id)).filter(Boolean).map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
+          {config.recent_category_ids?.some((id) => typeCats.some((c) => c.id === id)) && <div className="wz-chips"><span className="sc-muted">Previously used:</span>{config.recent_category_ids.map((id) => typeCats.find((c) => c.id === id)).filter(Boolean).map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
           <span className="wz-label">Category<b className="wz-req" title="Required"> *</b></span>
           <label>Search categories<input value={search} placeholder="Type to filter" onChange={(e) => setSearch(e.target.value)} /></label>
           <div className="wz-cat-list">
-            {config.categories.filter((c) => !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase()) || c.keywords.some((k) => k.includes(search.trim().toLowerCase()))).map((c) => (
-              <label key={c.id} className={`wz-cat${String(c.id) === form.category_id ? ' on' : ''}`}><input type="radio" name="wz-category" checked={String(c.id) === form.category_id} onChange={() => set({ category_id: String(c.id) })} />{c.name}</label>
+            {typeCats.filter((c) => !search.trim() || (c.path ?? c.name).toLowerCase().includes(search.trim().toLowerCase()) || c.keywords.some((k) => k.includes(search.trim().toLowerCase()))).map((c) => (
+              <label key={c.id} className={`wz-cat${String(c.id) === form.category_id ? ' on' : ''}`}><input type="radio" name="wz-category" disabled={sold} checked={String(c.id) === form.category_id} onChange={() => set({ category_id: String(c.id) })} />{c.depth ? <span className="wz-cat-path">{c.path}</span> : c.name}</label>
             ))}
           </div>
           {err('category_id')}
-          <label>Nothing fits? Suggest a category <span className="sc-muted">(NexTech reviews it — it doesn’t create a category)</span><input value={form.suggested_category_name} onChange={(e) => set({ suggested_category_name: e.target.value })} placeholder="e.g. Drone accessories" /></label>
+          <label>Nothing fits? Suggest a category <span className="sc-muted">({brandName()} reviews it — it doesn’t create a category)</span><input value={form.suggested_category_name} onChange={(e) => set({ suggested_category_name: e.target.value })} placeholder="e.g. Drone accessories" /></label>
         </div>
       )}
 
@@ -413,13 +419,13 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             </div>
           </div>
           <label>Product identity — trademark
-            <select value={form.trademark_id} onChange={(e) => set({ trademark_id: e.target.value })}>
+            <select value={form.trademark_id} disabled={sold} onChange={(e) => set({ trademark_id: e.target.value })}>
               <option value="">No brand / unbranded</option>
               {config.trademarks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
             {err('trademark_id')}
           </label>
-          <p className="sc-muted">Select a trademark if the product is made by a specific brand — it improves the price assessment and search matching. No trademark yet? <button type="button" className="sc-link" onClick={() => go('account-health')}>Register one under Account health</button> and wait for NexTech to review it.</p>
+          <p className="sc-muted">Select a trademark if the product is made by a specific brand — it improves the price assessment and search matching. No trademark yet? <button type="button" className="sc-link" onClick={() => go('account-health')}>Register one under Account health</button> and wait for {brandName()} to review it.</p>
           <InfoSectionsEditor value={form.info_sections} onChange={(v) => set({ info_sections: v })} />
           <ProductDocumentsEditor value={form.guides} onChange={(v) => set({ guides: v })} onUpload={(file) => uploadFile(headers, '/seller/product-document', file)} />
           <label>Your product code (Contribution Goods, optional)<input value={form.seller_code} maxLength="60" onChange={(e) => set({ seller_code: e.target.value })} /></label>
@@ -444,7 +450,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                     ) : f.type === 'multiselect' ? (
                       <div className="wz-multi">{f.options.map((o) => <label key={o} className="sc-check"><input type="checkbox" checked={[].concat(value ?? []).includes(o)} onChange={(e) => setDetail(f.key, e.target.checked ? [...[].concat(value ?? []), o] : [].concat(value ?? []).filter((x) => x !== o))} />{o}</label>)}</div>
                     ) : (
-                      <input type={f.type === 'number' ? 'number' : 'text'} step="any" value={value ?? ''} placeholder={f.placeholder ?? undefined} onChange={(e) => setDetail(f.key, e.target.value)} />
+                      <input type={f.type === 'number' ? 'number' : 'text'} step="any" value={value ?? ''} disabled={sold && f.key === 'model_number'} placeholder={f.placeholder ?? undefined} onChange={(e) => setDetail(f.key, e.target.value)} />
                     )}
                     {err(`product_details.${f.key}`)}
                   </div>
@@ -589,9 +595,9 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                 <select value={form.shipping_template_id} onChange={(e) => set({ shipping_template_id: e.target.value })}><option value="">Default template</option>{shipTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.is_default ? ' (default)' : ''}</option>)}</select>
               </label>
             </div>
-          ) : <p>NexTech collects and delivers this product — no handling time or shipping template needed.</p>}
+          ) : <p>{brandName()} collects and delivers this product — no handling time or shipping template needed.</p>}
           {config.ships_itself && <p className="sc-muted">No suitable template, or this product needs its own shipping? <button type="button" className="sc-link" onClick={() => go('shipping')}>Add shipping template</button></p>}
-          <p className="sc-muted">Delivery method: {{ nextech: 'NexTech collects & delivers', self: 'You ship with your own courier', label: 'You ship on a NexTech label' }[config.fulfillment_mode] ?? config.fulfillment_mode}</p>
+          <p className="sc-muted">Delivery method: {{ nextech: `${brandName()} collects & delivers`, self: 'You ship with your own courier', label: `You ship on a ${brandName()} label` }[config.fulfillment_mode] ?? config.fulfillment_mode}</p>
           <div className="wz-pz">
             <label className="sc-check"><input type="checkbox" checked={form.personalization.enabled} onChange={(e) => set({ personalization: { ...form.personalization, enabled: e.target.checked } })} /> <b>Buyers upload a photo</b> <small className="sc-muted">for personalized products — printed mugs, photo cases, custom portraits…</small></label>
             {form.personalization.enabled && (

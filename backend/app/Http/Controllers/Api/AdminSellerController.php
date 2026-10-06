@@ -10,6 +10,8 @@ use App\Models\SupportMessage;
 use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\SellerLedger;
+use App\Support\SellerNotify;
+use App\Support\SellerCod;
 use App\Support\SellerOnboarding;
 use App\Support\SellerRequirements;
 use App\Support\Market;
@@ -85,6 +87,7 @@ class AdminSellerController extends Controller
 
             $seller->shop?->forceFill(['is_active' => true])->save();
         });
+        SellerNotify::send($seller, request()->user(), 'Your seller application is approved', 'Welcome to '.\App\Support\Branding::name().' — your seller application is approved and your shop is open. Next, finish the setup tasks on the Seller Center homepage (tax information, compliance information, bank account) and add your products.');
 
         return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
     }
@@ -103,6 +106,7 @@ class AdminSellerController extends Controller
 
             $seller->shop?->forceFill(['is_active' => false])->save();
         });
+        SellerNotify::send($seller, $request->user(), 'Your seller application wasn’t approved', "Your seller application wasn’t approved: {$data['reason']} If you think this is a mistake, reply here.");
 
         return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
     }
@@ -123,6 +127,7 @@ class AdminSellerController extends Controller
 
             $seller->shop?->forceFill(['is_active' => false])->save();
         });
+        SellerNotify::send($seller, $request->user(), 'Your shop has been paused', "Your shop has been paused and your products are hidden: {$data['reason']} Reply here to sort it out.");
 
         return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
     }
@@ -185,6 +190,8 @@ class AdminSellerController extends Controller
             });
         });
 
+        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.Money::format($data['amount_cents'], $cur).' has been sent to your account'.(! empty($data['note']) ? " ({$data['note']})" : '').'. It shows under Finances in Seller Center.');
+
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
         ]);
@@ -204,6 +211,7 @@ class AdminSellerController extends Controller
             'processed_by' => $request->user()->id,
             'processed_at' => now(),
         ]);
+        SellerNotify::send($seller, $request->user(), 'Your payout request was declined', "Your payout request was declined: {$data['note']}");
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
@@ -313,7 +321,7 @@ class AdminSellerController extends Controller
                 'reviewed_at' => now(),
             ])->save();
 
-            $this->postToSellerThread($seller, $request->user(), $message);
+            SellerNotify::send($seller, $request->user(), 'Please update your seller application', $message);
         });
 
         return response()->json(['data' => $this->row($seller->fresh()->load('shop'))]);
@@ -341,10 +349,23 @@ class AdminSellerController extends Controller
             $task.'_note' => $approve ? null : $data['note'],
         ] + ($task === 'bank' ? ['bank_verified_at' => $approve ? now() : null] : []))->save();
 
-        if (! $approve) {
-            $label = ['tax' => 'tax information', 'compliance' => 'additional compliance information', 'bank' => 'bank account'][$task];
-            $this->postToSellerThread($seller, $request->user(), "Your $label needs another look: {$data['note']} Update it from the Seller Center homepage.");
-        }
+        $label = ['tax' => 'tax information', 'compliance' => 'compliance information', 'bank' => 'bank account'][$task];
+        $approve
+            ? SellerNotify::send($seller, $request->user(), 'Your '.$label.' is approved', 'Your '.$label.' has been reviewed and approved'.($task === 'bank' ? ' — payouts will go to this account.' : '.'))
+            : SellerNotify::send($seller, $request->user(), 'Your '.$label.' needs another look', "Your $label needs another look: {$data['note']} Update it from the Seller Center homepage.");
+
+        return response()->json(['data' => $this->row($seller->fresh()->load(['user:id,name,email,phone', 'shop', 'reviewer:id,name']), detailed: true)]);
+    }
+
+    /** Allow (or stop) cash on delivery for this seller — used when Settings says "Only sellers I approve". */
+    public function setCod(Request $request, Seller $seller): JsonResponse
+    {
+        abort_unless($seller->shop, 422, 'This seller has no shop yet.');
+        $approved = (bool) $request->validate(['approved' => ['required', 'boolean']])['approved'];
+        $seller->shop->forceFill(['cod_approved' => $approved] + ($approved ? [] : ['accepts_cod' => false]))->save();
+        SellerNotify::send($seller, $request->user(), $approved ? 'Cash on delivery approved' : 'Cash on delivery switched off',
+            $approved ? \App\Support\Branding::name().' approved cash on delivery for your shop — switch it on in My account → Shipping settings. You keep the cash; '.\App\Support\Branding::name().'’s commission and fees come out of your next orders’ earnings.'
+                : \App\Support\Branding::name().' switched off cash on delivery for your shop. Buyers pay by card.');
 
         return response()->json(['data' => $this->row($seller->fresh()->load(['user:id,name,email,phone', 'shop', 'reviewer:id,name']), detailed: true)]);
     }
@@ -365,19 +386,7 @@ class AdminSellerController extends Controller
      */
     private function postToSellerThread(Seller $seller, User $sender, string $body): SupportThread
     {
-        $thread = SupportThread::where('user_id', $seller->user_id)
-            ->whereIn('issue_type', ['seller_product_issue', 'seller_other'])
-            ->where('status', 'open')
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $thread) {
-            $thread = SupportThread::create([
-                'user_id' => $seller->user_id,
-                'issue_type' => 'seller_product_issue',
-                'status' => 'open',
-            ]);
-        }
+        $thread = SellerNotify::thread($seller);
 
         $thread->post($sender, $body, isStaff: true);
 
@@ -470,11 +479,14 @@ class AdminSellerController extends Controller
                 'name' => $seller->shop->name,
                 'slug' => $seller->shop->slug,
                 'is_active' => (bool) $seller->shop->is_active,
+                'fulfillment_mode' => $seller->shop->fulfillment_mode,
+                'market' => $seller->shop->market,
             ] : null,
         ];
 
         if ($detailed) {
             $row += [
+                'cod' => $seller->shop ? SellerCod::status($seller->shop) + ['accepts' => (bool) $seller->shop->accepts_cod] : null,
                 'tax_id' => $seller->tax_id,
                 'registered_line1' => $seller->registered_line1,
                 'registered_line2' => $seller->registered_line2,

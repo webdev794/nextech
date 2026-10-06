@@ -32,6 +32,8 @@ return [
                 'computers' => 'Computers & peripherals',
                 'phones' => 'Mobile phones & accessories',
                 'software_physical' => 'Prewritten software on physical media',
+                'digital' => 'Digital downloads (software, games, e-books)',
+                'other' => 'Other — I set the tax code on each product',
             ],
             'bank' => ['code_label' => 'Routing number (ABA)', 'code_regex' => '^\d{9}$', 'account_label' => 'Account number', 'account_regex' => '^\d{4,17}$'],
             'corporate_documents' => [
@@ -129,6 +131,12 @@ return [
                 '8518' => 'HSN 8518 — Headphones, earphones & speakers',
                 '8528' => 'HSN 8528 — Monitors & televisions',
                 '8504' => 'HSN 8504 — Chargers & power adapters',
+                '8507' => 'HSN 8507 — Batteries & power banks',
+                '8525' => 'HSN 8525 — Cameras & camcorders',
+                '8543' => 'HSN 8543 — Other electronic gadgets',
+                '8523' => 'HSN 8523 — Software / games on discs or drives',
+                '9973' => 'SAC 9973 — Digital downloads (software, games, e-books)',
+                'other' => 'Other — I set the HSN on each product',
             ],
             'bank' => ['code_label' => 'IFSC', 'code_regex' => '^[A-Z]{4}0[A-Z0-9]{6}$', 'account_label' => 'Account number', 'account_regex' => '^\d{9,18}$'],
             'corporate_documents' => [

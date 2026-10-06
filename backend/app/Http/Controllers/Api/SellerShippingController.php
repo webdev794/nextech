@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\SellerCod;
 use App\Http\Controllers\Controller;
 use App\Models\LabelTemplate;
 use App\Models\ShippingTemplate;
@@ -51,7 +52,7 @@ class SellerShippingController extends Controller
             $allowed = collect($this->intlDestinations($shop))->pluck('code')->all();
             $intl = collect((array) $data['intl_shipping'])
                 ->mapWithKeys(fn ($terms, $code) => [strtoupper((string) $code) => $terms]);
-            abort_if($intl->keys()->diff($allowed)->isNotEmpty(), 422, 'You can only ship to the countries NexTech sells in.');
+            abort_if($intl->keys()->diff($allowed)->isNotEmpty(), 422, 'You can only ship to the countries '.\App\Support\Branding::name().' sells in.');
             if ($intl->isNotEmpty()) {
                 abort_if($block = $this->intlBlocked($shop), 422, (string) $block);
                 abort_unless($shop->fulfillment_mode === 'self' || ($data['fulfillment_mode'] ?? null) === 'self', 422, 'Shipping abroad needs "I ship with my own courier" — switch to it first.');
@@ -67,6 +68,7 @@ class SellerShippingController extends Controller
             $shop->free_shipping_accepted_at ??= now();
         }
         if (! empty($data['accepts_cod'])) {
+            abort_if($why = SellerCod::sellerReason($shop), 422, (string) $why);
             abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Cash on delivery is for orders you ship yourself — choose how you ship first.');
         }
         foreach (['ships_saturday', 'ships_sunday', 'working_holidays', 'accepts_cod'] as $key) {
@@ -75,7 +77,7 @@ class SellerShippingController extends Controller
             }
         }
         if (($data['fulfillment_mode'] ?? null) === 'nextech' && $shop->fulfillment_mode !== 'nextech') {
-            abort_unless(SellerShipping::nextechPickup() === 'available', 422, 'NexTech pickup isn\'t offered right now — ship orders yourself (own courier or a NexTech label).');
+            abort_unless(SellerShipping::nextechPickup() === 'available', 422, \App\Support\Branding::name().' pickup isn\'t offered right now — ship orders yourself (own courier or a '.\App\Support\Branding::name().' label).');
         }
         if (isset($data['fulfillment_mode']) && $data['fulfillment_mode'] !== 'nextech') {
             abort_unless(SellerShipping::setupComplete($shop), 422, 'Before shipping orders yourself, add a ship-from address, create a shipping template, and accept the free-shipping rule.');
@@ -276,6 +278,7 @@ class SellerShippingController extends Controller
         return [
             'fulfillment_mode' => $shop->fulfillment_mode,
             'accepts_cod' => (bool) $shop->accepts_cod,
+            'cod' => SellerCod::status($shop),
             'ships_saturday' => (bool) $shop->ships_saturday,
             'ships_sunday' => (bool) $shop->ships_sunday,
             'working_holidays' => $shop->working_holidays ?? [],

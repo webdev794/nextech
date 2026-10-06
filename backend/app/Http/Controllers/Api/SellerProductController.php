@@ -13,6 +13,7 @@ use App\Support\Market;
 use App\Support\DigitalProducts;
 use App\Support\Personalization;
 use App\Support\ProductCatalog;
+use App\Support\ProductSnapshot;
 use App\Support\ReturnPolicy;
 use App\Support\ProductImages;
 use App\Support\ProductVariants;
@@ -85,7 +86,7 @@ class SellerProductController extends Controller
             // Like Temu: a seller who ships themselves needs a shipping template before listing.
             abort_if($shop->shipsItself() && ! $shop->shippingTemplates()->exists(), 422, 'Create a shipping template in Shipping settings before adding products.');
             // With NexTech pickup switched off, new listings need the seller's own shipping.
-            abort_if(! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available', 422, 'NexTech pickup isn\'t offered anymore — set up your own shipping in Shipping settings before adding products.');
+            abort_if(! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available', 422, \App\Support\Branding::name().' pickup isn\'t offered anymore — set up your own shipping in Shipping settings before adding products.');
         }
         $data = $this->validated($request, $shop, null, $submit);
         $variants = $this->pullVariants($data);
@@ -132,8 +133,8 @@ class SellerProductController extends Controller
         abort_unless($product->shop_id === $shop->id, 403);
         $active = (bool) $request->validate(['active' => ['required', 'boolean']])['active'];
         abort_if($product->status === 'draft' || $product->archived_at !== null, 422, 'This product can\'t be deactivated or relisted.');
-        abort_if($active && $product->deactivated_by === 'admin', 422, 'NexTech took this product off sale — message NexTech to relist it.');
-        abort_if($active && $product->deletion_requested_at !== null, 422, 'You asked NexTech to remove this product — message NexTech if you want to keep selling it.');
+        abort_if($active && $product->deactivated_by === 'admin', 422, \App\Support\Branding::name().' took this product off sale — message '.\App\Support\Branding::name().' to relist it.');
+        abort_if($active && $product->deletion_requested_at !== null, 422, 'You asked '.\App\Support\Branding::name().' to remove this product — message '.\App\Support\Branding::name().' if you want to keep selling it.');
 
         // Buyers still under returns / warranty: it stays listed (out of stock at worst)
         // so they can check its details and get support.
@@ -177,6 +178,8 @@ class SellerProductController extends Controller
 
         $data = $this->validated($request, $shop, $product, $submit);
         unset($data['is_active']); // on / off sale goes through setActive()
+        // Sold already: name, category, type, brand and model stay as buyers bought them.
+        abort_if($locked = ProductSnapshot::lockedChange($product, $data), 422, (string) $locked);
         $variants = $this->pullVariants($data);
         $images = $this->pullImages($data);
         $digital = ($data['product_type'] ?? $product->product_type) === 'digital';
@@ -279,7 +282,7 @@ class SellerProductController extends Controller
             $product->delete();
         } catch (QueryException) {
             return response()->json([
-                'message' => 'This product is on past orders, so it can\'t be deleted. Hide it and ask NexTech to remove it instead.',
+                'message' => 'This product is on past orders, so it can\'t be deleted. Hide it and ask '.\App\Support\Branding::name().' to remove it instead.',
                 'can_request_deletion' => true,
             ], 409);
         }
@@ -318,6 +321,7 @@ class SellerProductController extends Controller
     private function present(Product $product, Shop $shop): array
     {
         $row = $product->toArray();
+        $row['has_sales'] = $product->status !== 'draft' && ProductSnapshot::hasSold($product);
         $row['support_until'] = $product->status === 'draft' ? null : ProductCatalog::supportUntil($product)?->toDateString();
         $row['listing_errors'] = $product->status === 'draft'
             ? ProductCatalog::listingErrors($product->toArray(), $product->category, $product->variants->map(fn ($v) => $v->only(['options', 'price_cents']))->all(), $product->images->pluck('url')->all(), $shop->shipsItself(), SellerRequirements::on($shop, 'listing_details'))
@@ -438,6 +442,15 @@ class SellerProductController extends Controller
             if (array_key_exists($list, $data) && is_array($data[$list])) {
                 $data[$list] = array_values(array_filter(array_map(fn ($v) => is_string($v) ? trim($v) : $v, $data[$list])));
             }
+        }
+
+        // A download goes in a digital category, a physical product in a physical one.
+        $categoryId = array_key_exists('category_id', $data) ? $data['category_id'] : $product?->category_id;
+        if ($categoryId && ($category = Category::find($categoryId))) {
+            $type = $data['product_type'] ?? $product?->product_type ?? 'physical';
+            abort_if(($type === 'digital') !== ($category->kind === 'digital'), 422, $type === 'digital'
+                ? '“'.$category->name.'” is a category for physical products — choose a digital category for a download.'
+                : '“'.$category->name.'” is a category for digital downloads — choose a physical category, or switch the product type to Digital download.');
         }
 
         // India: the regular price is the MRP (inclusive of all taxes) and the

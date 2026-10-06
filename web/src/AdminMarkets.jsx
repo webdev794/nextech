@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { currencySymbol } from './money'
+import { brandName } from './useBranding'
 
 // Settings → Countries: each non-home market's own checkout fees and seller
 // payout limits (in that market's currency), plus India's grievance officer.
@@ -18,7 +19,7 @@ const PAYOUT_FIELDS = [
   ['max_payout_cents', 'Maximum per payout'],
   ['daily_payout_cap_cents', 'Daily payout cap (0 = none)'],
   ['return_pickup_fee_cents', 'Return pickup fee charged to seller'],
-  ['label_postage_cents', 'NexTech label postage charged to seller'],
+  ['label_postage_cents', `${brandName()} label postage charged to seller`],
 ]
 const RIDER_FIELDS = [
   ['base_cents', 'Rider base pay per delivery'],
@@ -71,10 +72,11 @@ export function MarketSettings({ settings, save, onSaved, only }) {
       <form key={market.code} className="admin-form" onSubmit={(event) => saveMarket(event, market)}>
         <h3>{market.name} — charges &amp; payouts ({market.currency.toUpperCase()} {sym})</h3>
         <p className="muted">
-          Shoppers in {market.name} see only {market.name} products, priced in {sym}. Orders are delivered by NexTech riders from {market.name} stores within their radius, otherwise by courier or the seller&rsquo;s own shipping.
+          Shoppers in {market.name} see only {market.name} products, priced in {sym}. Orders are delivered by {brandName()} riders from {market.name} stores within their radius, otherwise by courier or the seller&rsquo;s own shipping.
           {market.code === 'IN' && ' Prices include GST (sellers set HSN code and GST rate per product). TCS 0.5% (GST sec. 52) and TDS 0.1% (sec. 194-O) are withheld from sellers’ sales automatically.'}
         </p>
         <h4>Delivery &amp; checkout charges</h4>
+        <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
         <div className="admin-form-grid">
           {FEE_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`fees.${key}`]} onChange={(event) => set(`fees.${key}`, event.target.value)} /></label>)}
         </div>
@@ -85,6 +87,7 @@ export function MarketSettings({ settings, save, onSaved, only }) {
           {PAYOUT_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`payouts.${key}`]} onChange={(event) => set(`payouts.${key}`, event.target.value)} /></label>)}
         </div>
         <h4>Rider pay</h4>
+        <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
         <div className="admin-form-grid">
           {RIDER_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`rider.${key}`]} onChange={(event) => set(`rider.${key}`, event.target.value)} /></label>)}
         </div>
@@ -118,7 +121,7 @@ export function BusinessDetails({ settings, save, onSaved }) {
   return (
     <form className="admin-form" onSubmit={submit}>
       <h3>Business &amp; tax details</h3>
-      <p className="muted">Printed under &ldquo;Sold by&rdquo; on bills for NexTech&rsquo;s own products; sellers&rsquo; products show the seller&rsquo;s details. Empty fields are left off the bill (without a legal name or address, the store&rsquo;s name and address are used).</p>
+      <p className="muted">Your company&rsquo;s legal identity — the registered office on your GST certificate, not your warehouses (those are in Stores / hubs). Printed under &ldquo;Sold by&rdquo; on bills for {brandName()}&rsquo;s own products; sellers&rsquo; products show the seller&rsquo;s details. Leave the address blank if it&rsquo;s the same as the store — the bill then uses the store&rsquo;s name and address; empty fields are left off.</p>
       {markets.map((m) => (
         <div key={m.code}>
           <h4>{m.name}</h4>

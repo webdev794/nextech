@@ -51,7 +51,7 @@ export function ReturnPolicyView({ days, policy, warranty, warrantyTerms, id }) 
   const accepts = policy?.accepts ?? []
   const excludes = policy?.excludes ?? []
   const hasWarranty = warranty && warranty !== 'No warranty'
-  if (!accepts.length && !excludes.length && !policy?.notes && !hasWarranty) return null
+  if (!accepts.length && !excludes.length && !policy?.notes && !hasWarranty && !(Number(days) > 0)) return null
   return (
     <section className="return-policy-view" id={id}>
       <h3>Returns &amp; warranty</h3>

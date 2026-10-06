@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
-import { setBranding as setSharedBranding } from './useBranding'
+import { setBranding as setSharedBranding, brandName } from './useBranding'
 import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
 import { AdminChatDock, SellerLedgerTable } from './AdminSellerChat'
 import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
@@ -99,7 +99,10 @@ const toSlug = (text, typing = false) => {
   return typing ? s.slice(0, 160) : s.replace(/-+$/, '').slice(0, 160)
 }
 
-const STATUS_FILTERS = ['all', 'open', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
+// Why an admin cancels an order (the customer and the order record see it).
+const CANCEL_REASONS = ['Item out of stock / missing', 'Item damaged before dispatch', 'Customer asked to cancel', 'Can’t deliver to this address', 'Payment problem / suspected fraud', 'Duplicate order', 'Other']
+
+const STATUS_FILTERS = ['all', 'open', 'refund_due', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
 const PAGE_SIZES = [5, 10, 20, 50, 100, 500, 1000]
 
 // Rows-per-page + page nav shown under a list. `total`/`pageCount` come from the
@@ -177,7 +180,7 @@ const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'reviews', 'categories'
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
-  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
+  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', branding: 'Store settings', secure: 'Secure access',
   support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
@@ -195,7 +198,7 @@ function CurrencySettings({ fx, saveSetting, onSaved }) {
   return (
     <form className="admin-form" onSubmit={(e) => { e.preventDefault(); run({ fx_margin_bps: Math.round(Number(margin || 0) * 100), fx_manual: Object.fromEntries(Object.entries(manual).map(([c, v]) => [c, v === '' ? null : Number(v)])) }, 'Currency settings saved.') }}>
       <h3>Currency conversion (cross-border orders)</h3>
-      <p className="muted">When a buyer orders from a seller in another country, prices are converted into the buyer&rsquo;s currency at the rate below plus your margin. The seller is paid their own listed price; the margin stays with NexTech (it covers the card&rsquo;s currency-conversion fee). Each order keeps the rate it was placed at.</p>
+      <p className="muted">When a buyer orders from a seller in another country, prices are converted into the buyer&rsquo;s currency at the rate below plus your margin. The seller is paid their own listed price; the margin stays with {brandName()} (it covers the card&rsquo;s currency-conversion fee). Each order keeps the rate it was placed at.</p>
       {fx.currencies.map((c) => (
         <div key={c.currency} className="admin-fx-row">
           <p><b>1 USD = {c.in_use} {c.currency.toUpperCase()}</b>{c.manual_rate ? ' (your fixed rate)' : ' (market rate)'} · buyers pay <b>{c.buyer_rate} {c.currency.toUpperCase()}</b> per USD with the margin
@@ -236,13 +239,13 @@ function orderSellers(order) {
     if (item.fulfilled_by === 'seller') cur.ships = true
     shops.set(item.shop_id, cur)
   }
-  if (!shops.size) return <span className="muted">NexTech</span>
+  if (!shops.size) return <span className="muted">{brandName()}</span>
   return (
     <>
       {[...shops.values()].map((shop) => (
-        <span key={shop.name} className="admin-order-seller"><b>{shop.name}</b><span className="admin-note">{shop.ships ? 'seller ships' : 'NexTech delivers'}</span></span>
+        <span key={shop.name} className="admin-order-seller"><b>{shop.name}</b><span className="admin-note">{shop.ships ? 'seller ships' : `${brandName()} delivers`}</span></span>
       ))}
-      {nextechStock && <span className="admin-note">+ NexTech items</span>}
+      {nextechStock && <span className="admin-note">+ {brandName()} items</span>}
     </>
   )
 }
@@ -252,10 +255,10 @@ const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes reque
 const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved', 'deletion']
 const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing', deletion: 'Removal requested' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
-const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
+const EMPTY_FOOTER = { copyright: `© {year} ${brandName()}`, app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
 
 const ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
@@ -306,7 +309,9 @@ const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
   id: v.id, label: v.label, sku: v.sku, price: (v.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(v.compare_at_price_cents),
   stock: v.inventory_quantity, image_url: v.image_url ?? '', is_active: v.is_active,
 }))
-const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true, show_on_home: true }
+const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true, show_on_home: true, parent_id: '', kind: 'physical' }
+// A category's place in the tree, for pickers: "Downloadable › Games › Arcade".
+const categoryLabel = (c) => c?.path ?? c?.name ?? ''
 const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', country: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
 const riderFormFrom = (rider) => ({
   id: rider.id,
@@ -625,6 +630,8 @@ export default function Admin({ token, onClose }) {
   const [digitalFilesOf, setDigitalFilesOf] = useState(null) // Products → Files panel
   // Products / Categories submenus: clicking the open section again folds its submenu.
   const [subnavFolded, setSubnavFolded] = useState(false)
+  // Admin cancelling an order: { order, reason, note } — a reason is required.
+  const [cancelling, setCancelling] = useState(null)
   const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [riderReport, setRiderReport] = useState(null)
@@ -660,6 +667,7 @@ export default function Admin({ token, onClose }) {
   const [speakerOpen, setSpeakerOpen] = useState(false)
   const [notifications, setNotifications] = useState({ awaiting_packing: [], refused_cod: [], cash_overdue: [], negative_feedback: [], negative_feedback_total: 0, financial_activity: [], financial_activity_total: 0, recent_ratings: [] })
   const [bellOpen, setBellOpen] = useState(false)
+  const [sellerBellOpen, setSellerBellOpen] = useState(false)
   const [dismissedNotifs, setDismissedNotifs] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('gdp_dismissed_notifs') ?? '[]')) } catch { return new Set() }
   })
@@ -909,8 +917,8 @@ export default function Admin({ token, onClose }) {
         setSupportBadge(pending.length)
         setPendingThreads(pending)
         const map = Object.fromEntries(pending.map((t) => [t.id, t.last_message_at]))
-        if (seenRef.current === null) { seenRef.current = map; return } // seed, don't chime on first load
-        const fresh = pending.filter((t) => seenRef.current[t.id] !== t.last_message_at)
+        // First load: seed without chiming — and carry on, so the bells load straight away too.
+        const fresh = seenRef.current === null ? [] : pending.filter((t) => seenRef.current[t.id] !== t.last_message_at)
         seenRef.current = map
         if (fresh.length) {
           if (!soundMuted) playChime()
@@ -1200,7 +1208,7 @@ export default function Admin({ token, onClose }) {
   async function saveBranding(event) {
     event.preventDefault()
     const saved = await saveSetting({
-      store_name: brandingForm.store_name.trim() || 'NexTech',
+      store_name: brandingForm.store_name.trim() || `${brandName()}`,
       tagline: brandingForm.tagline.trim(),
       logo_url: brandingForm.logo_url.trim(),
       favicon_url: brandingForm.favicon_url.trim(),
@@ -1459,7 +1467,7 @@ export default function Admin({ token, onClose }) {
           <span className="admin-note" style={{ color: '#2f6d34' }} title={`Confirmed ${new Date(order.items_returned_at).toLocaleString()}`}>✓ items returned</span>
         )}
         {steps.map(([status, label]) => (
-          <button key={status} type="button" disabled={busyId === order.id} className={status === 'cancelled' ? 'act danger' : 'act'} onClick={() => patchOrder(order, { status })}>{label}</button>
+          <button key={status} type="button" disabled={busyId === order.id} className={status === 'cancelled' ? 'act danger' : 'act'} onClick={() => (status === 'cancelled' ? setCancelling({ order, reason: '', note: '' }) : patchOrder(order, { status }))}>{label}</button>
         ))}
       </>
     )
@@ -1678,7 +1686,7 @@ export default function Admin({ token, onClose }) {
                 <strong>Charge the seller</strong>
                 <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_pickup} onChange={(event) => setRefundForm({ ...refundForm, charge_pickup: event.target.checked })} /> Return pickup fee ({money(settings?.return_pickup_fee_cents ?? 499, o.currency)} per seller)</label>
                 <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_delivery} onChange={(event) => setRefundForm({ ...refundForm, charge_delivery: event.target.checked })} /> Their share of the delivery fee ({money(o.delivery_fee_cents ?? 0, o.currency)} on this order, charged once)</label>
-                <span className="muted">The refunded item value (less the commission they paid) is always taken back from the seller. Untick these for a NexTech fault, e.g. delivery damage.</span>
+                <span className="muted">The refunded item value (less the commission they paid) is always taken back from the seller. Untick these for a {brandName()} fault, e.g. delivery damage.</span>
               </div>
             )}
             {refundForm.items.length > 0 && (
@@ -1831,8 +1839,9 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, ...rest } = categoryForm
-    const payload = { ...rest, sort_order: Number(rest.sort_order) }
+    const payload = { ...rest, sort_order: Number(rest.sort_order), parent_id: rest.parent_id ? Number(rest.parent_id) : null }
     if (!payload.slug) delete payload.slug
+    if (payload.parent_id) delete payload.kind // a subcategory takes its parent's kind
     try {
       const response = await fetch(`${API_URL}/admin/categories${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
       const data = await readJson(response)
@@ -2150,10 +2159,16 @@ Reason:`, '')
   const riderApplications = notifications.rider_applications ?? []
   const sellerApplications = notifications.seller_applications ?? []
   const categorySuggestions = notifications.category_suggestions ?? []
-  const notificationCount = payoutRequests.length
-    + categorySuggestions.length
-    + labelRequests.length
-    + sellerApplications.length
+  const refundsDue = notifications.refunds_due ?? []
+  const sellerTasks = notifications.seller_tasks ?? []
+  const codKept = notifications.cod_kept ?? []
+  const sellersOwing = notifications.sellers_owing ?? []
+  const productsWaiting = notifications.products_waiting ?? 0
+  const removalRequests = notifications.removal_requests ?? 0
+  // Seller items live under the top-bar "Sellers" button, not the main bell.
+  const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length
+    + labelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0)
+  const notificationCount = refundsDue.length
     + riderPayoutRequests.length
     + riderApplications.length
     + visibleRefusedCod.length
@@ -2227,42 +2242,90 @@ Reason:`, '')
               {TAB_LABELS[name]}{name === 'support' && supportBadge > 0 && <span className="tab-badge">{supportBadge}</span>}
             </button>
           ))}
+          {/* Seller notifications, kept apart from the main bell: applications, onboarding
+              reviews, products, payouts, labels and category requests. */}
           <div className="admin-bell-wrap">
-            <button className={`admin-close${bellShaking ? ' shaking' : ''}`} type="button" title="Notifications" aria-expanded={bellOpen} onClick={() => setBellOpen((v) => !v)}>
-              🔔{notificationCount > 0 && <span className="admin-bell-badge">{notificationCount > 99 ? '99+' : notificationCount}</span>}
+            <button className="admin-top-tab admin-seller-bell" type="button" title="Seller notifications" aria-expanded={sellerBellOpen} onClick={() => { setSellerBellOpen((v) => !v); setBellOpen(false) }}>
+              Sellers{sellerNotificationCount > 0 && <span className="tab-badge">{sellerNotificationCount > 99 ? '99+' : sellerNotificationCount}</span>}
             </button>
-            {bellOpen && (
+            {sellerBellOpen && (
               <div className="admin-bell-pop" role="menu">
-                <h4>Needs attention</h4>
-                {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
+                <h4>Sellers — needs attention</h4>
+                {sellerNotificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {codKept.length > 0 && (
+                      <section>
+                        <h5>Cash kept by sellers (7 days)</h5>
+                        {codKept.slice(0, BELL_ITEM_CAP).map((c) => (
+                          <div className="admin-bell-row" key={`cod-${c.order_id}-${c.seller_id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); openOrderById(c.order_id) }}>
+                              💵 {c.shop_name ?? 'Seller'} kept {money(c.amount_cents, c.currency)} — order #{c.order_id} · {new Date(c.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {sellersOwing.length > 0 && (
+                      <section>
+                        <h5>Sellers owing {brandName()}</h5>
+                        {sellersOwing.slice(0, BELL_ITEM_CAP).map((o) => (
+                          <div className="admin-bell-row" key={`owe-${o.seller_id}`}>
+                            <button type="button" className={o.over_limit ? 'admin-bell-item warn' : 'admin-bell-item'} onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (o.seller_id) openSellerDetail(o.seller_id) }}>
+                              ⚖️ {o.shop_name} owes {money(o.owed_cents, o.currency)}{o.over_limit ? ' — over the limit, cash on delivery paused' : ' — comes out of their next orders'}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {sellerTasks.length > 0 && (
+                      <section>
+                        <h5>Onboarding to review</h5>
+                        {sellerTasks.slice(0, BELL_ITEM_CAP).map((t) => (
+                          <div className="admin-bell-row" key={`stask-${t.seller_id}-${t.task}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(t.seller_id) }}>
+                              📝 {t.name ?? 'Seller'} — {t.label}{t.at ? ` · ${new Date(t.at).toLocaleDateString()}` : ''}
+                            </button>
+                          </div>
+                        ))}
+                        {sellerTasks.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{sellerTasks.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {(productsWaiting > 0 || removalRequests > 0) && (
+                      <section>
+                        <h5>Seller products</h5>
+                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button></div>}
+                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button></div>}
+                      </section>
+                    )}
+                    {sellerApplications.length > 0 && (
+                      <section>
+                        <h5>New seller applications</h5>
+                        {sellerApplications.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`sapp-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(a.id) }}>
+                              🏪 {a.name ?? 'New seller'} · {new Date(a.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {sellerApplications.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{sellerApplications.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
                     {categorySuggestions.length > 0 && (
                       <section>
                         <h5>New categories sellers asked for</h5>
                         {categorySuggestions.slice(0, BELL_ITEM_CAP).map((c) => (
                           <div className="admin-bell-row" key={`cat-${c.name}`}>
-                            <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
+                            <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setSellerBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
                               🗂️ &ldquo;{c.name}&rdquo; — {c.shop_name ?? 'Seller'}, {c.products > 1 ? `${c.products} products` : c.product_name} · {new Date(c.at).toLocaleDateString()}
                             </button>
                           </div>
                         ))}
                         {categorySuggestions.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('products') }}>+{categorySuggestions.length - BELL_ITEM_CAP} more — see Products</button>
-                        )}
-                      </section>
-                    )}
-                    {labelRequests.length > 0 && (
-                      <section>
-                        <h5>Shipping labels to upload</h5>
-                        {labelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
-                          <div className="admin-bell-row" key={`label-${r.id}`}>
-                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('orders') }}>
-                              🏷️ {r.shop_name ?? 'Seller'} — order #{r.order_id} · {new Date(r.at).toLocaleDateString()}
-                            </button>
-                          </div>
-                        ))}
-                        {labelRequests.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('orders') }}>+{labelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('products') }}>+{categorySuggestions.length - BELL_ITEM_CAP} more — see Products</button>
                         )}
                       </section>
                     )}
@@ -2271,13 +2334,57 @@ Reason:`, '')
                         <h5>Seller payout requests</h5>
                         {payoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
                           <div className="admin-bell-row" key={`payout-${r.id}`}>
-                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
                               💸 {r.shop_name ?? 'Seller'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
                             </button>
                           </div>
                         ))}
                         {payoutRequests.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('sellers') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Sellers</button>
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {labelRequests.length > 0 && (
+                      <section>
+                        <h5>Shipping labels to upload</h5>
+                        {labelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`label-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>
+                              🏷️ {r.shop_name ?? 'Seller'} — order #{r.order_id} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {labelRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>+{labelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
+                        )}
+                      </section>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="admin-bell-wrap">
+            <button className={`admin-close${bellShaking ? ' shaking' : ''}`} type="button" title="Notifications" aria-expanded={bellOpen} onClick={() => { setBellOpen((v) => !v); setSellerBellOpen(false) }}>
+              🔔{notificationCount > 0 && <span className="admin-bell-badge">{notificationCount > 99 ? '99+' : notificationCount}</span>}
+            </button>
+            {bellOpen && (
+              <div className="admin-bell-pop" role="menu">
+                <h4>Needs attention</h4>
+                {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
+                  <>
+                    {refundsDue.length > 0 && (
+                      <section>
+                        <h5>Refunds to issue</h5>
+                        {refundsDue.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`refund-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" title={r.reason ?? ''} onClick={() => openOrderById(r.id)}>
+                              ↩ Order #{r.id} — {money(r.amount_cents, r.currency)}{r.customer ? ` · ${r.customer}` : ''} · cancelled{r.cancelled_by ? ` by ${r.cancelled_by === 'admin' ? `${brandName()}` : r.cancelled_by}` : ''}
+                            </button>
+                          </div>
+                        ))}
+                        {refundsDue.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('orders'); setStatusFilter('refund_due'); setOrdersPage(1) }}>+{refundsDue.length - BELL_ITEM_CAP} more — see Orders</button>
                         )}
                       </section>
                     )}
@@ -2293,21 +2400,6 @@ Reason:`, '')
                         ))}
                         {riderPayoutRequests.length > BELL_ITEM_CAP && (
                           <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('riders') }}>+{riderPayoutRequests.length - BELL_ITEM_CAP} more — see Riders</button>
-                        )}
-                      </section>
-                    )}
-                    {sellerApplications.length > 0 && (
-                      <section>
-                        <h5>New seller applications</h5>
-                        {sellerApplications.slice(0, BELL_ITEM_CAP).map((a) => (
-                          <div className="admin-bell-row" key={`sapp-${a.id}`}>
-                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('sellers'); openSellerDetail(a.id) }}>
-                              🏪 {a.name ?? 'New seller'} · {new Date(a.at).toLocaleDateString()}
-                            </button>
-                          </div>
-                        ))}
-                        {sellerApplications.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('sellers') }}>+{sellerApplications.length - BELL_ITEM_CAP} more — see Sellers</button>
                         )}
                       </section>
                     )}
@@ -2731,7 +2823,7 @@ Reason:`, '')
           <div className="admin-filters">
             {STATUS_FILTERS.map((value) => (
               <button key={value} type="button" className={statusFilter === value ? 'chip active' : 'chip'} onClick={() => { setStatusFilter(value); setOrdersPage(1) }}>
-                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : STATUS_LABELS[value]}
+                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : value === 'refund_due' ? `Refund due${refundsDue.length > 0 ? ` (${refundsDue.length})` : ''}` : STATUS_LABELS[value]}
               </button>
             ))}
           </div>
@@ -2747,8 +2839,8 @@ Reason:`, '')
                     <td className="admin-td-name">{orderSellers(order)}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
                     <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
-                    <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
-                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
+                    <td>{order.payment_status === 'refund_pending' || (order.status === 'cancelled' && order.payment_status === 'paid') ? <span className="pill pill-refund_due">refund due</span> : <span className={`pill pill-${order.payment_status}`}>{order.payment_status.replace('_', ' ')}</span>}<span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
+                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.status === 'cancelled' && order.cancel_reason && <span className="admin-note" title={order.cancel_reason}>{order.cancelled_by === 'customer' ? 'By customer' : order.cancelled_by === 'rider' ? 'At the door' : `By ${brandName()}`}: {order.cancel_reason}</span>}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
                       {order.delivery_method === 'seller' ? (
                         <>
@@ -2841,7 +2933,7 @@ Reason:`, '')
               <label>Category
                 <select value={productCategory} onChange={(event) => { setProductCategory(event.target.value); setProductsPage(1); setProductForm(null) }}>
                   <option value="">All categories</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {categories.map((c) => <option key={c.id} value={c.id}>{categoryLabel(c)}</option>)}
                 </select>
               </label>
             )}
@@ -2879,13 +2971,13 @@ Reason:`, '')
                 <label>Category<b className="admin-req" title="Required"> *</b>
                   <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
                     <option value="" disabled>Choose…</option>
-                    {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    {categories.map((category) => <option key={category.id} value={category.id}>{categoryLabel(category)}</option>)}
                   </select>
                   {productForm.suggested_category_name && <p className="admin-note">Seller suggested a new category: &ldquo;{productForm.suggested_category_name}&rdquo;</p>}
                 </label>
                 <label>Shop
                   <select value={productForm.shop_id ?? ''} onChange={(event) => setProductForm({ ...productForm, shop_id: event.target.value })}>
-                    <option value="">Sold directly by NexTech</option>
+                    <option value="">Sold directly by {brandName()}</option>
                     {shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                   </select>
                 </label>
@@ -3056,7 +3148,7 @@ Reason:`, '')
                     <td>{product.name}{countryBadge(product.market)}{product.product_type === 'digital' && <span className="pill pill-digital" title="Digital download">⬇ Digital</span>}{(product.followup_items ?? []).length > 0 && <span className="admin-note" title={product.followup_items.join(' ')}>⚠ seller to add {product.followup_items.length} detail{product.followup_items.length === 1 ? '' : 's'}</span>}{product.shop_id && ['pending', 'draft'].includes(product.status) && (product.followups?.later ?? []).length > 0 && <span className="admin-note" title={product.followups.later.join(' ')}>⚠ {product.followups.later.length} detail{product.followups.later.length === 1 ? '' : 's'} missing</span>}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
-                    <td>{product.shop?.name ?? <span className="muted">NexTech</span>}</td>
+                    <td>{product.shop?.name ?? <span className="muted">{brandName()}</span>}</td>
                     <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.low_traffic_offers > 0 && <span className="pill pill-rejected" title="A sales boost offer is waiting for the seller">Low traffic</span>}{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}{(product.missing_compliance ?? []).length > 0 && <p className="admin-note">Docs missing: {product.missing_compliance.join(', ')}</p>}</td>
                     <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
@@ -3118,12 +3210,24 @@ Reason:`, '')
               </div>
               <div className="admin-form-grid">
                 <label>Name<input required value={categoryForm.name} onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })} /></label>
+                <label>Parent category
+                  <select value={categoryForm.parent_id ?? ''} onChange={(event) => setCategoryForm({ ...categoryForm, parent_id: event.target.value })}>
+                    <option value="">— None (top level) —</option>
+                    {categories.filter((c) => c.id !== categoryForm.id && (c.depth ?? 0) < 2 && !(c.path ?? '').startsWith(`${categoryLabel(categories.find((x) => x.id === categoryForm.id))} ›`)).map((c) => <option key={c.id} value={c.id}>{categoryLabel(c)}</option>)}
+                  </select>
+                </label>
+                <label>Type
+                  <select value={categoryForm.parent_id ? (categories.find((c) => String(c.id) === String(categoryForm.parent_id))?.kind ?? 'physical') : (categoryForm.kind ?? 'physical')} disabled={!!categoryForm.parent_id} onChange={(event) => setCategoryForm({ ...categoryForm, kind: event.target.value })}>
+                    <option value="physical">Physical products</option>
+                    <option value="digital">Digital downloads</option>
+                  </select>
+                </label>
                 <label>Slug (optional)<input value={categoryForm.slug ?? ''} onChange={(event) => setCategoryForm({ ...categoryForm, slug: event.target.value })} /></label>
                 <label>Sort order<input type="number" min="0" value={categoryForm.sort_order} onChange={(event) => setCategoryForm({ ...categoryForm, sort_order: event.target.value })} /></label>
                 <label className="admin-check"><input type="checkbox" checked={categoryForm.is_active} onChange={(event) => setCategoryForm({ ...categoryForm, is_active: event.target.checked })} /> Active</label>
                 <label className="admin-check"><input type="checkbox" checked={categoryForm.show_on_home !== false} onChange={(event) => setCategoryForm({ ...categoryForm, show_on_home: event.target.checked })} /> Show on homepage</label>
               </div>
-              <p className="muted">Homepage category tiles use this category&rsquo;s name, image and sort order.</p>
+              <p className="muted">Up to 3 levels, e.g. Downloadable &rsaquo; Games &rsaquo; Arcade. A subcategory takes its top category&rsquo;s type: sellers see only physical categories for physical products and only digital ones for downloads. Shoppers opening a category also see its subcategories&rsquo; products. Homepage category tiles use this category&rsquo;s name, image and sort order.</p>
               <div className="admin-form-actions">
                 <button className="act" type="submit">Save</button>
                 <button className="act ghost" type="button" onClick={() => setCategoryForm(null)}>Cancel</button>
@@ -3134,19 +3238,21 @@ Reason:`, '')
           {!categoryForm && <>
           {listBusy.categories && categories.length === 0 ? <Loading>Loading categories…</Loading> : categories.length === 0 ? <p className="admin-empty">No categories.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Image</th><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
+              <thead><tr><th>Image</th><th>Name</th><th>Type</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(categories, categoriesPage).map((category) => (
                   <tr key={category.id}>
                     <td>{category.image_url ? <img className="admin-banner-thumb" src={mediaUrl(category.image_url)} alt="" /> : <span className="muted">—</span>}</td>
-                    <td>{category.name}</td>
+                    <td style={{ paddingLeft: 16 + (category.depth ?? 0) * 22 }}>{(category.depth ?? 0) > 0 && <span className="muted">&#8627; </span>}{category.name}{category.children_count > 0 && <span className="admin-note">{category.children_count} subcategor{category.children_count === 1 ? 'y' : 'ies'}</span>}</td>
+                    <td>{category.kind === 'digital' ? 'Digital' : 'Physical'}</td>
                     <td>{category.slug}</td>
                     <td>{category.products_count ?? 0}</td>
                     <td>{category.sort_order}</td>
                     <td>{category.is_active ? 'Yes' : 'No'}</td>
                     <td>{category.show_on_home !== false ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active, show_on_home: category.show_on_home !== false }); scrollFormIntoView('admin-category-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active, show_on_home: category.show_on_home !== false, parent_id: category.parent_id ? String(category.parent_id) : '', kind: category.kind ?? 'physical' }); scrollFormIntoView('admin-category-form') }}>Edit</button>
+                      {(category.depth ?? 0) < 2 && <button className="act ghost" type="button" title="Add a subcategory under this one" onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY, parent_id: String(category.id), show_on_home: false }); scrollFormIntoView('admin-category-form') }}>+ Sub</button>}
                       <button className="act danger" type="button" onClick={() => removeCategory(category)}>Delete</button>
                     </td>
                   </tr>
@@ -3372,12 +3478,12 @@ Reason:`, '')
         <section className="admin-panel">
           <div className="admin-toolbar">
             <button className="act" type="button" onClick={() => { setStoreForm({ ...EMPTY_STORE }); scrollFormIntoView('admin-store-form') }}>New store</button>
-            <span className="muted">Customers outside every active store&rsquo;s radius can browse but can&rsquo;t check out.</span>
+            <span className="muted"><b>Stores are your warehouses or delivery hubs</b> — where stock is kept, riders pick up orders, and each delivery radius starts. Customers outside every active store&rsquo;s radius can browse but can&rsquo;t check out. (Your company&rsquo;s registered address for bills is in Settings &rarr; Business &amp; tax details.)</span>
           </div>
 
           {storeForm && (
             <form id="admin-store-form" className="admin-form" onSubmit={saveStore}>
-              <h3>{storeForm.id ? `Edit store #${storeForm.id}` : 'New store'}</h3>
+              <h3>{storeForm.id ? `Edit store #${storeForm.id}` : 'New store (warehouse / hub)'}</h3>
               <div className="admin-form-grid">
                 <label>Name<input value={storeForm.name} placeholder="Main Store" onChange={(event) => setStoreForm({ ...storeForm, name: event.target.value })} /></label>
                 <label>Street<input required value={storeForm.line1} onChange={(event) => setStoreForm({ ...storeForm, line1: event.target.value })} /></label>
@@ -3725,7 +3831,7 @@ Reason:`, '')
               <h3>Footer</h3>
               <p className="muted">The storefront footer. &ldquo;Useful Links&rdquo; also lists your published content pages; the links below are added after them.</p>
               <div className="admin-form-grid">
-                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder="© {year} NexTech" /></label>
+                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder={`© {year} ${brandName()}`} /></label>
                 <label>App Store URL<input value={footerForm.app_store_url} onChange={(event) => setFooterForm({ ...footerForm, app_store_url: event.target.value })} placeholder="https://apps.apple.com/…" /></label>
                 <label>Google Play URL<input value={footerForm.play_store_url} onChange={(event) => setFooterForm({ ...footerForm, play_store_url: event.target.value })} placeholder="https://play.google.com/…" /></label>
               </div>
@@ -4026,21 +4132,36 @@ Reason:`, '')
 
               <div className="admin-form">
                 <h3>Seller shipping</h3>
-                <label>&ldquo;NexTech collects &amp; delivers&rdquo; option for sellers
+                <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
                   <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
                     <option value="available">Available — sellers can choose it</option>
                     <option value="disabled">Shown but unselectable</option>
                     <option value="hidden">Hidden</option>
                   </select>
                 </label>
-                <label>NexTech shipping labels (&ldquo;I ship, NexTech label&rdquo;)
+                <label>{brandName()} shipping labels (&ldquo;I ship, {brandName()} label&rdquo;)
                   <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
                     <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
                     <option value="auto">Courier API — paid carrier label bought through the courier connection</option>
                   </select>
                 </label>
                 <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
-                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a NexTech-bought label), taking pickups off NexTech. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
+                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
+                <label>Cash on delivery on sellers&rsquo; own deliveries
+                  <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
+                    <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
+                    <option value="off">Off for every seller</option>
+                    <option value="all">On for any seller who switches it on</option>
+                  </select>
+                </label>
+                <div className="admin-form-grid">
+                  {marketOptions.map((m) => (
+                    <label key={m.code}>Pause it when a seller owes {brandName()} more than ({currencySymbol(m.currency)}, {m.name})
+                      <input type="number" min="0" step="1" defaultValue={((settings.seller_cod_max_owed?.[m.code] ?? 0) / 100).toFixed(0)} onBlur={(event) => saveSetting({ seller_cod_max_owed: { [m.code]: Math.max(0, Math.round(Number(event.target.value || 0) * 100)) } })} />
+                    </label>
+                  ))}
+                </div>
+                <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
               </div>
 
               <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
@@ -4082,7 +4203,7 @@ Reason:`, '')
                     {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.currency.toUpperCase()})</option>)}
                   </select>
                 </label>
-                <p className="muted">Every country can have its own NexTech stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
+                <p className="muted">Every country can have its own {brandName()} stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
               </div>
 
               <BusinessDetails settings={settings} save={saveSetting} onSaved={setMessage} />
@@ -4093,7 +4214,7 @@ Reason:`, '')
                 : <>
               <form className="admin-form" onSubmit={saveFees}>
                 <h3>Marketplace commission &amp; seller payouts ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
-                <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to NexTech&rsquo;s own catalog.</p>
+                <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to {brandName()}&rsquo;s own catalog.</p>
                 <div className="admin-form-grid">
                   <label>Commission rate — established sellers (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
                   <label className="admin-check"><input type="checkbox" checked={!!feesForm.commission_apply_existing} onChange={(event) => setFeesForm({ ...feesForm, commission_apply_existing: event.target.checked })} /> Apply a rate change to existing sellers too{settings.kept_rate_sellers?.[settings.home_market] ? ` (${settings.kept_rate_sellers[settings.home_market]} on an older rate)` : ''} — unticked, they keep their current rate; move chosen ones later in Secure access</label>
@@ -4103,11 +4224,12 @@ Reason:`, '')
                   <label>Default return window (days)<input type="number" min="0" max={feesForm.max_return_days || 365} value={feesForm.return_window_days} onChange={(event) => setFeesForm({ ...feesForm, return_window_days: event.target.value })} /></label>
                   <label>Maximum return window (days)<input type="number" min="0" max="365" value={feesForm.max_return_days} onChange={(event) => setFeesForm({ ...feesForm, max_return_days: event.target.value })} /></label>
                   <label>Return pickup fee charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.return_pickup_fee} onChange={(event) => setFeesForm({ ...feesForm, return_pickup_fee: event.target.value })} /></label>
-                  <label>NexTech label postage charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.label_postage} onChange={(event) => setFeesForm({ ...feesForm, label_postage: event.target.value })} /></label>
+                  <label>{brandName()} label postage charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.label_postage} onChange={(event) => setFeesForm({ ...feesForm, label_postage: event.target.value })} /></label>
                 </div>
-                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per NexTech-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
+                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per {brandName()}-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
 
                 <h3>Rider pay</h3>
+                <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
                 <div className="admin-form-grid">
                   <label>Base pay per delivery ($)<input type="number" min="0" step="0.01" value={feesForm.rider_base_pay} onChange={(event) => setFeesForm({ ...feesForm, rider_base_pay: event.target.value })} /></label>
                   <label>Per mile ($)<input type="number" min="0" step="0.01" value={feesForm.rider_per_mile} onChange={(event) => setFeesForm({ ...feesForm, rider_per_mile: event.target.value })} /></label>
@@ -4129,6 +4251,7 @@ Reason:`, '')
 
               <form className="admin-form" onSubmit={saveFees}>
                 <h3>Delivery &amp; checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
 
                 <fieldset className="admin-fieldset">
                   <legend>Delivery fee</legend>
@@ -4259,6 +4382,32 @@ Reason:`, '')
         />
       )}
 
+      {cancelling && (
+        <div className="admin-change-overlay" role="dialog" aria-modal="true" aria-label="Cancel order">
+          <form className="admin-change-box" onSubmit={async (event) => {
+            event.preventDefault()
+            const reason = [cancelling.reason, cancelling.note.trim()].filter(Boolean).join(' — ')
+            if (!reason) return
+            await patchOrder(cancelling.order, { status: 'cancelled', cancel_reason: reason })
+            setCancelling(null)
+          }}>
+            <h3>Cancel order #{cancelling.order.id}</h3>
+            {['paid', 'partially_refunded'].includes(cancelling.order.payment_status) && <p className="muted">This order is paid — it&rsquo;ll show as <b>Refund due</b> (Orders filter and the 🔔 bell) until you refund it.</p>}
+            <label>Reason
+              <select required value={cancelling.reason} onChange={(event) => setCancelling((c) => ({ ...c, reason: event.target.value }))}>
+                <option value="" disabled>Choose…</option>
+                {CANCEL_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label>Details {cancelling.reason === 'Other' ? '' : '(optional)'}<textarea rows={2} maxLength={400} required={cancelling.reason === 'Other'} value={cancelling.note} placeholder="e.g. which item is missing" onChange={(event) => setCancelling((c) => ({ ...c, note: event.target.value }))} /></label>
+            <div className="admin-form-actions">
+              <button className="act danger" type="submit" disabled={busyId === cancelling.order.id}>Cancel order</button>
+              <button className="act ghost" type="button" onClick={() => setCancelling(null)}>Keep order</button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {digitalFilesOf && <AdminDigitalFiles product={digitalFilesOf} authHeaders={authHeaders} onClose={() => setDigitalFilesOf(null)} />}
 
       {changeRequest && (
@@ -4384,7 +4533,12 @@ Reason:`, '')
                         <h4>Shop &amp; shipping</h4>
                         <dl className="admin-dl">
                           <div><dt>Shop</dt><dd>{d.shop.name} ({d.shop.is_active ? 'live' : 'hidden'})</dd></div>
-                          <div><dt>Shipping</dt><dd>{{ nextech: 'NexTech collects & delivers this seller’s orders', self: 'Ships with their own courier (tracking entered in Seller Center)', label: 'Ships on NexTech-bought labels (postage deducted from earnings)' }[d.shop.fulfillment_mode ?? 'nextech']}</dd></div>
+                          {d.cod && <div><dt>Cash on delivery</dt><dd>
+                            {d.cod.mode === 'off' ? 'Off for all sellers (Settings → Seller shipping)' : d.cod.mode === 'all' ? `Allowed for all sellers — ${d.cod.accepts ? 'on in their shop' : 'they haven’t switched it on'}` : d.cod.approved ? `Allowed — ${d.cod.accepts ? 'on in their shop' : 'they haven’t switched it on'}` : 'Not allowed'}
+                            {d.cod.owed_cents > 0 && <span className="admin-note" style={{ color: '#a23b28' }}>Owes {brandName()} {money(d.cod.owed_cents, d.currency)}{d.cod.owed_cents > d.cod.max_owed_cents ? ' — over the limit, paused' : ''}</span>}
+                            {d.cod.mode === 'approved' && <button className={d.cod.approved ? 'act ghost' : 'act'} type="button" disabled={busyId === d.id} style={{ marginLeft: 8 }} onClick={() => { if (d.cod.approved || window.confirm(`Allow cash on delivery for ${d.shop.name}? They keep the cash; ${brandName()}’s share comes out of their next orders’ earnings.`)) sellerAction(d, 'cod', { approved: !d.cod.approved }) }}>{d.cod.approved ? 'Stop cash on delivery' : 'Allow cash on delivery'}</button>}
+                          </dd></div>}
+                          <div><dt>Shipping</dt><dd>{{ nextech: `${brandName()} collects & delivers this seller’s orders`, self: 'Ships with their own courier (tracking entered in Seller Center)', label: `Ships on ${brandName()}-bought labels (postage deducted from earnings)` }[d.shop.fulfillment_mode ?? 'nextech']}</dd></div>
                         </dl>
                       </section>
                     )}
@@ -4575,7 +4729,7 @@ Reason:`, '')
                     const pks = (o.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
                     return (
                       <div key={ss.id}>
-                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? 'NexTech label' : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
+                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
                         {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
                         {pks.map((pk) => (
                           <div key={pk.id} className="muted admin-pkg">

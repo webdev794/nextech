@@ -75,3 +75,7 @@
 .drawer-later{display:block;margin-top:2px;padding:0;border:0;background:none;color:var(--muted);font:12px Okra,sans-serif;text-decoration:underline;cursor:pointer}
 .drawer-later:hover{color:#e0245e}
 .pdp-oos{color:#c62828;font-weight:700}
+.cat-subs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.cat-sub{padding:7px 14px;border:1px solid #dcdcdc;border-radius:999px;background:#fff;font:500 14px 'Okra',sans-serif;cursor:pointer}
+.cat-sub:hover{border-color:#111}
+.cat-sub.back{background:#f4f4f4}

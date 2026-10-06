@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use App\Support\DownloadLinkCheck;
+use App\Support\DigitalProducts;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\Shop;
@@ -9,7 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * Products -> Add products via upload. The seller fills in the template the
+ * Products -> Bulk import products. The seller fills in the template the
  * browser generated (one row per SKU; rows sharing a "Contribution Goods"
  * code are one product) and uploads it; the browser reads the sheet into
  * rows keyed by the template's column keys and this turns them into
@@ -34,9 +36,11 @@ class ProductUpload
      * @param  list<int>  $categoryIds  the categories the template was generated for
      * @return array{results: list<array<string, mixed>>, error_records: int}
      */
-    public static function process(Shop $shop, array $rows, array $categoryIds): array
+    public static function process(Shop $shop, array $rows, array $categoryIds, bool $digital = false): array
     {
-        $categories = Category::whereIn('id', $categoryIds)->get()->keyBy(fn ($c) => mb_strtolower($c->name));
+        $picked = Category::whereIn('id', $categoryIds)->get();
+        // A category can be written as its name or its full path ("Downloadable › Games › Arcade").
+        $categories = $picked->keyBy(fn ($c) => mb_strtolower($c->name))->merge($picked->keyBy(fn ($c) => mb_strtolower($c->path())));
         $trademarks = $shop->trademarks()->where('status', 'approved')->get()->keyBy(fn ($t) => mb_strtolower($t->name));
         $templates = $shop->shippingTemplates()->get()->keyBy(fn ($t) => mb_strtolower($t->name));
         $types = (array) config('product_catalog.variation_types');
@@ -45,9 +49,9 @@ class ProductUpload
         // can only be saved as drafts.
         $strict = SellerRequirements::on($shop, 'listing_details');
         $gstRequired = SellerRequirements::on($shop, 'gst_details');
-        $shippingBlock = ! SellerRequirements::on($shop, 'shipping_setup') ? null : match (true) {
+        $shippingBlock = $digital || ! SellerRequirements::on($shop, 'shipping_setup') ? null : match (true) {
             $shop->shipsItself() && ! $shop->shippingTemplates()->exists() => 'Create a shipping template in Shipping settings before submitting products.',
-            ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => 'NexTech pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
+            ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => \App\Support\Branding::name().' pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
             default => null,
         };
 
@@ -57,7 +61,7 @@ class ProductUpload
             if (! array_filter($row, fn ($v) => $v !== null && $v !== '')) {
                 continue; // blank line
             }
-            $code = (string) ($row['contribution_goods'] ?? '');
+            $code = $digital ? '' : (string) ($row['contribution_goods'] ?? '');
             $groups[$code !== '' ? 'g:'.mb_strtolower($code) : 'r:'.$i][] = ['index' => $i, 'row' => $row];
         }
 
@@ -75,6 +79,9 @@ class ProductUpload
             }
 
             $category = $categories->get(mb_strtolower((string) ($first['category'] ?? '')));
+            if ($category && ($category->kind === 'digital') !== $digital) {
+                $messages[] = '"'.$category->name.'" is a '.($digital ? 'physical' : 'digital').' category — use the '.($category->kind === 'digital' ? 'Digital downloads' : 'Physical products').' template for it.';
+            }
             if (! $category) {
                 $messages[] = ($first['category'] ?? '') === ''
                     ? 'Choose a category.'
@@ -97,7 +104,7 @@ class ProductUpload
                 }
             }
 
-            $theme = array_values(array_filter(array_map('trim', preg_split('/\s*(?:×|x|X|\*|\+)\s*/u', (string) ($first['variation_theme'] ?? '')) ?: [])));
+            $theme = $digital ? [] : array_values(array_filter(array_map('trim', preg_split('/\s*(?:×|x|X|\*|\+)\s*/u', (string) ($first['variation_theme'] ?? '')) ?: [])));
             if (array_diff($theme, $types)) {
                 $messages[] = 'Variation theme "'.$first['variation_theme'].'" isn’t one of: '.implode(', ', $types).'.';
                 $theme = array_values(array_intersect($theme, $types));
@@ -107,7 +114,7 @@ class ProductUpload
             }
 
             $details = [];
-            foreach (ProductCatalog::attributesFor($category) as $field) {
+            foreach (ProductCatalog::attributesFor($category, $digital) as $field) {
                 $value = $first['detail_'.$field['key']] ?? null;
                 if ($value === null || $value === '') {
                     continue;
@@ -118,8 +125,10 @@ class ProductUpload
             }
 
             $urls = fn (array $row, string $prefix, int $max) => collect(range(1, $max))->map(fn ($n) => (string) ($row[$prefix.$n] ?? ''))->filter()->values();
+            // Product images: image_url_1…10 (older templates: sku_image_url_1…10).
+            $productImages = fn (array $row) => $urls($row, 'image_url_', 10)->whenEmpty(fn () => $urls($row, 'sku_image_url_', 10));
             $badUrls = collect($group)->flatMap(fn ($g) => [
-                ...$urls($g['row'], 'sku_image_url_', 10), ...$urls($g['row'], 'detail_image_url_', 5),
+                ...$productImages($g['row']), $g['row']['variant_image_url'] ?? '', ...$urls($g['row'], 'detail_image_url_', 5),
                 $g['row']['product_video_url'] ?? '', $g['row']['detail_video_url'] ?? '', $g['row']['price_reference_url'] ?? '',
             ])->filter()->reject(fn ($u) => preg_match('#^https?://\S+$#i', $u))->unique();
             foreach ($badUrls as $bad) {
@@ -136,10 +145,10 @@ class ProductUpload
                     $variants[] = [
                         'label' => implode(' / ', array_filter($options)) ?: 'Option '.($n + 1),
                         'options' => $options,
-                        'seller_code' => ($g['row']['contribution_sku'] ?? '') ?: null,
+                        'seller_code' => ($g['row']['contribution_sku'] ?? '') ?: null, // older templates only
                         'price_cents' => self::cents($g['row']['base_price'] ?? null),
                         'inventory_quantity' => (int) ($g['row']['quantity'] ?? 0),
-                        'image_url' => $urls($g['row'], 'sku_image_url_', 10)->first(),
+                        'image_url' => ($g['row']['variant_image_url'] ?? '') ?: $productImages($g['row'])->first(),
                         'weight_grams' => self::int($g['row']['weight_g'] ?? null),
                         'length_mm' => self::int($g['row']['length_mm'] ?? null),
                         'width_mm' => self::int($g['row']['width_mm'] ?? null),
@@ -148,7 +157,7 @@ class ProductUpload
                 }
             }
 
-            $images = $urls($first, 'sku_image_url_', 10)->all();
+            $images = $productImages($first)->all();
             $handling = self::int($first['handling_time'] ?? null);
             if ($handling !== null && ! in_array($handling, (array) config('product_catalog.handling_days'), true)) {
                 $messages[] = 'Handling time must be one of: '.implode(', ', (array) config('product_catalog.handling_days')).' days.';
@@ -173,6 +182,31 @@ class ProductUpload
                 'country_of_origin' => trim(($first['country_of_origin'] ?? '').(($first['province_of_origin'] ?? '') !== '' ? ' ('.$first['province_of_origin'].')' : '')) ?: null,
                 'price_references' => ($first['price_reference_url'] ?? '') !== '' ? [$first['price_reference_url']] : null,
             ];
+            $download = null;
+            if ($digital) {
+                // A download: no shipping, stock follows license keys (unlimited by default),
+                // and the file is the seller's hosted link from the sheet.
+                $data['product_type'] = 'digital';
+                $data['inventory_quantity'] = DigitalProducts::UNLIMITED;
+                $data['handling_days'] = null;
+                $data['shipping_template_id'] = null;
+                $data['digital_settings'] = array_filter([
+                    'download_limit' => ($first['download_limit'] ?? '') !== '' ? max(0, min(100, (int) $first['download_limit'])) : null,
+                    'instructions' => ($first['install_instructions'] ?? '') ?: null,
+                ], fn ($v) => $v !== null);
+                $url = trim((string) ($first['download_url'] ?? ''));
+                if ($url === '') {
+                    $messages[] = 'Add the download link (or upload the file on the product after import).';
+                } else {
+                    $url = DownloadLinkCheck::normalize($url);
+                    $check = DownloadLinkCheck::check($url);
+                    if ($check['status'] === 'broken') {
+                        $messages[] = 'Download link: '.$check['note'];
+                    }
+                    $download = ['name' => (string) (($first['download_name'] ?? '') ?: 'Download'), 'external_url' => $url,
+                        'link_status' => $check['status'], 'link_note' => $check['note'], 'link_checked_at' => now(), 'size_bytes' => $check['size']];
+                }
+            }
             if (Market::taxInclusive($shop->market)) {
                 $data['hsn_code'] = ($first['hsn_code'] ?? '') ?: null;
                 $data['gst_rate_bps'] = ($first['gst_rate'] ?? '') !== '' ? (int) round((float) $first['gst_rate'] * 100) : null;
@@ -195,7 +229,7 @@ class ProductUpload
 
             $productId = null;
             if ($data['name'] !== '') {
-                $productId = DB::transaction(function () use ($shop, $data, $variants, $images, $messages) {
+                $productId = DB::transaction(function () use ($shop, $data, $variants, $images, $messages, $download) {
                     $product = Product::create($data + [
                         'shop_id' => $shop->id,
                         'status' => $messages ? 'draft' : 'pending',
@@ -204,6 +238,9 @@ class ProductUpload
                     ]);
                     ProductVariants::sync($product, $variants);
                     ProductImages::sync($product, $images);
+                    if ($download) {
+                        $product->files()->create($download + ['sort_order' => 1]);
+                    }
 
                     return $product->id;
                 });

@@ -114,7 +114,7 @@ class AdminSupportController extends Controller
 
         $data = $request->validate(['shop_id' => ['sometimes', 'nullable', 'integer']]);
         $options = $this->sellerOptions($thread);
-        abort_if($options->isEmpty(), 422, 'No seller items on this order — it was sold by NexTech.');
+        abort_if($options->isEmpty(), 422, 'No seller items on this order — it was sold by '.\App\Support\Branding::name().'.');
 
         $shop = isset($data['shop_id'])
             ? $options->firstWhere('id', (int) $data['shop_id'])
@@ -186,8 +186,8 @@ class AdminSupportController extends Controller
 
         if ($statusChanged) {
             $thread->post(null, $thread->status === 'resolved'
-                ? 'NexTech marked this conversation as resolved.'
-                : 'NexTech reopened this conversation.', isStaff: true, system: true);
+                ? \App\Support\Branding::name().' marked this conversation as resolved.'
+                : \App\Support\Branding::name().' reopened this conversation.', isStaff: true, system: true);
         }
 
         return response()->json(['data' => $this->withSellerOptions($thread->fresh($this->threadRelations()))]);

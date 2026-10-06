@@ -4,6 +4,7 @@ import { ChatDock, ChatWindow } from './ChatDock'
 import { API_URL, chatAdapter, readJson } from './chatDockUtils'
 import { popOutSellerChat, supportChat } from './sellerChatEvents'
 import './Admin.css'
+import { brandName } from './useBranding'
 
 // The admin console's chat windows (ChatDock.jsx): chats with sellers
 // (openSellerChat) and customer / rider support conversations
@@ -18,10 +19,10 @@ export function AdminChatDock({ authHeaders, issueLabels, onSupportDetails }) {
   const details = useRef(onSupportDetails)
   useEffect(() => { details.current = onSupportDetails })
   const adapterFor = useCallback((chat) => (chat.kind === 'seller'
-    ? { adapter: sellerAdapter(chat.id, authHeaders), labels: { seller: chat.name, nextech: 'NexTech' } }
+    ? { adapter: sellerAdapter(chat.id, authHeaders), labels: { seller: chat.name, nextech: `${brandName()}` } }
     : {
         adapter: chatAdapter({ url: `${API_URL}/admin/support/threads/${chat.id}/chat`, postUrl: `${API_URL}/admin/support/threads/${chat.id}/messages`, headers: authHeaders }),
-        labels: { customer: 'Customer', seller: 'Seller', rider: 'Rider', nextech: 'NexTech' },
+        labels: { customer: 'Customer', seller: 'Seller', rider: 'Rider', nextech: `${brandName()}` },
         onDetails: () => details.current(chat.id),
       }), [authHeaders])
   const load = useCallback(async () => {
@@ -44,12 +45,12 @@ export function SellerChatPopup() {
   const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
   const adapter = useMemo(() => sellerAdapter(id, authHeaders), [id, authHeaders])
   const [unread, setUnread] = useState(0)
-  useEffect(() => { document.title = unread ? `(${unread}) ${name} — NexTech chat` : `${name} — NexTech chat` }, [unread, name])
+  useEffect(() => { document.title = unread ? `(${unread}) ${name} — ${brandName()} chat` : `${name} — ${brandName()} chat` }, [unread, name])
   const onUnread = useCallback((_, n) => setUnread(n), [])
   if (!id || !token) return <p style={{ padding: 20, font: '14px system-ui' }}>Sign in to the admin console in this browser first.</p>
   return (
     <div className="chatdock-popup">
-      <ChatWindow popup chat={{ key: `seller-${id}`, name, minimized: false, max: true, unread }} adapter={adapter} labels={{ seller: name, nextech: 'NexTech' }}
+      <ChatWindow popup chat={{ key: `seller-${id}`, name, minimized: false, max: true, unread }} adapter={adapter} labels={{ seller: name, nextech: `${brandName()}` }}
         readKey={`nextech_admin_chats:read:seller-${id}`} onUnread={onUnread} onClose={() => window.close()} />
     </div>
   )

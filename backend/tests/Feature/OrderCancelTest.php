@@ -89,10 +89,25 @@ class OrderCancelTest extends TestCase
         ]);
         Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
 
-        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled'])
+        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled', 'cancel_reason' => 'Item out of stock'])
             ->assertOk()
             ->assertJsonPath('data.status', 'cancelled')
             ->assertJsonPath('data.payment_status', 'cancelled');
+    }
+
+    // A paid order the admin cancels needs its money back: it needs a reason and shows as refund due.
+    public function test_admin_cancelling_a_paid_order_needs_a_reason_and_flags_the_refund(): void
+    {
+        $order = $this->order(User::factory()->create(), ['status' => 'confirmed', 'payment_status' => 'paid', 'payment_method' => 'card']);
+        Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
+
+        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled'])->assertStatus(422);
+        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled', 'cancel_reason' => 'Item out of stock / missing'])
+            ->assertOk()
+            ->assertJsonPath('data.payment_status', 'refund_pending')
+            ->assertJsonPath('data.cancel_reason', 'Item out of stock / missing');
+        $this->getJson('/api/admin/orders?status=refund_due')->assertOk()->assertJsonPath('data.0.id', $order->id);
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.refunds_due.0.id', $order->id);
     }
 
     public function test_a_pending_payment_order_still_cannot_jump_to_packing(): void

@@ -9,6 +9,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 import { currencySymbol, storeMoney } from './money'
 import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
 import { PersonalizationView } from './Personalization'
+import { brandName } from './useBranding'
 
 const money = (cents) => storeMoney(cents ?? 0)
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—')
@@ -30,9 +31,9 @@ async function send(headers, path, method = 'GET', body) {
 }
 
 const MODES = [
-  ['nextech', 'NexTech collects & delivers', 'NexTech picks orders up from your ship-from address and delivers them. Customers pay NexTech’s delivery fee. Nothing to set up.'],
+  ['nextech', `${brandName()} collects & delivers`, `${brandName()} picks orders up from your ship-from address and delivers them. Customers pay ${brandName()}’s delivery fee. Nothing to set up.`],
   ['self', 'I ship with my own courier', 'You pack and hand orders to your courier (UPS, USPS, FedEx…), then enter the tracking number. You set shipping fees and transit times in templates.'],
-  ['label', 'I ship, NexTech label', 'You pack and ship, but get the shipping label from NexTech’s courier account — download it, print it and stick it on the package. Postage is deducted from your earnings.'],
+  ['label', `I ship, ${brandName()} label`, `You pack and ship, but get the shipping label from ${brandName()}’s courier account — download it, print it and stick it on the package. Postage is deducted from your earnings.`],
 ]
 const EMPTY_ADDRESS = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', phone: '', contact_name: '', is_default: false }
 const EMPTY_GROUP = { regions: [], address_types: ['standard'], transit_min_days: 2, transit_max_days: 5, fee: '' }
@@ -62,7 +63,7 @@ function IntlShipping({ data, patch }) {
   return (
     <div className="sc-card">
       <h2 className="sc-h2">International shipping</h2>
-      <p className="sc-muted">Sell to buyers in other countries NexTech sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork, and enter the tracking number as usual. Buyers pay any import duties on delivery.</p>
+      <p className="sc-muted">Sell to buyers in other countries {brandName()} sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork, and enter the tracking number as usual. Buyers pay any import duties on delivery.</p>
       {data.intl_blocked ? <p className="ss-warn">{data.intl_blocked}</p> : !ownCourier ? <p className="ss-warn">Shipping abroad needs &ldquo;I ship with my own courier&rdquo; — choose it above first.</p> : (
         <form onSubmit={save} className="ss-intl">
           {data.intl_destinations.map((d) => {
@@ -195,7 +196,7 @@ export function ShippingSettings({ headers, onChanged }) {
                 )
               })}
             </div>
-            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">NexTech pickup is being phased out — complete the 3 steps below, then choose &ldquo;I ship with my own courier&rdquo; or &ldquo;I ship, NexTech label&rdquo;.{data.shipping_required && <> You can&rsquo;t add new products until you do.</>}</p>}
+            {data.fulfillment_mode === 'nextech' && data.nextech_pickup !== 'available' && <p className="ss-warn">{brandName()} pickup is being phased out — complete the 3 steps below, then choose &ldquo;I ship with my own courier&rdquo; or &ldquo;I ship, {brandName()} label&rdquo;.{data.shipping_required && <> You can&rsquo;t add new products until you do.</>}</p>}
             {(!data.setup_complete || wantMode) && (() => {
               const steps = [
                 ['Add a ship-from address', data.addresses.length > 0, () => setAddressForm({ ...EMPTY_ADDRESS, is_default: !data.addresses.length })],
@@ -223,11 +224,13 @@ export function ShippingSettings({ headers, onChanged }) {
           {['self', 'label'].includes(data.fulfillment_mode) && (
             <div className="sc-card">
               <h2 className="sc-h2">Cash on delivery</h2>
+              {data.cod && !data.cod.available && <p className="seller-banner-amber">{data.cod.reason}</p>}
+              {data.cod?.owed_cents > 0 && data.cod.available && <p className="sc-muted">You owe {brandName()} {(data.cod.owed_cents / 100).toFixed(2)} from cash orders — it comes out of your next orders&rsquo; earnings.</p>}
               <label className="sc-check ss-cod-toggle">
-                <input type="checkbox" checked={!!data.accepts_cod} onChange={(e) => patch({ accepts_cod: e.target.checked }, e.target.checked ? 'Cash on delivery is on — buyers can choose it when their cart is only from your shop.' : 'Cash on delivery is off.')} />
+                <input type="checkbox" checked={!!data.accepts_cod} disabled={!data.accepts_cod && data.cod && !data.cod.available} onChange={(e) => patch({ accepts_cod: e.target.checked }, e.target.checked ? 'Cash on delivery is on — buyers can choose it when their cart is only from your shop.' : 'Cash on delivery is off.')} />
                 Accept cash on delivery
               </label>
-              <p className="sc-muted">Your courier collects the cash when it delivers (use a courier COD service, e.g. Delhivery or Blue Dart COD in India). Offered when everything in the buyer&rsquo;s cart is from your shop and ships within {data.country_name}. Update each order as it moves — <b>Packed</b>, <b>In transit</b>, <b>Out for delivery</b>, <b>Delivered &amp; cash collected</b> — buyers and NexTech see every step, and you&rsquo;ll get a reminder when an order goes 2 days without an update. Once you confirm the cash, NexTech&rsquo;s commission and fees on that order are taken from your balance.</p>
+              <p className="sc-muted">Your courier collects the cash when it delivers (use a courier COD service, e.g. Delhivery or Blue Dart COD in India). Offered when everything in the buyer&rsquo;s cart is from your shop and ships within {data.country_name}. Update each order as it moves — <b>Packed</b>, <b>In transit</b>, <b>Out for delivery</b>, <b>Delivered &amp; cash collected</b> — buyers and {brandName()} see every step, and you&rsquo;ll get a reminder when an order goes 2 days without an update. Once you confirm the cash, {brandName()}&rsquo;s commission and fees on that order are taken from your balance.</p>
             </div>
           )}
 
@@ -469,7 +472,7 @@ export function ShipOrders({ headers, mode }) {
     try {
       if (shipForm.label && manualLabels) {
         await send(headers, `/seller/fulfillment/orders/${shipForm.order.id}/label-request`, 'POST', { items, ship_from_address_id: Number(shipForm.address), note: shipForm.note.trim() || null, label_template_id: shipForm.template ? Number(shipForm.template) : null })
-        setMsg(labelTemplates.length ? 'Label ready — download it from the order below.' : 'Label requested — NexTech will upload it here for you to download and print.')
+        setMsg(labelTemplates.length ? 'Label ready — download it from the order below.' : `Label requested — ${brandName()} will upload it here for you to download and print.`)
       } else if (shipForm.label) {
         await send(headers, `/seller/fulfillment/orders/${shipForm.order.id}/label`, 'POST', { items, ship_from_address_id: Number(shipForm.address) })
       } else {
@@ -511,7 +514,7 @@ export function ShipOrders({ headers, mode }) {
     if (status === 'delivered' && p.order.cod) {
       if (!window.confirm(`Cash on delivery: did the courier (or you) collect ${money(p.order.cod_amount_cents)} from the buyer? Confirm only once you have it.`)) return
       cash = true
-    } else if (!window.confirm(`Mark this package “${{ in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered' }[status]}”? The buyer and NexTech see this update.`)) return
+    } else if (!window.confirm(`Mark this package “${{ in_transit: 'In transit', out_for_delivery: 'Out for delivery', delivered: 'Delivered' }[status]}”? The buyer and ${brandName()} see this update.`)) return
     await act(`/seller/fulfillment/packages/${p.id}/progress`, { status, cash_collected: cash })
   }
 
@@ -524,7 +527,7 @@ export function ShipOrders({ headers, mode }) {
     <tr key={p.id}>
       {withSelect && <td><input type="checkbox" disabled={!p.can_edit} checked={selected.includes(p.id)} onChange={(e) => setSelected((s) => (e.target.checked ? [...s, p.id] : s.filter((x) => x !== p.id)))} /></td>}
       <td><b>#{p.order.id}</b><small className="sc-muted">{p.order.ship_to.name} · {p.order.ship_to.city}, {p.order.ship_to.state}</small></td>
-      <td>{p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">NexTech label · {money(p.label_cost_cents)}</small>}</td>
+      <td>{p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">{brandName()} label · {money(p.label_cost_cents)}</small>}</td>
       <td>{p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}{p.edit_count > 0 && <small className="sc-muted">edited {p.edit_count}/3</small>}</td>
       <td>{shortDate(p.shipped_at)}</td>
       <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replaceAll('_', ' ')}</span>{p.order.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(p.order.cod_amount_cents)}</span>}<PackageProgress pkg={p} packedAt={p.order.shipping?.packed_at} cod={p.order.cod} /><TrackingTimeline pkg={p} /></td>
@@ -569,7 +572,7 @@ export function ShipOrders({ headers, mode }) {
                     <td>{shortDate(o.shipping?.deliver_from)}–{shortDate(o.shipping?.deliver_by)}</td>
                     <td className="sc-actions">
                       {(o.label_requests ?? []).filter((r) => r.status === 'requested').map((r) => (
-                        <small key={r.id} className="ss-label-wait">Label requested {shortDate(r.created_at)} — waiting for NexTech <button type="button" onClick={() => { if (window.confirm('Cancel this label request?')) act(`/seller/fulfillment/label-requests/${r.id}/cancel`) }}>Cancel</button></small>
+                        <small key={r.id} className="ss-label-wait">Label requested {shortDate(r.created_at)} — waiting for {brandName()} <button type="button" onClick={() => { if (window.confirm('Cancel this label request?')) act(`/seller/fulfillment/label-requests/${r.id}/cancel`) }}>Cancel</button></small>
                       ))}
                       {(o.label_requests ?? []).filter((r) => r.status === 'ready' && !r.order_package_id).map((r) => (
                         <div key={r.id} className="ss-label-ready">
@@ -584,7 +587,7 @@ export function ShipOrders({ headers, mode }) {
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
                       {o.items.some((i) => free(i) > 0) && !onHold(o) && <>
                         {mode !== 'label' && <button type="button" onClick={() => openShip(o, false)}>Confirm shipment</button>}
-                        <button type="button" onClick={() => openShip(o, true)}>{manualLabels ? (labelTemplates.length ? 'Get shipping label' : 'Request NexTech label') : 'Buy NexTech label'}</button>
+                        <button type="button" onClick={() => openShip(o, true)}>{manualLabels ? (labelTemplates.length ? 'Get shipping label' : `Request ${brandName()} label`) : `Buy ${brandName()} label`}</button>
                       </>}
                     </td>
                   </tr>
@@ -611,16 +614,16 @@ export function ShipOrders({ headers, mode }) {
             </div>
           </>
         )}
-        <p className="sc-muted sc-foot">Enter tracking only after the courier has the package. Tracking can be changed up to 3 times per package, until it&rsquo;s delivered. NexTech labels bought automatically update tracking by themselves; uploaded labels are marked delivered by you, the customer or NexTech.</p>
+        <p className="sc-muted sc-foot">Enter tracking only after the courier has the package. Tracking can be changed up to 3 times per package, until it&rsquo;s delivered. {brandName()} labels bought automatically update tracking by themselves; uploaded labels are marked delivered by you, the customer or {brandName()}.</p>
       </div>
 
       {shipForm && (
         <div className="ss-overlay" role="presentation" onClick={() => setShipForm(null)}>
           <form className="ss-modal" onSubmit={submitShip} onClick={(e) => e.stopPropagation()}>
-            <h2 className="sc-h2">{shipForm.label ? (manualLabels ? 'Request NexTech shipping label' : 'Buy NexTech shipping label') : 'Confirm shipment'} · Order #{shipForm.order.id}</h2>
+            <h2 className="sc-h2">{shipForm.label ? (manualLabels ? `Request ${brandName()} shipping label` : `Buy ${brandName()} shipping label`) : 'Confirm shipment'} · Order #{shipForm.order.id}</h2>
             <p className="sc-muted">Ship to: {[shipForm.order.ship_to.recipient ?? shipForm.order.ship_to.name, shipForm.order.ship_to.line1, shipForm.order.ship_to.line2, shipForm.order.ship_to.city, [shipForm.order.ship_to.state, shipForm.order.ship_to.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')}</p>
             <h3 className="ss-sub">Items in this package</h3>
-            {shipForm.labelRequest ? shipForm.order.items.filter((i) => shipForm.items[i.id]).map((i) => <div className="ss-item" key={i.id}><span>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}</span><span>× {shipForm.items[i.id]}</span><span className="sc-muted">on NexTech label</span></div>) : shipForm.order.items.filter((i) => free(i) > 0).map((i) => (
+            {shipForm.labelRequest ? shipForm.order.items.filter((i) => shipForm.items[i.id]).map((i) => <div className="ss-item" key={i.id}><span>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}</span><span>× {shipForm.items[i.id]}</span><span className="sc-muted">on {brandName()} label</span></div>) : shipForm.order.items.filter((i) => free(i) > 0).map((i) => (
               <div className="ss-item" key={i.id}>
                 <span>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''}</span>
                 <input type="number" min="0" max={free(i)} value={shipForm.items[i.id] ?? 0} onChange={(e) => setShipForm((f) => ({ ...f, items: { ...f.items, [i.id]: Math.min(free(i), Math.max(0, Number(e.target.value))) } }))} />
@@ -633,12 +636,12 @@ export function ShipOrders({ headers, mode }) {
                 {labelTemplates.length > 0 ? (
                   <label>Label layout<select value={shipForm.template} onChange={(e) => setShipForm({ ...shipForm, template: e.target.value })}>{labelTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
                 ) : (
-                  <label>Package details for NexTech (optional)<input maxLength="500" placeholder="e.g. 1.2 kg, box 30×20×10 cm" value={shipForm.note} onChange={(e) => setShipForm({ ...shipForm, note: e.target.value })} /></label>
+                  <label>Package details for {brandName()} (optional)<input maxLength="500" placeholder="e.g. 1.2 kg, box 30×20×10 cm" value={shipForm.note} onChange={(e) => setShipForm({ ...shipForm, note: e.target.value })} /></label>
                 )}
-                <p className="sc-muted">{labelTemplates.length > 0 ? 'Your label PDF is made instantly with the ship-from and customer addresses. Download and print it, stick it on the package, hand it to the courier, then add the tracking number. You can switch layout any time.' : 'NexTech uploads the label here as a PDF — usually within one working day. Download and print it, stick it on the package, hand it to the courier, then add the tracking number.'}</p>
+                <p className="sc-muted">{labelTemplates.length > 0 ? 'Your label PDF is made instantly with the ship-from and customer addresses. Download and print it, stick it on the package, hand it to the courier, then add the tracking number. You can switch layout any time.' : `${brandName()} uploads the label here as a PDF — usually within one working day. Download and print it, stick it on the package, hand it to the courier, then add the tracking number.`}</p>
               </>
             ) : shipForm.label ? (
-              <p className="sc-muted">NexTech books the label on its courier account; postage is deducted from your earnings on this order and tracking updates automatically. Print the label and attach it to the package.</p>
+              <p className="sc-muted">{brandName()} books the label on its courier account; postage is deducted from your earnings on this order and tracking updates automatically. Print the label and attach it to the package.</p>
             ) : (
               <>
                 <div className="ss-row">

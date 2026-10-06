@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
 import { ChatWindow } from './ChatDock'
+import { brandName } from './useBranding'
 
 // Pops a chat out into an always-on-top window (Chrome / Edge Document
 // Picture-in-Picture), so it floats over other tabs and apps. Returns false
@@ -17,7 +18,7 @@ export async function openChatOnTop(props, onClosed) {
         if (sheet.href) { const link = pip.document.createElement('link'); link.rel = 'stylesheet'; link.href = sheet.href; pip.document.head.appendChild(link) }
       }
     }
-    pip.document.title = `${props.chat.name} — NexTech chat`
+    pip.document.title = `${props.chat.name} — ${brandName()} chat`
     pip.document.body.style.margin = '0'
     const host = pip.document.createElement('div')
     host.className = 'chatdock-popup'

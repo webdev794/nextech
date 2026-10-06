@@ -56,6 +56,9 @@ class SellerOnboardingController extends Controller
             'tax_note' => null,
             'tax_submitted_at' => $resubmit ? now() : $seller->tax_submitted_at,
         ])->save();
+        if ($resubmit) {
+            $this->tellAdmins($seller, 'tax information');
+        }
 
         return response()->json(['data' => $this->payload($seller)]);
     }
@@ -76,6 +79,7 @@ class SellerOnboardingController extends Controller
             'tax_note' => null,
             'tax_submitted_at' => now(),
         ])->save();
+        $this->tellAdmins($seller, 'tax information');
 
         return response()->json(['data' => $this->payload($seller)]);
     }
@@ -184,6 +188,7 @@ class SellerOnboardingController extends Controller
             'compliance_note' => null,
             'compliance_submitted_at' => now(),
         ])->save();
+        $this->tellAdmins($seller, 'compliance information');
 
         return response()->json(['data' => $this->payload($seller)]);
     }
@@ -233,8 +238,19 @@ class SellerOnboardingController extends Controller
             'bank_submitted_at' => now(),
             'bank_verified_at' => null,
         ])->save();
+        $this->tellAdmins($seller, 'bank account');
 
         return response()->json(['data' => $this->payload($seller)]);
+    }
+
+    /** Email the admins that something is waiting for their review (also listed under Sellers in the admin top bar). */
+    private function tellAdmins(Seller $seller, string $what): void
+    {
+        try {
+            \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminSellerSubmitted($seller->loadMissing('shop'), $what));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     private function seller(Request $request): Seller

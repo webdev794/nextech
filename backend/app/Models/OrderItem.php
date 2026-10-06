@@ -12,12 +12,13 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id', 'product_id', 'product_variant_id', 'shop_id', 'fulfilled_by', 'product_name', 'sku', 'hsn_code', 'gst_rate_bps',
-        'variant_label', 'personalization', 'digital_ready_at', 'quantity', 'unit_price_cents', 'compare_at_price_cents', 'return_days', 'line_total_cents', 'seller_line_total_cents',
+        'variant_label', 'product_snapshot', 'personalization', 'digital_ready_at', 'quantity', 'unit_price_cents', 'compare_at_price_cents', 'return_days', 'line_total_cents', 'seller_line_total_cents',
     ];
 
     protected function casts(): array
     {
         return [
+            'product_snapshot' => 'array',
             'quantity' => 'integer',
             'personalization' => 'array',
             'digital_ready_at' => 'datetime',

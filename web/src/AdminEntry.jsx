@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { mediaUrl } from './mediaUrl'
 import './Admin.css'
+import { brandName } from './useBranding'
 
 // The console itself is a big module — load it only once an admin is signed in,
 // so the sign-in gate paints immediately on a cold refresh.
@@ -63,7 +64,7 @@ export default function AdminEntry() {
       .then(readJson)
       .then(({ data }) => {
         if (cancelled || !data?.branding) return
-        const name = data.branding.store_name || 'NexTech'
+        const name = data.branding.store_name || `${brandName()}`
         document.title = `${name} · Admin`
         if (data.branding.favicon_url) {
           let link = document.querySelector("link[rel='icon']")

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { storeMoney } from './money'
 import { PersonalizationView } from './Personalization'
+import { brandName } from './useBranding'
 
 // Seller Center -> Manage orders (modelled on Temu's): Pending / Unshipped /
 // Shipped / Canceled tabs, "action needed" filters, a date range (last 30
@@ -34,7 +35,7 @@ const STATUS_TABS = [
 ]
 const STATUS_PILL = { pending: ['Pending', 'hidden'], unshipped: ['Unshipped', 'pending'], shipped: ['Shipped', 'approved'], cancelled: ['Canceled', 'rejected'] }
 const ACTIONS = [
-  ['buyer_contacted', 'Buyer contacted buyer service', 'The buyer asked NexTech support about these orders.'],
+  ['buyer_contacted', 'Buyer contacted buyer service', `The buyer asked ${brandName()} support about these orders.`],
   ['address_change', 'Buyer requested address change', 'Accept or decline before you ship.'],
   ['delay_risk', 'At risk of delayed shipment', 'Ship today so the order isn’t canceled for shipping late.'],
 ]
@@ -163,7 +164,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
                     </span>
                   </td>
                   <td>{o.items.map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.quantity}</span><small className="sc-muted">Goods ID {i.product_id ?? '—'} · SKU {i.sku ?? '—'}</small></div>)}</td>
-                  <td>{o.fulfilled_by === 'nextech' ? <span className="sc-muted">NexTech delivers</span> : <>{shortDate(o.ship_by)}<small className="sc-muted">arrives {shortDate(o.deliver_from)}–{shortDate(o.deliver_by)}</small></>}</td>
+                  <td>{o.fulfilled_by === 'nextech' ? <span className="sc-muted">{brandName()} delivers</span> : <>{shortDate(o.ship_by)}<small className="sc-muted">arrives {shortDate(o.deliver_from)}–{shortDate(o.deliver_by)}</small></>}</td>
                   <td>{o.packages.length ? o.packages.map((p) => <div key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}</div>) : <span className="sc-muted">—</span>}</td>
                   <td>
                     <span className={`sc-pill ${STATUS_PILL[o.status]?.[1] ?? ''}`}>{STATUS_PILL[o.status]?.[0] ?? o.status}</span>
@@ -187,7 +188,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             <button type="button" className="seller-btn ghost" disabled={filters.page >= pages} onClick={() => setFilters((f) => ({ ...f, page: f.page + 1 }))}>Next</button>
           </div>
         )}
-        <p className="sc-muted sc-foot">Only your items in each order are shown. Still have questions? <button type="button" className="sc-link" onClick={() => go('messages')}>Contact your NexTech selling partner</button>.</p>
+        <p className="sc-muted sc-foot">Only your items in each order are shown. Still have questions? <button type="button" className="sc-link" onClick={() => go('messages')}>Contact your {brandName()} selling partner</button>.</p>
       </div>
 
       {detail && (
@@ -196,7 +197,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             <div className="sc-head"><h2 className="sc-h2">Order #{detail.id}</h2><span className={`sc-pill ${STATUS_PILL[detail.status]?.[1] ?? ''}`}>{STATUS_PILL[detail.status]?.[0]}</span></div>
             <p className="sc-muted">Placed {dateTime(detail.created_at)}</p>
             {detail.status === 'pending' && <div className="sc-alert warn"><span>{detail.awaiting_payment ? 'The buyer hasn’t finished paying — don’t ship this order.' : `Pending — don’t ship yet. It moves to Unshipped at ${new Date(detail.pending_until).toLocaleTimeString([], { timeStyle: 'short' })}.`}</span></div>}
-            {detail.buyer_contacted_at && <div className="sc-alert warn"><span>The buyer contacted NexTech buyer service about this order (last message {dateTime(detail.buyer_contacted_at)}). NexTech will message you if anything is needed from you.</span></div>}
+            {detail.buyer_contacted_at && <div className="sc-alert warn"><span>The buyer contacted {brandName()} buyer service about this order (last message {dateTime(detail.buyer_contacted_at)}). {brandName()} will message you if anything is needed from you.</span></div>}
             {detail.address_change && (
               <div className="ss-setup">
                 <p><b>The buyer asked to ship to a new address</b> <span className="sc-muted">({dateTime(detail.address_change.created_at)})</span></p>
@@ -207,11 +208,11 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
                 <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => decide(detail, 'decline')}>Decline</button><button type="button" className="sc-primary" onClick={() => decide(detail, 'approve')}>Accept new address</button></div>
               </div>
             )}
-            {detail.address_change_nextech && <p className="sc-muted">The buyer asked to change the address — NexTech handles it for orders it delivers.</p>}
+            {detail.address_change_nextech && <p className="sc-muted">The buyer asked to change the address — {brandName()} handles it for orders it delivers.</p>}
             <dl className="ob-facts">
               <dt>{detail.fulfilled_by === 'nextech' ? 'Delivering to' : 'Ship to'}</dt><dd>{addressLines(detail.ship_to).join(', ') || '—'}</dd>
               {detail.fulfilled_by !== 'nextech' && <><dt>Ship by</dt><dd className={detail.overdue ? 'sc-low' : ''}>{shortDate(detail.ship_by)}{detail.overdue ? ' — overdue' : ''}</dd><dt>Delivery promised</dt><dd>{shortDate(detail.deliver_from)} – {shortDate(detail.deliver_by)}</dd></>}
-              <dt>Fulfilled by</dt><dd>{{ seller: 'You ship it', mixed: 'You ship some items; NexTech delivers the rest', nextech: 'NexTech picks up and delivers' }[detail.fulfilled_by]}</dd>
+              <dt>Fulfilled by</dt><dd>{{ seller: 'You ship it', mixed: `You ship some items; ${brandName()} delivers the rest`, nextech: `${brandName()} picks up and delivers` }[detail.fulfilled_by]}</dd>
             </dl>
             <table className="sc-table">
               <thead><tr><th>Item</th><th>Goods ID</th><th>SKU ID</th><th>Order item ID</th><th>Qty</th><th>Total</th></tr></thead>

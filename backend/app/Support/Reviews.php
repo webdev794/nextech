@@ -16,7 +16,7 @@ class Reviews
     {
         $parts = preg_split('/\s+/u', trim((string) $name), -1, PREG_SPLIT_NO_EMPTY);
         if (! $parts) {
-            return 'NexTech shopper';
+            return \App\Support\Branding::name().' shopper';
         }
 
         return $parts[0].(count($parts) > 1 ? ' '.mb_strtoupper(mb_substr(end($parts), 0, 1)).'.' : '');

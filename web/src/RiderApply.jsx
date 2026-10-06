@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'import { brandName } from './useBranding'
+
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 
@@ -106,7 +107,7 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
   return (
     <div className="admin-gate rider-apply-gate">
       <div className="admin-gate-card rider-apply-card">
-        <h1>Deliver with NexTech</h1>
+        <h1>Deliver with {brandName()}</h1>
 
         {app?.status === 'pending' && (
           <>

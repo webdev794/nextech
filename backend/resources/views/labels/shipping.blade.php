@@ -63,7 +63,8 @@
     </div>
 
     <div class="row">
-        <div class="tag">From</div>
+        {{-- The seller's ship-from address doubles as the return address for the courier. --}}
+        <div class="tag">From &mdash; if undelivered, please return to</div>
         @foreach ($fromLines as $line)
             <div class="from-line">{{ $line }}</div>
         @endforeach

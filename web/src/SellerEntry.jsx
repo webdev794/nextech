@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import './Seller.css'
+import { brandName } from './useBranding'
 
 // The Seller Center itself is a big module — load it only once someone is
 // signed in, so the sign-in gate paints immediately on a cold refresh.
@@ -56,7 +57,7 @@ export default function SellerEntry() {
       .then(readJson)
       .then(({ data }) => {
         if (cancelled || !data?.branding) return
-        const name = data.branding.store_name || 'NexTech'
+        const name = data.branding.store_name || `${brandName()}`
         document.title = `${name} · Seller Center`
       })
       .catch(() => {})
@@ -107,10 +108,10 @@ export default function SellerEntry() {
   return (
     <div className="seller-gate">
       <form className="seller-gate-card" onSubmit={otp ? submitCode : submitPassword}>
-        <h1>NexTech Seller Center</h1>
+        <h1>{brandName()} Seller Center</h1>
         <p className="seller-gate-sub">{otp
           ? `Enter the 6-digit code sent to ${otp.email}.`
-          : 'Sign in with your NexTech account to start or manage your seller application. New here? Create an account below.'}</p>
+          : `Sign in with your ${brandName()} account to start or manage your seller application. New here? Create an account below.`}</p>
         {otp
           ? <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength="8" placeholder="6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
           : <>

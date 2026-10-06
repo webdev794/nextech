@@ -2,6 +2,9 @@
 
 namespace App\Support;
 
+use Illuminate\Support\Facades\Notification;
+use App\Notifications\AdminSellerCashKept;
+use App\Models\User;
 use App\Models\Order;
 use App\Models\OrderPackage;
 use App\Models\SellerLedgerEntry;
@@ -54,7 +57,7 @@ class SellerProgress
             return 'Cash on delivery works for seller-shipped items when everything in your cart comes from one seller — pay by card, or check out separately.';
         }
         $shop = $shops->first();
-        if (! $shop->accepts_cod) {
+        if (! $shop->accepts_cod || SellerCod::sellerReason($shop) !== null) {
             return "{$shop->name} doesn't accept cash on delivery — pay by card instead.";
         }
         if ($shop->market !== strtoupper($market)) {
@@ -132,7 +135,8 @@ class SellerProgress
             return;
         }
 
-        DB::transaction(function () use ($order) {
+        $keptBy = [];
+        DB::transaction(function () use ($order, &$keptBy) {
             $order->forceFill(['payment_status' => 'paid'])->save();
             SellerLedger::creditForOrder($order);
             foreach ($order->items()->whereNotNull('shop_id')->pluck('shop_id')->unique() as $shopId) {
@@ -140,11 +144,20 @@ class SellerProgress
                     SellerLedgerEntry::create([
                         'shop_id' => $shopId, 'order_id' => $order->id, 'type' => 'cod_cash_held',
                         'amount_cents' => -(int) $order->total_cents,
-                        'note' => 'Cash on delivery collected by you — NexTech\'s commission and fees come out of your balance',
+                        'note' => 'Cash on delivery collected by you — '.\App\Support\Branding::name().'\'s commission and fees come out of your balance (your next orders\' earnings)',
                     ]);
+                    $keptBy[] = $shopId;
                 }
             }
         });
+        // Tell the admins a seller kept the cash (and what they now owe).
+        foreach (Shop::whereIn('id', $keptBy)->get() as $shop) {
+            try {
+                Notification::send(User::where('is_admin', true)->get(), new AdminSellerCashKept($order, $shop));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
         $order->refresh()->sendDeliveredReceiptIfReady();
     }
 

@@ -112,7 +112,7 @@ class SellerFulfillmentController extends Controller
             'ship_from_address_id' => ['required', 'integer', Rule::exists('shop_addresses', 'id')->where('shop_id', $shop->id)],
         ]);
 
-        abort_if(SellerFulfillment::labelMode() === 'manual', 422, 'Request the label instead — NexTech will upload it for you to download.');
+        abort_if(SellerFulfillment::labelMode() === 'manual', 422, 'Request the label instead — '.\App\Support\Branding::name().' will upload it for you to download.');
         SellerOrders::assertShippable($order);
         $origin = $shop->addresses()->findOrFail($data['ship_from_address_id'])->toCourierAddress();
         $label = Courier::buyLabel($order, $origin);
@@ -137,7 +137,7 @@ class SellerFulfillmentController extends Controller
     public function requestLabel(Request $request, Order $order): JsonResponse
     {
         $shop = $this->shop($request);
-        abort_unless($shop->fulfillment_mode === 'label', 422, 'Switch to "I ship, NexTech label" in Shipping settings first.');
+        abort_unless($shop->fulfillment_mode === 'label', 422, 'Switch to "I ship, '.\App\Support\Branding::name().' label" in Shipping settings first.');
         SellerOrders::assertShippable($order);
         $data = $request->validate([
             'items' => ['required', 'array', 'min:1'],
@@ -317,7 +317,7 @@ class SellerFulfillmentController extends Controller
 
             return response()->json(['data' => $this->row($package->order->fresh())]);
         }
-        abort_unless($package->label_source === 'nextech' && ! $package->label_path, 422, 'Only NexTech labels bought through the courier connection are tracked automatically.');
+        abort_unless($package->label_source === 'nextech' && ! $package->label_path, 422, 'Only '.\App\Support\Branding::name().' labels bought through the courier connection are tracked automatically.');
 
         $status = Courier::trackLabel($package->carrier, $package->tracking_number, $package->shipped_at, $package->status);
         $package->update(['status' => $status, 'delivered_at' => $status === 'delivered' ? ($package->delivered_at ?? now()) : null]);
@@ -336,7 +336,7 @@ class SellerFulfillmentController extends Controller
     /** @param  array<string, mixed>  $data */
     private function applyTrackingEdit(OrderPackage $package, array $data): void
     {
-        abort_unless($package->label_source === 'own', 422, 'Tracking on a NexTech label comes from the courier and can\'t be edited.');
+        abort_unless($package->label_source === 'own', 422, 'Tracking on a '.\App\Support\Branding::name().' label comes from the courier and can\'t be edited.');
         abort_unless(in_array($package->status, SellerProgress::MOVING, true), 422, 'Tracking can\'t be changed once a package is delivered, returned or lost.');
         abort_if($package->edit_count >= OrderPackage::MAX_EDITS, 422, 'This package\'s tracking has already been changed '.OrderPackage::MAX_EDITS.' times.');
 

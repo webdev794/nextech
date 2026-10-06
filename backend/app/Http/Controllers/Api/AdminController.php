@@ -304,7 +304,53 @@ class AdminController extends Controller
                 'at' => $group->first()->updated_at,
             ])->values();
 
+        // Seller Center onboarding tasks waiting for review (tax, compliance, bank).
+        $taskLabels = ['tax' => 'Tax information', 'compliance' => 'Compliance information', 'bank' => 'Bank account'];
+        $sellerTasks = Seller::query()
+            ->where(fn ($q) => $q->where('tax_status', 'pending')->orWhere('compliance_status', 'pending')->orWhere('bank_status', 'processing'))
+            ->with('shop:id,seller_id,name')
+            ->get()
+            ->flatMap(fn (Seller $s) => collect([
+                'tax' => $s->tax_status === 'pending' ? $s->tax_submitted_at : false,
+                'compliance' => $s->compliance_status === 'pending' ? $s->compliance_submitted_at : false,
+                'bank' => $s->bank_status === 'processing' ? $s->bank_submitted_at : false,
+            ])->reject(fn ($at) => $at === false)->map(fn ($at, $task) => [
+                'seller_id' => $s->id,
+                'name' => $s->shop?->name ?? $s->company_name,
+                'task' => $task,
+                'label' => $taskLabels[$task],
+                'at' => $at ?? $s->updated_at,
+            ])->values())
+            ->sortBy('at')->values();
+
+        // Cancelled orders whose money still has to go back to the customer.
+        $refundsDue = Order::query()->refundDue()->with('user:id,name,email')->latest('updated_at')->limit(50)->get()
+            ->map(fn (Order $o) => [
+                'id' => $o->id,
+                'customer' => $o->user?->name ?? $o->user?->email,
+                'amount_cents' => $o->total_cents,
+                'currency' => $o->currency,
+                'cancelled_by' => $o->cancelled_by,
+                'reason' => $o->cancel_reason,
+                'at' => $o->updated_at,
+            ]);
+
+        // Seller cash on delivery: cash sellers kept (last 7 days) and sellers who owe NexTech.
+        $codKept = \App\Models\SellerLedgerEntry::query()->where('type', 'cod_cash_held')->where('created_at', '>=', now()->subDays(7))
+            ->with('shop:id,name,seller_id,market')->latest()->limit(50)->get()
+            ->map(fn ($e) => ['order_id' => $e->order_id, 'seller_id' => $e->shop?->seller_id, 'shop_name' => $e->shop?->name, 'amount_cents' => -(int) $e->amount_cents, 'currency' => Market::currency($e->shop?->market ?? 'US'), 'at' => $e->created_at]);
+        $codShopIds = \App\Models\SellerLedgerEntry::query()->where('type', 'cod_cash_held')->distinct()->pluck('shop_id');
+        $sellersOwing = \App\Models\Shop::whereIn('id', $codShopIds)->get()
+            ->map(fn ($shop) => ['seller_id' => $shop->seller_id, 'shop_name' => $shop->name, 'owed_cents' => \App\Support\SellerCod::owedCents($shop), 'over_limit' => \App\Support\SellerCod::owedCents($shop) > \App\Support\SellerCod::maxOwedCents($shop->market), 'currency' => Market::currency($shop->market)])
+            ->filter(fn ($r) => $r['owed_cents'] > 0)->sortByDesc('owed_cents')->values();
+
         return response()->json(['data' => [
+            'cod_kept' => $codKept,
+            'sellers_owing' => $sellersOwing,
+            'refunds_due' => $refundsDue,
+            'seller_tasks' => $sellerTasks,
+            'products_waiting' => Product::query()->where('status', 'pending')->whereNotNull('shop_id')->count(),
+            'removal_requests' => Product::query()->whereNotNull('deletion_requested_at')->whereNull('archived_at')->count(),
             'category_suggestions' => $categorySuggestions,
             'seller_applications' => $sellerApplications,
             'awaiting_packing' => $awaitingPacking,

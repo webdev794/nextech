@@ -30,7 +30,7 @@ class SellerUpdateReminder extends Notification
         $mail = (new MailMessage)
             ->subject("{$count} ".($count === 1 ? 'order needs' : 'orders need')." your update — {$brandName} Seller Center")
             ->greeting('Please update your orders')
-            ->line('Buyers and NexTech follow each order through the steps you update — packed, picked up by the courier, in transit, out for delivery, delivered (and cash collected for cash on delivery). These are waiting on you:');
+            ->line('Buyers and '.\App\Support\Branding::name().' follow each order through the steps you update — packed, picked up by the courier, in transit, out for delivery, delivered (and cash collected for cash on delivery). These are waiting on you:');
         foreach ($this->orders->take(20) as $row) {
             $mail->line("Order #{$row['order_id']} — {$row['reason']}");
         }
@@ -39,7 +39,7 @@ class SellerUpdateReminder extends Notification
         }
 
         return $mail->action('Open Ship orders', rtrim((string) config('app.url'), '/').'/#/seller')
-            ->line('Orders left without updates may be flagged to NexTech support.')
+            ->line('Orders left without updates may be flagged to '.\App\Support\Branding::name().' support.')
             ->salutation("— {$brandName}");
     }
 }

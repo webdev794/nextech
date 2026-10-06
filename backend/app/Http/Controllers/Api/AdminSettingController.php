@@ -272,6 +272,10 @@ class AdminSettingController extends Controller
                 // NexTech's own legal identity per country, printed as "Sold by" on bills for its own items.
                 // Digital downloads: upload limits (MB) — keep small on shared hosting.
                 'digital_max_file_mb' => ['sometimes', 'integer', 'min:1', 'max:4096'],
+                // Seller cash on delivery: off / only approved sellers / all, and the "owed" limit per country (cents).
+                'seller_cod_mode' => ['sometimes', Rule::in(\App\Support\SellerCod::MODES)],
+                'seller_cod_max_owed' => ['sometimes', 'array'],
+                'seller_cod_max_owed.*' => ['integer', 'min:0', 'max:100000000'],
                 'digital_max_product_mb' => ['sometimes', 'integer', 'min:1', 'max:20480'],
                 'business_details' => ['sometimes', 'array'],
                 'business_details.*' => ['nullable', 'array'],
@@ -391,6 +395,12 @@ class AdminSettingController extends Controller
             Fx::refresh();
         }
 
+        if (array_key_exists('seller_cod_mode', $validated)) {
+            Setting::put('seller_cod_mode', $validated['seller_cod_mode']);
+        }
+        if (array_key_exists('seller_cod_max_owed', $validated)) {
+            Setting::put('seller_cod_max_owed', array_merge((array) Setting::get('seller_cod_max_owed', []), array_intersect_key(array_map('intval', $validated['seller_cod_max_owed']), array_flip(Market::codes()))));
+        }
         foreach (['digital_max_file_mb', 'digital_max_product_mb'] as $key) {
             if (array_key_exists($key, $validated)) {
                 Setting::put($key, (int) $validated[$key]);
@@ -543,6 +553,8 @@ class AdminSettingController extends Controller
             'grievance_officer' => Setting::get('grievance_officer'),
             'business_details' => (object) (Setting::get('business_details') ?? []),
             'digital_max_file_mb' => (int) Setting::get('digital_max_file_mb', 50),
+            'seller_cod_mode' => \App\Support\SellerCod::mode(),
+            'seller_cod_max_owed' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerCod::maxOwedCents($c)]),
             'digital_max_product_mb' => (int) Setting::get('digital_max_product_mb', 200),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),

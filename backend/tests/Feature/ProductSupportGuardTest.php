@@ -70,4 +70,27 @@ class ProductSupportGuardTest extends TestCase
         $product->update(['return_policy' => ['accepts' => [], 'notes' => '']]);
         $this->assertNull($product->fresh()->return_policy);
     }
+
+    // Once sold, the listing's identity is fixed (a different product is a new listing); price etc. can still change.
+    public function test_a_sold_product_keeps_its_name_category_and_model(): void
+    {
+        [$user, $product] = $this->sellerProduct(['product_details' => ['model_number' => 'LS-100']]);
+        $this->sell($product);
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/seller/products/{$product->id}", ['name' => 'Something else entirely'])->assertStatus(422)->assertJsonFragment(['message' => 'This product has been sold, so its name can’t change — buyers’ orders and warranties refer to it. To sell a different product, add it as a new listing.']);
+        $this->assertNotSame('Something else entirely', $product->fresh()->name);
+        $this->assertTrue(\App\Support\ProductSnapshot::hasSold($product));
+    }
+
+    // Checkout freezes the product as bought on the order line.
+    public function test_the_snapshot_records_the_product_as_bought(): void
+    {
+        [, $product] = $this->sellerProduct(['product_details' => ['warranty' => '1 year', 'warranty_terms' => 'Covers defects.'], 'return_days' => 15]);
+        $snap = \App\Support\ProductSnapshot::of($product->fresh());
+        $this->assertSame($product->name, $snap['name']);
+        $this->assertSame('1 year', $snap['warranty']);
+        $this->assertSame('Covers defects.', $snap['warranty_terms']);
+        $this->assertSame(15, $snap['return_days']);
+    }
 }

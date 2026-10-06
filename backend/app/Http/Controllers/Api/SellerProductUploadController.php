@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 /**
- * Products -> Add products via upload: the uploaded spreadsheet (kept so it
+ * Products -> Bulk import products: the uploaded spreadsheet (kept so it
  * can be downloaded with the results), the rows the browser read from it,
  * and a task per upload that ends as Completed (every product submitted) or
  * Action required (some saved as drafts to fix).
@@ -39,6 +39,8 @@ class SellerProductUploadController extends Controller
             'file' => ['required', 'file', 'max:10240', 'mimes:xlsx'],
             'rows' => ['required', 'json'],
             'category_ids' => ['required', 'json'],
+            // Which template: physical products, or digital downloads.
+            'product_type' => ['sometimes', 'in:physical,digital'],
         ]);
         $rows = json_decode($data['rows'], true);
         $categoryIds = json_decode($data['category_ids'], true);
@@ -56,7 +58,7 @@ class SellerProductUploadController extends Controller
             'rows' => $rows,
         ]);
 
-        $outcome = ProductUpload::process($shop, $rows, array_map('intval', $categoryIds));
+        $outcome = ProductUpload::process($shop, $rows, array_map('intval', $categoryIds), ($data['product_type'] ?? 'physical') === 'digital');
         $task->update([
             'status' => $outcome['error_records'] ? 'action_required' : 'completed',
             'error_records' => $outcome['error_records'],

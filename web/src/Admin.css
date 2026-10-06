@@ -626,3 +626,4 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-form-section>label{margin:0}
 /* Okra has no italic face and the site turns off faux styles (font-synthesis:none) — allow a slanted style here; help text isn't uppercased like field names. */
 .admin-form .muted,.admin-form .admin-note,.admin-form .return-policy-hint{font-synthesis:style;text-transform:none;letter-spacing:0}
+.pill-refund_due{background:#fbe0dc;color:#a23b28}

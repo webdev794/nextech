@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { checkProductImage } from './productImageCheck'
 import { storeMoney } from './money'
+import { brandName } from './useBranding'
 
 // Seller Center catalog tools, modelled on Temu's Seller Center:
-//  - Add products via upload (Excel template per category, upload, results)
+//  - Bulk import products (Excel template per category, upload, results)
 //  - Pricing health (sales boost offers for "Low traffic" products, pricing records)
 //  - the once-a-day sales boost pop-up
 //  - Product compliance (documents + origin per product)
@@ -48,19 +49,53 @@ const loadExcel = async () => (await import('exceljs')).default
 const dateTime = (v) => (v ? new Date(v).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : '—')
 
 // ---------------------------------------------------------------------------
-// Spreadsheet template (Add products via upload)
+// Spreadsheet template (Bulk import products)
 // ---------------------------------------------------------------------------
 const RED = 'FFF4CCCC'
 const GREY = 'FFD9D9D9'
 const ORANGE = 'FFFF9900'
+
+// A digital-downloads template: the download fields (type, works on, version…), a
+// price and the download link — no battery, weight, shipping or variant columns.
+function digitalColumns(config) {
+  const range = (n, fn) => Array.from({ length: n }, (_, i) => fn(i + 1))
+  const cols = [
+    { section: 'Product Identity', key: 'category', label: 'Category', required: true, help: 'One of the categories this template was made for.', list: 'categories' },
+    { section: 'Product Identity', key: 'product_name', label: 'Product name', required: true, help: 'Up to 160 characters. One row per product.' },
+    { section: 'Product Identity', key: 'brand', label: 'Brand (trademark)', help: 'An approved trademark registered under Account health. Leave empty if unbranded.', list: 'trademarks' },
+    { section: 'Product Description', key: 'description', label: 'Product description', required: true, help: 'Shown on the product page.' },
+    ...range(5, (n) => ({ section: 'Product Description', key: `bullet_point_${n}`, label: `Bullet point ${n}`, help: 'Key selling point.' })),
+    { section: 'Product Description', key: 'product_video_url', label: 'Product video URL', help: 'Public video address, e.g. a trailer. Max 100 MB, 3 minutes, 720p.' },
+  ]
+  ;(config.digital_attributes ?? []).forEach((a) => cols.push({
+    section: 'Product Detail', key: `detail_${a.key}`, label: `${a.label}${a.unit ? ` (${a.unit})` : ''}`, required: !!a.required && !a.when, options: a.options,
+    help: `${a.type === 'multiselect' ? 'One or more of (separate with ;): ' : a.options ? 'One of: ' : ''}${(a.options ?? []).join(', ')}${a.placeholder ? a.placeholder : ''}`,
+    list: a.type === 'select' ? `attr_${a.key}` : null,
+  }))
+  cols.push(
+    { section: 'Price & download', key: 'base_price', label: 'Price', required: true, help: 'In your market’s currency.' },
+    { section: 'Price & download', key: 'download_url', label: 'Download link (URL)', required: true, help: 'Public https:// link to the file (Google Drive, Dropbox, your server) — it must open without signing in. Buyers get it only after paying. Or leave empty and upload the file on the product after import.' },
+    { section: 'Price & download', key: 'download_name', label: 'Download name', help: 'What buyers see, e.g. Windows installer. Empty = Download.' },
+    { section: 'Price & download', key: 'download_limit', label: 'Downloads allowed per purchase', help: 'Empty = 5. 0 = unlimited.' },
+    { section: 'Price & download', key: 'install_instructions', label: 'Install / use instructions', help: 'Shown to buyers in Your downloads.' },
+    ...range(10, (n) => ({ section: 'Product images', key: `image_url_${n}`, label: `Product image URL ${n}`, required: n === 1, help: `Public image address (https://…), e.g. cover art or screenshots. Square 1:1, 800×800 px, 3 MB max.${n === 1 ? ' Image 1 is the main image.' : ''}` })),
+  )
+  if (config.market === 'IN') {
+    cols.push(
+      { section: 'Qualifications', key: 'hsn_code', label: 'HSN / SAC code', help: 'e.g. 9973 for downloads.' },
+      { section: 'Qualifications', key: 'gst_rate', label: 'GST rate (%)', help: 'e.g. 18' },
+    )
+  }
+  return cols
+}
 
 function templateColumns(cats, config) {
   const range = (n, fn) => Array.from({ length: n }, (_, i) => fn(i + 1))
   const cols = [
     { section: 'Product Identity', key: 'category', label: 'Category', required: true, help: 'One of the categories this template was made for.', list: 'categories' },
     { section: 'Product Identity', key: 'product_name', label: 'Product name', required: true, help: 'Up to 160 characters.' },
-    { section: 'Product Identity', key: 'contribution_goods', label: 'Contribution Goods', help: 'Your own product code. Rows (SKUs) with the same code make up one product; leave empty for a single-SKU product.' },
-    { section: 'Product Identity', key: 'contribution_sku', label: 'Contribution SKU', help: 'Your own code for this SKU (variant).' },
+    // Key kept as contribution_goods so older templates still import. SKUs are generated automatically.
+    { section: 'Product Identity', key: 'contribution_goods', label: 'Product group code', help: 'Any code you choose, e.g. P1. Put the same code on every row (variant) of one product; leave empty for a product without variants. SKUs are created automatically.' },
     { section: 'Product Identity', key: 'brand', label: 'Brand (trademark)', help: 'An approved trademark registered under Account health. Leave empty if unbranded.', list: 'trademarks' },
     { section: 'Product Description', key: 'description', label: 'Product description', required: true, help: 'Shown on the product page.' },
     ...range(5, (n) => ({ section: 'Product Description', key: `bullet_point_${n}`, label: `Bullet point ${n}`, help: 'Key selling point.' })),
@@ -80,7 +115,8 @@ function templateColumns(cats, config) {
     { section: 'Sale Property (at least one, at most two)', key: 'variation_theme', label: 'Variation theme', help: `What the SKUs differ by: one type, or two joined with × (e.g. Color × Size). Types: ${config.variation_types.join(', ')}.`, list: 'themes' },
     { section: 'Sale Property (at least one, at most two)', key: 'variation_value_1', label: 'Variation value 1', help: 'This SKU’s value for the first type (e.g. Black).' },
     { section: 'Sale Property (at least one, at most two)', key: 'variation_value_2', label: 'Variation value 2', help: 'This SKU’s value for the second type (e.g. 256 GB).' },
-    ...range(10, (n) => ({ section: 'Variations', key: `sku_image_url_${n}`, label: `SKU image URL ${n}`, required: n === 1, help: 'Public image address (https://…). Square 1:1, 800×800 px, 3 MB max. Image 1 is the main image.' })),
+    { section: 'Variations', key: 'variant_image_url', label: 'Variant image URL', help: 'The photo of this row’s variant (e.g. the Black one), shown when a buyer picks it. Empty = the first product image.' },
+    ...range(10, (n) => ({ section: 'Product images', key: `image_url_${n}`, label: `Product image URL ${n}`, required: n === 1, help: `Public image address (https://…). Square 1:1, 800×800 px, 3 MB max. ${n === 1 ? 'Image 1 is the main image. ' : ''}Fill on the first row of a product; other rows of the same product can leave it empty.` })),
     { section: 'Variations', key: 'quantity', label: 'Quantity', required: true, help: 'Stock for this SKU.' },
     { section: 'Variations', key: 'base_price', label: 'Base price', required: true, help: 'Price for this SKU, in your market’s currency.' },
     { section: 'Variations', key: 'weight_g', label: 'Weight (g)', help: 'Actual weight, packaged.' },
@@ -105,32 +141,16 @@ function templateColumns(cats, config) {
 
 const colLetter = (n) => { let s = ''; for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s; return s }
 
-async function buildTemplate(cats, config, templates) {
+async function buildTemplate(cats, config, templates, digital = false) {
   const ExcelJS = await loadExcel()
   const wb = new ExcelJS.Workbook()
-  wb.creator = 'NexTech Seller Center'
-  const cols = templateColumns(cats, config)
+  wb.creator = `${brandName()} Seller Center`
+  const cols = digital ? digitalColumns(config) : templateColumns(cats, config)
   const lastRow = 3 + MAX_UPLOAD_ROWS
 
-  const intro = wb.addWorksheet('Instructions')
-  intro.getColumn(1).width = 110
-  ;[
-    'NexTech — Add products via upload',
-    '',
-    '1. Fill in the Template tab: one row per SKU. Rows with the same Contribution Goods code are one product.',
-    '2. The Data Definitions tab explains every column.',
-    '3. Colors: red = required, grey = leave empty for that category, orange edge = required only after an earlier answer, no color = optional.',
-    '4. Product information (name, description, details, theme, offer, origin) must be identical on every SKU row of a product.',
-    '5. Image and video URLs must be public — they must open without logging in.',
-    '',
-    'Image requirements — non-apparel: 1:1, 800×800 px, 3 MB max · apparel: 3:4, 1340×1785 px, 3 MB max. Up to 10 images, one URL per cell.',
-    'Show only the product for sale, clearly, from several angles. You must hold the rights to every image. Images below standard may be rejected.',
-    'Product video: up to 100 MB, 3 minutes, at least 720p. Shown at the top of the product page.',
-    '',
-    'Use the latest template: download a new one whenever you list products, as the fields and valid values change from time to time.',
-    `Categories in this template: ${cats.map((c) => c.name).join(', ')}.`,
-  ].forEach((line, i) => { intro.getCell(`A${i + 1}`).value = line })
-  intro.getCell('A1').font = { bold: true, size: 14 }
+  // The Template comes first, so the file opens on the column headings; how to
+  // fill it in is explained on the page (Step 02), not inside the file.
+  const sheet = wb.addWorksheet('Template', { views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }] })
 
   // Lists for dropdowns (hidden).
   const lists = wb.addWorksheet('Lists', { state: 'veryHidden' })
@@ -142,13 +162,13 @@ async function buildTemplate(cats, config, templates) {
     values.forEach((v, i) => { lists.getCell(`${letter}${i + 1}`).value = v })
     listRefs[name] = `Lists!$${letter}$1:$${letter}$${values.length}`
   }
-  addList('categories', cats.map((c) => c.name))
+  addList('categories', cats.map((c) => c.path ?? c.name))
   addList('trademarks', config.trademarks.map((t) => t.name))
   const types = config.variation_types
   addList('themes', [...types, ...types.flatMap((a, i) => types.slice(i + 1).map((b) => `${a} × ${b}`))])
   addList('handling', config.handling_days.map(String))
   addList('templates', templates.map((t) => t.name))
-  cols.filter((c) => c.list?.startsWith('attr_')).forEach((c) => addList(c.list, c.attribute.options))
+  cols.filter((c) => c.list?.startsWith('attr_')).forEach((c) => addList(c.list, (c.attribute ?? c).options))
 
   const defs = wb.addWorksheet('Data Definitions')
   defs.columns = [{ header: 'Section', width: 26 }, { header: 'Field', width: 30 }, { header: 'Column key', width: 26 }, { header: 'Required', width: 30 }, { header: 'Meaning & valid values', width: 90 }]
@@ -163,7 +183,6 @@ async function buildTemplate(cats, config, templates) {
     defs.addRow([c.section, c.label, c.key, required, c.help ?? ''])
   })
 
-  const sheet = wb.addWorksheet('Template', { views: [{ state: 'frozen', xSplit: 2, ySplit: 3 }] })
   let start = 1
   cols.forEach((c, i) => {
     const col = i + 1
@@ -193,21 +212,21 @@ async function buildTemplate(cats, config, templates) {
     if (c.attribute) {
       const isIn = (names) => (names.length ? `OR(${names.map((n) => `$A4="${n.replace(/"/g, '""')}"`).join(',')})` : 'FALSE')
       const has = cats.filter((cat) => cat.attributes.some((a) => a.key === c.attribute.key))
-      const req = has.filter((cat) => cat.attributes.find((a) => a.key === c.attribute.key).required && !c.attribute.when).map((cat) => cat.name)
-      const na = cats.filter((cat) => !has.includes(cat)).map((cat) => cat.name)
+      const req = has.filter((cat) => cat.attributes.find((a) => a.key === c.attribute.key).required && !c.attribute.when).map((cat) => cat.path ?? cat.name)
+      const na = cats.filter((cat) => !has.includes(cat)).map((cat) => cat.path ?? cat.name)
       const rules = []
       if (na.length) rules.push({ type: 'expression', priority: 1, formulae: [isIn(na)], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: GREY } } } })
       if (req.length) rules.push({ type: 'expression', priority: 2, formulae: [`AND(ISBLANK(${cell}),${isIn(req)})`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: RED } } } })
       if (c.attribute.when) {
         const side = { style: 'medium', color: { argb: ORANGE } }
-        rules.push({ type: 'expression', priority: 3, formulae: [isIn(has.map((cat) => cat.name))], style: { border: { top: side, left: side, bottom: side, right: side } } })
+        rules.push({ type: 'expression', priority: 3, formulae: [isIn(has.map((cat) => cat.path ?? cat.name))], style: { border: { top: side, left: side, bottom: side, right: side } } })
       }
       if (rules.length) sheet.addConditionalFormatting({ ref, rules })
     }
   })
 
   const meta = wb.addWorksheet('Meta', { state: 'veryHidden' })
-  meta.getCell('A1').value = JSON.stringify({ category_ids: cats.map((c) => c.id), market: config.market, generated_at: new Date().toISOString(), version: 1 })
+  meta.getCell('A1').value = JSON.stringify({ category_ids: cats.map((c) => c.id), market: config.market, product_type: digital ? 'digital' : 'physical', generated_at: new Date().toISOString(), version: 1 })
   return wb.xlsx.writeBuffer()
 }
 
@@ -218,7 +237,7 @@ async function readTemplate(file) {
   await wb.xlsx.load(await file.arrayBuffer())
   const sheet = wb.getWorksheet('Template')
   const metaCell = wb.getWorksheet('Meta')?.getCell('A1').value
-  if (!sheet || !metaCell) throw new Error('This isn’t a NexTech product template — download one from step 1 and fill it in.')
+  if (!sheet || !metaCell) throw new Error(`This isn’t a ${brandName()} product template — download one from step 1 and fill it in.`)
   const meta = JSON.parse(String(metaCell))
   const keys = []
   sheet.getRow(3).eachCell({ includeEmpty: true }, (cell, col) => { keys[col] = String(cell.value ?? '').trim() })
@@ -267,6 +286,7 @@ export function BulkUpload({ headers, go, openProduct }) {
   const [config, setConfig] = useState(null)
   const [templates, setTemplates] = useState([])
   const [picked, setPicked] = useState([])
+  const [kind, setKind] = useState('physical') // physical products or digital downloads
   const [tasks, setTasks] = useState([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState('')
@@ -286,8 +306,8 @@ export function BulkUpload({ headers, go, openProduct }) {
     setMsg('')
     try {
       const cats = config.categories.filter((c) => picked.includes(c.id))
-      const buffer = await buildTemplate(cats, config, templates)
-      saveBlob(new Blob([buffer], { type: XLSX }), `nextech-product-template-${new Date().toISOString().slice(0, 10)}.xlsx`)
+      const buffer = await buildTemplate(cats, config, templates, kind === 'digital')
+      saveBlob(new Blob([buffer], { type: XLSX }), `${kind === 'digital' ? 'digital-' : ''}product-template-${new Date().toISOString().slice(0, 10)}.xlsx`)
     } catch (e) { setMsg(e.message) } finally { setBusy('') }
   }
 
@@ -303,6 +323,7 @@ export function BulkUpload({ headers, go, openProduct }) {
       body.append('file', file)
       body.append('rows', JSON.stringify(rows))
       body.append('category_ids', JSON.stringify(meta.category_ids ?? []))
+      body.append('product_type', meta.product_type === 'digital' ? 'digital' : 'physical')
       const d = await send(headers, '/seller/product-uploads', 'POST', body)
       setResults(d.data)
       loadTasks()
@@ -346,17 +367,21 @@ export function BulkUpload({ headers, go, openProduct }) {
 
   return (
     <>
-      <h1 className="sc-title">Add products via upload</h1>
+      <h1 className="sc-title">Bulk import products</h1>
       <p className="sc-muted">List products in bulk in three steps: download the latest template, fill in the Excel file, upload it.</p>
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
 
       <div className="sc-card">
         <h2 className="sc-h2">Step 01 — Download the latest template</h2>
+        <div className="ss-modes bu-kind">
+          <label className={kind === 'physical' ? 'on' : ''}><input type="radio" name="bu-kind" checked={kind === 'physical'} onChange={() => { setKind('physical'); setPicked([]) }} /> <b>Physical products</b> <small className="sc-muted">shipped to the buyer — with variants, weight, shipping</small></label>
+          <label className={kind === 'digital' ? 'on' : ''}><input type="radio" name="bu-kind" checked={kind === 'digital'} onChange={() => { setKind('digital'); setPicked([]) }} /> <b>Digital downloads</b> <small className="sc-muted">games, software, e-books — with a download link, no shipping</small></label>
+        </div>
         <p className="sc-muted">Different categories need different templates. Choose up to {MAX_TEMPLATE_CATEGORIES} categories for the products you’ll upload. Always use the latest template — valid values and rules change from time to time.</p>
         <div className="bu-cats">
-          {config.categories.map((c) => {
+          {config.categories.filter((c) => (c.kind ?? 'physical') === kind).map((c) => {
             const on = picked.includes(c.id)
-            return <label key={c.id} className={`wz-cat${on ? ' on' : ''}`}><input type="checkbox" checked={on} disabled={!on && picked.length >= MAX_TEMPLATE_CATEGORIES} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id)))} />{c.name}</label>
+            return <label key={c.id} className={`wz-cat${on ? ' on' : ''}`}><input type="checkbox" checked={on} disabled={!on && picked.length >= MAX_TEMPLATE_CATEGORIES} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, c.id] : p.filter((x) => x !== c.id)))} />{c.depth ? <span className="wz-cat-path">{c.path}</span> : c.name}</label>
           })}
         </div>
         <div className="ss-actions"><button type="button" className="sc-primary" disabled={!picked.length || !!busy} onClick={generate}>{busy === 'template' ? 'Generating…' : `Generate template (${picked.length}/${MAX_TEMPLATE_CATEGORIES})`}</button></div>
@@ -365,11 +390,15 @@ export function BulkUpload({ headers, go, openProduct }) {
       <div className="sc-card">
         <h2 className="sc-h2">Step 02 — Edit your Excel file</h2>
         <ul className="ob-list">
-          <li><b>Template</b> tab: one row per SKU. Rows with the same <i>Contribution Goods</i> code are one product; product information must match on all of them.</li>
+          <li><b>Template</b> tab: one row per SKU. Rows with the same <i>Product group code</i> are one product (one row per variant); SKUs are created automatically; product information must match on all of them.</li>
           <li><b>Data Definitions</b> tab: what every column means and its valid values.</li>
           <li>Colors: <span className="bu-swatch red" /> required · <span className="bu-swatch grey" /> leave empty for that category · <span className="bu-swatch orange" /> required only after an earlier answer · no color = optional.</li>
-          <li>Images: 1:1, 800×800 px, 3 MB max (apparel 3:4, 1340×1785 px). Up to 10 per product, one public URL per cell. Video: 100 MB, 3 minutes, 720p max/min.</li>
+          <li><b>Images:</b> non-apparel 1:1, 800×800 px, 3 MB max · apparel 3:4, 1340×1785 px, 3 MB max. Up to 10 per product, one URL per cell — image 1 is the main image. Show only the product for sale, clearly, from several angles; you must hold the rights to every image, and images below standard may be rejected.</li>
+          <li><b>Video:</b> up to 100 MB and 3 minutes, at least 720p — shown at the top of the product page.</li>
+          <li><b>Links must be public:</b> image and video URLs (https://…) must open without signing in.</li>
           <li>Variation theme: one type or two joined with ×, e.g. <i>Color × Storage capacity</i>. Single-SKU products can leave it empty.</li>
+          <li>Hover over a column heading in the Template for a short tip on that column.</li>
+          <li>Use the latest template: download a new one each time you list products — fields and valid values change from time to time.</li>
         </ul>
       </div>
 
@@ -392,7 +421,7 @@ export function BulkUpload({ headers, go, openProduct }) {
             </table>
           </div>
         )}
-        <p className="sc-muted"><b>Completed</b>: every product was submitted and goes on sale once NexTech approves it. <b>Action required</b>: some products have errors and were saved as drafts — fix them under <button type="button" className="sc-link" onClick={() => go('products', 'draft')}>Manage products → Incomplete</button>.</p>
+        <p className="sc-muted"><b>Completed</b>: every product was submitted and goes on sale once {brandName()} approves it. <b>Action required</b>: some products have errors and were saved as drafts — fix them under <button type="button" className="sc-link" onClick={() => go('products', 'draft')}>Manage products → Incomplete</button>.</p>
       </div>
 
       {results && (
@@ -409,7 +438,7 @@ export function BulkUpload({ headers, go, openProduct }) {
                   return (
                     <tr key={r.row}>
                       <td>{row._sheet_row ?? r.row + 4}</td>
-                      <td>{row.product_name || '—'}{row.contribution_sku && <small className="sc-muted">{row.contribution_sku}</small>}</td>
+                      <td>{row.product_name || '—'}{row.contribution_goods && <small className="sc-muted">Group {row.contribution_goods}</small>}</td>
                       <td><span className={`sc-pill ${r.status === 'submitted' ? 'approved' : 'rejected'}`}>{{ submitted: 'Submitted', draft: 'Draft', failed: 'Failed' }[r.status]}</span></td>
                       <td>{r.messages.length ? <ul className="ob-list">{r.messages.map((m) => <li key={m}>{m}</li>)}</ul> : <span className="sc-muted">—</span>}</td>
                       <td>{r.status === 'draft' && r.product_id && <button type="button" className="sc-link" onClick={() => { setResults(null); openProduct(r.product_id) }}>Upload files &amp; fix</button>}</td>
@@ -467,7 +496,7 @@ export function PricingHealth({ headers, onChanged }) {
       {tab === 'boost' ? (
         <>
           <div className="sc-card">
-            <p>Products with too little price advantage are marked <span className="sc-pill rejected">Low traffic</span> and shown less. NexTech suggests a lower price for each affected variation — it’s your choice: <b>adjust</b> to the recommended price, or <b>reject</b> the offer and close that variation.</p>
+            <p>Products with too little price advantage are marked <span className="sc-pill rejected">Low traffic</span> and shown less. {brandName()} suggests a lower price for each affected variation — it’s your choice: <b>adjust</b> to the recommended price, or <b>reject</b> the offer and close that variation.</p>
             <p className="sc-muted">A product regains full search and recommendation exposure once all its offers are handled, with at least one price adjusted.</p>
           </div>
           {groups && groups.length === 0 && <div className="sc-card"><p className="sc-muted">No sales boost offers right now.</p></div>}
@@ -649,7 +678,7 @@ export function AccountHealth({ headers, country }) {
     try {
       await send(headers, '/seller/trademarks', 'POST', { name: form.name, registration_number: form.registration_number, registration_country: form.registration_country, certificate_path: form.certificate_path, logo_url: form.logo_url || null })
       setForm(null)
-      setMsg('Trademark submitted — NexTech will review it.')
+      setMsg(`Trademark submitted — ${brandName()} will review it.`)
       load()
     } catch (e) { setMsg(e.message) } finally { setBusy(false) }
   }
@@ -661,7 +690,7 @@ export function AccountHealth({ headers, country }) {
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
       <div className="sc-card">
         <h2 className="sc-h2">Trademarks</h2>
-        <p className="sc-muted">Register the brands you sell under. Once NexTech approves a trademark you can pick it when adding products — branded products get a separate price assessment and better search matching. You can add a logo at any time.</p>
+        <p className="sc-muted">Register the brands you sell under. Once {brandName()} approves a trademark you can pick it when adding products — branded products get a separate price assessment and better search matching. You can add a logo at any time.</p>
         <div className="sc-table-wrap">
           <table className="sc-table">
             <thead><tr><th>Logo</th><th>Trademark</th><th>Registration</th><th>Status</th><th></th></tr></thead>

@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { ChatDock } from './ChatDock'
 import { API_URL, chatAdapter, readJson } from './chatDockUtils'
+import { brandName } from './useBranding'
 
 // The chat docks for Seller Center, the storefront and the rider console —
 // the same windows as the admin console (ChatDock.jsx), each with its own
 // kinds of chat. `onDetails` handlers open that surface's full view of a
 // conversation (photos, rating, ending the chat, …).
 
-const NEXTECH = { key: 'nextech', kind: 'nextech', id: 0, name: 'NexTech support', minimized: true }
+const NEXTECH = { key: 'nextech', kind: 'nextech', id: 0, name: `${brandName()} support`, minimized: true }
 
 // Chat setups are cached per window, so reach the latest handler through a ref.
 function useLatest(fn) {
@@ -21,10 +22,10 @@ function useLatest(fn) {
 export function SellerChatDock({ authHeaders, onCustomerDetails, onRead }) {
   const details = useLatest(onCustomerDetails)
   const adapterFor = useCallback((chat) => (chat.kind === 'nextech'
-    ? { adapter: chatAdapter({ url: `${API_URL}/seller/chat`, headers: authHeaders }), labels: { nextech: 'NexTech' } }
+    ? { adapter: chatAdapter({ url: `${API_URL}/seller/chat`, headers: authHeaders }), labels: { nextech: `${brandName()}` } }
     : {
         adapter: chatAdapter({ url: `${API_URL}/seller/customer-chats/${chat.id}/chat`, postUrl: `${API_URL}/seller/customer-chats/${chat.id}/messages`, headers: authHeaders }),
-        labels: { customer: 'Buyer', nextech: 'NexTech', rider: 'Delivery partner' },
+        labels: { customer: 'Buyer', nextech: `${brandName()}`, rider: 'Delivery partner' },
         onDetails: () => details.current?.({ id: chat.id }),
       }), [authHeaders, details])
   const load = useCallback(async () => {
@@ -45,7 +46,7 @@ export function CustomerChatDock({ authHeaders, issueLabel, onDetails, onRead })
   const details = useLatest(onDetails)
   const adapterFor = useCallback((chat) => ({
     adapter: chatAdapter({ url: `${API_URL}/support/threads/${chat.id}/chat`, postUrl: `${API_URL}/support/threads/${chat.id}/messages`, headers: authHeaders }),
-    labels: { nextech: 'NexTech', seller: 'Seller', rider: 'Delivery partner' },
+    labels: { nextech: `${brandName()}`, seller: 'Seller', rider: 'Delivery partner' },
     onDetails: () => details.current?.(chat.id),
   }), [authHeaders, details])
   const load = useCallback(async () => {
@@ -68,8 +69,8 @@ function customerChat(t, issueLabel) {
 // customer of each delivery — two side by side on a wide screen.
 export function RiderChatDock({ headers, orders }) {
   const adapterFor = useCallback((chat) => (chat.kind === 'nextech'
-    ? { adapter: chatAdapter({ url: `${API_URL}/rider/support-chat`, headers }), labels: { nextech: 'NexTech' } }
-    : { adapter: chatAdapter({ url: `${API_URL}/rider/orders/${chat.id}/chat`, postUrl: `${API_URL}/rider/orders/${chat.id}/messages`, headers }), labels: { customer: 'Customer', nextech: 'NexTech', seller: 'Seller' } }), [headers])
+    ? { adapter: chatAdapter({ url: `${API_URL}/rider/support-chat`, headers }), labels: { nextech: `${brandName()}` } }
+    : { adapter: chatAdapter({ url: `${API_URL}/rider/orders/${chat.id}/chat`, postUrl: `${API_URL}/rider/orders/${chat.id}/messages`, headers }), labels: { customer: 'Customer', nextech: `${brandName()}`, seller: 'Seller' } }), [headers])
   const items = useMemo(() => [{ ...NEXTECH, subtitle: 'Help with a delivery' }, ...orders.map((o) => ({ key: `order-${o.id}`, kind: 'order', id: o.id, name: `Order #${o.id}`, subtitle: 'Chat with the customer' }))], [orders])
   const launcher = useMemo(() => ({ label: 'Messages', items }), [items])
   return <ChatDock storeKey="nextech_rider_chats" adapterFor={adapterFor} launcher={launcher} initial={[NEXTECH]} />

@@ -79,8 +79,7 @@ class CatalogController extends Controller
         $storeId = $this->servingStoreId($request);
         $market = Market::fromRequest($request);
 
-        return response()->json([
-            'data' => Category::query()
+        $filtered = Category::query()
                 ->where('is_active', true)
                 // Outside the home market, only categories that market sells in.
                 ->when($market !== Market::home(), fn ($query) => $query->whereHas(
@@ -99,10 +98,16 @@ class CatalogController extends Controller
                     'products',
                     fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->shownToShoppers(),
                 ))
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->get(),
-        ]);
+                ->pluck('id')->all();
+
+        // A parent stays listed when any of its subcategories has products; each
+        // category carries its parent and kind so the storefront can show the tree.
+        $listed = Category::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get()
+            ->filter(fn (Category $c) => array_intersect(Category::withDescendantIds($c->id), $filtered) !== [])
+            ->map(fn (Category $c) => $c->setAttribute('path', $c->path()))
+            ->values();
+
+        return response()->json(['data' => $listed]);
     }
 
     public function products(Request $request): JsonResponse
@@ -115,20 +120,16 @@ class CatalogController extends Controller
             'sort' => ['sometimes', Rule::in(['best_selling', 'top_rated', 'newest'])],
             'shop' => ['sometimes', 'string', 'max:180'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            // Also say which categories have products for these filters (ignoring the
+            // category one) — so a deals page's carousel shows only categories with items.
+            'with_categories' => ['sometimes', 'boolean'],
         ]);
 
         $storeId = $this->servingStoreId($request);
         $shopId = isset($validated['shop']) ? (self::publicShop($validated['shop'])?->id ?? 0) : null;
         $market = Market::fromRequest($request);
 
-        $products = Product::query()
-            ->with([
-                'category',
-                'variants' => fn ($query) => $query->where('is_active', true),
-                'storeInventory',
-                'images',
-                'shop:'.self::SHOP_COLUMNS,
-            ])
+        $base = Product::query()
             ->where('is_active', true)
             ->where('status', 'approved')
             ->shownToShoppers()
@@ -151,14 +152,33 @@ class CatalogController extends Controller
                             ->orWhere('sku', 'like', "%{$search}%"));
                 });
             })
-            ->when(isset($validated['category']), fn ($query) => $query->whereHas(
-                'category',
-                fn ($categoryQuery) => $categoryQuery->where('slug', $validated['category'])
-            ))
             ->when($shopId !== null, fn ($query) => $query->where('shop_id', $shopId))
             ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
-            ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5))
+            ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5));
+
+        // Categories with matching products (and their parents), before the category filter.
+        $categorySlugs = null;
+        if ($validated['with_categories'] ?? false) {
+            $tree = Category::tree();
+            $categorySlugs = (clone $base)->distinct()->pluck('category_id')
+                ->flatMap(fn ($id) => $tree->get($id)?->lineage() ?? [])
+                ->map(fn (Category $c) => $c->slug)->unique()->values();
+        }
+
+        $products = $base
+            ->with([
+                'category',
+                'variants' => fn ($query) => $query->where('is_active', true),
+                'storeInventory',
+                'images',
+                'shop:'.self::SHOP_COLUMNS,
+            ])
+            // A category shows its own products and its subcategories' (Games → Arcade, Puzzle…).
+            ->when(isset($validated['category']), fn ($query) => $query->whereIn(
+                'category_id',
+                Category::withDescendantIds((int) Category::where('slug', $validated['category'])->value('id'))
+            ))
             // "Low traffic" products (a sales boost offer still pending) rank below the rest.
             ->orderByRaw("EXISTS (SELECT 1 FROM sales_boost_offers sbo WHERE sbo.product_id = products.id AND sbo.status = 'pending')")
             ->when(
@@ -173,7 +193,7 @@ class CatalogController extends Controller
             ->paginate($validated['per_page'] ?? 20)
             ->through(fn (Product $product) => $this->present($product, $storeId, $market));
 
-        return response()->json($products);
+        return response()->json($categorySlugs === null ? $products : $products->toArray() + ['category_slugs' => $categorySlugs]);
     }
 
     /**

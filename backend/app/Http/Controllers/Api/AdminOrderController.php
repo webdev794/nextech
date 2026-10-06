@@ -51,9 +51,11 @@ class AdminOrderController extends Controller
                 'refunds.creator:id,name',
             ])
             // 'open' = not finished yet (anything short of delivered or cancelled).
-            ->when($validated['status'] ?? null, fn ($query, $status) => $status === 'open'
-                ? $query->open()
-                : $query->where('status', $status))
+            ->when($validated['status'] ?? null, fn ($query, $status) => match ($status) {
+                'open' => $query->open(),
+                'refund_due' => $query->refundDue(),
+                default => $query->where('status', $status),
+            })
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
         LiveTracking::refreshOrders($orders->getCollection());
@@ -116,7 +118,9 @@ class AdminOrderController extends Controller
             'cash_collected' => ['sometimes', 'boolean'],
             'refunded' => ['sometimes', 'boolean'],
             'items_returned' => ['sometimes', 'boolean'],
-        ]);
+            // Why the admin cancelled (out of stock, customer asked…) — required to cancel.
+            'cancel_reason' => ['required_if:status,cancelled', 'nullable', 'string', 'max:500'],
+        ], ['cancel_reason.required_if' => 'Say why the order is being cancelled.']);
 
         if (! array_key_exists('status', $validated)
             && ! array_key_exists('courier_name', $validated)
@@ -214,6 +218,12 @@ class AdminOrderController extends Controller
 
         if (($changes['status'] ?? null) === 'cancelled') {
             $changes['cancelled_by'] = 'admin';
+            $changes['cancel_reason'] = trim((string) $validated['cancel_reason']);
+            // A paid order the admin cancels needs its money back — flag it like a
+            // customer cancellation so it shows under "Refund due" until refunded.
+            if ($order->payment_status === 'paid') {
+                $changes['payment_status'] = 'refund_pending';
+            }
         }
 
         // A gift card covered the whole order — restoring its balance below

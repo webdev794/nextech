@@ -515,3 +515,23 @@ s.sc-muted{display:inline}
 .dg-link-status{display:block;margin-top:3px;font-size:12px;color:#1f6f3f}
 .dg-link-status.page{color:#8a6100}
 .dg-link-status.broken{color:#a23b28}
+.bu-kind{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+.bu-kind label{display:flex;gap:8px;align-items:center;padding:10px 12px;border:1px solid #d9ddd3;border-radius:10px;cursor:pointer;font-size:14px}
+.bu-kind label.on{border-color:#1f2328;box-shadow:0 0 0 1px #1f2328}
+.wz-cat-path{font-size:12px}
+.seller-held-list .positive{color:#8a5a00}
+.seller-earnings-list .held,.seller-ledger-legend .held{color:#8a5a00;font-weight:600}
+.seller-earnings-list .settled,.seller-ledger-legend .settled{color:#8a8f87;font-weight:600}
+.seller-earnings-list li.is-settled > span:first-child{color:#8a8f87}
+.seller-ledger-legend{margin:6px 0 8px;font-size:12px;color:#6b7368}
+.seller-ledger-legend .positive{color:#2f7d43;font-weight:600}
+.seller-earnings-list .paid,.seller-ledger-legend .paid{color:#14532d;font-weight:700}
+.seller-ledger-table td,.seller-ledger-table th{font-size:14px}
+.seller-ledger-table .num{text-align:right;white-space:nowrap;font-weight:600}
+.seller-ledger-table .seller-ledger-note{color:#6b7368;font-size:12px;max-width:340px}
+.seller-ledger-table td.positive{color:#2f7d43}.seller-ledger-table td.negative{color:#a23b28}
+.seller-ledger-table td.held{color:#8a5a00}.seller-ledger-table td.settled{color:#8a8f87}.seller-ledger-table td.paid{color:#14532d}
+.seller-ledger-table tr.ledger-settled td{color:#8a8f87}
+.ledger-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+.ledger-tag.positive{background:#e4f3e4;color:#2f7d43}.ledger-tag.negative{background:#f6e3e0;color:#a23b28}
+.ledger-tag.held{background:#fff8e1;color:#8a5a00}.ledger-tag.settled{background:#eef0ec;color:#6b7368}.ledger-tag.paid{background:#d6eadb;color:#14532d}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
-import { useBranding } from './useBranding'
+import { useBranding, brandName } from './useBranding'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { renderMarkdown } from './markdown'
@@ -64,7 +64,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: 'Shipping label (NexTech)', tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -191,7 +191,7 @@ export default function Seller({ token, onSignOut }) {
   const [productSearch, setProductSearch] = useState('')
   const [openGroups, setOpenGroups] = useState({ products: true, orders: true, account: false })
   // Customer <-> seller chats (buyer messages, or an order chat NexTech brought the seller into).
-  const [messagesTab, setMessagesTab] = useState('customers')
+  const [messagesTab, setMessagesTab] = useState('nextech') // support first: it's where a seller starts a new message
   const [sellerPages, setSellerPages] = useState([]) // policy pages placed in the seller footer
   const [shipTemplates, setShipTemplates] = useState([])
   const [customerChats, setCustomerChats] = useState([])
@@ -315,7 +315,7 @@ export default function Seller({ token, onSignOut }) {
 
   // The seller wraps up a conversation with NexTech (recorded as a system note).
   async function endSupportThread() {
-    if (!supportThread || !window.confirm('End this chat with NexTech?')) return
+    if (!supportThread || !window.confirm(`End this chat with ${brandName()}?`)) return
     setSupportMsg('')
     try {
       const response = await fetch(`${API_URL}/support/threads/${supportThread.id}/end?kind=seller`, { method: 'POST', headers: authHeaders() })
@@ -721,7 +721,7 @@ export default function Seller({ token, onSignOut }) {
           newestAlerted.current = fresh[0].id
           if (!soundMuted) playMessageChime()
           if (document.visibilityState !== 'visible' && 'Notification' in window && Notification.permission === 'granted') {
-            try { new Notification(`New order #${fresh[0].id}`, { body: fresh[0].ships_itself && fresh[0].ship_by ? `Ship by ${new Date(fresh[0].ship_by).toLocaleDateString()}` : 'Open Seller Center → Manage orders' }) } catch { /* ignore */ }
+            try { new Notification(`New order #${fresh[0].id}`, { body: fresh[0].fulfilment === 'digital' ? 'Digital download — delivered automatically' : fresh[0].ships_itself && fresh[0].ship_by ? `Ship by ${new Date(fresh[0].ship_by).toLocaleDateString()}` : 'Open Seller Center → Manage orders' }) } catch { /* ignore */ }
           }
         }
       } catch { /* keep last */ }
@@ -808,7 +808,7 @@ export default function Seller({ token, onSignOut }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not send the request.')
       setProducts((list) => list.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
-      setProductMsg(`${product.name} is hidden — NexTech will remove it shortly.`)
+      setProductMsg(`${product.name} is hidden — ${brandName()} will remove it shortly.`)
     } catch (error) { setProductMsg(error.message) }
   }
 
@@ -870,7 +870,7 @@ export default function Seller({ token, onSignOut }) {
 
     const NAV = [
       { key: 'home', label: 'Homepage', icon: '⌂' },
-      { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Add products via upload'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
+      { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Bulk import products'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
       { key: 'performance', label: 'Performance', icon: '♡', children: [['account-health', 'Account health']] },
       { key: 'orders', label: 'Orders', icon: '☰', badge: orderAlerts?.to_ship ?? 0, children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
@@ -883,7 +883,7 @@ export default function Seller({ token, onSignOut }) {
     return (
       <div className="sc-shell">
         <header className="sc-top">
-          <a className="sc-brand" href={STORE_URL}><BrandLogo onDark fallback={(brand?.store_name || 'N').charAt(0).toUpperCase()} className="sc-brand-logo" /><span>{brand?.store_name || 'NexTech'}<small>Seller Center</small></span></a>
+          <a className="sc-brand" href={STORE_URL}><BrandLogo onDark fallback={(brand?.store_name || 'N').charAt(0).toUpperCase()} className="sc-brand-logo" /><span>{brand?.store_name || `${brandName()}`}<small>Seller Center</small></span></a>
           <form className="sc-search" onSubmit={(event) => { event.preventDefault(); go('products'); setProductTab('all') }}>
             <input placeholder="Search your products by name or SKU" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} />
             <button type="submit" aria-label="Search">⌕</button>
@@ -932,7 +932,7 @@ export default function Seller({ token, onSignOut }) {
             {newOrders.length > 0 && (
               <div className="sc-new-order" role="status">
                 <span>🛒 <b>{newOrders.length === 1 ? `New order #${newOrders[0].id}` : `${newOrders.length} new orders`}</b>
-                  {newOrders[0].ships_itself ? (newOrders[0].ship_by ? ` — ship by ${new Date(newOrders[0].ship_by).toLocaleDateString()}` : ' — you ship it') : ' — NexTech collects it'}</span>
+                  {newOrders[0].ships_itself ? (newOrders[0].ship_by ? ` — ship by ${new Date(newOrders[0].ship_by).toLocaleDateString()}` : ' — you ship it') : newOrders[0].fulfilment === 'digital' ? ' — digital download, delivered to the buyer automatically' : ` — ${brandName()} picks it up from you`}</span>
                 <button type="button" className="sc-primary" onClick={() => { seeNewOrders(); go('orders') }}>View orders</button>
                 <button type="button" className="sc-link" onClick={seeNewOrders}>Dismiss</button>
               </div>
@@ -956,7 +956,7 @@ export default function Seller({ token, onSignOut }) {
             ) : section === 'home' ? (
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
-                {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact NexTech via Messages if you think this is a mistake.</div>}
+                {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact {brandName()} via Messages if you think this is a mistake.</div>}
                 {me.requirements?.onboarding_tasks && <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />}
                 <div className="sc-card">
                   <h2 className="sc-h2">Action needed</h2>
@@ -1008,7 +1008,7 @@ export default function Seller({ token, onSignOut }) {
                           return (
                             <tr key={product.id}>
                               <td>
-                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? (product.deletion_requested_at ? 'Removal requested' : product.deactivated_by === 'admin' ? 'Hidden by NexTech' : 'Deactivated') : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
+                                <span className={`sc-pill ${st}`}>{st === 'hidden' ? (product.deletion_requested_at ? 'Removal requested' : product.deactivated_by === 'admin' ? `Hidden by ${brandName()}` : 'Deactivated') : (PRODUCT_STATUS_LABELS[product.status] ?? product.status)}</span>
                                 {st === 'draft' && Object.keys(product.listing_errors ?? {}).length > 0 && <span className="sc-reason" title={Object.values(product.listing_errors).join('\n')}>ⓘ {Object.keys(product.listing_errors).length} thing{Object.keys(product.listing_errors).length === 1 ? '' : 's'} to finish</span>}
                                 {(product.missing_compliance ?? []).length > 0 && st !== 'draft' && <button type="button" className="sc-reason sc-link" title={product.missing_compliance.join('\n')} onClick={() => go('compliance-products')}>ⓘ Compliance documents missing</button>}
                                 {product.status === 'rejected' && product.rejection_reason && <span className="sc-reason" title={product.rejection_reason}>ⓘ {product.rejection_reason}</span>}
@@ -1031,9 +1031,9 @@ export default function Seller({ token, onSignOut }) {
                                   ? <span className="sc-muted" title="Buyers can still check its details and get returns / warranty support. Set stock to 0 to stop sales — it shows as Out of stock.">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>
                                   : <button type="button" onClick={() => setProductActive(product, false)}>Deactivate</button>)}
                                 {st === 'hidden' && (product.deletion_requested_at
-                                  ? <span className="sc-muted" title="Waiting for NexTech to remove it">Removal requested</span>
+                                  ? <span className="sc-muted" title={`Waiting for ${brandName()} to remove it`}>Removal requested</span>
                                   : product.deactivated_by === 'admin'
-                                    ? <span className="sc-muted" title="NexTech took this product off sale — message NexTech to relist it">Hidden by NexTech</span>
+                                    ? <span className="sc-muted" title={`${brandName()} took this product off sale — message ${brandName()} to relist it`}>Hidden by {brandName()}</span>
                                     : <button type="button" className="sc-primary" onClick={() => setProductActive(product, true)}>Relist</button>)}
                                 {!product.deletion_requested_at && !product.support_until && <button type="button" className="danger" onClick={() => removeProduct(product)}>Delete</button>}
                               </td>
@@ -1097,20 +1097,20 @@ export default function Seller({ token, onSignOut }) {
                       <ul className="seller-earnings-list seller-held-list">
                         {me.pending_orders.map((p) => (
                           <li key={p.order_id ?? 'missing'}>
-                            <span>{p.order_missing ? 'Sale credit without an order on record — held until NexTech reviews it' : <>Order #{p.order_id} — {p.return_days != null ? `${p.return_days}-day return window · ` : ''}{p.releases_at ? `payable from ${new Date(p.releases_at).toLocaleDateString()}` : 'payable after delivery + return window'}</>}</span>
+                            <span>{p.order_missing ? `Sale credit without an order on record — held until ${brandName()} reviews it` : <>Order #{p.order_id} — {p.return_days != null ? `${p.return_days}-day return window · ` : ''}{p.releases_at ? `payable from ${new Date(p.releases_at).toLocaleDateString()}` : 'payable after delivery + return window'}</>}</span>
                             <span className={p.amount_cents >= 0 ? 'positive' : 'negative'}>{p.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(p.amount_cents))}</span>
                           </li>
                         ))}
                       </ul>
                     )}
-                    <p className="seller-earnings-note">Payouts are sent by NexTech to your verified bank account; this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
+                    <p className="seller-earnings-note">Payouts are sent by {brandName()} to your verified bank account; this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
                     {(() => {
                       const req = me.last_payout_request
                       const balance = Math.max(0, me.available_cents ?? 0)
                       const max = me.max_payout_cents ?? 0
                       const requestable = max > 0 ? Math.min(balance, max) : balance
                       if (req?.status === 'pending') {
-                        return <p className="seller-payout-status pending">Payout of <strong>{money(req.amount_cents)}</strong> requested on {new Date(req.created_at).toLocaleDateString()} — NexTech will send it to your payout method shortly.</p>
+                        return <p className="seller-payout-status pending">Payout of <strong>{money(req.amount_cents)}</strong> requested on {new Date(req.created_at).toLocaleDateString()} — {brandName()} will send it to your payout method shortly.</p>
                       }
                       return (
                         <>
@@ -1126,15 +1126,52 @@ export default function Seller({ token, onSignOut }) {
                         </>
                       )
                     })()}
-                    <ul className="seller-earnings-list">
-                      {(me.ledger_entries ?? []).map((entry) => (
-                        <li key={entry.id}>
-                          <span>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type}{entry.order_id ? ` — order #${entry.order_id}` : ''}{entry.note ? ` — ${entry.note}` : ''}</span>
-                          <span className={entry.amount_cents >= 0 ? 'positive' : 'negative'}>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents))}</span>
-                        </li>
-                      ))}
-                      {(me.ledger_entries ?? []).length === 0 && <li className="seller-earnings-empty">No activity yet.</li>}
-                    </ul>
+                    {(() => {
+                      // Colour each line by where its money is: green = counted in "Available to pay out",
+                      // brown = held for the return window, grey = cancelled out (sale and refund net to zero).
+                      const entries = me.ledger_entries ?? []
+                      return entries.length > 0 && <p className="seller-ledger-legend"><span className="paid">Dark green</span> = already paid to you · <span className="positive">Green</span> = available to pay out · <span className="held">Brown</span> = held for returns · <span className="settled">Grey</span> = cancelled out by a refund</p>
+                    })()}
+                    {(() => {
+                      // Activity as a table, each line coloured by where its money is (see the legend above).
+                      const entries = me.ledger_entries ?? []
+                      if (!entries.length) return <p className="seller-earnings-empty">No activity yet.</p>
+                      const heldIds = new Set((me.pending_orders ?? []).map((p) => (p.order_missing ? 'none' : p.order_id)))
+                      const net = {}
+                      entries.forEach((e) => { if (e.order_id) net[e.order_id] = (net[e.order_id] ?? 0) + e.amount_cents })
+                      // Already paid: payouts cover the oldest released orders first.
+                      let paidOut = -entries.filter((e) => e.type === 'payout_debit').reduce((sum, e) => sum + e.amount_cents, 0)
+                      const paid = new Set()
+                      ;[...new Set([...entries].reverse().map((e) => e.order_id).filter(Boolean))].forEach((id) => {
+                        if (!heldIds.has(id) && net[id] > 0 && paidOut >= net[id]) { paid.add(id); paidOut -= net[id] }
+                      })
+                      const stateOf = (e) => (e.type === 'payout_debit' || (e.order_id && paid.has(e.order_id)) ? 'paid'
+                        : e.order_id && Math.abs(net[e.order_id]) < 1 ? 'settled'
+                          : heldIds.has(e.order_id ?? 'none') ? 'held' : (e.amount_cents >= 0 ? 'positive' : 'negative'))
+                      const STATUS = { paid: 'Paid to you', positive: 'Available', negative: 'Deducted', held: 'Held for returns', settled: 'Cancelled out' }
+                      return (
+                        <div className="sc-table-wrap">
+                          <table className="sc-table seller-ledger-table">
+                            <thead><tr><th>Date</th><th>Type</th><th>Order</th><th>Details</th><th>Status</th><th className="num">Amount</th></tr></thead>
+                            <tbody>
+                              {entries.map((entry) => {
+                                const state = stateOf(entry)
+                                return (
+                                  <tr key={entry.id} className={`ledger-${state}`}>
+                                    <td>{new Date(entry.created_at).toLocaleDateString()}</td>
+                                    <td>{LEDGER_TYPE_LABELS[entry.type] ?? entry.type}</td>
+                                    <td>{entry.order_id ? `#${entry.order_id}` : '—'}</td>
+                                    <td className="seller-ledger-note">{entry.note || '—'}</td>
+                                    <td><span className={`ledger-tag ${state}`}>{STATUS[state]}</span></td>
+                                    <td className={`num ${state}`}>{entry.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(entry.amount_cents))}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    })()}
 
                     <div className="seller-payout-form">
                       <p className="seller-earnings-note">
@@ -1200,8 +1237,8 @@ export default function Seller({ token, onSignOut }) {
               <>
                 <h1 className="sc-title">Messages</h1>
                 <div className="sc-tabs">
+                  <button type="button" className={messagesTab === 'nextech' ? 'active' : ''} onClick={() => setMessagesTab('nextech')}>{brandName()} support {unreadNextech > 0 && <span className="sc-badge">{unreadNextech}</span>}</button>
                   <button type="button" className={messagesTab === 'customers' ? 'active' : ''} onClick={() => setMessagesTab('customers')}>Customer chats {unreadCustomerChats > 0 && <span className="sc-badge">{unreadCustomerChats}</span>}</button>
-                  <button type="button" className={messagesTab === 'nextech' ? 'active' : ''} onClick={() => setMessagesTab('nextech')}>NexTech support {unreadNextech > 0 && <span className="sc-badge">{unreadNextech}</span>}</button>
                 </div>
                 {messagesTab === 'customers' ? (
                   <div className="sc-card">
@@ -1213,11 +1250,11 @@ export default function Seller({ token, onSignOut }) {
                           <p className="sc-muted">Your items: {(customerChat.order.items ?? []).map((i) => `${i.product_name} × ${i.quantity}`).join(', ') || '—'} · order {customerChat.order.status}</p>
                         )}
                         {customerChat.status === 'resolved' && <p className="sc-alert">This conversation is resolved. Replying reopens it.</p>}
-                        <p className="sc-alert warn">NexTech brought you into this chat to help resolve an order issue. NexTech can see and reply here too.</p>
+                        <p className="sc-alert warn">{brandName()} brought you into this chat to help resolve an order issue. {brandName()} can see and reply here too.</p>
                         <div className="sc-chat-log">
                           {(customerChat.messages ?? []).map((m) => (
                             <div key={m.id} className={`sc-msg ${m.from}`}>
-                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? 'NexTech' : m.from === 'customer' ? customerChat.customer_name : ''}</b>
+                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? `${brandName()}` : m.from === 'customer' ? customerChat.customer_name : ''}</b>
                               {m.body && <span>{m.body}</span>}
                               <ChatPhotos urls={m.attachments} />
                               <small>{new Date(m.created_at).toLocaleString()}</small>
@@ -1229,10 +1266,10 @@ export default function Seller({ token, onSignOut }) {
                           <textarea rows="2" placeholder={`Reply to ${customerChat.customer_name}…`} value={customerReply} onChange={(event) => setCustomerReply(event.target.value)} />
                           <button type="submit" className="sc-primary" disabled={!customerReply.trim() && !customerPhotos.length}>Send</button>
                         </form>
-                        <p className="sc-muted">Keep it on NexTech — don&rsquo;t share or ask for names, addresses, emails, phone numbers, one-time codes (OTPs) or payment outside the platform. Emails and phone numbers are hidden automatically.</p>
+                        <p className="sc-muted">Keep it on {brandName()} — don&rsquo;t share or ask for names, addresses, emails, phone numbers, one-time codes (OTPs) or payment outside the platform. Emails and phone numbers are hidden automatically.</p>
                       </div>
                     ) : customerChats.length === 0 ? (
-                      <p className="sc-muted">No customer chats yet. When a customer has an issue with one of your items, NexTech support will bring you into their chat here.</p>
+                      <p className="sc-muted">No customer chats yet. When a customer has an issue with one of your items, {brandName()} support will bring you into their chat here.</p>
                     ) : (
                       <table className="sc-table">
                         <thead><tr><th>Customer</th><th>Order</th><th>Type</th><th>Last message</th><th>Status</th><th></th></tr></thead>
@@ -1241,7 +1278,7 @@ export default function Seller({ token, onSignOut }) {
                             <tr key={t.id}>
                               <td><b>{t.customer_name}</b></td>
                               <td>{t.order_id ? `#${t.order_id}` : '—'}</td>
-                              <td>Order issue (with NexTech)</td>
+                              <td>Order issue (with {brandName()})</td>
                               <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>
                               <td>{customerUnread(t) ? <span className="sc-pill rejected">Unread</span> : t.needs_seller_reply ? <span className="sc-pill pending">Awaiting your reply</span> : <span className={`sc-pill ${t.status === 'resolved' ? 'approved' : ''}`}>{t.status === 'resolved' ? 'Resolved' : 'Open'}</span>}</td>
                               <td className="sc-actions"><button type="button" onClick={() => openCustomerChat(t)}>Open</button></td>
@@ -1303,7 +1340,7 @@ export default function Seller({ token, onSignOut }) {
                         <div className="seller-thread-messages">
                           {(supportThread.messages ?? []).map((msg) => (
                             <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
-                              <strong>{msg.is_staff ? 'NexTech' : 'You'}:</strong> {msg.body}
+                              <strong>{msg.is_staff ? `${brandName()}` : 'You'}:</strong> {msg.body}
                             </p>
                           ))}
                         </div>
@@ -1330,7 +1367,7 @@ export default function Seller({ token, onSignOut }) {
               <>
                 <h1 className="sc-title">Policies &amp; rules</h1>
                 <div className="sc-card">
-                  <p className="sc-muted">The rules for selling on NexTech. Please read them before listing products — listings that break them are removed.</p>
+                  <p className="sc-muted">The rules for selling on {brandName()}. Please read them before listing products — listings that break them are removed.</p>
                   {(() => {
                     const bySlug = Object.fromEntries(sellerPages.map((pg) => [pg.slug, pg]))
                     const children = (slug) => sellerPages.filter((pg) => pg.parent_slug === slug)
@@ -1360,7 +1397,7 @@ export default function Seller({ token, onSignOut }) {
                       </ul>
                     )
                   })()}
-                  <p className="sc-muted">Questions? <button type="button" className="sc-link" onClick={() => go('messages')}>Message NexTech</button></p>
+                  <p className="sc-muted">Questions? <button type="button" className="sc-link" onClick={() => go('messages')}>Message {brandName()}</button></p>
                 </div>
               </>
             ) : section === 'shop' ? (
@@ -1369,7 +1406,7 @@ export default function Seller({ token, onSignOut }) {
                 <div className="sc-card sc-shop-profile">
                   <div className="sc-prod">
                     {me.shop?.logo_url ? <img src={mediaUrl(me.shop.logo_url)} alt="" /> : <span className="sc-prod-ph" />}
-                    <span><b>{me.shop?.name}</b><small className="sc-muted">{me.shop?.is_active ? 'Live on NexTech' : 'Hidden'} · SKU prefix SLR{me.shop?.shop_code}</small></span>
+                    <span><b>{me.shop?.name}</b><small className="sc-muted">{me.shop?.is_active ? `Live on ${brandName()}` : 'Hidden'} · SKU prefix SLR{me.shop?.shop_code}</small></span>
                   </div>
                   {me.shop?.description && <p>{me.shop.description}</p>}
                   {shopUrl && <p>Shop page: <a href={shopUrl} target="_blank" rel="noreferrer">{shopUrl}</a></p>}
@@ -1404,7 +1441,7 @@ export default function Seller({ token, onSignOut }) {
                       </form>
                     )}
                 </div>
-                <p className="sc-muted"><button type="button" className="sc-link" onClick={() => openPage('seller-services-agreement')}>NexTech Seller Services Agreement</button></p>
+                <p className="sc-muted"><button type="button" className="sc-link" onClick={() => openPage('seller-services-agreement')}>{brandName()} Seller Services Agreement</button></p>
               </>
             ) : null}
           </main>
@@ -1423,7 +1460,7 @@ export default function Seller({ token, onSignOut }) {
   return (
     <div className="seller-shell">
       <header className="seller-bar">
-        <a className="seller-brand" href={STORE_URL}>NexTech <span>Seller Center</span></a>
+        <a className="seller-brand" href={STORE_URL}>{brandName()} <span>Seller Center</span></a>
         {breadcrumb && <span className="seller-bar-step">Step {step} of 4 — {breadcrumb}</span>}
         {me?.status && (
           <button type="button" className="seller-sound-toggle" title={soundMuted ? 'Message sound is off — click to turn on' : 'Message sound is on — click to mute'}
@@ -1680,7 +1717,7 @@ export default function Seller({ token, onSignOut }) {
             <p>{STATUS_COPY[me.status]?.body}</p>
             {me.status === 'rejected' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
             {me.status === 'suspended' && me.rejection_reason && <p className="seller-reason">Reason: {me.rejection_reason}</p>}
-            {me.status === 'needs_changes' && me.rejection_reason && <p className="seller-reason">{changeItems.length ? 'Message from NexTech' : 'What to change'}: {me.rejection_reason}</p>}
+            {me.status === 'needs_changes' && me.rejection_reason && <p className="seller-reason">{changeItems.length ? `Message from ${brandName()}` : 'What to change'}: {me.rejection_reason}</p>}
             {changeItems.length > 0 && (
               <div className="seller-change-list">
                 <h3>{changeItems.length} item{changeItems.length === 1 ? '' : 's'} to update</h3>
@@ -1703,7 +1740,7 @@ export default function Seller({ token, onSignOut }) {
                   <div className="seller-thread-messages">
                     {(supportThread.messages ?? []).map((msg) => (
                       <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
-                        <strong>{msg.is_staff ? 'NexTech' : 'You'}:</strong> {msg.body}
+                        <strong>{msg.is_staff ? `${brandName()}` : 'You'}:</strong> {msg.body}
                       </p>
                     ))}
                     {(supportThread.messages ?? []).length === 0 && <p className="seller-earnings-empty">No messages yet.</p>}

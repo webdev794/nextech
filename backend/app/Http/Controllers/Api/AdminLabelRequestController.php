@@ -68,7 +68,7 @@ class AdminLabelRequestController extends Controller
                             'order_id' => $labelRequest->order_id,
                             'type' => 'shipping_label',
                             'amount_cents' => -(int) $data['cost_cents'],
-                            'note' => 'NexTech label for order #'.$labelRequest->order_id,
+                            'note' => \App\Support\Branding::name().' label for order #'.$labelRequest->order_id,
                         ]);
                     }
 

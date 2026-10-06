@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { currencySymbol } from './money'
+import { brandName } from './useBranding'
 
 // Manual NexTech labels: sellers on "I ship, NexTech label" request a label
 // and the admin uploads the label PDF here for them to download and print.
@@ -149,7 +150,7 @@ export function OrderLabelRequests({ order, authHeaders, onChanged }) {
 
   return (
     <div className="admin-seller-ship">
-      <p><b>NexTech label requests</b></p>
+      <p><b>{brandName()} label requests</b></p>
       {(order.label_requests ?? []).filter((r) => r.status !== 'requested').map((r) => (
         <p key={r.id} className="muted">#{r.id} · {r.status === 'ready' ? `label uploaded ${r.handled_at ? new Date(r.handled_at).toLocaleDateString() : ''}${r.order_package_id ? ' · shipped' : ' · seller hasn’t shipped yet'}` : `cancelled — ${r.admin_note ?? ''}`}
           {r.has_label_file && <> · <button type="button" className="link" onClick={() => openFile(`${API_URL}/admin/label-requests/${r.id}/label`, authHeaders)}>View label</button></>}
@@ -161,7 +162,7 @@ export function OrderLabelRequests({ order, authHeaders, onChanged }) {
 }
 
 const SIZE_LABELS = { '4x6': '4×6 in (thermal printer)', a6: 'A6', a4: 'A4 sheet' }
-const EMPTY_TEMPLATE = { name: '', size: '4x6', header_text: 'NexTech Shipping', logo_url: '', footer_note: '', show_items: true, show_phone: false, is_default: false, is_active: true }
+const EMPTY_TEMPLATE = { name: '', size: '4x6', header_text: `${brandName()} Shipping`, logo_url: '', footer_note: '', show_items: true, show_phone: false, is_default: false, is_active: true }
 
 // Settings → Shipping label templates: what seller labels are generated from.
 export function LabelTemplates({ authHeaders, onMessage }) {
@@ -197,7 +198,7 @@ export function LabelTemplates({ authHeaders, onMessage }) {
   return (
     <div className="admin-form">
       <h3>Shipping label templates</h3>
-      <p className="muted">When a seller on &ldquo;I ship, NexTech label&rdquo; asks for a label, it&rsquo;s generated instantly from the default template with the order&rsquo;s addresses filled in. Sellers can switch template any time; you can still replace any label with your own PDF from the order. With no active template, requests wait for you to upload one.</p>
+      <p className="muted">When a seller on &ldquo;I ship, {brandName()} label&rdquo; asks for a label, it&rsquo;s generated instantly from the default template with the order&rsquo;s addresses filled in. Sellers can switch template any time; you can still replace any label with your own PDF from the order. With no active template, requests wait for you to upload one.</p>
       {templates === null ? <p className="muted">Loading…</p> : (
         <table className="admin-table">
           <thead><tr><th>Template</th><th>Size</th><th>Status</th><th></th></tr></thead>

@@ -48,7 +48,7 @@ class SellerNewOrder extends Notification
             ? 'Digital download — the buyer gets it automatically once paid. Nothing to ship.'
             : ($this->shipsItself
             ? 'You ship this order. Pack it, add the courier and tracking number in Seller Center → Manage orders'.($this->shipBy ? " by {$this->shipBy}" : '').', then update its status as it moves.'
-            : 'NexTech collects and delivers this order — have it packed and ready for pickup.'));
+            : \App\Support\Branding::name().' collects and delivers this order — have it packed and ready for pickup.'));
 
         return $mail->action('Open Manage orders', rtrim((string) config('app.url'), '/').'/#/seller')
             ->salutation("— {$brandName}");

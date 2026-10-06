@@ -22,7 +22,7 @@ class SendOtpCode extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage())
-            ->subject('Your NexTech verification code')
+            ->subject('Your '.\App\Support\Branding::name().' verification code')
             ->greeting('Verification code')
             ->line("Enter this code to continue: **{$this->code}**")
             ->line("The code expires in {$this->ttlMinutes} minutes.")

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { brandName } from './useBranding'
 
 // Seller Center onboarding tasks (modelled on Temu's): 1 tax information,
 // 2 additional compliance information, 3 bank account, 4 shipping templates
@@ -72,7 +73,7 @@ function useOnboarding(headers) {
 function Uploader({ headers, kind, label, value, onChange, required, onError }) {
   const [busy, setBusy] = useState(false)
   return (
-    <label>{label}{required ? '' : ' (optional)'}
+    <label>{label}{required ? <b className="wz-req" title="Required"> *</b> : ' (optional)'}
       <input type="file" accept=".jpg,.jpeg,.png,.pdf" disabled={busy} onChange={async (e) => {
         const file = e.target.files?.[0]
         e.target.value = ''
@@ -169,10 +170,10 @@ export function TaxInformation({ headers, onSupport }) {
             if (await submit('/seller/onboarding/tax-number', { tax_number: step1.tax_number, enrolment_number: step1.enrolment_number || null, certificate_path: step1.certificate?.path ?? null, certificate_name: step1.certificate?.name ?? null }, info.tax_code ? 'Saved — your tax information is back in review.' : 'Saved. Now configure your tax calculation settings (step 2).')) setOpen(null)
           }}>
             <h2 className="sc-h2">Add your {cfg.tax_number_label}</h2>
-            <label>{cfg.tax_number_label}<input required value={step1.tax_number} onChange={(e) => setStep1({ ...step1, tax_number: e.target.value })} /></label>
+            <label>{cfg.tax_number_label}<b className="wz-req" title="Required"> *</b><input required value={step1.tax_number} onChange={(e) => setStep1({ ...step1, tax_number: e.target.value })} /></label>
             <p className="sc-muted">Make sure it&rsquo;s valid and matches the one you gave when you registered.</p>
             {data.pan_only && <>
-              <label>GST enrolment number<input required value={step1.enrolment_number} onChange={(e) => setStep1({ ...step1, enrolment_number: e.target.value.trim() })} /></label>
+              <label>GST enrolment number<b className="wz-req" title="Required"> *</b><input required value={step1.enrolment_number} onChange={(e) => setStep1({ ...step1, enrolment_number: e.target.value.trim() })} /></label>
               <p className="sc-muted">Selling with a PAN only (no GSTIN)? Take an enrolment number for your PAN on the GST portal (Notification 34/2023). Without GST registration you can sell only within your own state and must stay under the GST turnover threshold — your products are delivered only to buyers in your state.</p>
             </>}
             <Uploader headers={headers} kind="tax_certificate" label={cfg.tax_certificate_label} required={!!cfg.tax_certificate_required} value={step1.certificate} onChange={(certificate) => setStep1((s) => ({ ...s, certificate }))} onError={setMsg} />
@@ -189,13 +190,15 @@ export function TaxInformation({ headers, onSupport }) {
             if (await submit('/seller/onboarding/tax-settings', step2, 'Thank you for completing the tax information setup. It will be reviewed within 1–3 business days (excluding holidays).')) setOpen(null)
           }}>
             <h2 className="sc-h2">Tax calculation settings</h2>
-            <label>Default item tax code
-              <select required value={step2.tax_code} onChange={(e) => setStep2({ ...step2, tax_code: e.target.value })}>
+            <label>Default item tax code<b className="wz-req" title="Required"> *</b>
+              <b className="wz-req" title="Required"> *</b><select required value={step2.tax_code} onChange={(e) => setStep2({ ...step2, tax_code: e.target.value })}>
                 {Object.entries(cfg.tax_codes ?? {}).map(([code, label]) => <option key={code} value={code}>{label}</option>)}
               </select>
             </label>
-            <p className="sc-muted">Used for tax on every item that doesn&rsquo;t set its own tax code.</p>
-            <label className="sc-check"><input type="checkbox" checked={step2.agree} onChange={(e) => setStep2({ ...step2, agree: e.target.checked })} /> I confirm this tax code is correct for my items and agree to NexTech&rsquo;s tax calculation terms.</label>
+            {Object.keys(cfg.tax_codes ?? {}).some((c) => /^\d/.test(c)) /* India: HSN codes */
+              ? <p className="sc-muted"><b>What is HSN?</b> HSN (Harmonised System of Nomenclature) is the 4–8 digit code on a GST invoice that says what kind of product it is — it decides the GST rate (SAC is the same for services and downloads). Pick the code for most of what you sell. <b>It&rsquo;s only a default:</b> every product has its own HSN field in Add product, so items in other or new categories are covered there. Not sure? Ask your accountant, or search the code on the GST portal.</p>
+              : <p className="sc-muted"><b>What is this?</b> A tax code says what kind of item you sell, so sales tax is worked out correctly. Pick the one for most of what you sell. <b>It&rsquo;s only a default:</b> items in other or new categories can set their own in Add product.</p>}
+            <label className="sc-check"><input type="checkbox" checked={step2.agree} onChange={(e) => setStep2({ ...step2, agree: e.target.checked })} /> I confirm this tax code is correct for my items and agree to {brandName()}&rsquo;s tax calculation terms.</label>
             <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setOpen(null)}>Cancel</button><button type="submit" className="sc-primary" disabled={!step2.agree}>Submit</button></div>
           </form>
         </div>
@@ -225,14 +228,14 @@ function AddressFields({ value, onChange }) {
   const set = (patch) => onChange({ ...value, ...patch })
   return (
     <>
-      <label>Residential address line 1<input required value={value.line1} onChange={(e) => set({ line1: e.target.value })} /></label>
+      <label>Residential address line 1<b className="wz-req" title="Required"> *</b><input required value={value.line1} onChange={(e) => set({ line1: e.target.value })} /></label>
       <label>Address line 2 (optional)<input value={value.line2 ?? ''} onChange={(e) => set({ line2: e.target.value })} /></label>
       <div className="ss-row">
-        <label>City / town<input required value={value.city} onChange={(e) => set({ city: e.target.value })} /></label>
+        <label>City / town<b className="wz-req" title="Required"> *</b><input required value={value.city} onChange={(e) => set({ city: e.target.value })} /></label>
         <label>State / region<input value={value.state ?? ''} onChange={(e) => set({ state: e.target.value })} /></label>
-        <label>Postal code<input required value={value.postal_code} onChange={(e) => set({ postal_code: e.target.value })} /></label>
+        <label>Postal code<b className="wz-req" title="Required"> *</b><input required value={value.postal_code} onChange={(e) => set({ postal_code: e.target.value })} /></label>
       </div>
-      <label>Country<CountrySelect value={value.country} onChange={(country) => set({ country })} /></label>
+      <label>Country<b className="wz-req" title="Required"> *</b><CountrySelect value={value.country} onChange={(country) => set({ country })} /></label>
     </>
   )
 }
@@ -290,21 +293,21 @@ export function ComplianceInformation({ headers, onSupport, go }) {
       people: form.people.map((p) => ({ ...p, ownership_pct: p.ownership_pct === '' ? null : Number(p.ownership_pct) })),
       documents: form.documents,
     }
-    if (await submit('/seller/onboarding/compliance', body, 'Thank you for completing the additional compliance information setup. NexTech will review it shortly.')) window.scrollTo({ top: 0 })
+    if (await submit('/seller/onboarding/compliance', body, `Thank you for completing the additional compliance information setup. ${brandName()} will review it shortly.`)) window.scrollTo({ top: 0 })
   }
 
   return (
     <>
       <h1 className="sc-title">Additional compliance information</h1>
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
-      {status === 'pending' && <Banner>Submitted — NexTech is reviewing your compliance information. {data.tasks.bank === 'todo' && <button type="button" className="sc-link" onClick={() => go('bank')}>Next: add your bank account</button>}</Banner>}
+      {status === 'pending' && <Banner>Submitted — {brandName()} is reviewing your compliance information. {data.tasks.bank === 'todo' && <button type="button" className="sc-link" onClick={() => go('bank')}>Next: add your bank account</button>}</Banner>}
       {status === 'rejected' && <Banner tone="danger">Your compliance information was sent back: {data.compliance.note} Update it below and submit again.</Banner>}
       {status === 'approved' && <Banner tone="ok">Your compliance information is approved.</Banner>}
 
       <form onSubmit={submitAll}>
         <div className="sc-card ob-intro">
           <h2 className="sc-h2">Senior management personnel information</h2>
-          <p className="sc-muted">To comply with the laws and regulations where you sell, NexTech evaluates each seller&rsquo;s risk level from the information provided, and may ask for more. We handle your information with the utmost care — see the <a href="#/p/seller-privacy-policy">Seller Privacy Policy</a>.</p>
+          <p className="sc-muted">To comply with the laws and regulations where you sell, {brandName()} evaluates each seller&rsquo;s risk level from the information provided, and may ask for more. We handle your information with the utmost care — see the <a href="#/p/seller-privacy-policy">Seller Privacy Policy</a>.</p>
           {!company && <p>As {data.business_type === 'individual' ? 'an individual seller' : 'a sole proprietor'}, you are your business&rsquo;s owner, director and executive — complete your details below.</p>}
         </div>
 
@@ -318,9 +321,9 @@ export function ComplianceInformation({ headers, onSupport, go }) {
           </dl>
           <div className="ob-grid">
             <div className="ss-row">
-              <label>Citizenship<CountrySelect value={form.primary.citizenship} onChange={(citizenship) => setPrimary({ citizenship })} /></label>
-              <label>Place of birth<input required value={form.primary.place_of_birth} placeholder="City, country" onChange={(e) => setPrimary({ place_of_birth: e.target.value })} /></label>
-              <label>ID date of expiry<input required type="date" value={form.primary.id_expiry} onChange={(e) => setPrimary({ id_expiry: e.target.value })} /></label>
+              <label>Citizenship<b className="wz-req" title="Required"> *</b><CountrySelect value={form.primary.citizenship} onChange={(citizenship) => setPrimary({ citizenship })} /></label>
+              <label>Place of birth<b className="wz-req" title="Required"> *</b><input required value={form.primary.place_of_birth} placeholder="City, country" onChange={(e) => setPrimary({ place_of_birth: e.target.value })} /></label>
+              <label>ID date of expiry<b className="wz-req" title="Required"> *</b><input required type="date" value={form.primary.id_expiry} onChange={(e) => setPrimary({ id_expiry: e.target.value })} /></label>
             </div>
             <AddressFields value={form.primary.address} onChange={(address) => setPrimary({ address })} />
           </div>
@@ -404,23 +407,23 @@ export function ComplianceInformation({ headers, onSupport, go }) {
               const set = (patch) => setPersonForm((f) => ({ ...f, person: { ...f.person, ...patch } }))
               return (
                 <>
-                  <label>Legal name<input required value={p.legal_name} onChange={(e) => set({ legal_name: e.target.value })} /></label>
+                  <label>Legal name<b className="wz-req" title="Required"> *</b><input required value={p.legal_name} onChange={(e) => set({ legal_name: e.target.value })} /></label>
                   <div className="ob-roles">
                     {ROLE_INFO.map(([role, title]) => <label key={role} className="sc-check"><input type="checkbox" checked={p.roles.includes(role)} onChange={(e) => set({ roles: e.target.checked ? [...new Set([...p.roles, role])] : p.roles.filter((r) => r !== role) })} /> {title.replace(/s$/, '')}</label>)}
                   </div>
                   {p.roles.includes('ubo') && <label>Ownership (%)<input type="number" min="0" max="100" step="0.01" value={p.ownership_pct} onChange={(e) => set({ ownership_pct: e.target.value })} /></label>}
                   <div className="ss-row">
-                    <label>Citizenship<CountrySelect value={p.citizenship} onChange={(citizenship) => set({ citizenship })} /></label>
-                    <label>Place of birth<input required value={p.place_of_birth} placeholder="City, country" onChange={(e) => set({ place_of_birth: e.target.value })} /></label>
-                    <label>Date of birth<input required type="date" value={p.date_of_birth} onChange={(e) => set({ date_of_birth: e.target.value })} /></label>
+                    <label>Citizenship<b className="wz-req" title="Required"> *</b><CountrySelect value={p.citizenship} onChange={(citizenship) => set({ citizenship })} /></label>
+                    <label>Place of birth<b className="wz-req" title="Required"> *</b><input required value={p.place_of_birth} placeholder="City, country" onChange={(e) => set({ place_of_birth: e.target.value })} /></label>
+                    <label>Date of birth<b className="wz-req" title="Required"> *</b><input required type="date" value={p.date_of_birth} onChange={(e) => set({ date_of_birth: e.target.value })} /></label>
                   </div>
                   <div className="ss-row">
-                    <label>Country of issue<CountrySelect value={p.id_country} onChange={(id_country) => set({ id_country })} /></label>
+                    <label>Country of issue<b className="wz-req" title="Required"> *</b><CountrySelect value={p.id_country} onChange={(id_country) => set({ id_country })} /></label>
                     <label>Proof of identity type<select value={p.id_type} onChange={(e) => set({ id_type: e.target.value })}>{ID_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
                   </div>
                   <div className="ss-row">
-                    <label>Proof of identity number<input required value={p.id_number} onChange={(e) => set({ id_number: e.target.value })} /></label>
-                    <label>Date of expiry<input required type="date" value={p.id_expiry} onChange={(e) => set({ id_expiry: e.target.value })} /></label>
+                    <label>Proof of identity number<b className="wz-req" title="Required"> *</b><input required value={p.id_number} onChange={(e) => set({ id_number: e.target.value })} /></label>
+                    <label>Date of expiry<b className="wz-req" title="Required"> *</b><input required type="date" value={p.id_expiry} onChange={(e) => set({ id_expiry: e.target.value })} /></label>
                   </div>
                   <AddressFields value={p.address} onChange={(address) => set({ address })} />
                 </>
@@ -442,6 +445,19 @@ export function ComplianceInformation({ headers, onSupport, go }) {
 // Task 3: bank account
 // ---------------------------------------------------------------------------
 const mask = (value) => (value ? `•••• ${String(value).slice(-4)}` : '')
+
+// Bank form: what's still missing or invalid, so Continue only lights up when it's all there.
+function bankMissing(form, cfg) {
+  const valid = (value, regex) => !regex || new RegExp(regex).test(value)
+  return [
+    !form.holder_name.trim() && 'account holder’s name',
+    !form.bank_name.trim() && 'bank name',
+    (!form.bank_code.trim() || !valid(form.bank_code.trim(), cfg.code_regex)) && `a valid ${cfg.code_label ?? 'bank code'}`,
+    (!form.account_number.trim() || !valid(form.account_number.trim(), cfg.account_regex)) && `a valid ${(cfg.account_label ?? 'account number').toLowerCase()}`,
+    !form.document && 'the bank document',
+    !form.document_issued_on && 'the document issue date',
+  ].filter(Boolean)
+}
 
 export function BankAccount({ headers, onSupport, go, onChanged }) {
   const { data, msg, setMsg, submit } = useOnboarding(headers)
@@ -493,11 +509,11 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
         <form className="sc-card ob-form" onSubmit={(e) => { e.preventDefault(); setConfirming(true) }}>
           <h2 className="sc-h2">{status === 'failed' ? 'Verify my bank account' : 'Add bank information'}</h2>
           <label>Bank location<input value={countryName(data.country)} disabled /></label>
-          <label>Account holder&rsquo;s name<input required value={form.holder_name} onChange={(e) => setForm({ ...form, holder_name: e.target.value })} /></label>
-          <label>Bank name<input required value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} /></label>
+          <label>Account holder&rsquo;s name<b className="wz-req" title="Required"> *</b><input required value={form.holder_name} onChange={(e) => setForm({ ...form, holder_name: e.target.value })} /></label>
+          <label>Bank name<b className="wz-req" title="Required"> *</b><input required value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} /></label>
           <div className="ss-row">
-            <label>{bankCfg.code_label}<input required value={form.bank_code} pattern={bankCfg.code_regex} onChange={(e) => setForm({ ...form, bank_code: e.target.value.toUpperCase() })} /></label>
-            <label>{bankCfg.account_label ?? 'Account number'}<input required inputMode="numeric" value={form.account_number} pattern={bankCfg.account_regex} onChange={(e) => setForm({ ...form, account_number: e.target.value.replace(/\s/g, '') })} /></label>
+            <label>{bankCfg.code_label}<b className="wz-req" title="Required"> *</b><input required value={form.bank_code} pattern={bankCfg.code_regex} onChange={(e) => setForm({ ...form, bank_code: e.target.value.toUpperCase() })} /></label>
+            <label>{bankCfg.account_label ?? 'Account number'}<b className="wz-req" title="Required"> *</b><input required inputMode="numeric" value={form.account_number} pattern={bankCfg.account_regex} onChange={(e) => setForm({ ...form, account_number: e.target.value.replace(/\s/g, '') })} /></label>
           </div>
           <h3 className="ss-sub">Bank document</h3>
           <p className="sc-muted">A bank statement or bank letter. It must contain:</p>
@@ -505,13 +521,14 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
           <p className="sc-muted">The details above must exactly match the uploaded bank document.</p>
           <div className="ss-row">
             <Uploader headers={headers} kind="bank_document" label="Bank document" required value={form.document} onError={setMsg} onChange={(document) => setForm((f) => ({ ...f, document }))} />
-            <label>Document issue date<input required type="date" value={form.document_issued_on} max={form.today} min={form.oldest} onChange={(e) => setForm({ ...form, document_issued_on: e.target.value })} /></label>
+            <label>Document issue date<b className="wz-req" title="Required"> *</b><input required type="date" value={form.document_issued_on} max={form.today} min={form.oldest} onChange={(e) => setForm({ ...form, document_issued_on: e.target.value })} /></label>
           </div>
-          <p className="ob-secure">🔒 NexTech protects your bank information — it&rsquo;s stored privately and only used to pay you.</p>
+          <p className="ob-secure">🔒 {brandName()} protects your bank information — it&rsquo;s stored privately and only used to pay you.</p>
           <div className="ss-actions">
             {status && <button type="button" className="seller-btn ghost" onClick={() => setForm(null)}>Cancel</button>}
-            <button type="submit" className="sc-primary" disabled={!form.document}>Continue</button>
+            <button type="submit" className="sc-primary" disabled={bankMissing(form, bankCfg).length > 0}>Continue</button>
           </div>
+          {bankMissing(form, bankCfg).length > 0 && <p className="sc-muted ob-missing">Still needed: {bankMissing(form, bankCfg).join(', ')}.</p>}
         </form>
       ) : status === 'processing' ? (
         <div className="sc-card">
@@ -535,7 +552,7 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
         </div>
       ) : (
         <div className="sc-card">
-          <p>Add your bank account to request payment. NexTech verifies it within 1–2 business days.</p>
+          <p>Add your bank account to request payment. {brandName()} verifies it within 1–2 business days.</p>
           <button type="button" className="sc-primary" onClick={openForm}>Set up</button>
         </div>
       )}

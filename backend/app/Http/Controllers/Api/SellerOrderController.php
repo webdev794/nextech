@@ -137,7 +137,7 @@ class SellerOrderController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($change->order_id === $order->id && $change->status === 'pending', 404);
-        abort_unless($order->items()->where('shop_id', $shop->id)->where('fulfilled_by', 'seller')->exists(), 403, 'NexTech handles address changes for orders it delivers.');
+        abort_unless($order->items()->where('shop_id', $shop->id)->where('fulfilled_by', 'seller')->exists(), 403, \App\Support\Branding::name().' handles address changes for orders it delivers.');
         $data = $request->validate([
             'decision' => ['required', Rule::in(['approve', 'decline'])],
             'note' => ['required_if:decision,decline', 'nullable', 'string', 'max:500'],
@@ -263,6 +263,8 @@ class SellerOrderController extends Controller
                 'created_at' => $o->created_at,
                 'items' => $o->items->sum('quantity'),
                 'ships_itself' => $o->items->contains(fn ($i) => $i->fulfilled_by === 'seller'),
+                // How it reaches the buyer: seller ships it, a download (automatic) or NexTech picks it up.
+                'fulfilment' => $o->items->contains(fn ($i) => $i->fulfilled_by === 'seller') ? 'seller' : ($o->items->every(fn ($i) => $i->fulfilled_by === 'digital') ? 'digital' : 'nextech'),
                 'ship_by' => $o->shopShipping->first()?->ship_by,
             ]);
 

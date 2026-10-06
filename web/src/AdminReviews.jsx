@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { mediaUrl } from './mediaUrl'
 import { Stars } from './Reviews'
+import { brandName } from './useBranding'
 
 // Admin -> Reviews (backend AdminReviewController): every buyer review waits
 // here until approved — on the product page and the reviewer's public page,
@@ -75,7 +76,7 @@ export function AdminReviews({ authHeaders, onMessage, onPending }) {
                 {r.product?.image_url && <img src={mediaUrl(r.product.image_url)} alt="" />}
                 <div>
                   <b>{r.product?.name ?? 'Deleted product'}</b>
-                  <span className="muted">{r.shop ? `Sold by ${r.shop}` : 'NexTech'}{r.variant_label ? ` · ${r.variant_label}` : ''}</span>
+                  <span className="muted">{r.shop ? `Sold by ${r.shop}` : `${brandName()}`}{r.variant_label ? ` · ${r.variant_label}` : ''}</span>
                 </div>
               </div>
               <div className="admin-rv-main">

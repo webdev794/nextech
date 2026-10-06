@@ -33,6 +33,12 @@ class AppServiceProvider extends ServiceProvider
         if (! $this->app->runningInConsole()) {
             $this->applyStoredStripeCredentials();
         }
+        // Emails come from the store's name as set in Store settings, not the .env name.
+        try {
+            config(['mail.from.name' => \App\Support\Branding::name()]);
+        } catch (\Throwable) {
+            // no database yet (fresh install / migrations): keep the .env name
+        }
     }
 
     /**

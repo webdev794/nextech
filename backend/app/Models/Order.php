@@ -314,6 +314,13 @@ class Order extends Model
                     ->whereRaw('order_items.quantity > (select coalesce(sum(order_package_items.quantity), 0) from order_package_items where order_package_items.order_item_id = order_items.id)')))));
     }
 
+    /** Cancelled orders whose money still has to go back (older admin cancellations stayed "paid"). */
+    public function scopeRefundDue($query)
+    {
+        return $query->where(fn ($q) => $q->where('payment_status', 'refund_pending')
+            ->orWhere(fn ($q) => $q->where('status', 'cancelled')->where('payment_status', 'paid')));
+    }
+
     public function isSellerShippedOnly(): bool
     {
         return $this->delivery_method === 'seller';
