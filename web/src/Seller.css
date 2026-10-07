@@ -548,3 +548,8 @@ s.sc-muted{display:inline}
 .wz-stock-note{display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:12px 14px;border:1px solid #f6d6b0;border-radius:10px;background:#fff8ef;font-size:14px}
 .wz-skus th.wz-qty-head{color:#c25a00;font-weight:700}
 .wz-skus td.wz-qty input{border-color:#f0a35e;font-weight:600}
+.policy-gate .policy-gate-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.policy-gate-steps{display:flex;flex-wrap:wrap;gap:6px 14px;margin:0;padding-left:18px;font-size:12px;color:#5c6357}
+.policy-gate-steps li.current{color:#1f2328;font-weight:600}.policy-gate-steps li.done{color:#1e7b34}
+.policy-gate-body{max-height:60vh;overflow:auto;border:1px solid #e3e6e8;border-radius:10px;padding:14px 16px}
+.policy-gate-body .seller-policy-accept{display:flex;flex-direction:column;gap:10px;margin-top:18px;padding-top:14px;border-top:1px solid #e3e6e8}

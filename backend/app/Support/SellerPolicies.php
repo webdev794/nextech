@@ -63,6 +63,12 @@ class SellerPolicies
     public static function assertAccepted(Seller $seller, string $for = 'selling'): void
     {
         $missing = self::pending($seller, $for);
-        abort_if($missing !== [], 422, 'First read and accept: '.implode(', ', array_column($missing, 'title')).' (My account → Policies & rules).');
+        if ($missing !== []) {
+            // The Seller Center opens these one by one, then retries the action.
+            abort(response()->json([
+                'message' => 'First read and accept: '.implode(', ', array_column($missing, 'title')).'.',
+                'policies_required' => array_map(fn ($p) => ['slug' => $p['slug'], 'title' => $p['title'], 'for' => $p['for'], 'outdated' => $p['outdated']], $missing),
+            ], 422));
+        }
     }
 }

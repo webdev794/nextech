@@ -310,6 +310,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
 // admin reviewing documents) can reach these.
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/seller/apply', [SellerController::class, 'apply']);
+    Route::get('/seller/application-draft', [SellerController::class, 'draft']);
+    Route::put('/seller/application-draft', [SellerController::class, 'saveDraft']);
     Route::get('/seller/me', [SellerController::class, 'me']);
     Route::post('/seller/kyc-document', [SellerKycController::class, 'store']);
     Route::get('/seller/policies', [\App\Http\Controllers\Api\SellerPolicyController::class, 'index']);

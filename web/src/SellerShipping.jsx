@@ -10,6 +10,7 @@ import { currencySymbol, storeMoney } from './money'
 import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
 import { PersonalizationView } from './Personalization'
 import { brandName } from './useBranding'
+import { handlePolicyError, requestPolicies } from './policyGateEvents'
 
 const money = (cents) => storeMoney(cents ?? 0)
 const shortDate = (d) => (d ? new Date(d).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '—')
@@ -22,6 +23,8 @@ async function readJson(response) {
 async function send(headers, path, method = 'GET', body) {
   const response = await fetch(`${API_URL}${path}`, { method, headers: { ...headers(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined })
   const data = await readJson(response)
+  // Policies to sign first: they open one by one, then the request is sent again.
+  if (!response.ok && await handlePolicyError(data)) return send(headers, path, method, body)
   if (!response.ok) {
     const error = new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Something went wrong.')
     error.formatWarning = !!data.format_warning
@@ -79,7 +82,7 @@ function IntlApply({ data, headers, onDone }) {
   return (
     <form onSubmit={submit} className="ss-intl">
       {data.intl_approval?.status === 'revoked' && <p className="ss-warn">{brandName()} stopped your international selling{data.intl_approval.reason ? `: ${data.intl_approval.reason}` : ''}. Contact us in Messages.</p>}
-      {unsigned.length > 0 && <p className="ss-warn">First read and accept: {unsigned.map((p) => <a key={p.slug} href={`#/p/${p.slug}`} style={{ marginRight: 8 }}>{p.title}</a>)}</p>}
+      {unsigned.length > 0 && <p className="ss-warn">First read and accept: {unsigned.map((p) => p.title).join(', ')} <button type="button" className="sc-primary" onClick={async () => { if (await requestPolicies(unsigned)) onDone({ ...data, intl_policies: (data.intl_policies ?? []).map((p) => ({ ...p, accepted: p.accepted ?? { signed_name: '', accepted_at: new Date().toISOString() } })) }) }}>Read and accept now</button></p>}
       <label>{rules.id_label}<input required maxLength="40" value={form.export_id} onChange={(e) => setForm({ ...form, export_id: e.target.value })} /></label>
       <label>{rules.document_label}{!rules.document_required && <small className="sc-muted"> optional</small>}<input type="file" accept=".pdf,.jpg,.jpeg,.png" required={rules.document_required && !form.document_path} disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />{form.document_path && <small className="sc-muted">Uploaded{form.docName ? `: ${form.docName}` : ''}</small>}</label>
       <div className="sc-card"><p className="sc-muted">{data.intl_declaration}</p></div>

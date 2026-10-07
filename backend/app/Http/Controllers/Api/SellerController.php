@@ -167,6 +167,9 @@ class SellerController extends Controller
             return $seller;
         });
 
+        // Submitted: the saved-for-later copy isn't needed any more.
+        $user->forceFill(['seller_application_draft' => null])->save();
+
         return response()->json(['data' => $seller->load('shop')], $existing ? 200 : 201);
     }
 
@@ -319,6 +322,25 @@ class SellerController extends Controller
         $shop->update($data);
 
         return response()->json(['data' => $shop->fresh()]);
+    }
+
+    /** The applicant's saved-for-later application (form + step), or null. */
+    public function draft(Request $request): JsonResponse
+    {
+        return response()->json(['data' => $request->user()->seller_application_draft]);
+    }
+
+    /** Save the application part-way, to finish later (on any device). */
+    public function saveDraft(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'form' => ['required', 'array'],
+            'step' => ['required', 'integer', 'min:1', 'max:4'],
+        ]);
+        abort_if(strlen((string) json_encode($data['form'])) > 60000, 422, 'That draft is too large to save.');
+        $request->user()->forceFill(['seller_application_draft' => ['form' => $data['form'], 'step' => $data['step'], 'saved_at' => now()->toIso8601String()]])->save();
+
+        return response()->json(['data' => ['saved_at' => now()]]);
     }
 
     private function uniqueSlug(string $name): string

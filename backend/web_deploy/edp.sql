@@ -804,7 +804,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (156, '2026_10_07_000063_add_is_house_to_shops', 91),
 (157, '2026_10_07_000064_add_tracking_url_to_shipments', 92),
 (158, '2026_10_07_000065_add_intl_approval_and_policy_acceptances', 93),
-(159, '2026_10_07_000066_add_address_proof_to_sellers', 94);
+(159, '2026_10_07_000066_add_address_proof_to_sellers', 94),
+(160, '2026_10_07_000067_add_seller_application_draft_to_users', 95);
 
 -- --------------------------------------------------------
 
@@ -2601,7 +2602,8 @@ CREATE TABLE `users` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `rider_payout_method` varchar(20) DEFAULT NULL,
-  `rider_payout_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`rider_payout_details`))
+  `rider_payout_details` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`rider_payout_details`)),
+  `seller_application_draft` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`seller_application_draft`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3310,7 +3312,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=160;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=161;
 
 --
 -- AUTO_INCREMENT for table `orders`

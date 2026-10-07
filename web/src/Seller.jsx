@@ -1,10 +1,12 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { useBranding, brandName } from './useBranding'
 import { mediaUrl } from './mediaUrl'
 import { ChatPhotoPicker, ChatPhotos } from './ChatPhotos'
 import { renderMarkdown } from './markdown'
 import { PageSection } from './PageSections'
+import { PolicyAccept, PolicyGate } from './PolicyGate'
+import { requestPolicies } from './policyGateEvents'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
@@ -160,51 +162,6 @@ const SUPPORT_ISSUE_LABELS = {
   seller_product_issue: 'Product issue', seller_other: 'Other',
 }
 
-// Read to the end, tick, sign with your name: the acceptance is kept with the
-// date and the exact text; a changed policy asks to accept again.
-function PolicyAccept({ page, status, headers, defaultName, onAccepted }) {
-  const endRef = useRef(null)
-  const [read, setRead] = useState(false)
-  const [agree, setAgree] = useState(false)
-  const [name, setName] = useState(defaultName)
-  const [msg, setMsg] = useState('')
-  useEffect(() => {
-    const el = endRef.current
-    if (!el || typeof IntersectionObserver === 'undefined') { Promise.resolve().then(() => setRead(true)); return undefined }
-    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) setRead(true) })
-    io.observe(el)
-    return () => io.disconnect()
-  }, [page.slug])
-
-  if (status?.accepted) {
-    return <div ref={endRef} className="sc-alert ok"><span>✓ Accepted and signed by <b>{status.accepted.signed_name}</b> on {new Date(status.accepted.accepted_at).toLocaleString()}.</span></div>
-  }
-
-  async function accept(event) {
-    event.preventDefault()
-    setMsg('')
-    try {
-      const response = await fetch(`${API_URL}/seller/policies/${page.slug}/accept`, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ agree, signed_name: name }) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save.')
-      onAccepted(data.data)
-    } catch (e) { setMsg(e.message) }
-  }
-
-  return (
-    <form ref={endRef} className="sc-card seller-policy-accept" onSubmit={accept}>
-      <h2 className="sc-h2">{status?.outdated ? 'This policy has changed — accept the new version' : 'Accept and sign'}</h2>
-      <p className="sc-muted">{page.acceptance_for === 'international' ? 'Needed before you can sell abroad.' : 'Needed before you can list or update products.'} Your name, today&rsquo;s date and this version of the text are kept as your signature.</p>
-      {!read && <p className="sc-muted">Scroll to the end of the policy to accept it.</p>}
-      <label className="sc-check"><input type="checkbox" disabled={!read} checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I have read &ldquo;{page.title}&rdquo; and accept it.</label>
-      <label>Your full name (signature)<input required minLength="3" maxLength="160" disabled={!read} value={name} onChange={(e) => setName(e.target.value)} /></label>
-      <p className="sc-muted">Date: {new Date().toLocaleDateString()}</p>
-      {msg && <p className="sc-alert warn">{msg}</p>}
-      <div><button type="submit" className="sc-primary" disabled={!read || !agree || name.trim().length < 3}>Accept and sign</button></div>
-    </form>
-  )
-}
-
 export default function Seller({ token, onSignOut }) {
   const [countries, setCountries] = useState([])
   const [siteConfig, setSiteConfig] = useState(null)
@@ -218,6 +175,7 @@ export default function Seller({ token, onSignOut }) {
   const [editingApplication, setEditingApplication] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [stepError, setStepError] = useState('')
+  const [draftNote, setDraftNote] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [uploading, setUploading] = useState('') // '' | 'id' | 'business' | 'logo'
   const [dashboardForm, setDashboardForm] = useState(null)
@@ -533,11 +491,24 @@ export default function Seller({ token, onSignOut }) {
     return ''
   }
 
+  // Save the application part-way (each Next, and "Save and finish later"), on the server.
+  async function saveDraft(atStep, announce) {
+    if (me !== null || editingApplication) return
+    try {
+      const response = await fetch(`${API_URL}/seller/application-draft`, { method: 'PUT', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ form, step: atStep }) })
+      if (!response.ok) throw new Error('Could not save your progress.')
+      if (announce) setDraftNote(`Saved ${new Date().toLocaleTimeString()} — come back any time; you'll continue from step ${atStep}.`)
+    } catch (e) { if (announce) setStepError(e.message) }
+  }
+
   function goNext() {
     const err = validateStep(step)
     if (err) { setStepError(err); return }
     setStepError('')
-    setStep((s) => { const next = Math.min(4, s + 1); setMaxStepSeen((m) => Math.max(m, next)); return next })
+    const next = Math.min(4, step + 1)
+    setStep(next)
+    setMaxStepSeen((m) => Math.max(m, next))
+    saveDraft(next, false)
   }
   function goBack() { setStepError(''); setStep((s) => Math.max(1, s - 1)) }
   function goToStep(n) { if (n <= maxStepSeen) { setStepError(''); setStep(n) } }
@@ -749,6 +720,22 @@ export default function Seller({ token, onSignOut }) {
       .then((data) => setShipTemplates(data?.data?.templates ?? []))
       .catch(() => {})
   }, [me?.status, shopMode, authHeaders, section])
+
+  // No application yet: pick up a saved-for-later one where it was left.
+  useEffect(() => {
+    if (me !== null || !token) return undefined
+    let stop = false
+    fetch(`${API_URL}/seller/application-draft`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }).then(readJson)
+      .then((d) => {
+        if (stop || !d?.data?.form) return
+        setForm((f) => ({ ...f, ...d.data.form }))
+        setStep(d.data.step ?? 1)
+        setMaxStepSeen(d.data.step ?? 1)
+        setDraftNote(`Welcome back — your application saved on ${new Date(d.data.saved_at).toLocaleString()} is restored.`)
+      })
+      .catch(() => {})
+    return () => { stop = true }
+  }, [me, token])
 
   const loadPolicies = useCallback(() => {
     if (!token) return
@@ -1029,6 +1016,7 @@ export default function Seller({ token, onSignOut }) {
                 <button type="button" className="sc-link" onClick={seeNewOrders}>Dismiss</button>
               </div>
             )}
+            <PolicyGate headers={authHeaders} defaultName={me?.contact_name ?? ''} onStatus={setPolicyStatus} />
             {pageView ? (
               <article className="sc-card seller-page-view">
                 {pageView === 'loading' ? <p className="seller-loading">Loading&hellip;</p> : <>
@@ -1049,7 +1037,7 @@ export default function Seller({ token, onSignOut }) {
             ) : section === 'home' ? (
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
-                {policyStatus.some((p) => !p.accepted && p.for === 'selling') && <div className="sc-alert warn"><span>Before you can list or update products, read and accept: {policyStatus.filter((p) => !p.accepted && p.for === 'selling').map((p, i) => <Fragment key={p.slug}>{i > 0 && ', '}<button type="button" className="sc-link" onClick={() => openPage(p.slug)}>{p.title}{p.outdated ? ' (updated)' : ''}</button></Fragment>)}</span></div>}
+                {policyStatus.some((p) => !p.accepted && p.for === 'selling') && <div className="sc-alert warn"><span>Before you can list or update products, read and accept: {policyStatus.filter((p) => !p.accepted && p.for === 'selling').map((p) => `${p.title}${p.outdated ? ' (updated)' : ''}`).join(', ')}</span><button type="button" className="sc-primary" onClick={() => requestPolicies(policyStatus.filter((p) => !p.accepted && p.for === 'selling'))}>Read and accept now</button></div>}
                 {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact {brandName()} via Messages if you think this is a mistake.</div>}
                 {me.requirements?.onboarding_tasks && <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />}
                 <div className="sc-card">
@@ -1866,9 +1854,11 @@ export default function Seller({ token, onSignOut }) {
               )}
 
               {stepError && <p className="seller-inline-error seller-step-error">{stepError}</p>}
+              {draftNote && <p className="seller-uploaded">{draftNote}</p>}
 
               <div className="seller-wizard-actions">
                 {step > 1 && <button type="button" className="seller-btn ghost" onClick={goBack}>Back</button>}
+                {me === null && !editingApplication && <button type="button" className="seller-btn ghost" onClick={() => saveDraft(step, true)}>Save and finish later</button>}
                 {step < 4
                   ? <button type="button" className="seller-btn" onClick={goNext}>Next</button>
                   : <button type="button" className="seller-btn" disabled={submitting} onClick={submitApplication}>{submitting ? 'Submitting…' : 'Submit application'}</button>}

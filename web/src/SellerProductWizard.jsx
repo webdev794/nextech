@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { handlePolicyError } from './policyGateEvents'
 import { ReturnPolicyFields } from './returnPolicy'
 import { mediaUrl } from './mediaUrl'
 import { DigitalFiles } from './SellerDigitalFiles'
@@ -312,6 +313,12 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
     try {
       const response = await fetch(`${API_URL}/seller/products${form.id ? `/${form.id}` : ''}`, { method: form.id ? 'PATCH' : 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(payload(submit)) })
       const data = await readJson(response)
+      // Policies to sign first: they open one by one, then the save carries on.
+      if (!response.ok && Array.isArray(data.policies_required)) {
+        setBusy('')
+        if (await handlePolicyError(data)) return save(submit)
+        throw new Error(data.message)
+      }
       if (!response.ok) {
         const fieldErrors = Object.fromEntries(Object.entries(data.errors ?? {}).map(([k, v]) => [k, v[0]]))
         setErrors(fieldErrors)
