@@ -465,6 +465,20 @@ export function ShipOrders({ headers, mode }) {
     } catch (e) { setMsg(e.message) }
   }
 
+  async function downloadInternational(o) {
+    setMsg('')
+    try {
+      const response = await fetch(`${API_URL}/seller/fulfillment/orders/${o.id}/international-label`, { headers: headers() })
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).message || 'Could not download the International Delivery sheet.')
+      const url = URL.createObjectURL(await response.blob())
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `international-delivery-order-${o.id}.pdf`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 5000)
+    } catch (e) { setMsg(e.message) }
+  }
+
   async function submitShip(event) {
     event.preventDefault()
     const items = Object.entries(shipForm.items).filter(([, q]) => Number(q) > 0).map(([id, q]) => ({ order_item_id: Number(id), quantity: Number(q) }))
@@ -566,7 +580,7 @@ export function ShipOrders({ headers, mode }) {
               <tbody>
                 {toShip.map((o) => (
                   <tr key={o.id}>
-                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
+                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.international && <span className="sc-pill">International</span>}{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
                     <td>{o.ship_to.name}<small className="sc-muted">{[o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(', ')}<br />{o.ship_to.city}, {o.ship_to.state} {o.ship_to.postal_code}</small></td>
                     <td>{o.items.filter((i) => i.remaining > 0).map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.remaining}</span><PersonalizationView value={i.personalization} download /></div>)}</td>
                     <td className={o.overdue ? 'sc-low' : ''}>{shortDate(o.shipping?.ship_by)}{o.overdue && <small>Overdue</small>}</td>
@@ -585,6 +599,7 @@ export function ShipOrders({ headers, mode }) {
                         </div>
                       ))}
                       {(o.label_requests ?? []).filter((r) => r.status === 'cancelled' && r.admin_note && r.admin_note !== 'Cancelled by the seller.').slice(0, 1).map((r) => <small key={r.id} className="sc-low">Label request declined: {r.admin_note}</small>)}
+                      {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
                       {o.items.some((i) => free(i) > 0) && !onHold(o) && <>
                         {mode !== 'label' && <button type="button" onClick={() => openShip(o, false)}>Confirm shipment</button>}

@@ -221,6 +221,26 @@ class SellerFulfillmentController extends Controller
         return Storage::disk('local')->download($labelRequest->label_path, "label-order-{$labelRequest->order_id}.".pathinfo($labelRequest->label_path, PATHINFO_EXTENSION));
     }
 
+    /** International Delivery sheet (address label + customs declaration) for an order going abroad. */
+    public function internationalLabel(Request $request, Order $order)
+    {
+        $shop = $this->shop($request);
+        abort_unless($order->items()->where('shop_id', $shop->id)->where('fulfilled_by', 'seller')->exists(), 404);
+        abort_unless($this->isInternational($order, $shop), 422, 'This order isn\'t going abroad.');
+        $template = ShippingLabel::internationalTemplate();
+        abort_unless($template, 422, 'No label template is set up yet.');
+
+        return response(ShippingLabel::international($order, $shop, $template), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "attachment; filename=\"international-delivery-order-{$order->id}.pdf\"",
+        ]);
+    }
+
+    private function isInternational(Order $order, Shop $shop): bool
+    {
+        return $order->market && $shop->market && strtoupper($order->market) !== strtoupper($shop->market);
+    }
+
     /** Download an admin-uploaded label (private file — it carries the customer's address). */
     public function downloadLabel(Request $request, OrderPackage $package)
     {
@@ -377,6 +397,8 @@ class SellerFulfillmentController extends Controller
             'cod' => $order->payment_method === 'cod',
             'cod_amount_cents' => $order->payment_method === 'cod' ? (int) $order->total_cents : null,
             'currency' => $order->currency,
+            // Going abroad: the seller can print the International Delivery sheet.
+            'international' => ($shop = request()->user()?->seller?->shop) ? $this->isInternational($order, $shop) : false,
             // Masked name; the street address and real name only for sellers who write
             // their own courier label — NexTech prints them on the labels it makes.
             'ship_to' => [

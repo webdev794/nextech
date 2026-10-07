@@ -4,6 +4,8 @@ namespace App\Support;
 
 use App\Models\LabelRequest;
 use App\Models\LabelTemplate;
+use App\Models\Order;
+use App\Models\Shop;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Storage;
 
@@ -70,6 +72,53 @@ class ShippingLabel
         Storage::disk('local')->put($path, $pdf->output());
 
         return $path;
+    }
+
+    /** The admin's "International Delivery" template, else the default one. */
+    public static function internationalTemplate(): ?LabelTemplate
+    {
+        return LabelTemplate::where('is_active', true)->where('name', 'International Delivery')->first() ?? self::defaultTemplate();
+    }
+
+    /**
+     * The International Delivery sheet for a shop's part of an order going
+     * abroad: address label plus a customs declaration (contents, value,
+     * country of origin, HS code, weight). Returns the PDF bytes.
+     */
+    public static function international(Order $order, Shop $shop, LabelTemplate $template): string
+    {
+        $order->loadMissing(['items.product', 'items.productVariant']);
+        $from = $shop->addresses()->orderByDesc('is_default')->orderBy('id')->first();
+        $to = (array) $order->delivery_address;
+        $origin = Country::find($from?->country ?: (string) $shop->market)['name'] ?? ($from?->country ?: $shop->market);
+        $items = $order->items->where('shop_id', $shop->id)->where('fulfilled_by', 'seller')->values()->map(fn ($i) => [
+            'name' => trim($i->product_name.($i->variant_label ? ' · '.$i->variant_label : '')),
+            'sku' => $i->sku,
+            'quantity' => (int) $i->quantity,
+            'unit_cents' => (int) $i->unit_price_cents,
+            'total_cents' => (int) ($i->line_total_cents ?: $i->unit_price_cents * $i->quantity),
+            'origin' => ($c = $i->product?->country_of_origin) ? (Country::find($c)['name'] ?? $c) : $origin,
+            'hs_code' => $i->hsn_code ?: $i->product?->hsn_code,
+            'weight_grams' => $i->productVariant?->weight_grams ? $i->productVariant->weight_grams * $i->quantity : null,
+        ]);
+
+        return Pdf::setOption(['isFontSubsettingEnabled' => true])
+            ->setPaper(self::PAPER[$template->size] ?? self::PAPER['a4'])
+            ->loadView('labels.international', [
+                'template' => $template,
+                'order' => $order,
+                'shop' => $shop,
+                'from' => $from,
+                'fromCountry' => $from?->country ? (Country::find($from->country)['name'] ?? $from->country) : $origin,
+                'to' => $to,
+                'toCountry' => Country::find((string) ($to['country'] ?? $order->market))['name'] ?? ($to['country'] ?? $order->market),
+                'items' => $items,
+                'currency' => strtoupper((string) $order->currency),
+                'logo' => self::logoDataUri($template->logo_url ?: (Branding::current()['logo_url'] ?? null)),
+                'brand' => Branding::current()['store_name'] ?: config('app.name'),
+                'reference' => sprintf('NT-%d-INT', $order->id),
+            ])
+            ->output();
     }
 
     /** Inline an uploaded logo (dompdf doesn't fetch remote images). */

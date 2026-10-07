@@ -632,7 +632,8 @@ CREATE TABLE `label_templates` (
 
 INSERT INTO `label_templates` (`id`, `name`, `size`, `header_text`, `logo_url`, `footer_note`, `show_items`, `show_phone`, `is_default`, `is_active`, `created_at`, `updated_at`) VALUES
 (1, 'Standard 4×6 (thermal printer)', '4x6', 'NexTech Shipping', NULL, 'Handle with care — electronics inside.', 1, 0, 1, 1, '2026-09-24 05:19:16', '2026-09-24 05:19:16'),
-(2, 'A4 sheet (regular printer)', 'a4', 'NexTech Shipping', NULL, 'Cut along the border and tape it to the package.', 1, 0, 0, 1, '2026-09-24 05:19:16', '2026-09-24 05:19:16');
+(2, 'A4 sheet (regular printer)', 'a4', 'NexTech Shipping', NULL, 'Cut along the border and tape it to the package.', 1, 0, 0, 1, '2026-09-24 05:19:16', '2026-09-24 05:19:16'),
+(4, 'International Delivery', 'a4', '{store} — International Delivery', NULL, 'Attach one copy to the outside of the parcel and put a second copy inside with the customs paperwork.', 1, 1, 0, 1, '2026-10-07 09:00:00', '2026-10-07 09:00:00');
 
 -- --------------------------------------------------------
 
@@ -796,7 +797,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (149, '2026_10_06_000056_add_pending_changes_to_products', 84),
 (150, '2026_10_07_000057_add_change_request_to_trademarks', 85),
 (151, '2026_10_07_000058_add_ships_abroad_to_products', 86),
-(152, '2026_10_07_000059_add_paperwork_to_order_shop_shipping', 87);
+(152, '2026_10_07_000059_add_paperwork_to_order_shop_shipping', 87),
+(153, '2026_10_07_000060_add_international_delivery_label_template', 88);
 
 -- --------------------------------------------------------
 
@@ -3254,13 +3256,13 @@ ALTER TABLE `label_requests`
 -- AUTO_INCREMENT for table `label_templates`
 --
 ALTER TABLE `label_templates`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=153;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=154;
 
 --
 -- AUTO_INCREMENT for table `orders`

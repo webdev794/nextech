@@ -406,6 +406,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/fulfillment/label-requests/{labelRequest}/template', [SellerFulfillmentController::class, 'changeLabelTemplate']);
     Route::get('/seller/fulfillment/packages/{package}/label', [SellerFulfillmentController::class, 'downloadLabel']);
     Route::get('/seller/fulfillment/label-requests/{labelRequest}/label', [SellerFulfillmentController::class, 'downloadRequestLabel']);
+    Route::get('/seller/fulfillment/orders/{order}/international-label', [SellerFulfillmentController::class, 'internationalLabel']);
     Route::patch('/seller/fulfillment/packages/{package}', [SellerFulfillmentController::class, 'updatePackage']);
     Route::post('/seller/fulfillment/packages/bulk', [SellerFulfillmentController::class, 'bulkUpdate']);
     Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
