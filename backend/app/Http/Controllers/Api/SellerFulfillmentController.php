@@ -61,6 +61,9 @@ class SellerFulfillmentController extends Controller
             'ship_from_address_id' => ['required', 'integer', Rule::exists('shop_addresses', 'id')->where('shop_id', $shop->id)],
             'carrier' => ['required', Rule::in(array_keys(Market::carriers($request->user()->seller?->shop?->market)))],
             'tracking_number' => ['required', 'string', 'min:6', 'max:60', 'regex:/^[A-Za-z0-9\- ]+$/'],
+            // "Other carrier": the courier's name and tracking website, so the buyer can track it.
+            'carrier_name' => ['required_if:carrier,Other', 'nullable', 'string', 'max:60'],
+            'tracking_site' => ['required_if:carrier,Other', 'nullable', 'url:http,https', 'max:255'],
             // The format check is advisory; the seller can confirm and submit anyway.
             'ignore_format_warning' => ['sometimes', 'boolean'],
             // Shipping a package that uses a label NexTech uploaded.
@@ -84,6 +87,7 @@ class SellerFulfillmentController extends Controller
                     'label_source' => 'own', // tracking entered by the seller, so they can still correct it
                     'carrier' => $data['carrier'],
                     'tracking_number' => $tracking,
+                ] + $this->otherCourier($data) + [
                     'label_path' => $labelRequest->label_path,
                 ], $labelRequest);
                 $labelRequest->update(['order_package_id' => $package->id]);
@@ -95,7 +99,7 @@ class SellerFulfillmentController extends Controller
                 'label_source' => 'own',
                 'carrier' => $data['carrier'],
                 'tracking_number' => $tracking,
-            ]);
+            ] + $this->otherCourier($data));
         }
 
         return response()->json(['data' => $this->row($order->fresh()), 'package' => $package], 201);
@@ -221,6 +225,51 @@ class SellerFulfillmentController extends Controller
         return Storage::disk('local')->download($labelRequest->label_path, "label-order-{$labelRequest->order_id}.".pathinfo($labelRequest->label_path, PATHINFO_EXTENSION));
     }
 
+    /**
+     * Own delivery (local): the seller's own delivery person takes the shop's
+     * part of the order out now. No courier or tracking number — the buyer
+     * gets a delivery code to read out, which the seller enters on delivery.
+     */
+    public function localDispatch(Request $request, Order $order): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
+        abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for your own delivery — ship it with a courier.');
+        $lines = SellerFulfillment::shopLines($order, $shop);
+        $items = $lines->map(fn ($l) => ['order_item_id' => $l->id, 'quantity' => SellerFulfillment::remainingQuantity($l) - SellerFulfillment::requestedQuantity($l)])
+            ->filter(fn ($i) => $i['quantity'] > 0)->values()->all();
+        abort_if($items === [], 422, 'Everything on this order has already gone out.');
+        $addressId = (int) ($shop->local_delivery['address_id'] ?? 0) ?: $shop->addresses()->orderByDesc('is_default')->value('id');
+
+        $package = $this->createPackage($order, $shop, $items, (int) $addressId, [
+            'label_source' => 'local',
+            'carrier' => SellerShipping::LOCAL,
+            'tracking_number' => sprintf('NT-%d-L%d', $order->id, $order->packages()->count() + 1),
+            'delivery_code' => (string) random_int(1000, 9999),
+        ]);
+        SellerProgress::advance($package, 'out_for_delivery', 'seller');
+
+        return response()->json(['data' => $this->row($order->fresh()), 'package' => $package->fresh()], 201);
+    }
+
+    /** Own-delivery packages are marked delivered only with the buyer's delivery code. */
+    private function checkDeliveryCode(OrderPackage $package, string $status, ?string $code): void
+    {
+        if ($status !== 'delivered' || $package->carrier !== SellerShipping::LOCAL || ! $package->delivery_code) {
+            return;
+        }
+        abort_if(trim((string) $code) === '', 422, 'Ask the buyer for their delivery code and enter it to confirm delivery.');
+        abort_unless(hash_equals($package->delivery_code, trim((string) $code)), 422, 'That delivery code doesn\'t match — check it with the buyer.');
+    }
+
+    /** @return array<string, mixed> the courier's name / site for "Other carrier" */
+    private function otherCourier(array $data): array
+    {
+        return $data['carrier'] === 'Other'
+            ? ['carrier_name' => trim((string) ($data['carrier_name'] ?? '')) ?: null, 'tracking_site' => $data['tracking_site'] ?? null]
+            : [];
+    }
+
     /** International Delivery sheet (address label + customs declaration) for an order going abroad. */
     public function internationalLabel(Request $request, Order $order)
     {
@@ -262,6 +311,9 @@ class SellerFulfillmentController extends Controller
         $data = $request->validate([
             'carrier' => ['required', Rule::in(array_keys(Market::carriers($request->user()->seller?->shop?->market)))],
             'tracking_number' => ['required', 'string', 'min:6', 'max:60', 'regex:/^[A-Za-z0-9\- ]+$/'],
+            // "Other carrier": the courier's name and tracking website, so the buyer can track it.
+            'carrier_name' => ['required_if:carrier,Other', 'nullable', 'string', 'max:60'],
+            'tracking_site' => ['required_if:carrier,Other', 'nullable', 'url:http,https', 'max:255'],
             'ignore_format_warning' => ['sometimes', 'boolean'],
         ]);
 
@@ -296,7 +348,8 @@ class SellerFulfillmentController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($package->shop_id === $shop->id, 404);
-        $data = $request->validate(['cash_collected' => ['sometimes', 'boolean']]);
+        $data = $request->validate(['cash_collected' => ['sometimes', 'boolean'], 'delivery_code' => ['sometimes', 'nullable', 'string', 'max:8']]);
+        $this->checkDeliveryCode($package, 'delivered', $data['delivery_code'] ?? null);
         SellerProgress::advance($package, 'delivered', 'seller', (bool) ($data['cash_collected'] ?? false));
 
         return response()->json(['data' => $this->row($package->order->fresh())]);
@@ -313,7 +366,9 @@ class SellerFulfillmentController extends Controller
         $data = $request->validate([
             'status' => ['required', Rule::in(['in_transit', 'out_for_delivery', 'delivered'])],
             'cash_collected' => ['sometimes', 'boolean'],
+            'delivery_code' => ['sometimes', 'nullable', 'string', 'max:8'],
         ]);
+        $this->checkDeliveryCode($package, $data['status'], $data['delivery_code'] ?? null);
         SellerProgress::advance($package, $data['status'], 'seller', (bool) ($data['cash_collected'] ?? false));
 
         return response()->json(['data' => $this->row($package->order->fresh())]);
@@ -371,6 +426,9 @@ class SellerFulfillmentController extends Controller
         $package->forceFill([
             'carrier' => $data['carrier'],
             'tracking_number' => $tracking,
+            // Bulk edits don't send the courier's name / site: keep what the package has.
+            'carrier_name' => $data['carrier'] === 'Other' ? (($data['carrier_name'] ?? null) ?: $package->carrier_name) : null,
+            'tracking_site' => $data['carrier'] === 'Other' ? (($data['tracking_site'] ?? null) ?: $package->tracking_site) : null,
             'edit_count' => $package->edit_count + 1,
             'last_edited_at' => now(),
             // New number: start live tracking over.

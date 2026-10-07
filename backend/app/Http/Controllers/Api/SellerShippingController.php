@@ -48,7 +48,32 @@ class SellerShippingController extends Controller
             'intl_shipping.*.transit_max_days' => ['required', 'integer', 'min:1', 'max:90', 'gte:intl_shipping.*.transit_min_days'],
             // Optional customs / export paperwork charge for that country, shown on the buyer's bill.
             'intl_shipping.*.paperwork_fee_cents' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000000'],
+            // Own delivery (local): the seller's own delivery person, within a radius of a ship-from address. null = off.
+            'local_delivery' => ['sometimes', 'nullable', 'array'],
+            'local_delivery.address_id' => ['required_with:local_delivery', 'integer', Rule::exists('shop_addresses', 'id')->where('shop_id', $shop->id)],
+            'local_delivery.radius_km' => ['required_with:local_delivery', 'numeric', 'min:1', 'max:100'],
+            'local_delivery.fee_cents' => ['required_with:local_delivery', 'integer', 'min:0', 'max:100000000'],
+            'local_delivery.days' => ['required_with:local_delivery', 'integer', 'min:1', 'max:7'],
         ]);
+
+        if (array_key_exists('local_delivery', $data)) {
+            if ($data['local_delivery']) {
+                abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Own delivery is for sellers who ship orders themselves — choose how you ship first.');
+                $address = $shop->addresses()->findOrFail($data['local_delivery']['address_id']);
+                $point = $this->pointFor($address);
+                abort_unless($point, 422, 'We couldn\'t find that address on the map — check it, then try again.');
+                $shop->local_delivery = [
+                    'address_id' => $address->id,
+                    'radius_km' => round((float) $data['local_delivery']['radius_km'], 1),
+                    'fee_cents' => (int) $data['local_delivery']['fee_cents'],
+                    'days' => (int) $data['local_delivery']['days'],
+                    'lat' => $point[0],
+                    'lng' => $point[1],
+                ];
+            } else {
+                $shop->local_delivery = null;
+            }
+        }
 
         if (array_key_exists('intl_shipping', $data)) {
             $allowed = collect($this->intlDestinations($shop))->pluck('code')->all();
@@ -122,6 +147,10 @@ class SellerShippingController extends Controller
             }
             $address->update($data);
         });
+        // Own delivery measures from this address: keep its map point current.
+        if ((int) ($shop->local_delivery['address_id'] ?? 0) === $address->id && ($point = $this->pointFor($address->fresh()))) {
+            $shop->update(['local_delivery' => ['lat' => $point[0], 'lng' => $point[1]] + (array) $shop->local_delivery]);
+        }
 
         return response()->json(['data' => $address->fresh()]);
     }
@@ -134,6 +163,10 @@ class SellerShippingController extends Controller
 
         $wasDefault = $address->is_default;
         $address->delete();
+        // Own delivery measured from this address switches off; the seller picks another.
+        if ((int) ($shop->local_delivery['address_id'] ?? 0) === $address->id) {
+            $shop->update(['local_delivery' => null]);
+        }
         if ($wasDefault) {
             $shop->addresses()->orderBy('id')->first()?->update(['is_default' => true]);
         }
@@ -307,7 +340,14 @@ class SellerShippingController extends Controller
             'intl_shipping' => (object) ((array) $shop->intl_shipping),
             'intl_destinations' => $this->intlDestinations($shop),
             'intl_blocked' => $this->intlBlocked($shop),
+            'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(['lat', 'lng'])->all() : null,
         ];
+    }
+
+    /** @return array{0: float, 1: float}|null */
+    private function pointFor(ShopAddress $address): ?array
+    {
+        return SellerShipping::addressPoint($address->only(['line1', 'city', 'state', 'postal_code']));
     }
 
     /** @return list<array{code: string, name: string, currency: string}> */

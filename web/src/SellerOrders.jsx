@@ -165,7 +165,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
                   </td>
                   <td>{o.items.map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.quantity}</span><small className="sc-muted">Goods ID {i.product_id ?? '—'} · SKU {i.sku ?? '—'}</small></div>)}</td>
                   <td>{o.fulfilled_by === 'nextech' ? <span className="sc-muted">{brandName()} delivers</span> : <>{shortDate(o.ship_by)}<small className="sc-muted">arrives {shortDate(o.deliver_from)}–{shortDate(o.deliver_by)}</small></>}</td>
-                  <td>{o.packages.length ? o.packages.map((p) => <div key={p.id}>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}</div>) : <span className="sc-muted">—</span>}</td>
+                  <td>{o.packages.length ? o.packages.map((p) => <div key={p.id}>{p.carrier_label ?? p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}</div>) : <span className="sc-muted">—</span>}</td>
                   <td>
                     <span className={`sc-pill ${STATUS_PILL[o.status]?.[1] ?? ''}`}>{STATUS_PILL[o.status]?.[0] ?? o.status}</span>
                     {o.pending_until && <small className="sc-muted">until {new Date(o.pending_until).toLocaleTimeString([], { timeStyle: 'short' })}</small>}
@@ -221,7 +221,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             {detail.packages.length > 0 && (
               <>
                 <h3 className="ss-sub">Packages</h3>
-                {detail.packages.map((p) => <div key={p.id}><p>{p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.tracking_label ?? p.status.replace('_', ' ')} · shipped {dateTime(p.shipped_at)}</p>{p.tracking_detail && <p className="sc-muted">{p.tracking_detail}{p.tracking_eta ? ` · expected by ${new Date(p.tracking_eta).toLocaleDateString()}` : ''}</p>}</div>)}
+                {detail.packages.map((p) => <div key={p.id}><p>{p.carrier_label ?? p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number} · {p.tracking_label ?? p.status.replace('_', ' ')} · shipped {dateTime(p.shipped_at)}</p>{p.tracking_detail && <p className="sc-muted">{p.tracking_detail}{p.tracking_eta ? ` · expected by ${new Date(p.tracking_eta).toLocaleDateString()}` : ''}</p>}</div>)}
               </>
             )}
             <div className="ss-actions">

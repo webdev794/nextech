@@ -32,6 +32,7 @@ class Shop extends Model
         'intl_shipping',
         'free_shipping_accepted_at',
         'label_template_id',
+        'local_delivery',
     ];
 
     protected function casts(): array
@@ -47,6 +48,7 @@ class Shop extends Model
             'ships_sunday' => 'boolean',
             'working_holidays' => 'array',
             'intl_shipping' => 'array',
+            'local_delivery' => 'array',
             'free_shipping_accepted_at' => 'datetime',
         ];
     }

@@ -4844,7 +4844,7 @@ Reason:`, '')
                         {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
                         {pks.map((pk) => (
                           <div key={pk.id} className="muted admin-pkg">
-                            📦 {pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
+                            📦 {pk.carrier_label ?? pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
                             {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
                             {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
                             <PackageProgress pkg={pk} packedAt={ss.packed_at} cod={o.payment_method === 'cod'} />

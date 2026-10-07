@@ -31,7 +31,7 @@ class PackageTrackingUpdate extends Notification
         $mail = (new MailMessage)
             ->subject("Order #{$this->order->id}: {$status} — {$brandName}")
             ->greeting($status)
-            ->line("Your package from order #{$this->order->id} ({$this->package->carrier} {$this->package->tracking_number}):");
+            ->line("Your package from order #{$this->order->id} ({$this->package->carrier_label} {$this->package->tracking_number}):");
         if ($this->package->tracking_detail) {
             $mail->line($this->package->tracking_detail);
         }

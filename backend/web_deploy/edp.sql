@@ -798,7 +798,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (150, '2026_10_07_000057_add_change_request_to_trademarks', 85),
 (151, '2026_10_07_000058_add_ships_abroad_to_products', 86),
 (152, '2026_10_07_000059_add_paperwork_to_order_shop_shipping', 87),
-(153, '2026_10_07_000060_add_international_delivery_label_template', 88);
+(153, '2026_10_07_000060_add_international_delivery_label_template', 88),
+(154, '2026_10_07_000061_add_local_delivery_and_other_courier', 89);
 
 -- --------------------------------------------------------
 
@@ -982,7 +983,10 @@ CREATE TABLE `order_packages` (
   `edit_count` tinyint(3) UNSIGNED NOT NULL DEFAULT 0,
   `last_edited_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `carrier_name` varchar(60) DEFAULT NULL,
+  `tracking_site` varchar(255) DEFAULT NULL,
+  `delivery_code` varchar(8) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -1046,7 +1050,8 @@ CREATE TABLE `order_shop_shipping` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `paperwork_cents` int(10) UNSIGNED NOT NULL DEFAULT 0,
-  `seller_paperwork_cents` int(10) UNSIGNED DEFAULT NULL
+  `seller_paperwork_cents` int(10) UNSIGNED DEFAULT NULL,
+  `method` varchar(16) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -2232,7 +2237,8 @@ CREATE TABLE `shops` (
   `free_shipping_accepted_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
-  `label_template_id` bigint(20) UNSIGNED DEFAULT NULL
+  `label_template_id` bigint(20) UNSIGNED DEFAULT NULL,
+  `local_delivery` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`local_delivery`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3262,7 +3268,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=154;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=155;
 
 --
 -- AUTO_INCREMENT for table `orders`

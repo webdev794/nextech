@@ -412,6 +412,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
     Route::post('/seller/fulfillment/packages/{package}/progress', [SellerFulfillmentController::class, 'progress']);
     Route::post('/seller/fulfillment/orders/{order}/packed', [SellerFulfillmentController::class, 'packed']);
+    Route::post('/seller/fulfillment/orders/{order}/local-dispatch', [SellerFulfillmentController::class, 'localDispatch']);
     Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
     Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);

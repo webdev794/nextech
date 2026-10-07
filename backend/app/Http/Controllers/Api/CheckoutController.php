@@ -287,7 +287,7 @@ class CheckoutController extends Controller
             // Seller-shipped lines: each seller's template fee for this state
             // (waived over the free-shipping threshold, which the seller covers).
             $addressType = SellerShipping::addressType((array) $address);
-            $sellerQuote = SellerShipping::quote($sellerQuoteLines, $address['state'] ?? null, null, $addressType, $market);
+            $sellerQuote = SellerShipping::quote($sellerQuoteLines, $address['state'] ?? null, null, $addressType, $market, (array) $address);
             if ($sellerQuote['unshippable']) {
                 $where = ['po_box' => 'a PO box', 'military' => 'a military (APO/FPO/DPO) address'][$addressType] ?? 'this state';
                 throw ValidationException::withMessages([
@@ -350,6 +350,7 @@ class CheckoutController extends Controller
                 $order->shopShipping()->create([
                     'shop_id' => $shopQuote['shop_id'],
                     'mode' => $shopQuote['mode'],
+                    'method' => $shopQuote['method'] ?? null,
                     'fee_cents' => $shopQuote['fee_cents'],
                     'seller_fee_cents' => $shopQuote['seller_fee_cents'] ?? null,
                     'paperwork_cents' => $shopQuote['paperwork_cents'] ?? 0,

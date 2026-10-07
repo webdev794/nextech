@@ -30,6 +30,8 @@ class ShippingQuoteController extends Controller
             'line2' => ['sometimes', 'nullable', 'string', 'max:255'],
             'city' => ['sometimes', 'nullable', 'string', 'max:100'],
             'postal_code' => ['sometimes', 'nullable', 'string', 'max:12'],
+            'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
+            'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'lines' => ['required', 'array', 'max:100'],
             'lines.*.product_id' => ['required', 'integer'],
             'lines.*.quantity' => ['required', 'integer', 'min:1'],
@@ -48,7 +50,9 @@ class ShippingQuoteController extends Controller
             $lines[] = ['product' => $product, 'quantity' => $line['quantity'], 'line_total_cents' => $line['price_cents'] * $line['quantity']];
         }
 
-        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data), ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null);
+        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data), ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null,
+            // A street address or map pin lets sellers' own local delivery apply.
+            (! empty($data['line1']) || isset($data['latitude'], $data['longitude'])) ? $data : null);
 
         return response()->json(['data' => $quote + [
             'seller_shipped_product_ids' => array_values(array_unique($sellerShipped)),

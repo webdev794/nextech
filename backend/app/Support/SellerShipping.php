@@ -18,6 +18,9 @@ class SellerShipping
 {
     public const MODES = ['nextech', 'self', 'label'];
 
+    /** Carrier key for packages the seller delivers themselves (Own delivery). */
+    public const LOCAL = 'Local';
+
     /**
      * Whether sellers may pick "NexTech collects & delivers": 'available',
      * 'disabled' (shown but can't be chosen) or 'hidden'. Admin turns it off
@@ -202,11 +205,20 @@ class SellerShipping
      * @param  ?string  $market  the buyer's country; null = each shop's own
      * @return array{shops: list<array<string, mixed>>, total_cents: int, unshippable: list<string>}
      */
-    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null, ?string $addressType = null, ?string $market = null): array
+    public static function quote(array $lines, ?string $state, ?Carbon $orderedAt = null, ?string $addressType = null, ?string $market = null, ?array $address = null): array
     {
         $orderedAt ??= now();
         $byShop = [];
         $unshippable = [];
+        // The buyer's location, looked up only when a shop offers own delivery.
+        $point = false;
+        $buyerPoint = function () use (&$point, $address) {
+            if ($point === false) {
+                $point = self::addressPoint($address);
+            }
+
+            return $point;
+        };
 
         foreach ($lines as $line) {
             $product = $line['product'];
@@ -247,6 +259,20 @@ class SellerShipping
             }
 
             $template = self::templateFor($product, $shop);
+            // The seller's own delivery: the whole shop's part goes that way when the buyer is within its radius.
+            if ($local = self::localFor($shop, $buyerPoint)) {
+                $entry = $byShop[$shop->id] ??= [
+                    'shop' => $shop, 'subtotal' => 0, 'fee' => 0, 'min' => 0, 'max' => 0, 'handling' => 0,
+                ];
+                $entry['local'] = true;
+                $entry['subtotal'] += (int) $line['line_total_cents'];
+                $entry['fee'] = (int) ($local['fee_cents'] ?? 0);
+                $entry['max'] = max($entry['max'], (int) ($local['days'] ?? 1));
+                $entry['handling'] = max($entry['handling'], (int) ($template?->handling_days ?? 1));
+                $byShop[$shop->id] = $entry;
+
+                continue;
+            }
             $group = $template?->groupFor(self::stateCode($state, $shop->market));
             // A group limited to some address types can't ship to the others (e.g. a PO box).
             if ($group && $addressType && $group->address_types && ! in_array($addressType, $group->address_types, true)) {
@@ -282,6 +308,7 @@ class SellerShipping
                 'shop_name' => $e['shop']->name,
                 'ships_from' => ! empty($e['intl']) ? $e['shop']->market : null,
                 'mode' => $e['shop']->fulfillment_mode,
+                'method' => ! empty($e['local']) ? 'local' : null,
                 'fee_cents' => $fee,
                 // International: the seller's own fee in their currency (what they're credited).
                 'seller_fee_cents' => ! empty($e['intl']) ? (int) $e['seller_fee'] : null,
@@ -298,6 +325,39 @@ class SellerShipping
         }
 
         return ['shops' => $shops, 'total_cents' => $total, 'unshippable' => $unshippable];
+    }
+
+    /** A shop's own-delivery terms when on and the buyer is within its radius, else null. */
+    public static function localFor(Shop $shop, callable $buyerPoint): ?array
+    {
+        $local = (array) $shop->local_delivery;
+        if (! in_array($shop->fulfillment_mode, ['self', 'label'], true) || empty($local['radius_km']) || ! isset($local['lat'], $local['lng'])) {
+            return null;
+        }
+        [$lat, $lng] = $buyerPoint() ?? [null, null];
+        if ($lat === null || $lng === null) {
+            return null;
+        }
+
+        return Geo::haversineKm((float) $lat, (float) $lng, (float) $local['lat'], (float) $local['lng']) <= (float) $local['radius_km'] ? $local : null;
+    }
+
+    /** [lat, lng] for an address: the pin the buyer set, else geocoded; null when unknown. */
+    public static function addressPoint(?array $address): ?array
+    {
+        if (! $address) {
+            return null;
+        }
+        if (isset($address['latitude'], $address['longitude'])) {
+            return [(float) $address['latitude'], (float) $address['longitude']];
+        }
+        $query = implode(', ', array_filter([$address['line1'] ?? null, $address['city'] ?? null, $address['state'] ?? null, $address['postal_code'] ?? null]));
+        if ($query === '') {
+            return null;
+        }
+        [$lat, $lng] = Geo::geocode($query);
+
+        return $lat !== null && $lng !== null ? [$lat, $lng] : null;
     }
 
     /** Ready to ship itself: an address, a template with at least one group, and the free-shipping rule accepted. */

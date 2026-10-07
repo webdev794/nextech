@@ -87,6 +87,43 @@ function IntlShipping({ data, patch }) {
 }
 
 // ---------------------------------------------------------------------------
+// Own delivery (local): the seller's own delivery person covers buyers within
+// a radius of a ship-from address, free or for a flat fee. No courier or
+// tracking number — the buyer reads a delivery code on arrival.
+// ---------------------------------------------------------------------------
+function LocalDelivery({ data, patch }) {
+  const ld = data.local_delivery
+  const [form, setForm] = useState(() => ({ on: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? 10, fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1 }))
+  if (!['self', 'label'].includes(data.fulfillment_mode)) return null
+  const set = (p) => setForm((f) => ({ ...f, ...p }))
+
+  function save(event) {
+    event.preventDefault()
+    if (!form.on) { patch({ local_delivery: null }, 'Own delivery is off — all orders go by courier.'); return }
+    patch({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days) } }, `Saved — buyers within ${form.radius} km get your own delivery.`)
+  }
+
+  return (
+    <div className="sc-card">
+      <h2 className="sc-h2">Own delivery (local)</h2>
+      <p className="sc-muted">Have your own delivery person? Buyers within the distance you set get your own delivery instead of a courier — free, or for a flat fee you choose (the fee is paid to you). There&rsquo;s no tracking number: when it leaves, click <b>Out for delivery (own delivery)</b>; the buyer gets a delivery code, and you enter it to mark the order delivered. Buyers further away still get your normal shipping.</p>
+      {!data.addresses?.length ? <p className="ss-warn">Add a ship-from address first — the distance is measured from it.</p> : (
+        <form onSubmit={save} className="ss-intl">
+          <label className="sc-check"><input type="checkbox" checked={form.on} onChange={(e) => set({ on: e.target.checked })} /> Offer own delivery</label>
+          {form.on && <div className="ss-row">
+            <label>Deliver from<select required value={form.address} onChange={(e) => set({ address: e.target.value })}>{data.addresses.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.city}</option>)}</select></label>
+            <label>Within (km)<input type="number" min="1" max="100" step="0.5" required value={form.radius} onChange={(e) => set({ radius: e.target.value })} /></label>
+            <label>Delivery fee ({currencySymbol(data.currency)}) <small className="sc-muted">0 = free</small><input type="number" min="0" step="0.01" required value={form.fee} onChange={(e) => set({ fee: e.target.value })} /></label>
+            <label>Delivered within (days)<input type="number" min="1" max="7" required value={form.days} onChange={(e) => set({ days: e.target.value })} /></label>
+          </div>}
+          <div><button type="submit" className="sc-primary">Save own delivery</button></div>
+        </form>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Shipping settings
 // ---------------------------------------------------------------------------
 export function ShippingSettings({ headers, onChanged }) {
@@ -234,6 +271,8 @@ export function ShippingSettings({ headers, onChanged }) {
               <p className="sc-muted">Your courier collects the cash when it delivers (use a courier COD service, e.g. Delhivery or Blue Dart COD in India). Offered when everything in the buyer&rsquo;s cart is from your shop and ships within {data.country_name}. Update each order as it moves — <b>Packed</b>, <b>In transit</b>, <b>Out for delivery</b>, <b>Delivered &amp; cash collected</b> — buyers and {brandName()} see every step, and you&rsquo;ll get a reminder when an order goes 2 days without an update. Once you confirm the cash, {brandName()}&rsquo;s commission and fees on that order are taken from your balance.</p>
             </div>
           )}
+
+          <LocalDelivery key={JSON.stringify(data.local_delivery ?? {}) + data.fulfillment_mode + (data.addresses?.length ?? 0)} data={data} patch={patch} />
 
           <IntlShipping key={JSON.stringify(data.intl_shipping ?? {}) + data.fulfillment_mode} data={data} patch={patch} />
 
@@ -491,7 +530,7 @@ export function ShipOrders({ headers, mode }) {
       } else if (shipForm.label) {
         await send(headers, `/seller/fulfillment/orders/${shipForm.order.id}/label`, 'POST', { items, ship_from_address_id: Number(shipForm.address) })
       } else {
-        await send(headers, `/seller/fulfillment/orders/${shipForm.order.id}/ship`, 'POST', { items, ship_from_address_id: Number(shipForm.address), carrier: shipForm.carrier, tracking_number: shipForm.tracking, ignore_format_warning: shipForm.warn, label_request_id: shipForm.labelRequest?.id ?? null })
+        await send(headers, `/seller/fulfillment/orders/${shipForm.order.id}/ship`, 'POST', { items, ship_from_address_id: Number(shipForm.address), carrier: shipForm.carrier, tracking_number: shipForm.tracking, carrier_name: shipForm.carrierName || null, tracking_site: shipForm.trackingSite || null, ignore_format_warning: shipForm.warn, label_request_id: shipForm.labelRequest?.id ?? null })
       }
       setShipForm(null)
       load()
@@ -504,7 +543,7 @@ export function ShipOrders({ headers, mode }) {
   async function submitEdit(event) {
     event.preventDefault()
     try {
-      await send(headers, `/seller/fulfillment/packages/${editForm.package.id}`, 'PATCH', { carrier: editForm.carrier, tracking_number: editForm.tracking, ignore_format_warning: editForm.warn })
+      await send(headers, `/seller/fulfillment/packages/${editForm.package.id}`, 'PATCH', { carrier: editForm.carrier, tracking_number: editForm.tracking, carrier_name: editForm.carrierName || null, tracking_site: editForm.trackingSite || null, ignore_format_warning: editForm.warn })
       setEditForm(null)
       load()
     } catch (e) {
@@ -533,6 +572,14 @@ export function ShipOrders({ headers, mode }) {
     await act(`/seller/fulfillment/packages/${p.id}/progress`, { status, cash_collected: cash })
   }
 
+  // Own delivery: delivered only with the code the buyer reads out.
+  async function deliverLocal(p) {
+    if (p.order.cod && !window.confirm(`Cash on delivery: did your delivery person collect ${money(p.order.cod_amount_cents)}? Confirm only once you have it.`)) return
+    const code = window.prompt('Enter the delivery code the buyer reads out:')
+    if (!code) return
+    await act(`/seller/fulfillment/packages/${p.id}/progress`, { status: 'delivered', cash_collected: !!p.order.cod, delivery_code: code.trim() })
+  }
+
   async function act(path, body) {
     setMsg('')
     try { await send(headers, path, 'POST', body); load() } catch (e) { setMsg(e.message) }
@@ -542,15 +589,16 @@ export function ShipOrders({ headers, mode }) {
     <tr key={p.id}>
       {withSelect && <td><input type="checkbox" disabled={!p.can_edit} checked={selected.includes(p.id)} onChange={(e) => setSelected((s) => (e.target.checked ? [...s, p.id] : s.filter((x) => x !== p.id)))} /></td>}
       <td><b>#{p.order.id}</b><small className="sc-muted">{p.order.ship_to.name} · {p.order.ship_to.city}, {p.order.ship_to.state}</small></td>
-      <td>{p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">{brandName()} label · {money(p.label_cost_cents)}</small>}</td>
+      <td>{p.carrier_label ?? p.carrier}{p.label_source === 'nextech' && <small className="sc-muted">{brandName()} label · {money(p.label_cost_cents)}</small>}</td>
       <td>{p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}{p.edit_count > 0 && <small className="sc-muted">edited {p.edit_count}/3</small>}</td>
       <td>{shortDate(p.shipped_at)}</td>
       <td><span className={`sc-pill ${p.status === 'delivered' ? 'approved' : ['lost', 'returned'].includes(p.status) ? 'rejected' : 'pending'}`}>{p.status.replaceAll('_', ' ')}</span>{p.order.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(p.order.cod_amount_cents)}</span>}<PackageProgress pkg={p} packedAt={p.order.shipping?.packed_at} cod={p.order.cod} /><TrackingTimeline pkg={p} /></td>
       <td className="sc-actions">
-        {p.can_edit && <button type="button" onClick={() => setEditForm({ package: p, carrier: p.carrier, tracking: p.tracking_number, warn: false })}>Edit tracking</button>}
+        {p.can_edit && <button type="button" onClick={() => setEditForm({ package: p, carrier: p.carrier, tracking: p.tracking_number, carrierName: p.carrier_name ?? '', trackingSite: p.tracking_site ?? '', warn: false })}>Edit tracking</button>}
         {p.label_url && <a href={p.label_url} target="_blank" rel="noreferrer">Print label</a>}
         {p.has_label_file && <button type="button" onClick={() => downloadLabel(p)}>Download label</button>}
         {p.label_source === 'nextech' && !p.has_label_file && ['shipped', 'in_transit'].includes(p.status) && <button type="button" onClick={() => act(`/seller/fulfillment/packages/${p.id}/sync`)}>Refresh tracking</button>}
+        {p.label_source === 'local' && p.status === 'out_for_delivery' && <button type="button" onClick={() => deliverLocal(p)}>{p.order.cod ? 'Delivered & cash collected' : 'Delivered'}</button>}
         {(p.label_source === 'own' || p.has_label_file) && (NEXT[p.status] ?? []).map(([status, label]) => <button type="button" key={status} onClick={() => progress(p, status)}>{status === 'delivered' && p.order.cod ? 'Delivered & cash collected' : label}</button>)}
         {p.status === 'delivered' && p.order.cod && !p.cash_collected_at && <button type="button" className="sc-primary" onClick={() => progress(p, 'delivered')}>Confirm cash collected</button>}
       </td>
@@ -580,7 +628,7 @@ export function ShipOrders({ headers, mode }) {
               <tbody>
                 {toShip.map((o) => (
                   <tr key={o.id}>
-                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.international && <span className="sc-pill">International</span>}{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
+                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.international && <span className="sc-pill">International</span>}{o.shipping?.method === 'local' && <span className="sc-pill approved">Own delivery</span>}{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
                     <td>{o.ship_to.name}<small className="sc-muted">{[o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(', ')}<br />{o.ship_to.city}, {o.ship_to.state} {o.ship_to.postal_code}</small></td>
                     <td>{o.items.filter((i) => i.remaining > 0).map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.remaining}</span><PersonalizationView value={i.personalization} download /></div>)}</td>
                     <td className={o.overdue ? 'sc-low' : ''}>{shortDate(o.shipping?.ship_by)}{o.overdue && <small>Overdue</small>}</td>
@@ -601,7 +649,8 @@ export function ShipOrders({ headers, mode }) {
                       {(o.label_requests ?? []).filter((r) => r.status === 'cancelled' && r.admin_note && r.admin_note !== 'Cancelled by the seller.').slice(0, 1).map((r) => <small key={r.id} className="sc-low">Label request declined: {r.admin_note}</small>)}
                       {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
-                      {o.items.some((i) => free(i) > 0) && !onHold(o) && <>
+                      {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="Your own delivery person takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => { if (window.confirm('Send it out with your own delivery person now? The buyer is told it’s on the way and gets a delivery code.')) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`) }}>Out for delivery (own delivery)</button>}
+                      {o.shipping?.method !== 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <>
                         {mode !== 'label' && <button type="button" onClick={() => openShip(o, false)}>Confirm shipment</button>}
                         <button type="button" onClick={() => openShip(o, true)}>{manualLabels ? (labelTemplates.length ? 'Get shipping label' : `Request ${brandName()} label`) : `Buy ${brandName()} label`}</button>
                       </>}
@@ -664,6 +713,10 @@ export function ShipOrders({ headers, mode }) {
                   <label>Carrier<select value={shipForm.carrier} onChange={(e) => setShipForm({ ...shipForm, carrier: e.target.value, warn: false })}>{carriers.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
                   <label>Tracking number<input required value={shipForm.tracking} onChange={(e) => setShipForm({ ...shipForm, tracking: e.target.value, warn: false })} /></label>
                 </div>
+                {shipForm.carrier === 'Other' && <div className="ss-row">
+                  <label>Courier name<input required maxLength="60" placeholder="e.g. City Express" value={shipForm.carrierName ?? ''} onChange={(e) => setShipForm({ ...shipForm, carrierName: e.target.value })} /></label>
+                  <label>Courier tracking website<input required type="url" maxLength="255" placeholder="https://…" value={shipForm.trackingSite ?? ''} onChange={(e) => setShipForm({ ...shipForm, trackingSite: e.target.value })} /></label>
+                </div>}
                 {shipForm.warn && <p className="sc-alert warn">The tracking number doesn&rsquo;t match {shipForm.carrier}&rsquo;s usual format. Double-check it — submit again to confirm it&rsquo;s correct.</p>}
                 <p className="sc-muted">Enter the tracking number after handing the package to the courier. Wrong details stop you and the customer seeing tracking updates.</p>
               </>
@@ -682,6 +735,10 @@ export function ShipOrders({ headers, mode }) {
               <label>Courier<select value={editForm.carrier} onChange={(e) => setEditForm({ ...editForm, carrier: e.target.value, warn: false })}>{carriers.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
               <label>Tracking ID<input required value={editForm.tracking} onChange={(e) => setEditForm({ ...editForm, tracking: e.target.value, warn: false })} /></label>
             </div>
+            {editForm.carrier === 'Other' && <div className="ss-row">
+              <label>Courier name<input required maxLength="60" value={editForm.carrierName} onChange={(e) => setEditForm({ ...editForm, carrierName: e.target.value })} /></label>
+              <label>Courier tracking website<input required type="url" maxLength="255" placeholder="https://…" value={editForm.trackingSite} onChange={(e) => setEditForm({ ...editForm, trackingSite: e.target.value })} /></label>
+            </div>}
             {editForm.warn && <p className="sc-alert warn">That doesn&rsquo;t look like a {editForm.carrier} tracking number — save again to confirm.</p>}
             <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setEditForm(null)}>Cancel</button><button type="submit" className="sc-primary">{editForm.warn ? 'Save anyway' : 'Save'}</button></div>
           </form>

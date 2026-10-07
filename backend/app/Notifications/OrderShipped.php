@@ -44,7 +44,11 @@ class OrderShipped extends Notification
                     $mail->line("{$row->quantity} × {$item->product_name}".($item->variant_label ? " ({$item->variant_label})" : ''));
                 }
             }
-            $mail->line("Carrier: {$package->carrier} · Tracking number: **{$package->tracking_number}**");
+            if ($package->carrier === \App\Support\SellerShipping::LOCAL) {
+                $mail->line('The seller is delivering it themselves.'.($package->delivery_code ? " Your delivery code is **{$package->delivery_code}** — read it to the delivery person when it arrives." : ''));
+            } else {
+                $mail->line("Carrier: {$package->carrier_label} · Tracking number: **{$package->tracking_number}**");
+            }
             if ($package->tracking_url) {
                 $mail->action('Track your package', $package->tracking_url);
             }

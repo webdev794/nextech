@@ -27,6 +27,8 @@ class OrderController extends Controller
         // The handover code is hidden by default; the owning customer sees it so
         // they can read it to the rider at the door.
         $orders->getCollection()->each->makeVisible(['delivery_code', 'delivery_code_expires_at']);
+        // Same for the seller's own delivery: the buyer reads the code to the seller's delivery person.
+        $orders->getCollection()->each(fn ($o) => $o->packages->each(fn ($p) => $p->status === 'out_for_delivery' && $p->makeVisible('delivery_code')));
 
         return response()->json([
             'data' => $orders->items(),
