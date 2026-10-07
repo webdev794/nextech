@@ -4146,6 +4146,17 @@ Reason:`, '')
         <section className="admin-panel">
           {!settings || !feesForm ? <Loading>Loading settings…</Loading> : (
             <>
+              {(settings.setup_checklist ?? []).length > 0 && (() => {
+                const todo = settings.setup_checklist.filter((c) => !c.ok)
+                return (
+                  <section className={`admin-group admin-setup${todo.length ? ' todo' : ''}`}>
+                    <h3 className="admin-group-title">Setup checklist {todo.length ? <span className="pill pill-pending">{todo.length} to do</span> : <span className="pill pill-approved">All set</span>}</h3>
+                    <ul className="admin-setup-list">
+                      {settings.setup_checklist.map((c) => <li key={c.key} className={c.ok ? 'ok' : 'todo'}><span aria-hidden>{c.ok ? '✓' : '!'}</span> <b>{c.label}</b>{!c.ok && <small className="muted"> — {c.hint}</small>}</li>)}
+                    </ul>
+                  </section>
+                )
+              })()}
               {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
 
               <section className="admin-group">

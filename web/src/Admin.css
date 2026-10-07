@@ -643,3 +643,7 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-group-title{margin:0 0 10px;font-size:18px}
 .admin-group>.admin-form,.admin-group>form.admin-form{margin-bottom:14px}
 .admin-group h4{margin:0 0 8px}
+.admin-setup.todo{border-color:#f0b35e;background:#fffaf2}
+.admin-setup-list{margin:0 0 10px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.admin-setup-list li span{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;color:#fff;background:#1f7a3d}
+.admin-setup-list li.todo span{background:#d97706}

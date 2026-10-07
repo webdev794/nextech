@@ -600,6 +600,7 @@ class AdminSettingController extends Controller
             ])->values(),
             'grievance_officer' => Setting::get('grievance_officer'),
             'business_details' => (object) (Setting::get('business_details') ?? []),
+            'setup_checklist' => $this->setupChecklist(),
             'digital_max_file_mb' => (int) Setting::get('digital_max_file_mb', 50),
             'seller_cod_mode' => \App\Support\SellerCod::mode(),
             'seller_cod_max_owed' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerCod::maxOwedCents($c)]),
@@ -649,6 +650,41 @@ class AdminSettingController extends Controller
     private function ttlMinutes(): int
     {
         return max(1, (int) config('secure_access.ttl_minutes', 15));
+    }
+
+    /**
+     * Settings → Setup checklist: the essentials without which part of the
+     * store can't work (payments, delivery, bills, seller payouts), each with
+     * whether it's done and what to do. Optional features aren't listed.
+     *
+     * @return list<array{key: string, label: string, ok: bool, hint: string}>
+     */
+    private function setupChecklist(): array
+    {
+        $stripe = Payments::stripe();
+        $cardsReady = $stripe['key'] !== '' && $stripe['secret'] !== '';
+        $courier = CourierCredentials::current();
+        $courierConnected = $courier['provider'] === 'real' && $courier['base_url'] !== '' && $courier['api_key'] !== '';
+        $stores = \App\Models\Store::query()->count();
+        $riders = \App\Models\User::query()->where('is_rider', true)->count();
+        $pickup = SellerShipping::nextechPickup();
+        $details = (array) (Setting::get('business_details') ?? []);
+        $markets = Market::codes();
+
+        $items = [
+            ['key' => 'store_name', 'label' => 'Store name', 'ok' => trim((string) (Branding::current()['store_name'] ?? '')) !== '', 'hint' => 'Store settings → name (shown on every page, email and bill).'],
+            ['key' => 'payments', 'label' => 'A way for buyers to pay', 'ok' => $cardsReady || (bool) Setting::get('cod_enabled', false), 'hint' => 'Add Stripe keys (Secure access → Payments) or turn on cash on delivery.'],
+            ['key' => 'business_details', 'label' => 'Business details on bills', 'ok' => collect($markets)->every(fn ($c) => trim((string) (($details[$c] ?? [])['legal_name'] ?? '')) !== '' && trim((string) (($details[$c] ?? [])['address'] ?? '')) !== ''), 'hint' => 'Settings → Business details: legal name and address for each country (printed on bills).'],
+            ['key' => 'delivery', 'label' => 'A way to deliver orders', 'ok' => $pickup !== 'available' || $stores > 0 || $courierConnected, 'hint' => '“'.Branding::name().' collects & delivers” is on but there’s no store with riders and no courier — add a store and riders, connect a courier, or switch it off so sellers ship themselves.'],
+        ];
+        if ($stores > 0) {
+            $items[] = ['key' => 'riders', 'label' => 'Riders for your stores', 'ok' => $riders > 0, 'hint' => 'Riders → add riders and link them to your stores.'];
+        }
+        if (SellerFulfillment::labelMode() === 'auto') {
+            $items[] = ['key' => 'courier', 'label' => 'Courier connected for labels', 'ok' => $courierConnected, 'hint' => 'Secure access → Courier, or switch labels to Built-in.'];
+        }
+
+        return $items;
     }
 
     private function grantKey(int $userId): string
