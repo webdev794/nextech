@@ -62,6 +62,18 @@ class SellerLedger
     }
 
     /** Total payouts allowed across all sellers of a market per day (0 = no cap). */
+    /**
+     * The bank-rules note sellers see next to "Request payout" (admin-editable
+     * per country): how transfers are sent and the banks' own limits.
+     */
+    public static function payoutNote(?string $market = null): string
+    {
+        $market = $market === null ? Market::home() : strtoupper($market);
+        $saved = trim((string) (((array) Setting::get('payout_notes', []))[$market] ?? ''));
+
+        return $saved !== '' ? $saved : (string) (config('payout_notes.'.$market) ?? config('payout_notes.default'));
+    }
+
     public static function dailyPayoutCapCents(?string $market = null): int
     {
         return self::marketLimit('daily_payout_cap_cents', $market);

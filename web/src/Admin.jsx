@@ -4243,6 +4243,15 @@ Reason:`, '')
 
               <BusinessDetails settings={settings} save={saveSetting} onSaved={setMessage} />
 
+              {settings.payout_notes && (
+                <form className="admin-form" key={`payout-note-${workMarket}`} onSubmit={async (event) => { event.preventDefault(); const text = new FormData(event.currentTarget).get('note'); if (await saveSetting({ payout_notes: { [workMarket]: text } })) setMessage('Payout note saved.') }}>
+                  <h3>Payout note for sellers — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket}</h3>
+                  <p className="muted">Shown to sellers next to &ldquo;Request payout&rdquo;, with their minimum, maximum per payout and daily limit. Explain how you pay and the banks&rsquo; own limits (e.g. a maximum per transfer). Clear it to go back to the default text. Switch country in the top bar to edit another one.</p>
+                  <textarea name="note" rows={3} maxLength={1000} defaultValue={settings.payout_notes[workMarket] ?? ''} />
+                  <div className="admin-form-actions"><button className="act" type="submit">Save payout note</button></div>
+                </form>
+              )}
+
               <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === workMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
               {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
                 ? <MarketSettings key={chargesMarket} settings={settings} only={chargesMarket} save={saveSetting} onSaved={setMessage} />

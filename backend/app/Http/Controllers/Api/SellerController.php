@@ -173,6 +173,9 @@ class SellerController extends Controller
             $seller->has_sales = $seller->shop->ledgerEntries()->exists();
             $seller->min_payout_cents = SellerLedger::minPayoutCents($seller->shop->market);
             $seller->max_payout_cents = SellerLedger::maxPayoutCents($seller->shop->market);
+            // Daily cap on all payouts sent (a big balance may be paid over several days) and the bank-rules note.
+            $seller->daily_payout_cap_cents = SellerLedger::dailyPayoutCapCents($seller->shop->market);
+            $seller->payout_note = SellerLedger::payoutNote($seller->shop->market);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }
 

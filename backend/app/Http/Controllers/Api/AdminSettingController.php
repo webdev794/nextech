@@ -235,6 +235,9 @@ class AdminSettingController extends Controller
                 'new_seller_days' => ['sometimes', 'integer', 'min:1', 'max:3650'],
                 // With a commission change: also move existing sellers to it (default: they keep their rate).
                 'commission_apply_existing' => ['sometimes', 'boolean'],
+                // Bank-rules note sellers see next to "Request payout", per country (blank = default text).
+                'payout_notes' => ['sometimes', 'array'],
+                'payout_notes.*' => ['nullable', 'string', 'max:1000'],
                 // US sales tax: by state/ZIP or one flat rate; per-state edits; ZIP-lookup key (Secure access).
                 'sales_tax_mode' => ['sometimes', Rule::in(['state', 'flat'])],
                 'sales_tax_states' => ['sometimes', 'array'],
@@ -328,6 +331,11 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('commission_rate_bps', $validated)) {
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        if (array_key_exists('payout_notes', $validated)) {
+            $notes = array_merge((array) Setting::get('payout_notes', []), collect($validated['payout_notes'])->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => trim((string) $v)])->all());
+            Setting::put('payout_notes', array_filter($notes, fn ($v) => $v !== ''));
         }
 
         if (array_key_exists('sales_tax_mode', $validated)) {
@@ -509,6 +517,7 @@ class AdminSettingController extends Controller
             'new_seller_commission_rate_bps' => SellerLedger::newSellerRateBps(),
             'new_seller_days' => SellerLedger::newSellerDays(),
             'sales_tax' => SalesTax::adminPayload(),
+            'payout_notes' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => SellerLedger::payoutNote($code)]),
             // Sellers kept on an older commission rate, per market.
             'kept_rate_sellers' => \App\Models\Shop::whereNotNull('commission_rate_bps')->selectRaw('market, count(*) as n')->groupBy('market')->pluck('n', 'market'),
             'min_payout_cents' => SellerLedger::minPayoutCents('US'),

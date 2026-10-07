@@ -1117,17 +1117,35 @@ export default function Seller({ token, onSignOut }) {
                       return (
                         <>
                           {req?.status === 'rejected' && <p className="seller-payout-status rejected">Your last payout request wasn&rsquo;t approved{req.admin_note ? `: ${req.admin_note}` : '.'}</p>}
-                          {balance >= (me.min_payout_cents ?? 0) && balance > 0 && (
-                            <div className="seller-payout-request">
-                              <button type="button" className="seller-btn" disabled={payoutReqBusy || !me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')} onClick={requestPayout}>Request payout of {money(requestable)}</button>
-                              {(!me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')) && <span className="seller-earnings-note">{me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.'}</span>}
-                              {max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — the rest can be requested after this one is paid.</span>}
-                            </div>
-                          )}
+                          {(() => {
+                            // Why the button can't be used right now (it's always shown).
+                            const noBank = !me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')
+                            const why = balance <= 0 ? 'Nothing available yet — money is released after delivery and the return window.'
+                              : balance < (me.min_payout_cents ?? 0) ? `Your available balance needs to reach ${money(me.min_payout_cents)} first (${money((me.min_payout_cents ?? 0) - balance)} to go).`
+                              : noBank ? (me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.')
+                              : null
+                            return (
+                              <div className="seller-payout-request">
+                                <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={requestPayout}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
+                                {why && <span className="seller-earnings-note">{why}</span>}
+                                {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
+                              </div>
+                            )
+                          })()}
                           {payoutReqMsg && <p className="seller-inline-error">{payoutReqMsg}</p>}
                         </>
                       )
                     })()}
+                    <div className="seller-payout-limits">
+                      <b>Payout limits</b>
+                      <ul>
+                        <li>Minimum to request: <strong>{money(me.min_payout_cents ?? 0)}</strong></li>
+                        <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
+                        {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
+                        <li>One request at a time — you can request again once the last one is paid.</li>
+                      </ul>
+                      {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
+                    </div>
                     {(() => {
                       // Colour each line by where its money is: green = counted in "Available to pay out",
                       // brown = held for the return window, grey = cancelled out (sale and refund net to zero).
