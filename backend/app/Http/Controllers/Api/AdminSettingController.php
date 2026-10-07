@@ -525,6 +525,9 @@ class AdminSettingController extends Controller
         return [
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
+            // NexTech's own delivery network (rider auto-assign applies only to these).
+            'own_stores_count' => \App\Models\Store::query()->count(),
+            'riders_count' => \App\Models\User::query()->where('is_rider', true)->count(),
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'nextech_label_mode' => SellerFulfillment::labelMode(),
             'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),

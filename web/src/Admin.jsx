@@ -4146,19 +4146,12 @@ Reason:`, '')
         <section className="admin-panel">
           {!settings || !feesForm ? <Loading>Loading settings…</Loading> : (
             <>
-              <div className="admin-form">
-                <h3>Payment</h3>
-                <label className="admin-check">
-                  <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
-                  Accept cash on delivery
-                </label>
-                <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
-              </div>
-
               {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
 
+              <section className="admin-group">
+                <h3 className="admin-group-title">Shipping</h3>
               <div className="admin-form">
-                <h3>Seller shipping</h3>
+                <h4>Seller shipping options</h4>
                 <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
                   <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
                     <option value="available">Available — sellers can choose it</option>
@@ -4174,7 +4167,10 @@ Reason:`, '')
                 </label>
                 <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
                 <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
-                <label>Cash on delivery on sellers&rsquo; own deliveries
+              </div>
+              <div className="admin-form">
+                <h4>Cash on delivery on sellers&rsquo; own deliveries</h4>
+                <label>Who can offer it
                   <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
                     <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
                     <option value="off">Off for every seller</option>
@@ -4192,6 +4188,8 @@ Reason:`, '')
               </div>
 
               <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
+
+              </section>
 
               <div className="admin-form">
                 <h3>Digital downloads</h3>
@@ -4308,15 +4306,8 @@ Reason:`, '')
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
 
-              <div className="admin-form">
-                <h3>Delivery</h3>
-                <label className="admin-check">
-                  <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
-                  Auto-assign riders to orders
-                </label>
-                <p className="muted">When an order becomes ready for delivery, the nearest on-shift rider linked to its store is assigned automatically (preferring riders with fewer active jobs). If none is eligible the order waits in the pickup pool. Manage riders and their stores under <strong>Riders</strong>.</p>
-              </div>
-
+              <section className="admin-group">
+                <h3 className="admin-group-title">Checkout charges &amp; payment</h3>
               <form className="admin-form" onSubmit={saveFees}>
                 <h3>Delivery &amp; checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
                 <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
@@ -4359,8 +4350,45 @@ Reason:`, '')
 
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
+
+              <div className="admin-form">
+                <h4>Cash on delivery</h4>
+                <label className="admin-check">
+                  <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
+                  Accept cash on delivery
+                </label>
+                <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
+              </div>
+              </section>
               {settings?.sales_tax && <SalesTaxSettings key={settings.sales_tax.mode + JSON.stringify(settings.sales_tax.states.map((x) => x.rate_bps))} settings={settings} save={saveSetting} headers={jsonHeaders} onSettings={setSettings} onMessage={setMessage} onError={fail} />}
                 </>}
+              {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket) && (
+                <section className="admin-group">
+                  <h3 className="admin-group-title">Payment</h3>
+              <div className="admin-form">
+                <h4>Cash on delivery</h4>
+                <label className="admin-check">
+                  <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
+                  Accept cash on delivery
+                </label>
+                <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
+              </div>
+                </section>
+              )}
+
+              <section className="admin-group">
+                <h3 className="admin-group-title">{brandName()} delivery — own stores &amp; riders</h3>
+                <div className="admin-form">
+                  {(settings.own_stores_count ?? 0) > 0 ? <>
+                    <label className="admin-check">
+                      <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
+                      Auto-assign riders to orders
+                    </label>
+                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p>
+                  </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). It&rsquo;s only for delivering {brandName()}&rsquo;s own stock — sellers ship their own orders.</p>}
+                </div>
+              </section>
+
             </>
           )}
         </section>
