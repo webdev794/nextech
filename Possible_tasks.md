@@ -97,6 +97,66 @@ A seller can manage their own delivery people inside NexTech, like admin manages
 
 ---
 
+## 3. Seller guide — PDF and in Seller Center (do last, once seller features are approved)
+
+### Goal
+A plain-language guide for sellers, covering everything they can do on the platform, step by step, with the conditions each task needs. It's used to teach new sellers and as a reference.
+
+### Where
+- [ ] **Files:** `Documents/Seller Documents/` in the repo, with one source file per topic (Markdown) plus the combined **PDF** (e.g. `NexTech-Seller-Guide.pdf`), generated with the existing dompdf setup or a build script.
+- [ ] **Online:** Seller Center → My account → **Seller guide**, visible only to signed-in sellers.
+  - The same topics, searchable, with a "Download PDF" button.
+  - Served by an authenticated endpoint, not a public page.
+- [ ] Sources to use: `work_done.md`, `tasks_done_today.md`, `flowcharts.md` and the Seller Center screens themselves (check every step against the live UI).
+
+### Topics (each one: what it is, step-by-step, "You need first", tips)
+1. **Joining:**
+   - the application steps (business, ID, shop, documents including proof of address);
+   - Save and finish later;
+   - what admin checks;
+   - Request changes / resubmitting;
+   - the registered address lock and how to change it.
+2. **Policies & rules:** which policies must be signed and when (to sell / to sell abroad), the signing window, and re-accepting a changed policy.
+3. **Setup tasks:** tax information, compliance information, how you get paid (bank account or PayPal), and which currency you're paid in.
+4. **Shop profile & store decoration:** the minimum number of live products before the design shows, and images, links and downloads.
+5. **Products:**
+   - adding a product (all wizard steps), variations and quantity, your own codes (optional);
+   - digital downloads, product guides and documents, compliance documents;
+   - drafts (Incomplete), review, held edits on live products;
+   - out of stock / Update stock, hiding or deleting, trademarks.
+6. **Shipping settings:**
+   - how you ship (NexTech collects / own courier / NexTech label);
+   - ship-from addresses, shipping templates (fees, transit days, address types);
+   - the free-shipping rule, working days and holidays;
+   - cash on delivery (conditions);
+   - Own delivery (local): radius, fee, delivery code;
+   - selling abroad: export ID, declaration, fees per country, customs/paperwork fee, the International Delivery sheet, money held until delivery plus the warranty.
+7. **Orders:**
+   - Manage orders tabs;
+   - Ship orders: Mark packed, confirm a shipment (courier and tracking; "Other" courier name and link), labels, own-delivery dispatch and delivery code;
+   - progress updates (in transit, out for delivery, delivered, cash collected);
+   - reminders and deadlines (ship-by, repeat reminders, overdue flagged to admin);
+   - address-change requests, cancellations, returns.
+8. **Money:**
+   - balance, held for returns/warranty, available to pay out;
+   - minimum payout (per country and method), maximum, daily limit;
+   - withdrawal fees, requesting a payout, the ledger.
+9. **Messages & customer chats:** messages with NexTech; customer order chats you're brought into by admin, and their privacy rules.
+10. **Notifications:** what you're emailed or alerted about, and when.
+11. **Conditions quick-reference table:** "To do X you need Y". For example:
+    - submit a product → the "to sell" policies signed, shipping set up, listing details complete;
+    - sell abroad → own courier, the "sell abroad" policies, export ID and declaration;
+    - cash on delivery → admin allows it, you ship yourself, your cash owed is under the limit;
+    - payout → available balance at or over the minimum, a payout method set, bank verified.
+12. **FAQ / troubleshooting.**
+
+### Notes
+- Keep the language simple: short steps, one action per step, screenshots where useful.
+- Mark each section with the date it was last checked against the app. Update it whenever a seller feature changes.
+- Country differences (US / India): tax IDs, couriers, currencies and export ID (IEC).
+
+---
+
 ## Customer chat (no change needed — for reference)
 - Sellers can't start chats with buyers. Admin brings a seller into a customer's order chat when needed (**Bring in [shop]** in the support chat). Admin stays in the chat, and the seller sees only a masked name and their own items.
 - Decided: no buyer-side "Ask the seller to join" button. Admin decides when to bring the seller in.
