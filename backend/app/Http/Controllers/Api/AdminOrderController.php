@@ -311,6 +311,51 @@ class AdminOrderController extends Controller
     }
 
     /**
+     * Shipped with a courier admin booked by hand (no courier connection):
+     * the courier, tracking number and tracking link, so the buyer can follow
+     * it. Marks the order out for delivery and emails the buyer.
+     */
+    public function manualShipment(Request $request, Order $order): JsonResponse
+    {
+        $data = $request->validate([
+            'carrier' => ['required', Rule::in(array_keys(\App\Support\Market::carriers($order->market)))],
+            'tracking_number' => ['required', 'string', 'min:4', 'max:60', 'regex:/^[A-Za-z0-9\- ]+$/'],
+            'carrier_name' => ['required_if:carrier,Other', 'nullable', 'string', 'max:60'],
+            'tracking_site' => ['required_if:carrier,Other', 'nullable', 'url:http,https', 'max:500'],
+        ]);
+        abort_if(in_array($order->status, ['pending_payment', 'cancelled', 'completed'], true), 422, 'This order can\'t be shipped now.');
+        abort_if($order->delivery_partner_id && $order->status === 'out_for_delivery', 422, 'A rider is already delivering this order.');
+        abort_unless($order->items()->where('fulfilled_by', 'nextech')->exists(), 422, 'Nothing on this order ships from '.\App\Support\Branding::name().' — the seller ships it.');
+        $tracking = strtoupper(preg_replace('/\s+/', '', $data['tracking_number']));
+        $other = $data['carrier'] === 'Other';
+
+        $order->shipment()->updateOrCreate([], [
+            'provider' => 'manual',
+            'carrier' => $other ? trim((string) $data['carrier_name']) : (\App\Support\Market::carriers($order->market)[$data['carrier']][0] ?? $data['carrier']),
+            'tracking_number' => $tracking,
+            'tracking_url' => $other ? $data['tracking_site'] : \App\Support\SellerShipping::trackingUrl($data['carrier'], $tracking),
+            'status' => 'booked',
+            'cost_cents' => 0,
+            'booked_at' => now(),
+        ]);
+        $changes = ['delivery_method' => 'online_courier', 'courier_name' => $order->fresh()->shipment->carrier, 'delivery_partner_id' => null];
+        if ($order->canTransitionTo('out_for_delivery')) {
+            $changes['status'] = 'out_for_delivery';
+        }
+        $order->update($changes);
+        // Going out for delivery emails the buyer by itself (Order model); otherwise send the new tracking now.
+        if (! isset($changes['status']) && $order->status === 'out_for_delivery') {
+            try {
+                $order->fresh()->emailCustomer(new \App\Notifications\OrderShipped($order->fresh()));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return response()->json(['data' => $this->detail($order)]);
+    }
+
+    /**
      * Manual escalation for the "no rider ever available" case: an own-rider
      * order sitting unassigned in the ready-for-delivery pool is handed off to
      * the online courier instead, deliberately by hand rather than on a timer.

@@ -16,6 +16,7 @@ class Shipment extends Model
         'status',
         'cost_cents',
         'booked_at',
+        'tracking_url',
     ];
 
     protected function casts(): array

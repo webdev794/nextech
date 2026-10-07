@@ -450,6 +450,10 @@ class SellerLedger
     public static function shopRate(Order $order, int $shopId): int
     {
         $shop = Shop::with('seller:id,reviewed_at')->find($shopId);
+        // The owner's own shop pays no commission.
+        if ($shop?->is_house) {
+            return 0;
+        }
         $newRate = self::newSellerRateBps();
         if ($newRate !== null) {
             $joined = $shop?->seller?->reviewed_at ?? $shop?->created_at;

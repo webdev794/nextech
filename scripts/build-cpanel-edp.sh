@@ -200,7 +200,7 @@ thing left to do is point this bundle's .env at it.
       MAIL_PASSWORD   (only needed if you set AUTH_OTP_ENABLED=true — it
          ships as false, so email-code sign-in is off and password sign-in
          works immediately with no mail setup)
-4. cPanel > MultiPHP Manager: set this domain to PHP 8.3 (8.2 minimum).
+4. cPanel > MultiPHP Manager: set this domain to PHP 8.4 (required).
 5. Visit once:  https://testcaresortwork.co.in/edp/_setup.php?key=RUNME
    It links storage (so product images work) and clears caches, then
    deletes itself. No migrate, no seed - your imported database is used as-is.

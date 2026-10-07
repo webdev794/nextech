@@ -190,7 +190,7 @@ NEXTECH - cPanel deployment bundle (single folder, DB imported by hand)
       DB_DATABASE, DB_USERNAME, DB_PASSWORD   (the DB you just imported into)
       MAIL_PASSWORD            (or set AUTH_OTP_ENABLED=false and skip mail)
       STRIPE_WEBHOOK_SECRET    (see Stripe note below)
-5. cPanel > MultiPHP Manager: set this domain to PHP 8.3 (8.2 minimum).
+5. cPanel > MultiPHP Manager: set this domain to PHP 8.4 (required).
 6. Visit:  https://testcaresortwork.co.in/gdp/_setup.php?key=RUNME
    It runs "storage:link" + "optimize:clear" and self-deletes. No migrate,
    no seed - your imported database is used as-is.

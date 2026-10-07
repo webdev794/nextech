@@ -13,7 +13,8 @@ class CourierTracking
 {
     public static function sync(Order $order): bool
     {
-        if (! $order->usesOnlineCourier() || ! $order->shipment) {
+        // A courier admin booked by hand isn't tracked through the courier connection — admin marks it delivered.
+        if (! $order->usesOnlineCourier() || ! $order->shipment || $order->shipment->provider === 'manual') {
             return false;
         }
 

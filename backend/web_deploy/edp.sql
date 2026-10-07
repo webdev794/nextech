@@ -800,7 +800,9 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (152, '2026_10_07_000059_add_paperwork_to_order_shop_shipping', 87),
 (153, '2026_10_07_000060_add_international_delivery_label_template', 88),
 (154, '2026_10_07_000061_add_local_delivery_and_other_courier', 89),
-(155, '2026_10_07_000062_add_seller_reminders_to_order_shop_shipping', 90);
+(155, '2026_10_07_000062_add_seller_reminders_to_order_shop_shipping', 90),
+(156, '2026_10_07_000063_add_is_house_to_shops', 91),
+(157, '2026_10_07_000064_add_tracking_url_to_shipments', 92);
 
 -- --------------------------------------------------------
 
@@ -2144,7 +2146,8 @@ CREATE TABLE `shipments` (
   `cost_cents` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `booked_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `tracking_url` varchar(500) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -2242,7 +2245,8 @@ CREATE TABLE `shops` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL,
   `label_template_id` bigint(20) UNSIGNED DEFAULT NULL,
-  `local_delivery` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`local_delivery`))
+  `local_delivery` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`local_delivery`)),
+  `is_house` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3272,7 +3276,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=156;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=158;
 
 --
 -- AUTO_INCREMENT for table `orders`

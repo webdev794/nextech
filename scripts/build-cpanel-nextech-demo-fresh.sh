@@ -226,7 +226,7 @@ DEPLOY
         DB_DATABASE, DB_USERNAME, DB_PASSWORD   (the database you just imported into)
         MAIL_PASSWORD   (or set AUTH_OTP_ENABLED=false to sign in with password only)
         STRIPE_WEBHOOK_SECRET   (optional for a demo)
-  5. cPanel > MultiPHP Manager: set this domain to PHP 8.3 (8.2 minimum).
+  5. cPanel > MultiPHP Manager: set this domain to PHP 8.4 (required).
   6. Visit once: https://testcaresortwork.co.in/gdp/nextech_demo/_setup.php?key=RUNME
      It clears caches so the .env/database you just set actually take effect,
      then deletes itself.

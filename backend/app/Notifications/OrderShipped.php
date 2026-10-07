@@ -56,6 +56,9 @@ class OrderShipped extends Notification
             $mail->line("Order #{$order->id} is out for delivery.");
             if ($order->shipment?->tracking_number) {
                 $mail->line("Carrier: {$order->shipment->carrier} · Tracking number: **{$order->shipment->tracking_number}**");
+                if ($order->shipment->tracking_url) {
+                    $mail->action('Track your package', $order->shipment->tracking_url);
+                }
             } else {
                 $mail->line('Your rider will read out a delivery code when they arrive — we\'ll email it to you then.');
             }

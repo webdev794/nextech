@@ -207,7 +207,7 @@ thing left to do is point this bundle's .env at it.
       DB_DATABASE, DB_USERNAME, DB_PASSWORD   (the DB you already imported into)
       MAIL_PASSWORD            (or set AUTH_OTP_ENABLED=false and skip mail)
       STRIPE_WEBHOOK_SECRET    (see Stripe note below — optional for a demo)
-4. cPanel > MultiPHP Manager: set this domain to PHP 8.3 (8.2 minimum).
+4. cPanel > MultiPHP Manager: set this domain to PHP 8.4 (required).
 5. Visit once:  https://testcaresortwork.co.in/gdp/nextech_demo/_setup.php?key=RUNME
    It links storage (so uploaded product images work) and clears caches, then
    deletes itself. No migrate, no seed - your imported database is used as-is.

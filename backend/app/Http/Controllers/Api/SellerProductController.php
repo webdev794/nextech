@@ -107,7 +107,8 @@ class SellerProductController extends Controller
         // Forced regardless of payload: a seller can only create products for
         // their own shop, and every new listing starts unreviewed (or as a draft).
         $data['shop_id'] = $shop->id;
-        $data['status'] = $submit ? 'pending' : 'draft';
+        // The house shop's listings go live without review.
+        $data['status'] = $submit ? ($shop->is_house ? 'approved' : 'pending') : 'draft';
         $data['rejection_reason'] = null;
         $data['price_cents'] ??= 0;
         $data['slug'] ??= $this->uniqueSlug($data['name']);
@@ -244,7 +245,7 @@ class SellerProductController extends Controller
         $data['status'] = $submit ? 'pending' : ($product->status === 'draft' ? 'draft' : $product->status);
         // Approved by admin with details still to add: filling them in keeps it live.
         $completingFollowups = $product->status === 'approved' && $product->followup_requested_at !== null;
-        if ($completingFollowups) {
+        if ($completingFollowups || ($submit && $shop->is_house)) {
             $data['status'] = 'approved';
         }
         if ($submit) {
@@ -253,7 +254,7 @@ class SellerProductController extends Controller
 
         // A live product stays live while its edit waits for review: the
         // change is held and shows only once NexTech approves it.
-        if ($product->status === 'approved' && $submit && ! $completingFollowups) {
+        if ($product->status === 'approved' && $submit && ! $completingFollowups && ! $shop->is_house) {
             DB::transaction(fn () => ProductPendingChanges::hold($product, $data, $variants, $images));
             $this->notifyCategorySuggestion($product->fresh(), $previousSuggestion);
 

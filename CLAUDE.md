@@ -20,7 +20,7 @@ Guidance for Claude Code when working in this repository.
 
 | Path | Stack | Purpose |
 |------|-------|---------|
-| `backend/` | Laravel 13, PHP 8.3, MySQL (db `edp`) | REST API + serves the built SPA |
+| `backend/` | Laravel 13, PHP 8.4, MySQL (db `edp`) | REST API + serves the built SPA |
 | `web/` | React 19 + Vite 8 (plain JS, no TS) | Customer storefront, admin console, rider console |
 | `mobile/` | Expo ~52 / React Native | Customer mobile app |
 

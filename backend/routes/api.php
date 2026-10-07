@@ -226,6 +226,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/orders/{order}/sync-tracking', [AdminOrderController::class, 'syncTracking']);
     Route::post('/orders/{order}/address-change/{change}', [AdminOrderController::class, 'decideAddressChange']);
     Route::post('/orders/{order}/escalate-to-courier', [AdminOrderController::class, 'escalateToCourier']);
+    Route::post('/orders/{order}/manual-shipment', [AdminOrderController::class, 'manualShipment']);
     Route::post('/orders/{order}/refund', [PaymentController::class, 'refund']);
     Route::post('/orders/{order}/gift-card', [AdminGiftCardController::class, 'issue']);
     Route::post('/orders/{order}/apply-gift-card', [AdminGiftCardController::class, 'applyToOrder']);
@@ -243,6 +244,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/label-requests/{labelRequest}/label', [AdminLabelRequestController::class, 'downloadRequest']);
     Route::get('/label-requests', [AdminLabelRequestController::class, 'index']);
     Route::get('/label-templates', [AdminLabelTemplateController::class, 'index']);
+    Route::get('/house-shop', [\App\Http\Controllers\Api\AdminHouseShopController::class, 'show']);
+    Route::post('/house-shop', [\App\Http\Controllers\Api\AdminHouseShopController::class, 'store']);
     Route::post('/label-templates', [AdminLabelTemplateController::class, 'store']);
     Route::put('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'update']);
     Route::delete('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'destroy']);

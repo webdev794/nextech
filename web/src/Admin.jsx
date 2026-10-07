@@ -524,6 +524,77 @@ async function fetchJson(url, options) {
   return data
 }
 
+// The house shop: the owner's own shop on the seller tools (shipping
+// templates, couriers + tracking, international, own delivery, reminders),
+// with no commission or product review. Managed in Seller Center from the
+// admin account that created it.
+function HouseShop({ headers, onMessage }) {
+  const [data, setData] = useState(null)
+  const [form, setForm] = useState(null)
+  useEffect(() => { fetchJson(`${API_URL}/admin/house-shop`, { headers: headers() }).then((d) => setData(d.data)).catch((e) => onMessage(e.message)) }, [headers, onMessage])
+  if (!data) return null
+  const sellerCenter = `${import.meta.env.BASE_URL}#/seller`
+
+  async function create(event) {
+    event.preventDefault()
+    if (!window.confirm('Create the house shop on this admin account? You’ll manage it in Seller Center, signed in as this account.')) return
+    try {
+      const d = await fetchJson(`${API_URL}/admin/house-shop`, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify(form) })
+      setData(d.data); setForm(null); onMessage('House shop created — open Seller Center to add products and set up shipping.')
+    } catch (e) { onMessage(e.message) }
+  }
+
+  return (
+    <div className="admin-form">
+      <h4>House shop — sell as the store owner</h4>
+      <p className="muted">Your own shop on the seller tools: shipping rates by state with delivery estimates, couriers with tracking numbers and links, international shipping with customs paperwork, own local delivery, labels, and reminders to pack and ship. No commission and no product review. {brandName()}&rsquo;s stores and riders keep working as they are.</p>
+      {data.shop ? (
+        <p><b>{data.shop.name}</b> · {data.shop.products} product(s) · managed by {data.shop.owner?.name} ({data.shop.owner?.email}) · <a href={sellerCenter} target="_blank" rel="noreferrer">Open Seller Center</a></p>
+      ) : form ? (
+        <form onSubmit={create} className="admin-form-grid">
+          <label>Shop name<input required maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+          <label>Ship-from address<input required maxLength="255" value={form.line1} onChange={(e) => setForm({ ...form, line1: e.target.value })} /></label>
+          <label>Address line 2<input maxLength="255" value={form.line2} onChange={(e) => setForm({ ...form, line2: e.target.value })} /></label>
+          <label>City<input required maxLength="100" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} /></label>
+          <label>State<select required value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })}><option value="">Choose…</option>{Object.entries(data.states ?? {}).map(([code, name]) => <option key={code} value={code}>{name}</option>)}</select></label>
+          <label>Postal code<input required maxLength="12" value={form.postal_code} onChange={(e) => setForm({ ...form, postal_code: e.target.value })} /></label>
+          <label>Tax number <small className="muted">optional — defaults to your business details</small><input maxLength="60" value={form.tax_id} onChange={(e) => setForm({ ...form, tax_id: e.target.value })} /></label>
+          <div className="admin-form-actions wz-wide"><button type="button" className="act ghost" onClick={() => setForm(null)}>Cancel</button><button className="act" type="submit">Create house shop</button></div>
+        </form>
+      ) : (
+        <button type="button" className="act" onClick={() => setForm({ name: `${brandName()} Official Store`, line1: '', line2: '', city: '', state: '', postal_code: '', tax_id: '' })}>Create house shop</button>
+      )}
+    </div>
+  )
+}
+
+// Shipped with a courier admin booked by hand: courier, tracking number and
+// link (for "Other"), so the buyer gets a track link. Marks it out for delivery.
+function ManualCourier({ order, carriers, headers, onDone }) {
+  const [form, setForm] = useState(null)
+  if (!form) return <button type="button" className="link" onClick={() => setForm({ carrier: order.shipment?.provider === 'manual' ? 'Other' : (carriers[0]?.value ?? 'Other'), tracking: order.shipment?.provider === 'manual' ? order.shipment.tracking_number : '', name: order.shipment?.provider === 'manual' ? order.shipment.carrier : '', site: order.shipment?.provider === 'manual' ? (order.shipment.tracking_url ?? '') : '' })}>{order.shipment?.provider === 'manual' ? 'Edit courier details' : 'Shipped by courier — enter courier details'}</button>
+
+  async function save(event) {
+    event.preventDefault()
+    try {
+      await fetchJson(`${API_URL}/admin/orders/${order.id}/manual-shipment`, { method: 'POST', headers: headers(), body: JSON.stringify({ carrier: form.carrier, tracking_number: form.tracking, carrier_name: form.name || null, tracking_site: form.site || null }) })
+      setForm(null); onDone('Courier details saved — the buyer can track it.')
+    } catch (e) { onDone(e.message) }
+  }
+
+  return (
+    <form className="admin-form-grid" onSubmit={save}>
+      <label>Courier<select value={form.carrier} onChange={(e) => setForm({ ...form, carrier: e.target.value })}>{(carriers.length ? carriers : [{ value: 'Other', label: 'Other carrier' }]).map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}</select></label>
+      <label>Tracking number<input required minLength="4" maxLength="60" value={form.tracking} onChange={(e) => setForm({ ...form, tracking: e.target.value })} /></label>
+      {form.carrier === 'Other' && <>
+        <label>Courier name<input required maxLength="60" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
+        <label>Courier tracking website<input required type="url" maxLength="500" placeholder="https://…" value={form.site} onChange={(e) => setForm({ ...form, site: e.target.value })} /></label>
+      </>}
+      <div className="admin-form-actions wz-wide"><button type="button" className="act ghost" onClick={() => setForm(null)}>Cancel</button><button className="act" type="submit">Save courier details</button></div>
+    </form>
+  )
+}
+
 export default function Admin({ token, onClose }) {
   const [tab, setTab] = useState('dashboard')
   const [navOpen, setNavOpen] = useState(() => {
@@ -4161,6 +4232,7 @@ Reason:`, '')
 
               <section className="admin-group">
                 <h3 className="admin-group-title">Shipping</h3>
+              <HouseShop headers={authHeaders} onMessage={setMessage} />
               <div className="admin-form">
                 <h4>Seller shipping options</h4>
                 <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
@@ -4905,12 +4977,15 @@ Reason:`, '')
               )}
               {o.delivery_method === 'online_courier' && (
                 o.shipment ? (
-                  <p className="muted">Tracking {o.shipment.tracking_number} · <span className={`pill pill-${o.shipment.status}`}>{o.shipment.status.replace('_', ' ')}</span>
-                    {o.status !== 'completed' && o.status !== 'cancelled' && o.shipment.status !== 'delivered' && (
+                  <p className="muted">{o.shipment.carrier} · Tracking {o.shipment.tracking_url ? <a href={o.shipment.tracking_url} target="_blank" rel="noreferrer">{o.shipment.tracking_number}</a> : o.shipment.tracking_number} · <span className={`pill pill-${o.shipment.status}`}>{o.shipment.status.replace('_', ' ')}</span>{o.shipment.provider === 'manual' ? ' · booked by hand' : ''}
+                    {o.status !== 'completed' && o.status !== 'cancelled' && o.shipment.status !== 'delivered' && o.shipment.provider !== 'manual' && (
                       <button type="button" className="link" disabled={busyId === o.id} onClick={() => syncTracking(o)}> Sync tracking</button>
                     )}
                   </p>
                 ) : <p className="muted">Online courier — awaiting booking.</p>
+              )}
+              {(o.items ?? []).some((it) => it.fulfilled_by === 'nextech') && !['pending_payment', 'cancelled', 'completed'].includes(o.status) && !(o.delivery_partner_id && o.status === 'out_for_delivery') && (
+                <ManualCourier order={o} carriers={settings?.carriers?.[o.market] ?? []} headers={jsonHeaders} onDone={(msg) => { setMessage(msg); openOrderById(o.id) }} />
               )}
               {o.rider_accepted_at && <p className="muted">Accepted{o.delivery_partner?.name ? ` by ${o.delivery_partner.name}` : ''} · {new Date(o.rider_accepted_at).toLocaleString()}</p>}
               {!o.rider_accepted_at && o.rider_offer_expires_at && <p className="muted">Offered{o.delivery_partner?.name ? ` to ${o.delivery_partner.name}` : ''}, expires {new Date(o.rider_offer_expires_at).toLocaleString()}</p>}

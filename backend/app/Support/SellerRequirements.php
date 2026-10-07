@@ -24,6 +24,10 @@ class SellerRequirements
 
     public static function on(?Shop $shop, string $rule): bool
     {
+        // The house shop (the owner's own) skips onboarding, verification and minimums; listings and shipping still apply.
+        if ($shop?->is_house && ! in_array($rule, ['listing_details', 'shipping_setup', 'gst_details'], true)) {
+            return false;
+        }
         if (in_array($rule, self::ALWAYS, true)) {
             return true;
         }

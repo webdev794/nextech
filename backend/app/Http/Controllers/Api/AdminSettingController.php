@@ -563,6 +563,8 @@ class AdminSettingController extends Controller
             'seller_local_delivery' => SellerShipping::localDeliveryOffered() ? 'available' : 'hidden',
             'seller_local_max_km' => SellerShipping::localMaxKm(),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
+            // Couriers per country, for entering a hand-booked courier on NexTech orders.
+            'carriers' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => collect(Market::carriers($code))->map(fn ($c, $key) => ['value' => $key, 'label' => $c[0]])->values()]),
             'nextech_label_mode' => SellerFulfillment::labelMode(),
             'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),
             'decoration_spot_check_rate' => \App\Support\StoreDecorations::spotCheckRate(),
