@@ -219,6 +219,7 @@ class SellerController extends Controller
             // Paid in another currency: the seller confirms their account can receive it.
             'currency_confirmed' => ['sometimes', 'boolean'],
         ]);
+        abort_unless(SellerPayouts::fees($seller->shop?->market)[$data['method']]['enabled'], 422, 'That payout method isn’t offered in your country.');
         $details = (array) $seller->payout_details;
         // The currency they want to be paid in — only one the method allows in their country.
         if (! empty($data['currency'])) {

@@ -290,6 +290,20 @@ class SellerOnboardingController extends Controller
             'primary_contact' => SellerOnboarding::primaryContact($seller),
             'tax' => ['info' => $seller->tax_info, 'status' => $seller->tax_status, 'note' => $seller->tax_note, 'submitted_at' => $seller->tax_submitted_at],
             'compliance' => ['data' => $seller->compliance, 'status' => $seller->compliance_status, 'note' => $seller->compliance_note, 'submitted_at' => $seller->compliance_submitted_at],
+            // How they get paid: only the methods admin offers in their country (bank and/or PayPal).
+            'payout' => (function () use ($seller) {
+                $market = $seller->shop?->market ?? \App\Support\Market::forCountry($seller->country);
+                $fees = \App\Support\SellerPayouts::fees($market);
+
+                return [
+                    'offered' => array_values(array_keys(array_filter($fees, fn ($f) => $f['enabled']))),
+                    'fees' => $fees,
+                    'method' => $seller->payout_method,
+                    'paypal_email' => ((array) $seller->payout_details)['paypal_email'] ?? null,
+                    'currency' => \App\Support\SellerPayouts::currencyFor($seller, $seller->payout_method === 'paypal' ? 'paypal' : 'bank', $market),
+                    'local_currency' => \App\Support\Market::currency($market),
+                ];
+            })(),
             'bank' => [
                 'details' => $seller->payout_method === 'bank' ? $seller->payout_details : null,
                 'status' => $seller->bank_status,

@@ -4249,7 +4249,7 @@ Reason:`, '')
                   <form className="admin-form" key={`payout-fees-${workMarket}`} onSubmit={async (event) => {
                     event.preventDefault()
                     const fd = new FormData(event.currentTarget)
-                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency, currencies: fd.getAll(`${m}_currencies`) }]))
+                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency, currencies: fd.getAll(`${m}_currencies`), enabled: fd.get(`${m}_enabled`) === 'on' }]))
                     if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Withdrawal fees saved.')
                   }}>
                     <h3>Withdrawal fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
@@ -4257,6 +4257,7 @@ Reason:`, '')
                     <div className="admin-form-grid">
                       {['bank', 'paypal'].map((m) => <Fragment key={m}>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — pays sellers in<select name={`${m}_currency`} defaultValue={fees[m].currency ?? activeCurrency}>{[...new Set([activeCurrency, 'usd'])].map((c) => <option key={c} value={c}>{c.toUpperCase()} {currencySymbol(c)}</option>)}</select></label>
+                        <label className="admin-check wz-wide"><input type="checkbox" name={`${m}_enabled`} defaultChecked={fees[m].enabled !== false} /> <b>Offer {m === 'paypal' ? 'PayPal' : 'bank transfer'} payouts to sellers in {marketOptions.find((x) => x.code === workMarket)?.name ?? workMarket}</b></label>
                         <div className="wz-wide"><span className="muted">{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — sellers can choose to be paid in:</span> {(settings.payout_currency_options?.[workMarket] ?? [activeCurrency]).map((c) => <label key={c} className="admin-check" style={{ display: 'inline-flex', marginRight: 12 }}><input type="checkbox" name={`${m}_currencies`} value={c} defaultChecked={(fees[m].currencies ?? [fees[m].currency]).includes(c)} /> {c.toUpperCase()}</label>)}</div>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed fee <small className="muted">in the currency it pays in</small><input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — percentage (%)<input name={`${m}_pct`} type="number" min="0" max="50" step="0.01" defaultValue={(fees[m].bps / 100).toFixed(2)} /></label>

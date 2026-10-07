@@ -1178,7 +1178,7 @@ export default function Seller({ token, onSignOut }) {
                         <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
                         {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
                         <li>One request at a time — you can request again once the last one is paid.</li>
-                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
+                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && f.enabled !== false && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
                       </ul>
                       {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                     </div>
@@ -1821,7 +1821,9 @@ export default function Seller({ token, onSignOut }) {
 // Finances → how the seller is paid: their verified bank account or PayPal,
 // and the currency they want it in (from those admin allows for the method).
 function PayoutMethod({ me, headers, onSaved }) {
-  const [method, setMethod] = useState(me.payout_method === 'paypal' ? 'paypal' : 'bank')
+  // Only the methods admin offers in this seller's country.
+  const offered = ['bank', 'paypal'].filter((m) => me.payout_fees?.[m]?.enabled !== false)
+  const [method, setMethod] = useState(offered.includes(me.payout_method) ? me.payout_method : offered[0] ?? 'bank')
   const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
   const [currency, setCurrency] = useState(me.payout_currency ?? me.currency ?? 'usd')
   const [confirmed, setConfirmed] = useState(!!me.payout_details?.currency_confirmed_at)
@@ -1845,8 +1847,9 @@ function PayoutMethod({ me, headers, onSaved }) {
   return (
     <form className="seller-payout-limits" onSubmit={save}>
       <b>How you&rsquo;re paid</b>
-      <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'bank'} onChange={() => setMethod('bank')} /> Bank account{hasBank ? ` (${me.payout_details.bank_name ?? 'bank'} ••••${String(me.payout_details.account_number).slice(-4)})` : ' — add it under Bank account'}{feeText('bank')}</label>
-      <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'paypal'} onChange={() => setMethod('paypal')} /> PayPal{feeText('paypal')}</label>
+      {offered.length === 1 && <small className="sc-muted">{offered[0] === 'paypal' ? 'PayPal' : 'Bank transfer'} is the payout method in your country.</small>}
+      {offered.includes('bank') && <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'bank'} onChange={() => setMethod('bank')} /> Bank account{hasBank ? ` (${me.payout_details.bank_name ?? 'bank'} ••••${String(me.payout_details.account_number).slice(-4)})` : ' — add it under Bank account'}{feeText('bank')}</label>}
+      {offered.includes('paypal') && <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'paypal'} onChange={() => setMethod('paypal')} /> PayPal{feeText('paypal')}</label>}
       {method === 'paypal' && <input type="email" required placeholder="PayPal email" value={email} onChange={(e) => setEmail(e.target.value)} />}
       <label>Pay me in
         <select value={chosen} onChange={(e) => { setCurrency(e.target.value); setConfirmed(false) }} disabled={allowed.length < 2}>

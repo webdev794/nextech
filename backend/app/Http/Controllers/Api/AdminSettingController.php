@@ -244,6 +244,7 @@ class AdminSettingController extends Controller
                 'payout_fees.*.*.bps' => ['nullable', 'integer', 'min:0', 'max:5000'],
                 'payout_fees.*.*.currency' => ['nullable', 'string', 'size:3'],
                 'payout_fees.*.*.currencies' => ['nullable', 'array'],
+                'payout_fees.*.*.enabled' => ['nullable', 'boolean'],
                 'payout_fees.*.*.currencies.*' => ['string', 'size:3'],
                 // US sales tax: by state/ZIP or one flat rate; per-state edits; ZIP-lookup key (Secure access).
                 'sales_tax_mode' => ['sometimes', Rule::in(['state', 'flat'])],
@@ -343,8 +344,10 @@ class AdminSettingController extends Controller
         if (array_key_exists('payout_fees', $validated)) {
             $fees = (array) Setting::get('payout_fees', []);
             foreach ($validated['payout_fees'] as $code => $byMethod) {
-                foreach (array_intersect_key((array) $byMethod, array_flip(\App\Support\SellerPayouts::METHODS)) as $method => $f) {
-                    $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0), 'currency' => strtolower((string) ($f['currency'] ?? Market::currency($code))), 'currencies' => array_values(array_map('strtolower', (array) ($f['currencies'] ?? [])))];
+                $byMethod = array_intersect_key((array) $byMethod, array_flip(\App\Support\SellerPayouts::METHODS));
+                abort_if($byMethod && ! collect($byMethod)->contains(fn ($f) => (bool) ($f['enabled'] ?? true)), 422, 'Keep at least one payout method on for '.strtoupper($code).'.');
+                foreach ($byMethod as $method => $f) {
+                    $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0), 'currency' => strtolower((string) ($f['currency'] ?? Market::currency($code))), 'currencies' => array_values(array_map('strtolower', (array) ($f['currencies'] ?? []))), 'enabled' => (bool) ($f['enabled'] ?? true)];
                 }
             }
             Setting::put('payout_fees', $fees);

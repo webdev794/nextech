@@ -36,6 +36,8 @@ class SellerPayouts
             $allowed = array_values(array_intersect(array_map('strtolower', (array) ($saved[$m]['currencies'] ?? [])), self::currencyOptions($local))) ?: [$currency];
 
             return [$m => [
+                // Offered to sellers in this country (admin switch; on unless turned off).
+                'enabled' => (bool) ($saved[$m]['enabled'] ?? true),
                 'fixed_cents' => $fixed,
                 'bps' => max(0, min(5000, (int) ($saved[$m]['bps'] ?? 0))),
                 'currency' => $currency,
@@ -95,6 +97,10 @@ class SellerPayouts
     /** Can this seller be paid with their chosen method? Null = yes, else why not. */
     public static function blocker(Seller $seller): ?string
     {
+        $fees = self::fees($seller->shop?->market);
+        if ($seller->payout_method && ! ($fees[$seller->payout_method]['enabled'] ?? true)) {
+            return ($seller->payout_method === 'paypal' ? 'PayPal' : 'Bank transfer').' payouts aren’t offered in your country right now — choose another way to be paid.';
+        }
         if ($seller->payout_method === 'paypal') {
             return empty(((array) $seller->payout_details)['paypal_email']) ? 'Add your PayPal email first.' : null;
         }

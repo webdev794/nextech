@@ -67,7 +67,38 @@ function useOnboarding(headers) {
       return true
     } catch (e) { setMsg(e.message); return false }
   }, [headers])
-  return { data, msg, setMsg, submit }
+  const reload = useCallback(() => send(headers, '/seller/onboarding').then((d) => setData(d.data)).catch((e) => setMsg(e.message)), [headers])
+  return { data, msg, setMsg, submit, reload }
+}
+
+// Task 3 when paid by PayPal (where admin offers it): PayPal email and the
+// currency to be paid in, with a confirmation for a foreign currency.
+function PaypalSetup({ headers, payout, onSaved, onError }) {
+  const allowed = payout.fees?.paypal?.currencies ?? [payout.local_currency]
+  const [email, setEmail] = useState(payout.paypal_email ?? '')
+  const [currency, setCurrency] = useState(allowed.includes(payout.currency) ? payout.currency : allowed[0])
+  const [confirmed, setConfirmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const foreign = currency !== payout.local_currency
+  const f = payout.fees?.paypal
+  async function save(event) {
+    event.preventDefault()
+    setBusy(true)
+    try {
+      await send(headers, '/seller/payout-method', 'PATCH', { method: 'paypal', paypal_email: email.trim(), currency, currency_confirmed: confirmed })
+      onSaved()
+    } catch (e) { onError(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <form className="sc-card ob-form" onSubmit={save}>
+      <h2 className="sc-h2">Get paid by PayPal</h2>
+      {f && (f.fixed_cents > 0 || f.bps > 0) && <p className="sc-muted">Withdrawal fee per payout: {[f.fixed_cents > 0 && `${(f.fixed_cents / 100).toFixed(2)} ${f.currency.toUpperCase()}`, f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}.</p>}
+      <label>PayPal email<input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" /></label>
+      <label>Pay me in<select value={currency} disabled={allowed.length < 2} onChange={(e) => { setCurrency(e.target.value); setConfirmed(false) }}>{allowed.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}</select></label>
+      {foreign && <label className="sc-check"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> My PayPal account can receive {currency.toUpperCase()}.</label>}
+      <div className="ss-actions"><button type="submit" className="sc-primary" disabled={busy || (foreign && !confirmed)}>{busy ? 'Saving…' : 'Save PayPal'}</button></div>
+    </form>
+  )
 }
 
 function Uploader({ headers, kind, label, value, onChange, required, onError }) {
@@ -100,7 +131,7 @@ export function OnboardingTasks({ headers, go, hasProducts, onAddProduct }) {
   const rows = [
     ['tax', 'Task 1', 'Add tax information', 'Your tax registration number and default item tax code.', tasks.tax],
     ['compliance', 'Task 2', 'Add additional compliance information', 'To comply with local laws and regulations, provide business role information.', tasks.compliance],
-    ['bank', 'Task 3', 'Add your bank account', bankLocked ? 'Available after you add additional compliance information.' : 'Add your bank account to request payment.', tasks.bank],
+    ['bank', 'Task 3', 'Set up how you get paid', bankLocked ? 'Available after you add additional compliance information.' : 'Add your bank account or PayPal (as offered in your country) to request payment.', tasks.bank],
     ['shipping', 'Task 4', 'Set up shipping templates', 'Set up your shipping methods so your products can be shipped.', tasks.shipping],
   ]
   const left = rows.filter((r) => !complete(r[4])).length
@@ -460,10 +491,36 @@ function bankMissing(form, cfg) {
 }
 
 export function BankAccount({ headers, onSupport, go, onChanged }) {
-  const { data, msg, setMsg, submit } = useOnboarding(headers)
+  const { data, msg, setMsg, submit, reload } = useOnboarding(headers)
   const [form, setForm] = useState(null)
   const [confirming, setConfirming] = useState(false)
+  const [choice, setChoice] = useState(null)
   if (!data) return <div className="sc-card"><p className="sc-muted">{msg || 'Loading…'}</p></div>
+
+  // Only the payout methods admin offers in this seller's country.
+  const offered = data.payout?.offered ?? ['bank']
+  const method = choice ?? (offered.includes(data.payout?.method) ? data.payout.method : offered[0])
+  const chooser = offered.length > 1 && (
+    <div className="sc-card">
+      <h2 className="sc-h2">How do you want to be paid?</h2>
+      <div className="wz-radio">
+        <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'bank'} onChange={() => setChoice('bank')} /> Bank account</label>
+        <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'paypal'} onChange={() => setChoice('paypal')} /> PayPal</label>
+      </div>
+    </div>
+  )
+  if (method === 'paypal') {
+    return (
+      <>
+        <h1 className="sc-title">Payout method</h1>
+        {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
+        {data.tasks.bank === 'linked' && data.payout?.method === 'paypal' && <div className="sc-alert ok"><span>PayPal is set up — payouts go to {data.payout.paypal_email} in {String(data.payout.currency).toUpperCase()}.</span></div>}
+        {offered.length === 1 && <p className="sc-muted">{brandName()} pays sellers in your country by PayPal.</p>}
+        {chooser}
+        <PaypalSetup key={data.payout?.paypal_email ?? 'new'} headers={headers} payout={data.payout} onError={setMsg} onSaved={async () => { await reload(); setMsg('PayPal saved — you can request payouts once your balance is available.'); onChanged?.() }} />
+      </>
+    )
+  }
 
   const bankCfg = data.config.bank ?? {}
   const maxAge = data.config.bank_document_max_age_days ?? 180
@@ -493,6 +550,7 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
   return (
     <>
       <h1 className="sc-title">Bank account</h1>
+      {chooser}
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
 
       {locked ? (
