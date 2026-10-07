@@ -17,6 +17,26 @@ async function readJson(response) {
 
 const labelOf = (key) => key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
 
+// A live product's edit waiting for review: what the seller changed.
+const SKIP = new Set(['submit', 'variants', 'images'])
+const show = (v) => { if (v == null || v === '') return '—'; const t = typeof v === 'object' ? JSON.stringify(v) : String(v); return t.length > 120 ? `${t.slice(0, 120)}…` : t }
+function PendingChanges({ product }) {
+  const changes = product.pending_changes ?? {}
+  const rows = Object.entries(changes.data ?? {}).filter(([k, v]) => !SKIP.has(k) && JSON.stringify(v ?? null) !== JSON.stringify(product[k] ?? null))
+  return (
+    <div className="admin-cash-holding">
+      <b>Seller&rsquo;s changes waiting{product.pending_submitted_at ? ` (sent ${new Date(product.pending_submitted_at).toLocaleString()})` : ''} — buyers see the live version until you approve:</b>
+      {rows.length === 0 && !changes.images && !changes.variants ? <p className="muted">No visible field changes.</p> : (
+        <ul>
+          {rows.map(([k, v]) => <li key={k}><b>{k.replace(/_/g, ' ')}</b>: {show(product[k])} → {show(v)}</li>)}
+          {Array.isArray(changes.images) && JSON.stringify(changes.images) !== JSON.stringify((product.images ?? []).map((i) => i.url)) && <li><b>photos</b>: {changes.images.length} (was {(product.images ?? []).length})</li>}
+          {Array.isArray(changes.variants) && changes.variants.some((v) => !v._delete) && <li><b>variations / SKUs</b>: {changes.variants.filter((v) => !v._delete).length} submitted</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function ListingReview({ product, currency, authHeaders, jsonHeaders, viewDocument, onClose, onAction, busy, fail }) {
   const [offers, setOffers] = useState([])
   const [prices, setPrices] = useState({})
@@ -51,6 +71,13 @@ export function ListingReview({ product, currency, authHeaders, jsonHeaders, vie
 
         {(product.followups?.later ?? []).length > 0 && <div className="admin-cash-holding overdue"><b>{product.status === 'approved' ? 'Live — the seller still has to add:' : 'Still missing (you can approve anyway; the seller is asked to add these soon):'}</b><ul>{product.followups.later.map((m) => <li key={m}>{m}</li>)}</ul></div>}
         {(product.followups?.blocking ?? []).length > 0 && <p className="admin-cash-holding overdue">Can’t go live yet: {product.followups.blocking.join(' ')}</p>}
+        {product.pending_changes && <PendingChanges product={product} />}
+        {product.shop_id && product.status === 'approved' && product.pending_changes && (
+          <div className="admin-form-actions">
+            <button className="act" type="button" disabled={busy} onClick={() => onAction('approve')}>Approve changes</button>
+            <button className="act danger" type="button" disabled={busy} onClick={() => onAction('reject')}>Reject changes</button>
+          </div>
+        )}
         {product.shop_id && ['pending', 'draft'].includes(product.status) && (
           <div className="admin-form-actions">
             <button className="act" type="button" disabled={busy || (product.followups?.blocking ?? []).length > 0} onClick={() => onAction('approve')}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve after price assessment'}</button>

@@ -2153,21 +2153,35 @@ Reason:`, '')
   const negativeFeedbackHidden = (notifications.negative_feedback ?? []).length - visibleNegativeFeedback.length
   const financialActivityHidden = (notifications.financial_activity ?? []).length - visibleFinancialActivity.length
 
-  const payoutRequests = notifications.payout_requests ?? []
+  // Seller notifications: × hides one (remembered like the main bell's). Keys
+  // include what changes — a new request, date or amount brings it back.
+  const sellerKey = {
+    cod: (c) => `scod-${c.order_id}-${c.seller_id}`,
+    owe: (o) => `sowe-${o.seller_id}-${o.owed_cents}`,
+    task: (t) => `stask-${t.seller_id}-${t.task}-${t.at}`,
+    app: (a) => `sapp-${a.id}-${a.at}`,
+    cat: (c) => `scat-${c.name}-${c.shop_name}-${c.at}`,
+    pay: (r) => `spay-${r.id}`,
+    label: (r) => `slabel-${r.id}`,
+  }
+  const notDismissed = (kind) => (item) => !dismissedNotifs.has(sellerKey[kind](item))
+  const payoutRequests = (notifications.payout_requests ?? []).filter(notDismissed('pay'))
   const labelRequests = notifications.label_requests ?? []
+  const sellerLabelRequests = labelRequests.filter(notDismissed('label'))
   const riderPayoutRequests = notifications.rider_payout_requests ?? []
   const riderApplications = notifications.rider_applications ?? []
-  const sellerApplications = notifications.seller_applications ?? []
-  const categorySuggestions = notifications.category_suggestions ?? []
+  const sellerApplications = (notifications.seller_applications ?? []).filter(notDismissed('app'))
+  const categorySuggestions = (notifications.category_suggestions ?? []).filter(notDismissed('cat'))
   const refundsDue = notifications.refunds_due ?? []
-  const sellerTasks = notifications.seller_tasks ?? []
-  const codKept = notifications.cod_kept ?? []
-  const sellersOwing = notifications.sellers_owing ?? []
-  const productsWaiting = notifications.products_waiting ?? 0
-  const removalRequests = notifications.removal_requests ?? 0
+  const sellerTasks = (notifications.seller_tasks ?? []).filter(notDismissed('task'))
+  const codKept = (notifications.cod_kept ?? []).filter(notDismissed('cod'))
+  const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
+  // Counts, not items: × hides the line until the number changes.
+  const productsWaiting = dismissedNotifs.has(`sprod-${notifications.products_waiting}`) ? 0 : (notifications.products_waiting ?? 0)
+  const removalRequests = dismissedNotifs.has(`sdel-${notifications.removal_requests}`) ? 0 : (notifications.removal_requests ?? 0)
   // Seller items live under the top-bar "Sellers" button, not the main bell.
   const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length
-    + labelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0)
+    + sellerLabelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0)
   const notificationCount = refundsDue.length
     + riderPayoutRequests.length
     + riderApplications.length
@@ -2261,6 +2275,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); openOrderById(c.order_id) }}>
                               💵 {c.shop_name ?? 'Seller'} kept {money(c.amount_cents, c.currency)} — order #{c.order_id} · {new Date(c.at).toLocaleDateString()}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.cod(c)) }}>×</button>
                           </div>
                         ))}
                       </section>
@@ -2273,6 +2288,7 @@ Reason:`, '')
                             <button type="button" className={o.over_limit ? 'admin-bell-item warn' : 'admin-bell-item'} onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (o.seller_id) openSellerDetail(o.seller_id) }}>
                               ⚖️ {o.shop_name} owes {money(o.owed_cents, o.currency)}{o.over_limit ? ' — over the limit, cash on delivery paused' : ' — comes out of their next orders'}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.owe(o)) }}>×</button>
                           </div>
                         ))}
                       </section>
@@ -2285,6 +2301,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(t.seller_id) }}>
                               📝 {t.name ?? 'Seller'} — {t.label}{t.at ? ` · ${new Date(t.at).toLocaleDateString()}` : ''}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.task(t)) }}>×</button>
                           </div>
                         ))}
                         {sellerTasks.length > BELL_ITEM_CAP && (
@@ -2295,8 +2312,8 @@ Reason:`, '')
                     {(productsWaiting > 0 || removalRequests > 0) && (
                       <section>
                         <h5>Seller products</h5>
-                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button></div>}
-                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button></div>}
+                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sprod-${productsWaiting}`) }}>×</button></div>}
+                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sdel-${removalRequests}`) }}>×</button></div>}
                       </section>
                     )}
                     {sellerApplications.length > 0 && (
@@ -2307,6 +2324,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(a.id) }}>
                               🏪 {a.name ?? 'New seller'} · {new Date(a.at).toLocaleDateString()}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.app(a)) }}>×</button>
                           </div>
                         ))}
                         {sellerApplications.length > BELL_ITEM_CAP && (
@@ -2322,6 +2340,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setSellerBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
                               🗂️ &ldquo;{c.name}&rdquo; — {c.shop_name ?? 'Seller'}, {c.products > 1 ? `${c.products} products` : c.product_name} · {new Date(c.at).toLocaleDateString()}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.cat(c)) }}>×</button>
                           </div>
                         ))}
                         {categorySuggestions.length > BELL_ITEM_CAP && (
@@ -2337,6 +2356,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
                               💸 {r.shop_name ?? 'Seller'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.pay(r)) }}>×</button>
                           </div>
                         ))}
                         {payoutRequests.length > BELL_ITEM_CAP && (
@@ -2344,18 +2364,19 @@ Reason:`, '')
                         )}
                       </section>
                     )}
-                    {labelRequests.length > 0 && (
+                    {sellerLabelRequests.length > 0 && (
                       <section>
                         <h5>Shipping labels to upload</h5>
-                        {labelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                        {sellerLabelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
                           <div className="admin-bell-row" key={`label-${r.id}`}>
                             <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>
                               🏷️ {r.shop_name ?? 'Seller'} — order #{r.order_id} · {new Date(r.at).toLocaleDateString()}
                             </button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.label(r)) }}>×</button>
                           </div>
                         ))}
-                        {labelRequests.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>+{labelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
+                        {sellerLabelRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>+{sellerLabelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
                         )}
                       </section>
                     )}
@@ -3149,7 +3170,7 @@ Reason:`, '')
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">{brandName()}</span>}</td>
-                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.low_traffic_offers > 0 && <span className="pill pill-rejected" title="A sales boost offer is waiting for the seller">Low traffic</span>}{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}{(product.missing_compliance ?? []).length > 0 && <p className="admin-note">Docs missing: {product.missing_compliance.join(', ')}</p>}</td>
+                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.pending_changes && <span className="pill pill-pending" title={`Seller edited it${product.pending_submitted_at ? ` on ${new Date(product.pending_submitted_at).toLocaleDateString()}` : ''} — the live version keeps selling until you approve`}>Changes waiting</span>}{product.low_traffic_offers > 0 && <span className="pill pill-rejected" title="A sales boost offer is waiting for the seller">Low traffic</span>}{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}{(product.missing_compliance ?? []).length > 0 && <p className="admin-note">Docs missing: {product.missing_compliance.join(', ')}</p>}</td>
                     <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
@@ -3168,7 +3189,11 @@ Reason:`, '')
                         <button className="act" type="button" disabled={busyId === product.id} title={(product.followups?.later ?? []).length ? `Still missing: ${product.followups.later.join(' ')}` : undefined} onClick={() => approveProduct(product)}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve'}</button>
                         <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
                       </>}
-                      {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
+                      {product.shop_id && product.status === 'approved' && product.pending_changes && <>
+                        <button className="act" type="button" disabled={busyId === product.id} title="Make the seller's edit live" onClick={() => approveProduct(product)}>Approve changes</button>
+                        <button className="act danger" type="button" disabled={busyId === product.id} title="Drop the edit — the live version stays" onClick={() => rejectProduct(product)}>Reject changes</button>
+                      </>}
+                      {product.shop_id && product.status === 'approved' && !product.pending_changes && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
                       {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => approveProduct(product)}>Approve</button>}
                       {product.deletion_requested_at ? <>
                         {product.support_until ? <span className="muted" title="Past buyers are covered by returns / warranty — it can be removed after this date">Can remove after {new Date(product.support_until).toLocaleDateString()}</span> : <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'remove')}>Remove</button>}
