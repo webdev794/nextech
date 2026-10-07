@@ -216,7 +216,7 @@ class SellerShipping
             }
 
             if ($market && $shop->market !== strtoupper($market)) {
-                $terms = $shop->shipsTo($market);
+                $terms = $product->crossBorderTerms($market);
                 if (! $terms) {
                     $unshippable[] = $product->name;
 
@@ -228,8 +228,13 @@ class SellerShipping
                 ];
                 $entry['intl'] = true;
                 $entry['subtotal'] += (int) $line['line_total_cents'];
-                $entry['fee'] = max($entry['fee'], Fx::convert((int) ($terms['fee_cents'] ?? 0), Market::currency($shop->market), Market::currency($market)));
-                $entry['seller_fee'] = max($entry['seller_fee'] ?? 0, (int) ($terms['fee_cents'] ?? 0));
+                // The shop's fee for that country once per order, plus any extra
+                // per-item charge the seller set on this product (heavy / bulky items).
+                $extra = (int) ($product->intl_extra_fee_cents ?? 0) * (int) ($line['quantity'] ?? 1);
+                $entry['base_seller_fee'] = max($entry['base_seller_fee'] ?? 0, (int) ($terms['fee_cents'] ?? 0));
+                $entry['extra_seller_fee'] = ($entry['extra_seller_fee'] ?? 0) + $extra;
+                $entry['seller_fee'] = $entry['base_seller_fee'] + $entry['extra_seller_fee'];
+                $entry['fee'] = Fx::convert($entry['seller_fee'], Market::currency($shop->market), Market::currency($market));
                 $entry['min'] = max($entry['min'], (int) ($terms['transit_min_days'] ?? 0));
                 $entry['max'] = max($entry['max'], (int) ($terms['transit_max_days'] ?? 0));
                 $entry['handling'] = max($entry['handling'], (int) ($template?->handling_days ?? 1));

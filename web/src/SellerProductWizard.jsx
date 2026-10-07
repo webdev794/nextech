@@ -5,7 +5,7 @@ import { DigitalFiles } from './SellerDigitalFiles'
 import { InfoSectionsEditor } from './InfoSections'
 import { ProductDocumentsEditor } from './ProductDocuments'
 import { checkProductImage } from './productImageCheck'
-import { currencySymbol } from './money'
+import { currencySymbol, formatMoney } from './money'
 import { brandName } from './useBranding'
 
 // Seller Center -> Add products, step by step like Temu's Add product flow:
@@ -107,6 +107,8 @@ function formFrom(product, config) {
     price_references: [...(p.price_references ?? []), ''].slice(0, Math.max(1, (p.price_references ?? []).length)),
     size_chart: p.size_chart ?? { size_family: Object.keys(config?.size_families ?? {})[0] ?? '', sub_size_family: config?.sub_size_families?.[0] ?? '', rows: [] },
     handling_days: p.handling_days ? String(p.handling_days) : '',
+    ships_abroad: p.ships_abroad !== false,
+    intl_extra_fee: p.intl_extra_fee_cents ? units(p.intl_extra_fee_cents) : '',
     personalization: { enabled: false, required: true, max_photos: 1, instructions: '', note_label: '', ...(p.personalization ?? {}) },
     shipping_template_id: p.shipping_template_id ? String(p.shipping_template_id) : '',
     return_days: p.return_days ?? '',
@@ -290,6 +292,8 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       price_references: form.price_references,
       size_chart: apparel ? form.size_chart : null,
       handling_days: form.handling_days ? Number(form.handling_days) : null,
+      ships_abroad: !!form.ships_abroad,
+      intl_extra_fee_cents: form.ships_abroad ? (cents(form.intl_extra_fee) || null) : null,
       shipping_template_id: form.shipping_template_id ? Number(form.shipping_template_id) : null,
       return_days: String(form.return_days).trim() === '' ? null : Number(form.return_days),
       return_policy: form.return_policy,
@@ -598,6 +602,22 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             </div>
           ) : <p>{brandName()} collects and delivers this product — no handling time or shipping template needed.</p>}
           {config.ships_itself && <p className="sc-muted">No suitable template, or this product needs its own shipping? <button type="button" className="sc-link" onClick={() => go('shipping')}>Add shipping template</button></p>}
+
+          <h3 className="ss-sub">Selling abroad</h3>
+          {config.fulfillment_mode !== 'self' ? (
+            <p className="sc-muted">Only sold in your country. To sell abroad you ship international orders yourself — choose &ldquo;I ship with my own courier&rdquo; and add the countries in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings → International shipping</button>.</p>
+          ) : !(config.intl_shipping ?? []).length ? (
+            <p className="sc-muted">Only sold in your country. To sell abroad, add the countries you ship to (with your shipping fee and delivery time for each) in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings → International shipping</button>.</p>
+          ) : <>
+            <div className="wz-radio">
+              <label className="sc-check"><input type="radio" name="ships_abroad" checked={!form.ships_abroad} onChange={() => set({ ships_abroad: false })} /> Only in my country</label>
+              <label className="sc-check"><input type="radio" name="ships_abroad" checked={!!form.ships_abroad} onChange={() => set({ ships_abroad: true })} /> Also abroad — to the countries I ship to</label>
+            </div>
+            {form.ships_abroad && <>
+              <p className="sc-muted">Buyers in these countries see this product in their currency and pay your shipping fee. You ship these orders yourself, so make sure the fee covers the courier, customs paperwork and packing: {config.intl_shipping.map((c) => `${c.name} (${formatMoney(c.fee_cents, c.currency)} per order)`).join(', ')}. Change countries and fees in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings</button>.</p>
+              <label>Extra international shipping per item <small className="sc-muted">optional — for heavy or bulky items, added on top of the per-order fee</small><input type="number" min="0" step="0.01" value={form.intl_extra_fee} placeholder="0.00" onChange={(e) => set({ intl_extra_fee: e.target.value })} /></label>
+            </>}
+          </>}
           <p className="sc-muted">Delivery method: {{ nextech: `${brandName()} collects & delivers`, self: 'You ship with your own courier', label: `You ship on a ${brandName()} label` }[config.fulfillment_mode] ?? config.fulfillment_mode}</p>
           <div className="wz-pz">
             <label className="sc-check"><input type="checkbox" checked={form.personalization.enabled} onChange={(e) => set({ personalization: { ...form.personalization, enabled: e.target.checked } })} /> <b>Buyers upload a photo</b> <small className="sc-muted">for personalized products — printed mugs, photo cases, custom portraits…</small></label>

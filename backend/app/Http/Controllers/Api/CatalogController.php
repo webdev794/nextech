@@ -69,6 +69,8 @@ class CatalogController extends Controller
         $product->setAttribute('ships_from_name', Country::find($product->market)['name'] ?? $product->market);
         $product->setAttribute('intl_shipping', [
             'fee_cents' => $conv((int) ($terms['fee_cents'] ?? 0)),
+            // This product's own extra charge per item on top (heavy / bulky items).
+            'extra_per_item_cents' => $product->intl_extra_fee_cents ? $conv((int) $product->intl_extra_fee_cents) : 0,
             'transit_min_days' => (int) ($terms['transit_min_days'] ?? 0),
             'transit_max_days' => (int) ($terms['transit_max_days'] ?? 0),
         ]);

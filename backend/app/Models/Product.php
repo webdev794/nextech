@@ -39,6 +39,8 @@ class Product extends Model
         'video_url',
         'is_active',
         'deactivated_by',
+        'ships_abroad',
+        'intl_extra_fee_cents',
         'deletion_requested_at',
         'deletion_reason',
         'archived_at',
@@ -86,6 +88,7 @@ class Product extends Model
             'info_sections' => 'array',
             'guides' => 'array',
             'pending_changes' => 'array',
+            'ships_abroad' => 'boolean',
             'pending_submitted_at' => 'datetime',
             'digital_settings' => 'array',
             'price_references' => 'array',
@@ -159,15 +162,21 @@ class Product extends Model
         $market = strtoupper($market);
 
         return $query->where(fn ($q) => $q->where($q->qualifyColumn('market'), $market)
-            ->orWhereHas('shop', fn ($shop) => $shop->where('fulfillment_mode', 'self')
-                ->where('market', '!=', $market)
-                ->whereNotNull("intl_shipping->{$market}")));
+            ->orWhere(fn ($abroad) => $abroad
+                ->where(fn ($p) => $p->where($q->qualifyColumn('ships_abroad'), true)->orWhere($q->qualifyColumn('product_type'), 'digital'))
+                ->whereHas('shop', fn ($shop) => $shop->where('fulfillment_mode', 'self')
+                    ->where('market', '!=', $market)
+                    ->whereNotNull("intl_shipping->{$market}"))));
     }
 
     /** Shipped in from another country for a buyer in $market: the shop's terms for it, else null. */
     public function crossBorderTerms(string $market): ?array
     {
         if ($this->shop_id === null || $this->market === strtoupper($market)) {
+            return null;
+        }
+        // The seller chose to sell this one only in their own country.
+        if (! $this->isDigital() && $this->ships_abroad === false) {
             return null;
         }
         $shop = $this->relationLoaded('shop') ? $this->shop : $this->shop()->first();

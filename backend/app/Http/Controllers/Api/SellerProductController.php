@@ -68,6 +68,8 @@ class SellerProductController extends Controller
             'recent_category_ids' => $shop->products()->whereNotNull('category_id')->latest('updated_at')->pluck('category_id')->unique()->take(6)->values(),
             'trademarks' => $shop->trademarks()->where('status', 'approved')->orderBy('name')->get(['id', 'name', 'logo_url']),
             'ships_itself' => $shop->shipsItself(),
+            // Countries this shop ships to (Shipping settings → International shipping), with its fee there.
+            'intl_shipping' => collect((array) $shop->intl_shipping)->map(fn ($t, $code) => ['code' => $code, 'name' => \App\Support\Country::find($code)['name'] ?? $code, 'fee_cents' => (int) ($t['fee_cents'] ?? 0), 'currency' => Market::currency($shop->market)])->values(),
             'fulfillment_mode' => $shop->fulfillment_mode,
             'market' => $shop->market,
             'requirements' => SellerRequirements::all($shop),
@@ -433,6 +435,9 @@ class SellerProductController extends Controller
             'compliance.documents.*.path' => ['required', 'string', 'max:255', 'starts_with:kyc/'.$request->user()->id.'/'],
             'compliance.documents.*.name' => ['nullable', 'string', 'max:255'],
             'is_active' => ['sometimes', 'boolean'],
+            // Also sold to the countries the shop ships to, and an extra per-item charge for those orders.
+            'ships_abroad' => ['sometimes', 'boolean'],
+            'intl_extra_fee_cents' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000000'],
             // Nothing existing fits — a free-text hint for admin to act on
             // manually; never becomes a real category on its own.
             'suggested_category_name' => ['sometimes', 'nullable', 'string', 'max:160'],
