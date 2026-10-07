@@ -134,6 +134,23 @@ INSERT INTO `banners` (`id`, `image_url`, `headline`, `category_slug`, `link_url
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `category_interests`
+--
+
+CREATE TABLE `category_interests` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `user_id` bigint(20) UNSIGNED NOT NULL,
+  `category_id` bigint(20) UNSIGNED NOT NULL,
+  `views` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `last_viewed_at` timestamp NULL DEFAULT NULL,
+  `last_bought_at` timestamp NULL DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `cache`
 --
 
@@ -807,7 +824,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (159, '2026_10_07_000066_add_address_proof_to_sellers', 94),
 (160, '2026_10_07_000067_add_seller_application_draft_to_users', 95),
 (161, '2026_10_07_000068_add_affiliate_to_products', 96),
-(162, '2026_10_07_000069_add_condition_to_products', 97);
+(162, '2026_10_07_000069_add_condition_to_products', 97),
+(163, '2026_10_07_000070_create_category_interests_table', 98);
 
 -- --------------------------------------------------------
 
@@ -2651,6 +2669,14 @@ ALTER TABLE `banners`
   ADD KEY `banners_is_active_sort_order_index` (`is_active`,`sort_order`);
 
 --
+-- Indexes for table `category_interests`
+--
+ALTER TABLE `category_interests`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `category_interests_user_id_category_id_unique` (`user_id`,`category_id`),
+  ADD KEY `category_interests_category_id_foreign` (`category_id`);
+
+--
 -- Indexes for table `cache`
 --
 ALTER TABLE `cache`
@@ -3225,6 +3251,12 @@ ALTER TABLE `auth_otps`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `category_interests`
+--
+ALTER TABLE `category_interests`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `banners`
 --
 ALTER TABLE `banners`
@@ -3318,7 +3350,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=163;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=164;
 
 --
 -- AUTO_INCREMENT for table `orders`
@@ -3587,6 +3619,13 @@ ALTER TABLE `users`
 --
 ALTER TABLE `addresses`
   ADD CONSTRAINT `addresses_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+--
+-- Constraints for table `category_interests`
+--
+ALTER TABLE `category_interests`
+  ADD CONSTRAINT `category_interests_category_id_foreign` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `category_interests_user_id_foreign` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `carts`

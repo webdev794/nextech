@@ -106,6 +106,7 @@ Route::get('/pages/{slug}', [PageController::class, 'show']);
 Route::post('/site-feedback', [SiteFeedbackController::class, 'store'])->middleware('throttle:6,1');
 
 Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/me/category-views', [\App\Http\Controllers\Api\CategoryInterestController::class, 'store'])->middleware('throttle:120,1');
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::post('/addresses', [AddressController::class, 'store']);
     Route::patch('/addresses/{address}', [AddressController::class, 'update']);

@@ -459,6 +459,25 @@ function AddCardForm({ onDone, onCancel }) {
   </form>
 }
 
+// "Recommended" follows what the shopper looks at: the categories of products
+// they open (and categories they browse), newest first, kept in this browser
+// and — when signed in — on their account too.
+const RECENT_CATS_KEY = 'nextech_recent_cats'
+function readRecentCategories() {
+  try { const list = JSON.parse(localStorage.getItem(RECENT_CATS_KEY) || '[]'); return Array.isArray(list) ? list.filter(Number.isInteger) : [] } catch { return [] }
+}
+function rememberCategory(id) {
+  if (!Number.isInteger(id)) return
+  const list = [id, ...readRecentCategories().filter((x) => x !== id)].slice(0, 20)
+  try { localStorage.setItem(RECENT_CATS_KEY, JSON.stringify(list)) } catch { /* private mode */ }
+  const token = (() => { try { return localStorage.getItem('gdp_token') } catch { return null } })()
+  if (token) fetch(`${API_URL}/me/category-views`, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ category_id: id }) }).catch(() => {})
+}
+const catalogHeaders = () => {
+  const token = (() => { try { return localStorage.getItem('gdp_token') } catch { return null } })()
+  return { Accept: 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }
+}
+
 export default function Storefront() {
   const [stripeKey, setStripeKey] = useState(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '')
   const stripePromise = stripeFor(stripeKey)
@@ -1017,6 +1036,12 @@ export default function Storefront() {
     const params = new URLSearchParams()
     if (debouncedQuery.length >= 2) params.set('search', debouncedQuery)
     else if (activeCategorySlug) params.set('category', activeCategorySlug)
+    else {
+      // Recommended: the shopper's recently viewed categories first.
+      params.set('recommended', '1')
+      const recent = readRecentCategories()
+      if (recent.length) params.set('recent', recent.join(','))
+    }
     params.set('per_page', String(productsPerPage()))
     params.set('page', String(page))
     const sep = catalogQuery ? '&' : '?'
@@ -1039,7 +1064,7 @@ export default function Storefront() {
     // The API rejects a search shorter than 2 chars; show nothing rather than
     // fall through to an unfiltered fetch while the user is still typing.
     if (debouncedQuery.length === 1) { setLoading(false); return undefined }
-    fetch(buildProductsUrl(1), { headers: { Accept: 'application/json' } })
+    fetch(buildProductsUrl(1), { headers: catalogHeaders() })
       .then((response) => { if (!response.ok) throw new Error('offline'); return responseJson(response) })
       .then((data) => {
         if (cancelled) return
@@ -1056,7 +1081,7 @@ export default function Storefront() {
     if (loadingMore || !hasMorePages) return
     setLoadingMore(true)
     const nextPage = productPage + 1
-    fetch(buildProductsUrl(nextPage), { headers: { Accept: 'application/json' } })
+    fetch(buildProductsUrl(nextPage), { headers: catalogHeaders() })
       .then((response) => { if (!response.ok) throw new Error('offline'); return responseJson(response) })
       .then((data) => {
         setProducts((prev) => prev.concat(data.data ?? []))
@@ -1229,6 +1254,10 @@ export default function Storefront() {
     if (window.location.hash) window.location.hash = ''
     else setPageView(null)
   }
+
+  // Remember what the shopper looks at, for "Recommended".
+  useEffect(() => { if (productView && productView !== 'loading' && productView.category_id) rememberCategory(Number(productView.category_id)) }, [productView])
+  useEffect(() => { const id = categories.find((c) => c.name === activeCategory)?.id; if (id) rememberCategory(Number(id)) }, [activeCategory, categories])
 
   function openProduct(product) {
     window.location.hash = `#/product/${product.slug || product.id}`

@@ -126,6 +126,9 @@ class CatalogController extends Controller
             // Also say which categories have products for these filters (ignoring the
             // category one) — so a deals page's carousel shows only categories with items.
             'with_categories' => ['sometimes', 'boolean'],
+            // Home "Recommended": the shopper's recently viewed categories first.
+            'recommended' => ['sometimes', 'boolean'],
+            'recent' => ['sometimes', 'nullable', 'string', 'max:200'], // guest's recent category ids, newest first
         ]);
 
         $storeId = $this->servingStoreId($request);
@@ -182,6 +185,15 @@ class CatalogController extends Controller
                 'category_id',
                 Category::withDescendantIds((int) Category::where('slug', $validated['category'])->value('id'))
             ))
+            // Recommended: products from the shopper's recently viewed categories first, newest look first.
+            ->when(($validated['recommended'] ?? false) && ! isset($validated['category']) && ! isset($validated['search']), function ($query) use ($request, $validated) {
+                $recent = array_values(array_filter(array_map('intval', explode(',', (string) ($validated['recent'] ?? '')))));
+                $ranked = \App\Support\CategoryInterests::ranked(auth('sanctum')->user(), array_slice($recent, 0, 20));
+                if ($ranked) {
+                    $cases = collect($ranked)->map(fn ($id, $i) => 'WHEN '.(int) $id.' THEN '.$i)->implode(' ');
+                    $query->orderByRaw("CASE products.category_id {$cases} ELSE ".count($ranked).' END');
+                }
+            })
             // "Low traffic" products (a sales boost offer still pending) rank below the rest.
             ->orderByRaw("EXISTS (SELECT 1 FROM sales_boost_offers sbo WHERE sbo.product_id = products.id AND sbo.status = 'pending')")
             ->when(

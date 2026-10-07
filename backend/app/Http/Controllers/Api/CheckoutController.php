@@ -346,6 +346,8 @@ class CheckoutController extends Controller
                 'delivery_instructions' => $validated['delivery_instructions'] ?? null,
             ]);
             $order->items()->createMany($orderItems);
+            // Bought from these categories: "Recommended" moves on from them for a while.
+            \App\Support\CategoryInterests::bought($order);
             foreach ($sellerQuote['shops'] as $shopQuote) {
                 $order->shopShipping()->create([
                     'shop_id' => $shopQuote['shop_id'],
