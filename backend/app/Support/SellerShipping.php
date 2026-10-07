@@ -327,11 +327,23 @@ class SellerShipping
         return ['shops' => $shops, 'total_cents' => $total, 'unshippable' => $unshippable];
     }
 
+    /** Whether admin lets sellers offer Own delivery (local): 'available' or 'hidden'. */
+    public static function localDeliveryOffered(): bool
+    {
+        return Setting::get('seller_local_delivery', 'available') !== 'hidden';
+    }
+
+    /** The largest own-delivery radius admin allows, in km. */
+    public static function localMaxKm(): float
+    {
+        return max(1.0, min(100.0, (float) Setting::get('seller_local_max_km', 25)));
+    }
+
     /** A shop's own-delivery terms when on and the buyer is within its radius, else null. */
     public static function localFor(Shop $shop, callable $buyerPoint): ?array
     {
         $local = (array) $shop->local_delivery;
-        if (! in_array($shop->fulfillment_mode, ['self', 'label'], true) || empty($local['radius_km']) || ! isset($local['lat'], $local['lng'])) {
+        if (! self::localDeliveryOffered() || ! in_array($shop->fulfillment_mode, ['self', 'label'], true) || empty($local['radius_km']) || ! isset($local['lat'], $local['lng'])) {
             return null;
         }
         [$lat, $lng] = $buyerPoint() ?? [null, null];
@@ -339,7 +351,9 @@ class SellerShipping
             return null;
         }
 
-        return Geo::haversineKm((float) $lat, (float) $lng, (float) $local['lat'], (float) $local['lng']) <= (float) $local['radius_km'] ? $local : null;
+        $radius = min((float) $local['radius_km'], self::localMaxKm());
+
+        return Geo::haversineKm((float) $lat, (float) $lng, (float) $local['lat'], (float) $local['lng']) <= $radius ? $local : null;
     }
 
     /** [lat, lng] for an address: the pin the buyer set, else geocoded; null when unknown. */

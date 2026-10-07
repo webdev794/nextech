@@ -58,6 +58,8 @@ class SellerShippingController extends Controller
 
         if (array_key_exists('local_delivery', $data)) {
             if ($data['local_delivery']) {
+                abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Own delivery isn\'t offered right now.');
+                abort_if((float) $data['local_delivery']['radius_km'] > SellerShipping::localMaxKm(), 422, 'Own delivery can cover up to '.SellerShipping::localMaxKm().' km.');
                 abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Own delivery is for sellers who ship orders themselves — choose how you ship first.');
                 $address = $shop->addresses()->findOrFail($data['local_delivery']['address_id']);
                 $point = $this->pointFor($address);
@@ -340,6 +342,8 @@ class SellerShippingController extends Controller
             'intl_shipping' => (object) ((array) $shop->intl_shipping),
             'intl_destinations' => $this->intlDestinations($shop),
             'intl_blocked' => $this->intlBlocked($shop),
+            'local_delivery_offered' => SellerShipping::localDeliveryOffered(),
+            'local_max_km' => SellerShipping::localMaxKm(),
             'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(['lat', 'lng'])->all() : null,
         ];
     }

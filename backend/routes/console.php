@@ -39,22 +39,11 @@ Artisan::command('digital:check-links', function () {
 })->purpose('Re-check sellers\' hosted download links');
 Schedule::command('digital:check-links')->dailyAt('03:30')->withoutOverlapping();
 
-// Sellers who ship themselves: a daily email listing orders waiting on their
-// update (packed, picked up, in transit, out for delivery, cash collected).
+// Sellers who ship themselves: hourly, email orders waiting on their update
+// (packed, shipped, out for delivery, delivered, cash collected) — each order at
+// most once per admin's repeat interval — and alert admin about overdue ones.
 Artisan::command('sellers:remind-updates', function () {
-    $sent = 0;
-    App\Models\Shop::query()->where('is_active', true)->whereIn('fulfillment_mode', ['self', 'label'])->with('seller.user')->each(function ($shop) use (&$sent) {
-        $orders = App\Support\SellerProgress::needsUpdate($shop);
-        $user = $shop->seller?->user;
-        if ($orders->isNotEmpty() && $user?->email) {
-            try {
-                $user->notify(new App\Notifications\SellerUpdateReminder($orders));
-                $sent++;
-            } catch (Throwable $e) {
-                report($e);
-            }
-        }
-    });
-    $this->info("Reminders sent: {$sent}");
-})->purpose('Email sellers about orders waiting on their status update');
-Schedule::command('sellers:remind-updates')->dailyAt('09:00')->withoutOverlapping();
+    $result = App\Support\SellerProgress::chase();
+    $this->info("Sellers reminded: {$result['reminded']} · overdue sent to admin: {$result['escalated']}");
+})->purpose('Remind sellers about orders waiting on their update; alert admin about overdue ones');
+Schedule::command('sellers:remind-updates')->hourly()->withoutOverlapping();

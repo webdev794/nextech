@@ -94,7 +94,7 @@ function IntlShipping({ data, patch }) {
 function LocalDelivery({ data, patch }) {
   const ld = data.local_delivery
   const [form, setForm] = useState(() => ({ on: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? 10, fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1 }))
-  if (!['self', 'label'].includes(data.fulfillment_mode)) return null
+  if (!['self', 'label'].includes(data.fulfillment_mode) || !data.local_delivery_offered) return null
   const set = (p) => setForm((f) => ({ ...f, ...p }))
 
   function save(event) {
@@ -112,7 +112,7 @@ function LocalDelivery({ data, patch }) {
           <label className="sc-check"><input type="checkbox" checked={form.on} onChange={(e) => set({ on: e.target.checked })} /> Offer own delivery</label>
           {form.on && <div className="ss-row">
             <label>Deliver from<select required value={form.address} onChange={(e) => set({ address: e.target.value })}>{data.addresses.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.city}</option>)}</select></label>
-            <label>Within (km)<input type="number" min="1" max="100" step="0.5" required value={form.radius} onChange={(e) => set({ radius: e.target.value })} /></label>
+            <label>Within (km) <small className="sc-muted">up to {data.local_max_km}</small><input type="number" min="1" max={data.local_max_km ?? 100} step="0.5" required value={form.radius} onChange={(e) => set({ radius: e.target.value })} /></label>
             <label>Delivery fee ({currencySymbol(data.currency)}) <small className="sc-muted">0 = free</small><input type="number" min="0" step="0.01" required value={form.fee} onChange={(e) => set({ fee: e.target.value })} /></label>
             <label>Delivered within (days)<input type="number" min="1" max="7" required value={form.days} onChange={(e) => set({ days: e.target.value })} /></label>
           </div>}

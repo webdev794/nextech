@@ -13,6 +13,7 @@ class OrderShopShipping extends Model
     protected $fillable = [
         'order_id', 'shop_id', 'mode', 'fee_cents', 'seller_fee_cents', 'paperwork_cents', 'seller_paperwork_cents', 'free_shipping', 'transit_min_days', 'transit_max_days',
         'ship_by', 'deliver_from', 'deliver_by', 'packed_at', 'method',
+        'reminded_at', 'reminder_count', 'escalated_at',
     ];
 
     protected function casts(): array
@@ -22,6 +23,9 @@ class OrderShopShipping extends Model
             'free_shipping' => 'boolean',
             'ship_by' => 'date',
             'packed_at' => 'datetime',
+            'reminded_at' => 'datetime',
+            'reminder_count' => 'integer',
+            'escalated_at' => 'datetime',
             'deliver_from' => 'date',
             'deliver_by' => 'date',
         ];

@@ -66,6 +66,8 @@ class AdminSupportController extends Controller
             // right order — unlocking the refund / gift-card panel.
             'user.orders' => fn ($q) => $q->select('id', 'user_id', 'status', 'total_cents', 'created_at')->latest()->limit(20),
             'order.items', 'order.refunds', 'order.giftCards', 'order.giftCards.issuedBy:id,name',
+            // Delivery status for the chat: each seller's promise and packages (tracking, steps).
+            'order.shopShipping.shop:id,name', 'order.packages',
         ];
     }
 
@@ -95,6 +97,7 @@ class AdminSupportController extends Controller
     public function show(SupportThread $thread): JsonResponse
     {
         $thread->load($this->threadRelations());
+        $thread->order?->packages->each->makeVisible('delivery_code');
 
         return response()->json(['data' => $this->withSellerOptions($thread)]);
     }

@@ -224,6 +224,13 @@ class AdminSettingController extends Controller
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
                 'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
+                // Sellers' own local delivery, and how hard sellers are chased for order updates.
+                'seller_local_delivery' => ['sometimes', Rule::in(['available', 'hidden'])],
+                'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:100'],
+                'seller_update_rules' => ['sometimes', 'array'],
+                'seller_update_rules.pack_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
+                'seller_update_rules.repeat_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:72'],
+                'seller_update_rules.escalate_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
                 'nextech_label_mode' => ['sometimes', Rule::in(['auto', 'manual'])],
                 'decoration_min_products' => ['sometimes', 'integer', 'min:0', 'max:1000'],
                 'decoration_spot_check_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
@@ -340,6 +347,15 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('nextech_pickup', $validated)) {
             Setting::put('nextech_pickup', $validated['nextech_pickup']);
+        }
+        if (array_key_exists('seller_local_delivery', $validated)) {
+            Setting::put('seller_local_delivery', $validated['seller_local_delivery']);
+        }
+        if (array_key_exists('seller_local_max_km', $validated)) {
+            Setting::put('seller_local_max_km', round((float) $validated['seller_local_max_km'], 1));
+        }
+        if (array_key_exists('seller_update_rules', $validated)) {
+            Setting::put('seller_update_rules', array_map('intval', array_intersect_key($validated['seller_update_rules'], array_flip(['pack_hours', 'repeat_hours', 'escalate_hours']))));
         }
 
         if (array_key_exists('rider_auto_assign', $validated)) {
@@ -543,6 +559,9 @@ class AdminSettingController extends Controller
             'courier_connected' => (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current()),
             'riders_count' => \App\Models\User::query()->where('is_rider', true)->count(),
             'nextech_pickup' => SellerShipping::nextechPickup(),
+            'seller_local_delivery' => SellerShipping::localDeliveryOffered() ? 'available' : 'hidden',
+            'seller_local_max_km' => SellerShipping::localMaxKm(),
+            'seller_update_rules' => \App\Support\SellerProgress::rules(),
             'nextech_label_mode' => SellerFulfillment::labelMode(),
             'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),
             'decoration_spot_check_rate' => \App\Support\StoreDecorations::spotCheckRate(),

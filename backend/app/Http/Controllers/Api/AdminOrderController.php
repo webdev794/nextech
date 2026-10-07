@@ -58,6 +58,8 @@ class AdminOrderController extends Controller
             })
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
+        // Support: admin sees the buyer's delivery code on sellers' own-delivery packages.
+        $orders->getCollection()->each(fn ($o) => $o->packages->each->makeVisible('delivery_code'));
         LiveTracking::refreshOrders($orders->getCollection());
 
         $this->attachCustomerNames($orders->items());
@@ -363,6 +365,7 @@ class AdminOrderController extends Controller
             'refunds.creator:id,name',
         ]);
         $this->attachCustomerNames([$fresh]);
+        $fresh->packages->each->makeVisible('delivery_code');
 
         return $fresh;
     }

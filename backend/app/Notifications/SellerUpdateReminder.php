@@ -8,7 +8,7 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Collection;
 
-/** Daily, to a seller with orders waiting on their update (SellerProgress::needsUpdate). */
+/** To a seller with orders waiting on their update (SellerProgress::chase, hourly; each order at most once per repeat interval). */
 class SellerUpdateReminder extends Notification
 {
     use Queueable;

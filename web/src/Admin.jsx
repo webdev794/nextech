@@ -4180,6 +4180,30 @@ Reason:`, '')
                 <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
               </div>
               <div className="admin-form">
+                <h4>Sellers&rsquo; own delivery (local)</h4>
+                <label>&ldquo;Own delivery&rdquo; option for sellers who ship themselves
+                  <select value={settings.seller_local_delivery ?? 'available'} onChange={(event) => saveSetting({ seller_local_delivery: event.target.value })}>
+                    <option value="available">Available — sellers can deliver nearby orders with their own delivery person</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+                {settings.seller_local_delivery !== 'hidden' && <label>Largest distance a seller can cover (km)
+                  <input type="number" min="1" max="100" step="0.5" defaultValue={settings.seller_local_max_km ?? 25} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 25) })} />
+                </label>}
+                <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
+              </div>
+              <div className="admin-form">
+                <h4>Chasing sellers for order updates</h4>
+                <div className="admin-form-grid">
+                  {[['pack_hours', 'Remind if a new order isn’t packed after (hours)', 168], ['repeat_hours', 'Repeat the reminder every (hours) until it’s updated', 72], ['escalate_hours', 'Alert me when an order is still not shipped this long after its ship-by date (hours)', 168]].map(([key, label, max]) => (
+                    <label key={key}>{label}
+                      <input type="number" min="1" max={max} step="1" defaultValue={settings.seller_update_rules?.[key] ?? ''} onBlur={(event) => saveSetting({ seller_update_rules: { ...(settings.seller_update_rules ?? {}), [key]: Math.min(max, Math.max(1, Number(event.target.value || 1))) } })} />
+                    </label>
+                  ))}
+                </div>
+                <p className="muted">Sellers get an alert the moment an order arrives. After that, an hourly check emails them about each order waiting on them — not packed, due to ship, no tracking, out for delivery too long, cash not confirmed — at most once per repeat interval, and the same list shows in Seller Center. Orders still unshipped past ship-by are emailed to you once; the order shows how many reminders were sent.</p>
+              </div>
+              <div className="admin-form">
                 <h4>Cash on delivery on sellers&rsquo; own deliveries</h4>
                 <label>Who can offer it
                   <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
@@ -4448,6 +4472,23 @@ Reason:`, '')
                     {thread.seller_options.map((shop) => <button key={shop.id} className="act ghost" type="button" style={{ marginLeft: 6 }} onClick={() => bringInSeller(shop.id)}>Bring in {shop.name}</button>)}
                   </p>
                 )
+            )}
+
+            {(thread.order?.shop_shipping ?? []).length > 0 && (
+              <div className="admin-form" style={{ marginTop: 16 }}>
+                <h4>Delivery status · Order #{thread.order.id}</h4>
+                {thread.order.shop_shipping.map((ss) => {
+                  const pks = (thread.order.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
+                  return (
+                    <div key={ss.id}>
+                      <p className="muted"><b>{ss.shop?.name ?? `Shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'own delivery (local)' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}{ss.reminder_count > 0 ? ` · seller reminded ${ss.reminder_count}×` : ''}</p>
+                      {pks.length === 0 ? <p className="muted">{ss.packed_at ? `Packed ${new Date(ss.packed_at).toLocaleString()} — not shipped yet` : 'Not packed yet'}{new Date(ss.ship_by) < new Date() ? ' (overdue)' : ''}</p> : pks.map((pk) => (
+                        <p key={pk.id} className="muted">📦 {pk.carrier_label ?? pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number} · <span className={`pill pill-${pk.status}`}>{pk.status.replaceAll('_', ' ')}</span>{pk.tracking_detail ? ` · ${pk.tracking_detail}` : ''}{pk.delivery_code ? ` · delivery code ${pk.delivery_code}` : ''} · updated {new Date(pk.progress_updated_at ?? pk.shipped_at).toLocaleString()}</p>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
             )}
 
             {thread.order && thread.order.payment_status === 'pending' && (thread.user?.gift_cards ?? []).length > 0 && (
@@ -4840,13 +4881,14 @@ Reason:`, '')
                     const pks = (o.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
                     return (
                       <div key={ss.id}>
-                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
-                        {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
+                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'seller’s own delivery (local)' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
+                        {pks.length === 0 && <p className="muted">Not shipped yet{ss.packed_at ? ` · packed ${new Date(ss.packed_at).toLocaleString()}` : ' · not packed'}{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
+                        {ss.reminder_count > 0 && <p className="muted">Seller reminded {ss.reminder_count}× · last {new Date(ss.reminded_at).toLocaleString()}{ss.escalated_at ? ' · flagged overdue to admin' : ''}</p>}
                         {pks.map((pk) => (
                           <div key={pk.id} className="muted admin-pkg">
                             📦 {pk.carrier_label ?? pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
                             {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
-                            {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
+                            {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}{pk.delivery_code ? ` · buyer's delivery code ${pk.delivery_code}` : ''}
                             <PackageProgress pkg={pk} packedAt={ss.packed_at} cod={o.payment_method === 'cod'} />
                             <TrackingTimeline pkg={pk} />
                             {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}

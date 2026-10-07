@@ -27,8 +27,26 @@ class SellerProgress
     /** Still on its way (can move on, tracking can be corrected). */
     public const MOVING = ['shipped', 'in_transit', 'out_for_delivery'];
 
-    /** No update for this long on a moving package → remind the seller. */
+    /** No update for this long on a courier package (no live tracking) → remind the seller. */
     public const QUIET_HOURS = 48;
+
+    /**
+     * Admin's rules for chasing sellers (Settings → Shipping): remind when an
+     * order isn't packed after pack_hours, repeat every repeat_hours while it's
+     * still waiting, and alert admin escalate_hours after a missed ship-by date.
+     *
+     * @return array{pack_hours: int, repeat_hours: int, escalate_hours: int}
+     */
+    public static function rules(): array
+    {
+        $r = (array) \App\Models\Setting::get('seller_update_rules', []);
+
+        return [
+            'pack_hours' => max(1, (int) ($r['pack_hours'] ?? 12)),
+            'repeat_hours' => max(1, (int) ($r['repeat_hours'] ?? 12)),
+            'escalate_hours' => max(1, (int) ($r['escalate_hours'] ?? 24)),
+        ];
+    }
 
     public const LABELS = [
         'packed' => 'Packed', 'shipped' => 'Picked up by courier', 'in_transit' => 'In transit',
@@ -171,7 +189,17 @@ class SellerProgress
     public static function needsUpdate(Shop $shop): Collection
     {
         $quiet = now()->subHours(self::QUIET_HOURS);
+        $rules = self::rules();
         $out = collect();
+
+        // New orders not packed yet after pack_hours (before their ship-by date).
+        Order::query()
+            ->whereNotIn('status', ['pending_payment', 'cancelled', 'completed'])
+            ->where('created_at', '<=', now()->subHours($rules['pack_hours']))
+            ->whereHas('shopShipping', fn ($q) => $q->where('shop_id', $shop->id)->whereNull('packed_at')->whereDate('ship_by', '>', today()))
+            ->whereDoesntHave('packages', fn ($q) => $q->where('shop_id', $shop->id))
+            ->get(['id'])
+            ->each(fn ($o) => $out->push(['order_id' => $o->id, 'reason' => 'Not packed yet — pack it and mark it Packed']));
 
         $late = Order::query()
             ->whereNotIn('status', ['pending_payment', 'cancelled', 'completed'])
@@ -180,11 +208,20 @@ class SellerProgress
             ->with(['shopShipping' => fn ($q) => $q->where('shop_id', $shop->id)])
             ->get(['id']);
         foreach ($late as $o) {
-            $packed = $o->shopShipping->first()?->packed_at;
-            $out->push(['order_id' => $o->id, 'reason' => $packed ? 'Packed — hand it to the courier and add the tracking number' : 'Due to ship — pack it and hand it to the courier']);
+            $ship = $o->shopShipping->first();
+            $packed = $ship?->packed_at;
+            $out->push(['order_id' => $o->id, 'reason' => $ship?->method === 'local'
+                ? 'Due today — send it out with your delivery person (Out for delivery)'
+                : ($packed ? 'Packed — hand it to the courier and add the tracking number' : 'Due to ship — pack it and hand it to the courier')]);
         }
 
-        OrderPackage::where('shop_id', $shop->id)->whereIn('status', self::MOVING)
+        // Own delivery: out for delivery and no update after repeat_hours.
+        OrderPackage::where('shop_id', $shop->id)->where('label_source', 'local')->where('status', 'out_for_delivery')
+            ->where('progress_updated_at', '<', now()->subHours($rules['repeat_hours']))
+            ->get(['id', 'order_id'])
+            ->each(fn ($p) => $out->push(['order_id' => $p->order_id, 'reason' => 'Out for delivery for a while — delivered? Enter the buyer\'s delivery code']));
+
+        OrderPackage::where('shop_id', $shop->id)->whereIn('status', self::MOVING)->where('label_source', '!=', 'local')
             ->where(fn ($q) => $q->where('progress_updated_at', '<', $quiet)->orWhere(fn ($w) => $w->whereNull('progress_updated_at')->where('shipped_at', '<', $quiet)))
             ->whereNull('tracking_ref') // live courier tracking updates these itself
             ->get(['id', 'order_id', 'status'])
@@ -196,5 +233,66 @@ class SellerProgress
             ->each(fn ($p) => $out->push(['order_id' => $p->order_id, 'reason' => 'Delivered — confirm the cash on delivery was collected']));
 
         return $out->unique('order_id')->values();
+    }
+
+    /**
+     * Hourly: remind each seller about orders waiting on them (email), at most
+     * once every repeat_hours per order, and alert admin once about orders
+     * still not shipped escalate_hours after their ship-by date.
+     *
+     * @return array{reminded: int, escalated: int}
+     */
+    public static function chase(): array
+    {
+        $rules = self::rules();
+        $reminded = 0;
+        $overdue = [];
+
+        Shop::query()->where('is_active', true)->whereIn('fulfillment_mode', ['self', 'label'])->with('seller.user')
+            ->each(function (Shop $shop) use ($rules, &$reminded, &$overdue) {
+                $due = self::needsUpdate($shop);
+                if ($due->isEmpty()) {
+                    return;
+                }
+                $rows = \App\Models\OrderShopShipping::where('shop_id', $shop->id)->whereIn('order_id', $due->pluck('order_id'))->get()->keyBy('order_id');
+                $remind = $due->filter(function ($d) use ($rows, $rules) {
+                    $row = $rows->get($d['order_id']);
+
+                    return $row && (! $row->reminded_at || $row->reminded_at->lte(now()->subHours($rules['repeat_hours'])));
+                })->values();
+
+                $user = $shop->seller?->user;
+                if ($remind->isNotEmpty() && $user?->email) {
+                    try {
+                        $user->notify(new \App\Notifications\SellerUpdateReminder($remind));
+                        foreach ($remind as $d) {
+                            $row = $rows->get($d['order_id']);
+                            $row->forceFill(['reminded_at' => now(), 'reminder_count' => min(255, $row->reminder_count + 1)])->save();
+                        }
+                        $reminded++;
+                    } catch (\Throwable $e) {
+                        report($e);
+                    }
+                }
+
+                // Not shipped escalate_hours after the ship-by date: tell admin once.
+                foreach ($rows as $row) {
+                    if (! $row->escalated_at && $row->ship_by && $row->ship_by->copy()->endOfDay()->addHours($rules['escalate_hours'])->isPast()
+                        && ! OrderPackage::where('order_id', $row->order_id)->where('shop_id', $shop->id)->exists()) {
+                        $row->forceFill(['escalated_at' => now()])->save();
+                        $overdue[] = ['order_id' => $row->order_id, 'shop' => $shop->name, 'ship_by' => $row->ship_by->toDateString(), 'reminders' => $row->reminder_count];
+                    }
+                }
+            });
+
+        if ($overdue) {
+            try {
+                Notification::send(User::where('is_admin', true)->get(), new \App\Notifications\AdminSellerOverdue($overdue));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return ['reminded' => $reminded, 'escalated' => count($overdue)];
     }
 }
