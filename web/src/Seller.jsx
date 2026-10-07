@@ -843,11 +843,18 @@ export default function Seller({ token, onSignOut }) {
   // ---------------------------------------------------------------------------
   if (me && me.status === 'approved' && !editingApplication) {
     const productStatus = (product) => (!product.is_active && product.status !== 'draft' ? 'hidden' : product.status)
-    const PRODUCT_TABS = [['all', 'All'], ['approved', 'Live'], ['pending', 'Pending review'], ['draft', 'Incomplete'], ['rejected', 'Rejected'], ['hidden', 'Hidden']]
-    const tabCount = (tab) => (tab === 'all' ? products.length : products.filter((p) => productStatus(p) === tab).length)
+    // Live physical products with nothing left to sell (all variations at 0).
+    const isOutOfStock = (p) => p.status === 'approved' && p.is_active && p.product_type !== 'digital'
+      && ((p.variants ?? []).filter((v) => v.is_active !== false).length
+        ? p.variants.filter((v) => v.is_active !== false).every((v) => (v.inventory_quantity ?? 0) <= 0)
+        : (p.inventory_quantity ?? 0) <= 0)
+    const inTab = (p, tab) => (tab === 'all' ? true : tab === 'oos' ? isOutOfStock(p) : productStatus(p) === tab)
+    const PRODUCT_TABS = [['all', 'All'], ['approved', 'Live'], ['oos', 'Out of stock'], ['pending', 'Pending review'], ['draft', 'Incomplete'], ['rejected', 'Rejected'], ['hidden', 'Hidden']]
+    const tabCount = (tab) => products.filter((p) => inTab(p, tab)).length
+    const outOfStockCount = tabCount('oos')
     const needle = productSearch.trim().toLowerCase()
     const visibleProducts = products
-      .filter((p) => productTab === 'all' || productStatus(p) === productTab)
+      .filter((p) => inTab(p, productTab))
       .filter((p) => !needle || p.name.toLowerCase().includes(needle) || (p.sku ?? '').toLowerCase().includes(needle) || (p.variants ?? []).some((v) => (v.sku ?? '').toLowerCase().includes(needle)))
     const rejectedCount = tabCount('rejected')
     const pendingCount = tabCount('pending')
@@ -894,6 +901,7 @@ export default function Seller({ token, onSignOut }) {
           </form>
           <div className="sc-top-right">
             <button type="button" className="sc-top-btn" onClick={() => { go('policies'); setOpenGroups((g) => ({ ...g, account: true })) }}>Help</button>
+            {outOfStockCount > 0 && <button type="button" className="sc-top-btn sc-top-warn" title="Live products buyers can't order — add stock or deactivate them" onClick={() => go('products', 'oos')}>⚠ Out of stock<span className="sc-badge">{outOfStockCount}</span></button>}
             <button type="button" className="sc-top-btn" onClick={() => go('messages')}>Messages{unreadThreads > 0 && <span className="sc-badge">{unreadThreads}</span>}</button>
             <button type="button" className="sc-top-btn" title={soundMuted ? 'Message sound is off — click to turn on' : 'Message sound is on — click to mute'}
               onClick={() => setSoundMuted((m) => { const next = !m; try { localStorage.setItem('nextech_seller_sound_muted', next ? '1' : '0') } catch { /* ignore */ } return next })}>

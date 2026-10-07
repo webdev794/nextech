@@ -22,6 +22,11 @@ class Purchasable
     {
         $categoryActive = (bool) $product->category?->is_active;
         $baseActive = $product->is_active && $categoryActive && ($variant ? $variant->is_active : true) && ! $product->hiddenFromShoppers();
+        // A seller product with variations (size, colour…) is bought as one of
+        // them — never as the bare product, whose own stock count isn't used.
+        if (! $variant && $product->shop_id && ! empty($product->variation_theme) && $product->variants()->where('is_active', true)->exists()) {
+            $baseActive = false;
+        }
 
         $availability = $product->availabilityAt($storeId, $variant);
 

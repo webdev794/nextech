@@ -1458,11 +1458,14 @@ export default function Storefront() {
   function variantView(product) {
     const variants = product.variants ?? []
     const hasVariants = variants.length > 0
+    // A seller's variations (size, colour…) are the only choices; the bare
+    // product (with its own stock) is only an option for NexTech's pack products.
+    const sellerVariations = hasVariants && (product.variation_theme ?? []).length > 0
     const options = hasVariants
-      ? [{ id: '', label: product.name, price_cents: product.price_cents, compare_at_price_cents: product.compare_at_price_cents, inventory_quantity: product.inventory_quantity, image_url: product.image_url }, ...variants]
+      ? [...(sellerVariations ? [] : [{ id: '', label: product.name, price_cents: product.price_cents, compare_at_price_cents: product.compare_at_price_cents, inventory_quantity: product.inventory_quantity, image_url: product.image_url }]), ...variants]
       : []
     const chosen = hasVariants
-      ? (options.find((o) => String(o.id) === String(pickedVariant[product.id] ?? '')) ?? options[0])
+      ? (options.find((o) => String(o.id) === String(pickedVariant[product.id] ?? '')) ?? options.find((o) => (o.inventory_quantity ?? 0) > 0) ?? options[0])
       : null
     const variant = chosen && chosen.id !== '' ? chosen : null
     const unitPrice = chosen ? chosen.price_cents : product.price_cents
