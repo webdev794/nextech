@@ -1209,6 +1209,7 @@ export default function Admin({ token, onClose }) {
       menu_placements: Array.isArray(page.menu_placements) ? page.menu_placements : [],
       show_in_footer: page.show_in_footer,
       is_published: page.is_published, sort_order: page.sort_order ?? 0,
+      acceptance_for: page.acceptance_for ?? '',
     })
     scrollAdminTop()
   }
@@ -1224,7 +1225,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, ...rest } = pageForm
-    const payload = { ...rest, slug: rest.slug.trim(), parent_slug: (rest.parent_slug ?? '').trim() || null, sort_order: Number(rest.sort_order) || 0 }
+    const payload = { ...rest, slug: rest.slug.trim(), parent_slug: (rest.parent_slug ?? '').trim() || null, sort_order: Number(rest.sort_order) || 0, acceptance_for: rest.acceptance_for || null }
     try {
       const response = await fetch(`${API_URL}/admin/pages${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
       const data = await readJson(response)
@@ -2072,6 +2073,18 @@ Reason:`, '')
     const items = Object.entries(picked).map(([key, note]) => ({ key, note }))
     if (items.length === 0 && !reason.trim()) return
     if (await sellerAction(seller, 'request-changes', { items, reason: reason.trim() || null })) setChangeRequest(null)
+  }
+
+  // Stop a seller's international selling, or let them sell abroad again.
+  async function intlAction(seller, decision) {
+    const note = decision === 'revoke' ? window.prompt('Why are you stopping their international selling? (sent to the seller)') : null
+    if (decision === 'revoke' && !note) return
+    setBusyId(seller.id)
+    try {
+      const data = await fetchJson(`${API_URL}/admin/sellers/${seller.id}/international`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision, note }) })
+      setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, intl_approval: data.data.intl_approval } : cur))
+      setMessage(decision === 'revoke' ? 'International selling stopped.' : 'International selling restored.')
+    } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
   // KYC documents live on the private disk, gated by auth — not a plain <a
@@ -3715,6 +3728,15 @@ Reason:`, '')
                         </label>
                       ))}
                     </div>
+                    {pageForm.menu_placements.includes('seller_footer') && (
+                      <label>Sellers must read, accept and sign this page
+                        <select value={pageForm.acceptance_for ?? ''} onChange={(event) => setPageForm({ ...pageForm, acceptance_for: event.target.value })}>
+                          <option value="">No — for information</option>
+                          <option value="selling">Yes — before they can list or update products</option>
+                          <option value="international">Yes — before they can sell abroad</option>
+                        </select>
+                      </label>
+                    )}
                     {pageForm.menu_placements.includes('main_footer') && (
                       <label>Footer column
                         <select value={pageForm.footer_group} onChange={(event) => setPageForm({ ...pageForm, footer_group: event.target.value })}>
@@ -4265,6 +4287,11 @@ Reason:`, '')
                 <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
               </div>
               <div className="admin-form">
+                <h4>Selling abroad</h4>
+                <label className="admin-check"><input type="checkbox" checked={settings.intl_requires_approval !== false} onChange={(event) => saveSetting({ intl_requires_approval: event.target.checked })} /> Sellers must sign export terms before selling abroad</label>
+                <p className="muted">The seller gives their export ID (in India the IEC, with its certificate), accepts the pages you mark &ldquo;before they can sell abroad&rdquo; (Pages → Seller Center footer) and signs a declaration that they ship only legal goods and declare them truthfully. Signing approves it straight away; you can stop any seller in Sellers → View. Sellers already shipping abroad when you switch this on keep doing so.</p>
+              </div>
+              <div className="admin-form">
                 <h4>Chasing sellers for order updates</h4>
                 <div className="admin-form-grid">
                   {[['pack_hours', 'Remind if a new order isn’t packed after (hours)', 168], ['repeat_hours', 'Repeat the reminder every (hours) until it’s updated', 72], ['escalate_hours', 'Alert me when an order is still not shipped this long after its ship-by date (hours)', 168]].map(([key, label, max]) => (
@@ -4717,6 +4744,26 @@ Reason:`, '')
                       <div><b>{money(d.min_payout_cents ?? 0, d.currency)}</b><span>Minimum payout</span></div>
                       <div><b>{d.shop.is_active ? 'Live' : 'Hidden'}</b><span>Shop</span></div>
                     </div>
+                  )}
+
+                  {d.shop && (d.intl_approval || (d.policies ?? []).length > 0) && (
+                    <section className="seller-card">
+                      {d.intl_approval && <>
+                        <h4>International selling · <span className={`pill pill-${d.intl_approval.status === 'approved' ? 'approved' : 'rejected'}`}>{d.intl_approval.status === 'approved' ? 'Allowed' : 'Stopped'}</span></h4>
+                        <p className="muted">{d.intl_rules?.id_label ?? 'Export ID'}: <b>{d.intl_approval.export_id ?? '—'}</b>{d.intl_approval.document_path && <> · <button type="button" className="link" onClick={() => viewKycDocument(d.intl_approval.document_path)}>{d.intl_rules?.document_label ?? 'Document'}</button></>}</p>
+                        {d.intl_approval.signed_name && <p className="muted">Declaration signed by <b>{d.intl_approval.signed_name}</b> on {new Date(d.intl_approval.signed_at).toLocaleString()}{d.intl_approval.ip ? ` · IP ${d.intl_approval.ip}` : ''}</p>}
+                        {d.intl_approval.reason && <p className="muted">Note: {d.intl_approval.reason}</p>}
+                        <div className="admin-form-actions">{d.intl_approval.status === 'approved'
+                          ? <button type="button" className="act danger" disabled={busyId === d.id} onClick={() => intlAction(d, 'revoke')}>Stop international selling</button>
+                          : <button type="button" className="act" disabled={busyId === d.id} onClick={() => intlAction(d, 'reinstate')}>Allow again</button>}</div>
+                      </>}
+                      {(d.policies ?? []).length > 0 && <>
+                        <h4>Policies signed</h4>
+                        <ul className="admin-plain-list">
+                          {d.policies.map((p) => <li key={p.slug}>{p.accepted ? '✓' : '✗'} {p.title} <span className="muted">({p.for === 'international' ? 'to sell abroad' : 'to sell'}) — {p.accepted ? `signed by ${p.accepted.signed_name}, ${new Date(p.accepted.accepted_at).toLocaleString()}` : p.outdated ? 'accepted an older version' : 'not accepted yet'}</span></li>)}
+                        </ul>
+                      </>}
+                    </section>
                   )}
 
                   <div className="seller-page-grid">

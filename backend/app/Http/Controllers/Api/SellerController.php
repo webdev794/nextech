@@ -173,6 +173,8 @@ class SellerController extends Controller
             // file, so this checks ledger history, not the current balance.
             $seller->has_sales = $seller->shop->ledgerEntries()->exists();
             $seller->min_payout_cents = SellerPayouts::minFor($seller->shop->market, $seller->payout_method);
+            // Policies to read and sign (to sell at all, or to sell abroad).
+            $seller->policies = \App\Support\SellerPolicies::status($seller);
             $seller->max_payout_cents = SellerLedger::maxPayoutCents($seller->shop->market);
             // Daily cap on all payouts sent (a big balance may be paid over several days) and the bank-rules note.
             $seller->daily_payout_cap_cents = SellerLedger::dailyPayoutCapCents($seller->shop->market);

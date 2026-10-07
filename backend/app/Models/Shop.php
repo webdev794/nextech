@@ -34,6 +34,7 @@ class Shop extends Model
         'label_template_id',
         'local_delivery',
         'is_house',
+        'intl_approval',
     ];
 
     protected function casts(): array
@@ -51,6 +52,7 @@ class Shop extends Model
             'intl_shipping' => 'array',
             'local_delivery' => 'array',
             'is_house' => 'boolean',
+            'intl_approval' => 'array',
             'free_shipping_accepted_at' => 'datetime',
         ];
     }
@@ -130,7 +132,7 @@ class Shop extends Model
      */
     public function shipsTo(string $market): ?array
     {
-        if ($this->fulfillment_mode !== 'self' || strtoupper($market) === $this->market) {
+        if ($this->fulfillment_mode !== 'self' || strtoupper($market) === $this->market || ! \App\Support\SellerIntl::allowed($this)) {
             return null;
         }
         $terms = ((array) $this->intl_shipping)[strtoupper($market)] ?? null;

@@ -84,6 +84,8 @@ class SellerShippingController extends Controller
             abort_if($intl->keys()->diff($allowed)->isNotEmpty(), 422, 'You can only ship to the countries '.\App\Support\Branding::name().' sells in.');
             if ($intl->isNotEmpty()) {
                 abort_if($block = $this->intlBlocked($shop), 422, (string) $block);
+                abort_unless(\App\Support\SellerIntl::allowed($shop), 422, 'Apply for international selling first — '.\App\Support\Branding::name().' approves it before you can ship abroad.');
+                \App\Support\SellerPolicies::assertAccepted($shop->seller, 'international');
                 abort_unless($shop->fulfillment_mode === 'self' || ($data['fulfillment_mode'] ?? null) === 'self', 422, 'Shipping abroad needs "I ship with my own courier" — switch to it first.');
             }
             $shop->intl_shipping = $intl->isEmpty() ? null : $intl->map(fn ($t) => [
@@ -115,6 +117,47 @@ class SellerShippingController extends Controller
             $shop->fulfillment_mode = $data['fulfillment_mode'];
         }
         $shop->save();
+
+        return response()->json(['data' => $this->payload($shop->fresh())]);
+    }
+
+    /**
+     * Apply to sell abroad: export ID, export document and a signed
+     * declaration (typed name + date). Admin approves it in Sellers.
+     */
+    public function applyInternational(Request $request): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless(\App\Support\SellerIntl::requiresApproval() && ! $shop->is_house, 422, 'No approval is needed — set up the countries you ship to.');
+        abort_if(\App\Support\SellerIntl::status($shop) === 'approved', 422, 'You\'re already approved to sell abroad.');
+        abort_if($block = $this->intlBlocked($shop), 422, (string) $block);
+        \App\Support\SellerPolicies::assertAccepted($shop->seller, 'international');
+        $rules = \App\Support\SellerIntl::rules($shop->market);
+        $userId = $request->user()->id;
+        $data = $request->validate([
+            'export_id' => array_values(array_filter(['required', 'string', 'max:40', $rules['id_regex'] ? 'regex:/'.$rules['id_regex'].'/i' : null])),
+            'document_path' => [$rules['document_required'] ? 'required' : 'nullable', 'string', 'max:255', 'starts_with:kyc/'.$userId.'/'],
+            'agree' => ['required', 'accepted'],
+            'signed_name' => ['required', 'string', 'min:3', 'max:160'],
+        ], ['export_id.regex' => 'That doesn\'t look like a valid '.$rules['id_label'].'.', 'agree.accepted' => 'Tick that you accept the declaration.']);
+
+        abort_if(\App\Support\SellerIntl::status($shop) === 'revoked', 422, \App\Support\Branding::name().' stopped your international selling — contact us in Messages.');
+        $shop->intl_approval = [
+            // The seller's signature approves it — no admin step.
+            'status' => 'approved',
+            'export_id' => strtoupper(trim($data['export_id'])),
+            'document_path' => $data['document_path'] ?? null,
+            'declaration' => \App\Support\SellerIntl::declaration(Country::find($shop->market)['name'] ?? $shop->market),
+            'signed_name' => trim($data['signed_name']),
+            'signed_at' => now()->toIso8601String(),
+            'ip' => $request->ip(),
+        ];
+        $shop->save();
+        try {
+            \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminSellerSubmitted($shop->seller, 'international selling terms (approved on signing — you can stop it in Sellers)'));
+        } catch (\Throwable $e) {
+            report($e);
+        }
 
         return response()->json(['data' => $this->payload($shop->fresh())]);
     }
@@ -342,6 +385,12 @@ class SellerShippingController extends Controller
             'intl_shipping' => (object) ((array) $shop->intl_shipping),
             'intl_destinations' => $this->intlDestinations($shop),
             'intl_blocked' => $this->intlBlocked($shop),
+            // Approval to sell abroad: the seller's application and admin's decision.
+            'intl_requires_approval' => \App\Support\SellerIntl::requiresApproval() && ! $shop->is_house,
+            'intl_approval' => $shop->intl_approval ? collect($shop->intl_approval)->except(['ip'])->all() : null,
+            'intl_rules' => \App\Support\SellerIntl::rules($shop->market),
+            'intl_declaration' => \App\Support\SellerIntl::declaration(Country::find($shop->market)['name'] ?? $shop->market),
+            'intl_policies' => array_values(array_filter(\App\Support\SellerPolicies::status($shop->seller), fn ($p) => $p['for'] === 'international')),
             'local_delivery_offered' => SellerShipping::localDeliveryOffered(),
             'local_max_km' => SellerShipping::localMaxKm(),
             'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(['lat', 'lng'])->all() : null,

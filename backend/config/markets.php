@@ -35,6 +35,8 @@ return [
                 'digital' => 'Digital downloads (software, games, e-books)',
                 'other' => 'Other — I set the tax code on each product',
             ],
+            // Selling abroad (App\Support\SellerIntl): US exports need no general licence; the EIN identifies the exporter.
+            'export' => ['id_label' => 'EIN (exporter ID)', 'id_regex' => '^\d{2}-?\d{7}$', 'document_label' => 'IRS EIN letter or export registration (optional)', 'document_required' => false],
             'bank' => ['code_label' => 'Routing number (ABA)', 'code_regex' => '^\d{9}$', 'account_label' => 'Account number', 'account_regex' => '^\d{4,17}$'],
             'corporate_documents' => [
                 'articles' => 'Articles of incorporation / organization',
@@ -138,6 +140,8 @@ return [
                 '9973' => 'SAC 9973 — Digital downloads (software, games, e-books)',
                 'other' => 'Other — I set the HSN on each product',
             ],
+            // Selling abroad: India requires an IEC (Importer-Exporter Code, DGFT) to export, including e-commerce exports.
+            'export' => ['id_label' => 'IEC (Importer-Exporter Code)', 'id_regex' => '^[A-Z0-9]{10}$', 'document_label' => 'IEC certificate (DGFT)', 'document_required' => true],
             'bank' => ['code_label' => 'IFSC', 'code_regex' => '^[A-Z]{4}0[A-Z0-9]{6}$', 'account_label' => 'Account number', 'account_regex' => '^\d{9,18}$'],
             'corporate_documents' => [
                 'incorporation' => 'Certificate of incorporation',

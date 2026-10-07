@@ -343,6 +343,27 @@ class AdminSellerController extends Controller
      * information, bank account). A rejection needs a reason, which the
      * seller sees on the task and gets as a message.
      */
+    /** Stop a seller's international selling (rules broken), or let them sell abroad again. */
+    public function reviewInternational(Request $request, Seller $seller): JsonResponse
+    {
+        $shop = $seller->shop;
+        abort_unless($shop && $shop->intl_approval, 422, 'This seller hasn\'t applied to sell abroad.');
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['revoke', 'reinstate'])],
+            'note' => ['required_if:decision,revoke', 'nullable', 'string', 'max:500'],
+        ], ['note.required_if' => 'Say why, so the seller knows.']);
+
+        $status = $data['decision'] === 'revoke' ? 'revoked' : 'approved';
+        $shop->intl_approval = ['status' => $status, 'reason' => $data['note'] ?? null, 'reviewed_at' => now()->toIso8601String(), 'reviewed_by' => $request->user()->id] + (array) $shop->intl_approval;
+        $shop->save();
+        SellerNotify::send($seller, $request->user(), $status === 'approved' ? 'You can sell internationally again' : 'International selling stopped',
+            $status === 'approved'
+                ? 'You can sell abroad again. Your countries, fees and delivery times are in Shipping settings.'
+                : 'Your international selling has been stopped: '.$data['note'].' Your products are no longer shown to buyers abroad. Contact us in Messages.');
+
+        return response()->json(['data' => ['intl_approval' => $shop->intl_approval]]);
+    }
+
     public function reviewOnboarding(Request $request, Seller $seller, string $task): JsonResponse
     {
         $data = $request->validate([
@@ -547,6 +568,11 @@ class AdminSellerController extends Controller
                 ? $shop->ledgerEntries()->latest()->limit(20)->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at'])
                 : [];
             $row['min_payout_cents'] = \App\Support\SellerPayouts::minFor($shop?->market, $seller->payout_method);
+            // Selling abroad (application + decision) and the policies they've signed.
+            $row['intl_approval'] = $shop?->intl_approval;
+            $row['intl_rules'] = \App\Support\SellerIntl::rules($shop?->market);
+            $row['policies'] = \App\Support\SellerPolicies::status($seller);
+            $row['policy_history'] = \App\Models\PolicyAcceptance::where('seller_id', $seller->id)->with('page:id,title,slug')->latest('accepted_at')->limit(30)->get(['id', 'page_id', 'signed_name', 'ip', 'accepted_at']);
             $row['max_payout_cents'] = SellerLedger::maxPayoutCents($shop?->market);
             $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents($shop?->market);
             $row['currency'] = Market::currency($shop?->market);

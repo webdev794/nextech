@@ -101,6 +101,7 @@ class SellerProductController extends Controller
             abort_if($submit, 422, 'Save the digital product as a draft first, upload its download file, then submit it for review.');
         }
         if ($submit) {
+            \App\Support\SellerPolicies::assertAccepted($shop->seller);
             $this->assertListable($data, $variants ?? [], $images ?? [], $shop);
         }
 
@@ -233,6 +234,7 @@ class SellerProductController extends Controller
             abort_if($submit && ! $product->files()->exists(), 422, 'Upload the download file (or add a download link) before submitting.');
         }
         if ($submit) {
+            \App\Support\SellerPolicies::assertAccepted($shop->seller);
             $merged = $data + $product->only(['name', 'category_id', 'description', 'price_cents', 'country_of_origin', 'handling_days', 'product_details', 'variation_theme', 'size_chart', 'product_type']);
             $liveVariants = $variants !== null
                 ? array_values(array_filter($variants, fn ($v) => empty($v['_delete'])))

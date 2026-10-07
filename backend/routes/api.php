@@ -214,6 +214,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
     Route::get('/sellers/{seller}/chat', [AdminSellerController::class, 'chat']);
     Route::post('/sellers/{seller}/chat', [AdminSellerController::class, 'chatMessage']);
+    Route::post('/sellers/{seller}/international', [AdminSellerController::class, 'reviewInternational']);
     Route::get('/sellers/{seller}/ledger', [AdminSellerController::class, 'ledger']);
     Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
     Route::post('/sellers/{seller}/requirements', [AdminSellerController::class, 'requirements']);
@@ -311,6 +312,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/seller/apply', [SellerController::class, 'apply']);
     Route::get('/seller/me', [SellerController::class, 'me']);
     Route::post('/seller/kyc-document', [SellerKycController::class, 'store']);
+    Route::get('/seller/policies', [\App\Http\Controllers\Api\SellerPolicyController::class, 'index']);
+    Route::post('/seller/policies/{slug}/accept', [\App\Http\Controllers\Api\SellerPolicyController::class, 'accept']);
+    Route::post('/seller/shipping/international-application', [\App\Http\Controllers\Api\SellerShippingController::class, 'applyInternational']);
     Route::get('/seller/kyc-document/{path}', [SellerKycController::class, 'show'])->where('path', '.*');
     // Shop logo/banner: a first-time applicant has no Seller row yet, so this
     // can't be `seller`-gated. storeShopAsset() forces folder=shops so this

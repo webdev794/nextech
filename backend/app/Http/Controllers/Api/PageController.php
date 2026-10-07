@@ -16,7 +16,7 @@ class PageController extends Controller
     {
         return response()->json([
             'data' => Page::query()->published()->ordered()
-                ->get(['slug', 'parent_slug', 'title', 'show_in_footer', 'footer_group', 'menu_placements', 'sort_order']),
+                ->get(['slug', 'parent_slug', 'title', 'show_in_footer', 'footer_group', 'menu_placements', 'sort_order', 'acceptance_for']),
         ]);
     }
 
@@ -31,6 +31,8 @@ class PageController extends Controller
                 ? Page::query()->published()->where('slug', $page->parent_slug)->first(['slug', 'title']) ?? ['slug' => null, 'title' => Str::headline($page->parent_slug)]
                 : null,
             'banner_image' => $page->banner_image,
+            // Sellers must accept it: to sell at all ('selling') or to sell abroad ('international').
+            'acceptance_for' => $page->acceptance_for,
             'content' => (string) $page->content,
             'sections' => is_array($page->sections) ? array_values($page->sections) : [],
             'updated_at' => $page->updated_at,

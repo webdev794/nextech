@@ -228,6 +228,8 @@ class AdminSettingController extends Controller
                 'seller_local_delivery' => ['sometimes', Rule::in(['available', 'hidden'])],
                 // NexTech stock: own riders within each store's radius (courier beyond), or courier for everything.
                 'nextech_own_delivery' => ['sometimes', Rule::in(['on', 'off'])],
+                // Sellers need admin approval (export ID, document, signed declaration) to ship abroad.
+                'intl_requires_approval' => ['sometimes', 'boolean'],
                 'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:100'],
                 'seller_update_rules' => ['sometimes', 'array'],
                 'seller_update_rules.pack_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
@@ -354,6 +356,15 @@ class AdminSettingController extends Controller
         if (($validated['nextech_own_delivery'] ?? null) === 'on' && Setting::get('nextech_own_delivery', 'on') === 'off'
             && ! (\App\Models\Store::query()->where('is_active', true)->exists() && \App\Models\User::query()->where('is_rider', true)->exists())) {
             abort(422, 'Add an active store and at least one rider first (Stores, Riders).');
+        }
+        if (array_key_exists('intl_requires_approval', $validated)) {
+            // Turning it on: sellers already shipping abroad keep doing so (marked approved).
+            if ($validated['intl_requires_approval'] && ! \App\Support\SellerIntl::requiresApproval()) {
+                \App\Models\Shop::query()->whereNotNull('intl_shipping')->get()
+                    ->reject(fn ($shop) => \App\Support\SellerIntl::status($shop) === 'approved')
+                    ->each(fn ($shop) => $shop->update(['intl_approval' => ['status' => 'approved', 'reason' => 'Already selling abroad when approval was switched on', 'reviewed_at' => now()->toIso8601String()] + (array) $shop->intl_approval]));
+            }
+            Setting::put('intl_requires_approval', (bool) $validated['intl_requires_approval']);
         }
         if (array_key_exists('nextech_own_delivery', $validated)) {
             Setting::put('nextech_own_delivery', $validated['nextech_own_delivery']);
@@ -571,6 +582,7 @@ class AdminSettingController extends Controller
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'seller_local_delivery' => SellerShipping::localDeliveryOffered() ? 'available' : 'hidden',
             'nextech_own_delivery' => Setting::get('nextech_own_delivery', 'on') === 'off' ? 'off' : 'on',
+            'intl_requires_approval' => \App\Support\SellerIntl::requiresApproval(),
             'seller_local_max_km' => SellerShipping::localMaxKm(),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
             // Couriers per country, for entering a hand-booked courier on NexTech orders.

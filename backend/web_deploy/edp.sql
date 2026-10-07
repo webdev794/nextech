@@ -802,7 +802,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (154, '2026_10_07_000061_add_local_delivery_and_other_courier', 89),
 (155, '2026_10_07_000062_add_seller_reminders_to_order_shop_shipping', 90),
 (156, '2026_10_07_000063_add_is_house_to_shops', 91),
-(157, '2026_10_07_000064_add_tracking_url_to_shipments', 92);
+(157, '2026_10_07_000064_add_tracking_url_to_shipments', 92),
+(158, '2026_10_07_000065_add_intl_approval_and_policy_acceptances', 93);
 
 -- --------------------------------------------------------
 
@@ -1080,7 +1081,8 @@ CREATE TABLE `pages` (
   `menu_placements` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`menu_placements`)),
   `sort_order` int(10) UNSIGNED NOT NULL DEFAULT 0,
   `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `acceptance_for` varchar(16) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -1312,6 +1314,24 @@ INSERT INTO `personal_access_tokens` (`id`, `tokenable_type`, `tokenable_id`, `n
 (358, 'App\\Models\\User', 41, 'customer', '326fc9d94169ea6f63a15e6e4fa8f8d97dc192afea421cfade8ecc5cc053fd59', '[\"*\"]', '2026-10-04 23:07:17', NULL, '2026-10-04 23:07:05', '2026-10-04 23:07:17'),
 (378, 'App\\Models\\User', 41, 'customer', 'bf64ef857d72ab17ac0a731f61a7f602e3ef4a484427329d4bc3e70c14450c08', '[\"*\"]', '2026-10-06 06:56:17', NULL, '2026-10-05 00:53:46', '2026-10-06 06:56:17'),
 (415, 'App\\Models\\User', 15, 'customer', 'd3e7dc21bc9597d66239c6446ce328a07966579300d16a4b6076aef57ecbbe40', '[\"*\"]', '2026-10-06 06:56:17', NULL, '2026-10-06 01:07:28', '2026-10-06 06:56:17');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `policy_acceptances`
+--
+
+CREATE TABLE `policy_acceptances` (
+  `id` bigint(20) UNSIGNED NOT NULL,
+  `seller_id` bigint(20) UNSIGNED NOT NULL,
+  `page_id` bigint(20) UNSIGNED NOT NULL,
+  `page_version` varchar(40) NOT NULL,
+  `signed_name` varchar(160) NOT NULL,
+  `ip` varchar(45) DEFAULT NULL,
+  `accepted_at` timestamp NOT NULL,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
 
@@ -2246,7 +2266,8 @@ CREATE TABLE `shops` (
   `updated_at` timestamp NULL DEFAULT NULL,
   `label_template_id` bigint(20) UNSIGNED DEFAULT NULL,
   `local_delivery` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`local_delivery`)),
-  `is_house` tinyint(1) NOT NULL DEFAULT 0
+  `is_house` tinyint(1) NOT NULL DEFAULT 0,
+  `intl_approval` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`intl_approval`))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -2847,6 +2868,14 @@ ALTER TABLE `password_reset_tokens`
   ADD PRIMARY KEY (`email`);
 
 --
+-- Indexes for table `policy_acceptances`
+--
+ALTER TABLE `policy_acceptances`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `policy_acceptances_page_id_foreign` (`page_id`),
+  ADD KEY `policy_acceptances_seller_id_page_id_index` (`seller_id`,`page_id`);
+
+--
 -- Indexes for table `payout_requests`
 --
 ALTER TABLE `payout_requests`
@@ -3276,7 +3305,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=158;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=159;
 
 --
 -- AUTO_INCREMENT for table `orders`
@@ -3325,6 +3354,12 @@ ALTER TABLE `order_shop_shipping`
 --
 ALTER TABLE `pages`
   MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=47;
+
+--
+-- AUTO_INCREMENT for table `policy_acceptances`
+--
+ALTER TABLE `policy_acceptances`
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `payout_requests`
@@ -3670,6 +3705,13 @@ ALTER TABLE `order_refunds`
 ALTER TABLE `order_shop_shipping`
   ADD CONSTRAINT `order_shop_shipping_order_id_foreign` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE,
   ADD CONSTRAINT `order_shop_shipping_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `policy_acceptances`
+--
+ALTER TABLE `policy_acceptances`
+  ADD CONSTRAINT `policy_acceptances_page_id_foreign` FOREIGN KEY (`page_id`) REFERENCES `pages` (`id`) ON DELETE CASCADE,
+  ADD CONSTRAINT `policy_acceptances_seller_id_foreign` FOREIGN KEY (`seller_id`) REFERENCES `sellers` (`id`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `payout_requests`

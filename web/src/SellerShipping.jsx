@@ -44,7 +44,55 @@ const EMPTY_GROUP = { regions: [], address_types: ['standard'], transit_min_days
 // Buyers there see the products in their own currency; the seller is paid
 // their listed price plus the shipping fee.
 // ---------------------------------------------------------------------------
-function IntlShipping({ data, patch }) {
+// Selling abroad: export ID (+ document where needed), the international
+// policies and a signed declaration. Signing approves it straight away.
+function IntlApply({ data, headers, onDone }) {
+  const rules = data.intl_rules ?? {}
+  const [form, setForm] = useState({ export_id: data.intl_approval?.export_id ?? '', document_path: data.intl_approval?.document_path ?? '', docName: '', agree: false, signed_name: '' })
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  const unsigned = (data.intl_policies ?? []).filter((p) => !p.accepted)
+
+  async function upload(file) {
+    if (!file) return
+    setBusy(true); setMsg('')
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      body.append('kind', 'export_document')
+      const response = await fetch(`${API_URL}/seller/kyc-document`, { method: 'POST', headers: headers(), body })
+      const d = await readJson(response)
+      if (!response.ok) throw new Error(d.message ?? Object.values(d.errors ?? {})[0]?.[0] ?? 'Could not upload the document.')
+      setForm((f) => ({ ...f, document_path: d.data.path, docName: file.name }))
+    } catch (e) { setMsg(e.message) } finally { setBusy(false) }
+  }
+
+  async function submit(event) {
+    event.preventDefault()
+    setMsg('')
+    try {
+      const d = await send(headers, '/seller/shipping/international-application', 'POST', { export_id: form.export_id, document_path: form.document_path || null, agree: form.agree, signed_name: form.signed_name })
+      onDone(d.data)
+    } catch (e) { setMsg(e.message) }
+  }
+
+  return (
+    <form onSubmit={submit} className="ss-intl">
+      {data.intl_approval?.status === 'revoked' && <p className="ss-warn">{brandName()} stopped your international selling{data.intl_approval.reason ? `: ${data.intl_approval.reason}` : ''}. Contact us in Messages.</p>}
+      {unsigned.length > 0 && <p className="ss-warn">First read and accept: {unsigned.map((p) => <a key={p.slug} href={`#/p/${p.slug}`} style={{ marginRight: 8 }}>{p.title}</a>)}</p>}
+      <label>{rules.id_label}<input required maxLength="40" value={form.export_id} onChange={(e) => setForm({ ...form, export_id: e.target.value })} /></label>
+      <label>{rules.document_label}{!rules.document_required && <small className="sc-muted"> optional</small>}<input type="file" accept=".pdf,.jpg,.jpeg,.png" required={rules.document_required && !form.document_path} disabled={busy} onChange={(e) => upload(e.target.files?.[0])} />{form.document_path && <small className="sc-muted">Uploaded{form.docName ? `: ${form.docName}` : ''}</small>}</label>
+      <div className="sc-card"><p className="sc-muted">{data.intl_declaration}</p></div>
+      <label className="sc-check"><input type="checkbox" checked={form.agree} onChange={(e) => setForm({ ...form, agree: e.target.checked })} /> I accept this declaration.</label>
+      <label>Your full name (signature)<input required minLength="3" maxLength="160" value={form.signed_name} onChange={(e) => setForm({ ...form, signed_name: e.target.value })} /></label>
+      <p className="sc-muted">Date: {new Date().toLocaleDateString()} — signing approves international selling straight away.</p>
+      {msg && <p className="ss-warn">{msg}</p>}
+      <div><button type="submit" className="sc-primary" disabled={busy || unsigned.length > 0 || !form.agree || form.signed_name.trim().length < 3 || data.intl_approval?.status === 'revoked'}>Sign and start selling abroad</button></div>
+    </form>
+  )
+}
+
+function IntlShipping({ data, patch, headers, onData }) {
   const fromData = useCallback(() => Object.fromEntries((data.intl_destinations ?? []).map((d) => {
     const t = data.intl_shipping?.[d.code]
     return [d.code, { on: !!t, fee: t ? (t.fee_cents / 100).toFixed(2) : '', paperwork: t?.paperwork_fee_cents ? (t.paperwork_fee_cents / 100).toFixed(2) : '', min: t?.transit_min_days ?? 7, max: t?.transit_max_days ?? 14 }]
@@ -64,7 +112,7 @@ function IntlShipping({ data, patch }) {
     <div className="sc-card">
       <h2 className="sc-h2">International shipping</h2>
       <p className="sc-muted">Sell to buyers in other countries {brandName()} sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork (add a customs / paperwork fee per country if you charge one), and enter the tracking number as usual. Money from orders abroad is held until delivery plus the return window or the product&rsquo;s warranty, whichever is longer, before you can request it. Buyers pay any import duties on delivery.</p>
-      {data.intl_blocked ? <p className="ss-warn">{data.intl_blocked}</p> : !ownCourier ? <p className="ss-warn">Shipping abroad needs &ldquo;I ship with my own courier&rdquo; — choose it above first.</p> : (
+      {data.intl_blocked ? <p className="ss-warn">{data.intl_blocked}</p> : data.intl_requires_approval && data.intl_approval?.status !== 'approved' ? <IntlApply data={data} headers={headers} onDone={onData} /> : !ownCourier ? <p className="ss-warn">Shipping abroad needs &ldquo;I ship with my own courier&rdquo; — choose it above first.</p> : (
         <form onSubmit={save} className="ss-intl">
           {data.intl_destinations.map((d) => {
             const v = form[d.code] ?? { on: false, fee: '', min: 7, max: 14 }
@@ -274,7 +322,7 @@ export function ShippingSettings({ headers, onChanged }) {
 
           <LocalDelivery key={JSON.stringify(data.local_delivery ?? {}) + data.fulfillment_mode + (data.addresses?.length ?? 0)} data={data} patch={patch} />
 
-          <IntlShipping key={JSON.stringify(data.intl_shipping ?? {}) + data.fulfillment_mode} data={data} patch={patch} />
+          <IntlShipping key={JSON.stringify(data.intl_shipping ?? {}) + data.fulfillment_mode + (data.intl_approval?.status ?? '')} data={data} patch={patch} headers={headers} onData={setData} />
 
           <div className="sc-card">
             <div className="sc-head"><h2 className="sc-h2">Ship-from addresses</h2><button type="button" className="sc-primary" onClick={() => setAddressForm({ ...EMPTY_ADDRESS, is_default: !data.addresses.length })}>+ Add a new address</button></div>

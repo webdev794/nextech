@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { BrandLogo } from './BrandLogo'
 import { useBranding, brandName } from './useBranding'
 import { mediaUrl } from './mediaUrl'
@@ -156,6 +156,51 @@ const SUPPORT_ISSUE_LABELS = {
   seller_product_issue: 'Product issue', seller_other: 'Other',
 }
 
+// Read to the end, tick, sign with your name: the acceptance is kept with the
+// date and the exact text; a changed policy asks to accept again.
+function PolicyAccept({ page, status, headers, defaultName, onAccepted }) {
+  const endRef = useRef(null)
+  const [read, setRead] = useState(false)
+  const [agree, setAgree] = useState(false)
+  const [name, setName] = useState(defaultName)
+  const [msg, setMsg] = useState('')
+  useEffect(() => {
+    const el = endRef.current
+    if (!el || typeof IntersectionObserver === 'undefined') { Promise.resolve().then(() => setRead(true)); return undefined }
+    const io = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) setRead(true) })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [page.slug])
+
+  if (status?.accepted) {
+    return <div ref={endRef} className="sc-alert ok"><span>✓ Accepted and signed by <b>{status.accepted.signed_name}</b> on {new Date(status.accepted.accepted_at).toLocaleString()}.</span></div>
+  }
+
+  async function accept(event) {
+    event.preventDefault()
+    setMsg('')
+    try {
+      const response = await fetch(`${API_URL}/seller/policies/${page.slug}/accept`, { method: 'POST', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ agree, signed_name: name }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save.')
+      onAccepted(data.data)
+    } catch (e) { setMsg(e.message) }
+  }
+
+  return (
+    <form ref={endRef} className="sc-card seller-policy-accept" onSubmit={accept}>
+      <h2 className="sc-h2">{status?.outdated ? 'This policy has changed — accept the new version' : 'Accept and sign'}</h2>
+      <p className="sc-muted">{page.acceptance_for === 'international' ? 'Needed before you can sell abroad.' : 'Needed before you can list or update products.'} Your name, today&rsquo;s date and this version of the text are kept as your signature.</p>
+      {!read && <p className="sc-muted">Scroll to the end of the policy to accept it.</p>}
+      <label className="sc-check"><input type="checkbox" disabled={!read} checked={agree} onChange={(e) => setAgree(e.target.checked)} /> I have read &ldquo;{page.title}&rdquo; and accept it.</label>
+      <label>Your full name (signature)<input required minLength="3" maxLength="160" disabled={!read} value={name} onChange={(e) => setName(e.target.value)} /></label>
+      <p className="sc-muted">Date: {new Date().toLocaleDateString()}</p>
+      {msg && <p className="sc-alert warn">{msg}</p>}
+      <div><button type="submit" className="sc-primary" disabled={!read || !agree || name.trim().length < 3}>Accept and sign</button></div>
+    </form>
+  )
+}
+
 export default function Seller({ token, onSignOut }) {
   const [countries, setCountries] = useState([])
   const [siteConfig, setSiteConfig] = useState(null)
@@ -213,6 +258,8 @@ export default function Seller({ token, onSignOut }) {
     })
   }, [])
   const [pageView, setPageView] = useState(null) // { slug, title, content } | 'loading' | null
+  // Policies admin requires sellers to read, accept and sign (to sell, or to sell abroad).
+  const [policyStatus, setPolicyStatus] = useState([])
   const [soundMuted, setSoundMuted] = useState(() => { try { return localStorage.getItem('nextech_seller_sound_muted') === '1' } catch { return false } })
   // New orders: polled every 30s. A newer order than the last one seen chimes,
   // shows a browser notification and a banner until the seller opens it.
@@ -696,6 +743,14 @@ export default function Seller({ token, onSignOut }) {
       .catch(() => {})
   }, [me?.status, shopMode, authHeaders, section])
 
+  const loadPolicies = useCallback(() => {
+    if (!token) return
+    fetch(`${API_URL}/seller/policies`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } }).then(readJson)
+      .then((data) => { if (Array.isArray(data?.data)) setPolicyStatus(data.data) })
+      .catch(() => {})
+  }, [token])
+  useEffect(() => { Promise.resolve().then(loadPolicies) }, [loadPolicies, me?.status])
+
   // Seller policy pages (Pages with the "seller_footer" placement), listed under
   // My account > Policies & rules.
   useEffect(() => {
@@ -905,7 +960,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', 'Policies & rules']] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -981,11 +1036,13 @@ export default function Seller({ token, onSignOut }) {
                   {Array.isArray(pageView.sections) && pageView.sections.length > 0
                     ? <div className="page-sections">{pageView.sections.map((section, index) => <PageSection key={index} section={section} />)}</div>
                     : <div className="page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageView.content ?? '') }} />}
+                  {pageView.acceptance_for && <PolicyAccept page={pageView} status={policyStatus.find((p) => p.slug === pageView.slug)} headers={authHeaders} defaultName={me?.contact_name ?? ''} onAccepted={(list) => setPolicyStatus(list)} />}
                 </>}
               </article>
             ) : section === 'home' ? (
               <>
                 <h1 className="sc-title">Welcome back{me.contact_name ? `, ${me.contact_name.split(' ')[0]}` : ''}</h1>
+                {policyStatus.some((p) => !p.accepted && p.for === 'selling') && <div className="sc-alert warn"><span>Before you can list or update products, read and accept: {policyStatus.filter((p) => !p.accepted && p.for === 'selling').map((p, i) => <Fragment key={p.slug}>{i > 0 && ', '}<button type="button" className="sc-link" onClick={() => openPage(p.slug)}>{p.title}{p.outdated ? ' (updated)' : ''}</button></Fragment>)}</span></div>}
                 {!me.shop?.is_active && <div className="sc-alert warn">Your shop is hidden from customers right now. Contact {brandName()} via Messages if you think this is a mistake.</div>}
                 {me.requirements?.onboarding_tasks && <OnboardingTasks headers={authHeaders} go={go} hasProducts={products.length > 0} onAddProduct={newProduct} />}
                 <div className="sc-card">
@@ -1481,10 +1538,10 @@ export default function Seller({ token, onSignOut }) {
                           <li key={pg.slug}>
                             {pg.placeholder
                               ? <span className="sc-policy-parent">{pg.title}</span>
-                              : <button type="button" onClick={() => openPage(pg.slug)}>{pg.title}<span aria-hidden>&rsaquo;</span></button>}
+                              : <button type="button" onClick={() => openPage(pg.slug)}>{pg.title}{(() => { const st = policyStatus.find((x) => x.slug === pg.slug); return st && <span className={`sc-pill ${st.accepted ? 'approved' : 'pending'}`} style={{ marginLeft: 8 }}>{st.accepted ? `✓ Accepted ${new Date(st.accepted.accepted_at).toLocaleDateString()}` : st.for === 'international' ? 'Accept to sell abroad' : 'Accept to sell'}</span> })()}<span aria-hidden>&rsaquo;</span></button>}
                             {children(pg.slug).length > 0 && (
                               <ul className="sc-policy-sub">
-                                {children(pg.slug).map((c) => <li key={c.slug}><button type="button" onClick={() => openPage(c.slug)}>{c.title}<span aria-hidden>&rsaquo;</span></button></li>)}
+                                {children(pg.slug).map((c) => <li key={c.slug}><button type="button" onClick={() => openPage(c.slug)}>{c.title}{(() => { const st = policyStatus.find((x) => x.slug === c.slug); return st && <span className={`sc-pill ${st.accepted ? 'approved' : 'pending'}`} style={{ marginLeft: 8 }}>{st.accepted ? `✓ Accepted ${new Date(st.accepted.accepted_at).toLocaleDateString()}` : st.for === 'international' ? 'Accept to sell abroad' : 'Accept to sell'}</span> })()}<span aria-hidden>&rsaquo;</span></button></li>)}
                               </ul>
                             )}
                           </li>

@@ -65,6 +65,8 @@ class AdminPageController extends Controller
             'menu_placements' => ['sometimes', 'array', 'max:10'],
             'menu_placements.*' => ['string', 'in:main_menu,main_footer,seller_footer,blog'],
             'sort_order' => ['sometimes', 'integer', 'min:0', 'max:9999'],
+            // Sellers must read, accept and sign it — to sell at all, or to sell abroad.
+            'acceptance_for' => ['sometimes', 'nullable', 'in:selling,international'],
 
             // Structured content blocks. Text is plain / Markdown and is rendered
             // safely on the storefront; there is no raw-HTML section type.

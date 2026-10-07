@@ -647,3 +647,4 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-setup-list{margin:0 0 10px;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px;font-size:14px}
 .admin-setup-list li span{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;color:#fff;background:#1f7a3d}
 .admin-setup-list li.todo span{background:#d97706}
+.admin-plain-list{margin:0 0 8px;padding-left:18px}.admin-plain-list li{margin:4px 0}
