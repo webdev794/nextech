@@ -352,6 +352,8 @@ class CheckoutController extends Controller
                     'mode' => $shopQuote['mode'],
                     'fee_cents' => $shopQuote['fee_cents'],
                     'seller_fee_cents' => $shopQuote['seller_fee_cents'] ?? null,
+                    'paperwork_cents' => $shopQuote['paperwork_cents'] ?? 0,
+                    'seller_paperwork_cents' => $shopQuote['seller_paperwork_cents'] ?? null,
                     'free_shipping' => $shopQuote['free_shipping'],
                     'transit_min_days' => $shopQuote['transit_min_days'],
                     'transit_max_days' => $shopQuote['transit_max_days'],

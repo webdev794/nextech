@@ -795,7 +795,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (148, '2026_10_06_000055_add_product_snapshot_to_order_items', 83),
 (149, '2026_10_06_000056_add_pending_changes_to_products', 84),
 (150, '2026_10_07_000057_add_change_request_to_trademarks', 85),
-(151, '2026_10_07_000058_add_ships_abroad_to_products', 86);
+(151, '2026_10_07_000058_add_ships_abroad_to_products', 86),
+(152, '2026_10_07_000059_add_paperwork_to_order_shop_shipping', 87);
 
 -- --------------------------------------------------------
 
@@ -1041,7 +1042,9 @@ CREATE TABLE `order_shop_shipping` (
   `deliver_by` date NOT NULL,
   `packed_at` timestamp NULL DEFAULT NULL,
   `created_at` timestamp NULL DEFAULT NULL,
-  `updated_at` timestamp NULL DEFAULT NULL
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `paperwork_cents` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `seller_paperwork_cents` int(10) UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- --------------------------------------------------------
@@ -3257,7 +3260,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=152;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=153;
 
 --
 -- AUTO_INCREMENT for table `orders`

@@ -1091,7 +1091,7 @@ export default function Seller({ token, onSignOut }) {
 
                     <div className="seller-stat-tiles">
                       <div className="tile-available"><span>Available to pay out</span><strong>{money(Math.max(0, me.available_cents ?? 0))}</strong></div>
-                      <div className="tile-held"><span>Held for returns</span><strong>{money(me.pending_cents ?? 0)}</strong></div>
+                      <div className="tile-held"><span title="Held until delivery plus the return window — for orders shipped abroad, until the product’s warranty ends if that’s later">Held for returns / warranty</span><strong>{money(me.pending_cents ?? 0)}</strong></div>
                       <div><span>Total balance</span><strong>{money(me.balance_cents ?? 0)}</strong></div>
                     </div>
                     <p className="seller-payout-status info">Because of the return policy, payment for each order is held — it can&rsquo;t be paid out until the order has been delivered and the return window you set on its products has passed (products without their own window use {me.return_window_days ?? 30} days). This way a later return never has to be taken back from money already paid to you.{(me.available_cents ?? 0) < 0 ? ' Your available balance is below zero because an earlier payout covered sales still inside their return window — it evens out as they clear.' : ''}</p>
@@ -1150,7 +1150,7 @@ export default function Seller({ token, onSignOut }) {
                       const stateOf = (e) => (e.type === 'payout_debit' || (e.order_id && paid.has(e.order_id)) ? 'paid'
                         : e.order_id && Math.abs(net[e.order_id]) < 1 ? 'settled'
                           : heldIds.has(e.order_id ?? 'none') ? 'held' : (e.amount_cents >= 0 ? 'positive' : 'negative'))
-                      const STATUS = { paid: 'Paid to you', positive: 'Available', negative: 'Deducted', held: 'Held for returns', settled: 'Cancelled out' }
+                      const STATUS = { paid: 'Paid to you', positive: 'Available', negative: 'Deducted', held: 'Held for returns / warranty', settled: 'Cancelled out' }
                       return (
                         <div className="sc-table-wrap">
                           <table className="sc-table seller-ledger-table">

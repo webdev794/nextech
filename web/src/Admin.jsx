@@ -4516,7 +4516,7 @@ Reason:`, '')
                   {d.shop && (
                     <div className="crm-stats">
                       <div><b>{money(Math.max(0, d.available_cents ?? 0), d.currency)}</b><span>Available to pay out</span></div>
-                      <div><b>{money(d.pending_cents ?? 0, d.currency)}</b><span>Held for returns</span></div>
+                      <div><b>{money(d.pending_cents ?? 0, d.currency)}</b><span>Held for returns / warranty</span></div>
                       <div><b>{money(d.balance_cents ?? 0, d.currency)}</b><span>Total balance</span></div>
                       <div><b>{money(d.min_payout_cents ?? 0, d.currency)}</b><span>Minimum payout</span></div>
                       <div><b>{d.shop.is_active ? 'Live' : 'Hidden'}</b><span>Shop</span></div>

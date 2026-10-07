@@ -46,6 +46,8 @@ class SellerShippingController extends Controller
             'intl_shipping.*.fee_cents' => ['required', 'integer', 'min:0', 'max:100000000'],
             'intl_shipping.*.transit_min_days' => ['required', 'integer', 'min:1', 'max:90'],
             'intl_shipping.*.transit_max_days' => ['required', 'integer', 'min:1', 'max:90', 'gte:intl_shipping.*.transit_min_days'],
+            // Optional customs / export paperwork charge for that country, shown on the buyer's bill.
+            'intl_shipping.*.paperwork_fee_cents' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:100000000'],
         ]);
 
         if (array_key_exists('intl_shipping', $data)) {
@@ -61,7 +63,7 @@ class SellerShippingController extends Controller
                 'fee_cents' => (int) $t['fee_cents'],
                 'transit_min_days' => (int) $t['transit_min_days'],
                 'transit_max_days' => (int) $t['transit_max_days'],
-            ])->all();
+            ] + (! empty($t['paperwork_fee_cents']) ? ['paperwork_fee_cents' => (int) $t['paperwork_fee_cents']] : []))->all();
         }
 
         if (! empty($data['accept_free_shipping'])) {

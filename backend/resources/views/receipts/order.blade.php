@@ -180,6 +180,23 @@
         </tr>
         @endif
         @if(($order->handling_fee_cents ?? 0) > 0)
+        @php
+            // Sellers who ship themselves: their shipping, and (orders abroad) any customs / paperwork charge they set.
+            $paperwork = (int) $order->shopShipping()->sum('paperwork_cents');
+            $sellerShipping = max(0, (int) ($order->seller_shipping_cents ?? 0) - $paperwork);
+        @endphp
+        @if($order->shopShipping()->exists())
+        <tr>
+            <td>Shipping from sellers</td>
+            <td class="num">{{ $sellerShipping === 0 ? 'FREE' : $money($sellerShipping) }}</td>
+        </tr>
+        @endif
+        @if($paperwork > 0)
+        <tr>
+            <td>Customs / paperwork</td>
+            <td class="num">{{ $money($paperwork) }}</td>
+        </tr>
+        @endif
         <tr>
             <td>Handling fee</td>
             <td class="num">{{ $money($order->handling_fee_cents) }}</td>

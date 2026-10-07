@@ -235,6 +235,9 @@ class SellerShipping
                 $entry['extra_seller_fee'] = ($entry['extra_seller_fee'] ?? 0) + $extra;
                 $entry['seller_fee'] = $entry['base_seller_fee'] + $entry['extra_seller_fee'];
                 $entry['fee'] = Fx::convert($entry['seller_fee'], Market::currency($shop->market), Market::currency($market));
+                // Customs / export paperwork for that country: once per order, only when the seller set one.
+                $entry['seller_paperwork'] = max($entry['seller_paperwork'] ?? 0, (int) ($terms['paperwork_fee_cents'] ?? 0));
+                $entry['paperwork'] = Fx::convert($entry['seller_paperwork'], Market::currency($shop->market), Market::currency($market));
                 $entry['min'] = max($entry['min'], (int) ($terms['transit_min_days'] ?? 0));
                 $entry['max'] = max($entry['max'], (int) ($terms['transit_max_days'] ?? 0));
                 $entry['handling'] = max($entry['handling'], (int) ($template?->handling_days ?? 1));
@@ -282,6 +285,8 @@ class SellerShipping
                 'fee_cents' => $fee,
                 // International: the seller's own fee in their currency (what they're credited).
                 'seller_fee_cents' => ! empty($e['intl']) ? (int) $e['seller_fee'] : null,
+                'paperwork_cents' => (int) ($e['paperwork'] ?? 0),
+                'seller_paperwork_cents' => ! empty($e['intl']) ? (int) ($e['seller_paperwork'] ?? 0) : null,
                 'free_shipping' => $free,
                 'transit_min_days' => $e['min'],
                 'transit_max_days' => $e['max'],
@@ -289,7 +294,7 @@ class SellerShipping
                 'deliver_from' => self::addWorkingDays($e['shop'], $shipBy, $e['min'])->toDateString(),
                 'deliver_by' => self::addWorkingDays($e['shop'], $shipBy, $e['max'])->toDateString(),
             ];
-            $total += $fee;
+            $total += $fee + (int) ($e['paperwork'] ?? 0);
         }
 
         return ['shops' => $shops, 'total_cents' => $total, 'unshippable' => $unshippable];

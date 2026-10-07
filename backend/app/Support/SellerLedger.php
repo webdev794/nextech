@@ -132,7 +132,17 @@ class SellerLedger
             return null;
         }
 
-        return $deliveredAt->copy()->addDays(self::orderReturnDays($order, $shopId));
+        $release = $deliveredAt->copy()->addDays(self::orderReturnDays($order, $shopId));
+        // Shipped abroad: also held through the products' warranty (claims are
+        // harder to settle across borders), until the later of the two.
+        if ($order->market && self::shopMarket($shopId) !== $order->market) {
+            $months = $order->items->where('shop_id', $shopId)->map(fn ($i) => $i->product ? ProductCatalog::warrantyMonths($i->product) : 0)->max() ?? 0;
+            if ($months > 0) {
+                $release = $release->max($deliveredAt->copy()->addMonths($months));
+            }
+        }
+
+        return $release;
     }
 
     /**
@@ -152,8 +162,8 @@ class SellerLedger
         $orderIds = $entries->pluck('order_id')->filter()->unique();
         $orders = Order::query()
             ->whereIn('id', $orderIds)
-            ->with(['items' => fn ($q) => $q->where('shop_id', $shop->id), 'items.product:id,return_days'])
-            ->get(['id', 'status', 'delivered_at', 'updated_at'])
+            ->with(['items' => fn ($q) => $q->where('shop_id', $shop->id), 'items.product:id,return_days,product_details'])
+            ->get(['id', 'market', 'status', 'delivered_at', 'updated_at'])
             ->keyBy('id');
 
         $now = now();
@@ -233,7 +243,7 @@ class SellerLedger
                 // seller's own fee in their currency when shipped abroad.
                 $shipping = $order->shopShipping()->where('shop_id', $shopId)->first();
                 $abroad = self::shopMarket((int) $shopId) !== $order->market;
-                $shippingCents = $abroad ? (int) ($shipping?->seller_fee_cents ?? 0) : (int) ($shipping?->fee_cents ?? 0);
+                $shippingCents = $abroad ? (int) ($shipping?->seller_fee_cents ?? 0) + (int) ($shipping?->seller_paperwork_cents ?? 0) : (int) ($shipping?->fee_cents ?? 0);
 
                 SellerLedgerEntry::create([
                     'shop_id' => $shopId,

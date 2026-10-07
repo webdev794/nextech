@@ -47,7 +47,7 @@ const EMPTY_GROUP = { regions: [], address_types: ['standard'], transit_min_days
 function IntlShipping({ data, patch }) {
   const fromData = useCallback(() => Object.fromEntries((data.intl_destinations ?? []).map((d) => {
     const t = data.intl_shipping?.[d.code]
-    return [d.code, { on: !!t, fee: t ? (t.fee_cents / 100).toFixed(2) : '', min: t?.transit_min_days ?? 7, max: t?.transit_max_days ?? 14 }]
+    return [d.code, { on: !!t, fee: t ? (t.fee_cents / 100).toFixed(2) : '', paperwork: t?.paperwork_fee_cents ? (t.paperwork_fee_cents / 100).toFixed(2) : '', min: t?.transit_min_days ?? 7, max: t?.transit_max_days ?? 14 }]
   })), [data])
   const [form, setForm] = useState(fromData)
   if (!(data.intl_destinations ?? []).length) return null
@@ -56,14 +56,14 @@ function IntlShipping({ data, patch }) {
 
   function save(event) {
     event.preventDefault()
-    const body = Object.fromEntries(Object.entries(form).filter(([, v]) => v.on).map(([code, v]) => [code, { fee_cents: Math.round(Number(v.fee || 0) * 100), transit_min_days: Number(v.min), transit_max_days: Number(v.max) }]))
+    const body = Object.fromEntries(Object.entries(form).filter(([, v]) => v.on).map(([code, v]) => [code, { fee_cents: Math.round(Number(v.fee || 0) * 100), paperwork_fee_cents: Math.round(Number(v.paperwork || 0) * 100) || null, transit_min_days: Number(v.min), transit_max_days: Number(v.max) }]))
     patch({ intl_shipping: body }, Object.keys(body).length ? 'Saved — buyers in those countries can now buy your products.' : 'Saved — you ship only within your country.')
   }
 
   return (
     <div className="sc-card">
       <h2 className="sc-h2">International shipping</h2>
-      <p className="sc-muted">Sell to buyers in other countries {brandName()} sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork, and enter the tracking number as usual. Buyers pay any import duties on delivery.</p>
+      <p className="sc-muted">Sell to buyers in other countries {brandName()} sells in. They see your products in their own currency; you&rsquo;re paid your listed price in {data.currency?.toUpperCase()} plus the shipping fee below. You ship with your own courier, handle export paperwork (add a customs / paperwork fee per country if you charge one), and enter the tracking number as usual. Money from orders abroad is held until delivery plus the return window or the product&rsquo;s warranty, whichever is longer, before you can request it. Buyers pay any import duties on delivery.</p>
       {data.intl_blocked ? <p className="ss-warn">{data.intl_blocked}</p> : !ownCourier ? <p className="ss-warn">Shipping abroad needs &ldquo;I ship with my own courier&rdquo; — choose it above first.</p> : (
         <form onSubmit={save} className="ss-intl">
           {data.intl_destinations.map((d) => {
@@ -73,6 +73,7 @@ function IntlShipping({ data, patch }) {
                 <label className="sc-check"><input type="checkbox" checked={v.on} onChange={(e) => set(d.code, { on: e.target.checked })} /> Ship to {d.name}</label>
                 {v.on && <>
                   <label>Shipping fee ({currencySymbol(data.currency)})<input type="number" min="0" step="0.01" required value={v.fee} onChange={(e) => set(d.code, { fee: e.target.value })} /></label>
+                  <label>Customs / paperwork fee ({currencySymbol(data.currency)}) <small className="sc-muted">optional — shown as its own line on the buyer&rsquo;s bill</small><input type="number" min="0" step="0.01" value={v.paperwork} placeholder="0.00" onChange={(e) => set(d.code, { paperwork: e.target.value })} /></label>
                   <label>Arrives in (days)<span className="ss-intl-days"><input type="number" min="1" max="90" required value={v.min} onChange={(e) => set(d.code, { min: e.target.value })} /> – <input type="number" min={v.min || 1} max="90" required value={v.max} onChange={(e) => set(d.code, { max: e.target.value })} /></span></label>
                 </>}
               </div>
