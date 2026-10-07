@@ -41,6 +41,24 @@ cd web && npm --cache D:/edp/.tmp/npm-cache run dev -- --host 127.0.0.1 --port 5
 `web/` build: `npm run build` (outputs `web/dist/`). Lint: `npm run lint`.
 Test accounts and more detail live in `README.md`.
 
+## Syncing branch v10 locally (pull + database)
+
+When asked to "pull v10" / "update from v10":
+1. `git status` — stop and ask if there are uncommitted local changes. Then `git fetch origin v10` and `git checkout v10` (no merging other branches into it), then `git pull origin v10`.
+2. Back up the database first:
+   `"D:/xampp/mysql/bin/mysqldump.exe" -u root edp > D:/edp/.tmp/edp-backup-<date>.sql`
+   (adjust the user/password from `backend/.env`).
+3. Database: run migrations, don't re-import `backend/web_deploy/edp.sql`. Migrations are guarded (`hasColumn` / `hasTable`), so they're safe on a database imported earlier.
+   - Preview first: `cd backend && "D:/xampp/php84/php.exe" artisan migrate --pretend`
+   - Then run them: `"D:/xampp/php84/php.exe" artisan migrate --force`
+   - Then clear caches: `"D:/xampp/php84/php.exe" artisan optimize:clear`
+4. Dependencies, only if `composer.json` / `package.json` changed:
+   - `composer install` (with PHP 8.4);
+   - `cd web && npm --cache D:/edp/.tmp/npm-cache install`.
+5. Web: `cd web && npm run build` (or restart `npm run dev`).
+6. Scheduled jobs (seller reminders, lightning deal restarts, courier tracking) need the scheduler. Locally run `"D:/xampp/php84/php.exe" artisan schedule:work` in a terminal. On the server, a cron runs `php artisan schedule:run` every minute.
+7. Report which migrations ran and anything that failed.
+
 ## Conventions
 
 - **Environment is Windows + PowerShell.** A Bash tool is also available for POSIX scripts.
