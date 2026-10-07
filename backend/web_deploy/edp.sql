@@ -827,7 +827,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (162, '2026_10_07_000069_add_condition_to_products', 97),
 (163, '2026_10_07_000070_create_category_interests_table', 98),
 (164, '2026_10_07_000071_add_lightning_deal_to_products', 99),
-(165, '2026_10_07_000072_add_lightning_discount_to_products', 100);
+(165, '2026_10_07_000072_add_lightning_discount_to_products', 100),
+(166, '2026_10_07_000073_seed_demo_lightning_deals', 101);
 
 -- --------------------------------------------------------
 
@@ -3360,7 +3361,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=166;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=167;
 
 --
 -- AUTO_INCREMENT for table `orders`
@@ -3993,6 +3994,15 @@ ALTER TABLE `support_threads`
 --
 ALTER TABLE `trademarks`
   ADD CONSTRAINT `trademarks_shop_id_foreign` FOREIGN KEY (`shop_id`) REFERENCES `shops` (`id`) ON DELETE CASCADE;
+--
+-- Demo store: auto-renewing ~30% lightning deals on up to 8 of NexTech's own
+-- (demo) products, one per category / country, so Lightning deals can be tried out.
+--
+UPDATE `products` p
+JOIN (SELECT MIN(`id`) AS `id` FROM `products` WHERE (`is_demo` = 1 OR `shop_id` IS NULL) AND `status` = 'approved' AND `is_active` = 1 AND `affiliate_url` IS NULL GROUP BY `category_id`, `market` LIMIT 8) d ON d.`id` = p.`id`
+SET p.`lightning_pct` = 30, p.`lightning_pct_min` = 28, p.`lightning_pct_max` = 32, p.`lightning_repeat` = 1, p.`lightning_qty` = 50,
+    p.`lightning_starts_at` = NOW(), p.`lightning_ends_at` = NOW() + INTERVAL 12 HOUR, p.`lightning_base_sold` = p.`units_sold`;
+
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
