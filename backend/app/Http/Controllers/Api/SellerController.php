@@ -231,7 +231,10 @@ class SellerController extends Controller
         // Bank verification is enforced only when admin turned it on for this seller.
         abort_if($why = SellerPayouts::blocker($seller), 422, (string) $why);
 
-        $payoutRequest = DB::transaction(function () use ($seller): PayoutRequest {
+        // Optional amount (Upwork-style "withdraw"): between the minimum and what's requestable now.
+        $amount = $request->validate(['amount_cents' => ['sometimes', 'nullable', 'integer', 'min:1']])['amount_cents'] ?? null;
+
+        $payoutRequest = DB::transaction(function () use ($seller, $amount): PayoutRequest {
             // Lock the shop row so a double-click can't open two requests.
             $shop = Shop::whereKey($seller->shop->id)->lockForUpdate()->first();
             abort_if($shop->payoutRequests()->where('status', 'pending')->exists(), 422, 'You already have a payout request waiting.');
@@ -239,8 +242,12 @@ class SellerController extends Controller
             $min = SellerLedger::minPayoutCents($shop->market);
             abort_if(SellerLedger::availableCents($shop) < $min, 422, 'Your available balance (past the return window) needs to reach '.Money::format($min, Market::currency($shop->market)).' first.');
 
+            $requestable = SellerLedger::requestableCents($shop);
+            abort_if($amount !== null && $amount > $requestable, 422, 'You can request up to '.Money::format($requestable, Market::currency($shop->market)).' right now.');
+            abort_if($amount !== null && $amount < $min, 422, 'The minimum payout is '.Money::format($min, Market::currency($shop->market)).'.');
+
             return $shop->payoutRequests()->create([
-                'amount_cents' => SellerLedger::requestableCents($shop),
+                'amount_cents' => $amount ?? $requestable,
                 'status' => 'pending',
             ]);
         });

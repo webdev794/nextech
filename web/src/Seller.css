@@ -187,6 +187,12 @@
 .seller-payout-limits{margin:0 0 16px;padding:12px 14px;border:1px solid #e4e7dd;border-radius:10px;background:#fafbf8;font-size:14px}
 .seller-payout-limits ul{margin:6px 0 8px;padding-left:18px;line-height:1.6}
 .seller-payout-limits .seller-earnings-note{margin:0}
+.seller-payout-summary{display:flex;flex-direction:column;gap:6px;margin:4px 0;padding:12px 14px;border-radius:10px;background:#f6f7f5}
+.seller-payout-summary div{display:flex;justify-content:space-between;gap:12px}
+.seller-payout-summary dt{color:#5d665a}
+.seller-payout-summary dd{margin:0;font-weight:600}
+.seller-payout-summary .total{padding-top:6px;border-top:1px solid #e1e5dc}
+.seller-payout-summary .total dd{font-size:16px}
 .seller-payout-status{margin:0 0 14px;padding:10px 12px;border-radius:8px;font-size:12px;font-weight:500;line-height:1.5}
 .seller-payout-status.pending{background:#e8f5e9;color:#2e7d32}
 .seller-payout-status.rejected{background:#fdecea;color:#a23b28}

@@ -298,14 +298,18 @@ export default function Seller({ token, onSignOut }) {
     else setPageView(null)
   }
 
-  async function requestPayout() {
+  // Upwork-style "withdraw" confirmation: amount, method, fee and what the seller receives.
+  const [payoutConfirm, setPayoutConfirm] = useState(null)
+
+  async function requestPayout(amountCents) {
     setPayoutReqMsg('')
     setPayoutReqBusy(true)
     try {
-      const response = await fetch(`${API_URL}/seller/payout-requests`, { method: 'POST', headers: authHeaders() })
+      const response = await fetch(`${API_URL}/seller/payout-requests`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ amount_cents: amountCents ?? null }) })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not send your payout request.')
       setMe((m) => ({ ...m, last_payout_request: data.data }))
+      setPayoutConfirm(null)
     } catch (error) {
       setPayoutReqMsg(error.message)
     } finally {
@@ -1127,7 +1131,7 @@ export default function Seller({ token, onSignOut }) {
                             const fee = Math.min(requestable, f.fixed_cents + Math.round(requestable * f.bps / 10000))
                             return (
                               <div className="seller-payout-request">
-                                <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={requestPayout}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
+                                <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={() => setPayoutConfirm({ amount: (requestable / 100).toFixed(2), max: requestable, min: me.min_payout_cents ?? 0, method, fees: me.payout_fees ?? {} })}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
                                 {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} payout fee.</span>}
                                 {why && <span className="seller-earnings-note">{why}</span>}
                                 {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
@@ -1136,6 +1140,31 @@ export default function Seller({ token, onSignOut }) {
                           })()}
                           {payoutReqMsg && <p className="seller-inline-error">{payoutReqMsg}</p>}
                         </>
+                      )
+                    })()}
+                    {payoutConfirm && (() => {
+                      const c = payoutConfirm
+                      const amount = Math.round(Number(c.amount || 0) * 100)
+                      const f = c.fees[c.method] ?? { fixed_cents: 0, bps: 0 }
+                      const fee = Math.min(amount, f.fixed_cents + Math.round(amount * f.bps / 10000))
+                      const bad = amount < c.min ? `The minimum payout is ${money(c.min)}.` : amount > c.max ? `You can request up to ${money(c.max)} right now.` : null
+                      const dest = c.method === 'paypal' ? `PayPal — ${me.payout_details?.paypal_email ?? ''}` : `Bank account${me.payout_details?.account_number ? ` ••••${String(me.payout_details.account_number).slice(-4)}` : ''}`
+                      return (
+                        <div className="ss-overlay" role="presentation" onClick={() => setPayoutConfirm(null)}>
+                          <form className="ss-modal" role="dialog" aria-modal="true" aria-labelledby="payout-confirm-title" onClick={(e) => e.stopPropagation()} onSubmit={(e) => { e.preventDefault(); if (!bad) requestPayout(amount) }}>
+                            <h2 id="payout-confirm-title" className="sc-h2">Request a payout</h2>
+                            <label>Amount <small className="sc-muted">up to {money(c.max)}</small><input type="number" min={(c.min / 100).toFixed(2)} max={(c.max / 100).toFixed(2)} step="0.01" value={c.amount} onChange={(e) => setPayoutConfirm({ ...c, amount: e.target.value })} /></label>
+                            <dl className="seller-payout-summary">
+                              <div><dt>Paid to</dt><dd>{dest}</dd></div>
+                              <div><dt>Payout amount</dt><dd>{money(amount)}</dd></div>
+                              <div><dt>{c.method === 'paypal' ? 'PayPal' : 'Bank transfer'} payout fee</dt><dd>{fee > 0 ? `− ${money(fee)}` : 'Free'}</dd></div>
+                              <div className="total"><dt>You&rsquo;ll receive</dt><dd>{money(amount - fee)}</dd></div>
+                            </dl>
+                            {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
+                            {(bad || payoutReqMsg) && <p className="seller-inline-error">{bad || payoutReqMsg}</p>}
+                            <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setPayoutConfirm(null)}>Cancel</button><button type="submit" className="sc-primary" disabled={payoutReqBusy || !!bad || amount <= 0}>{payoutReqBusy ? 'Sending…' : 'Confirm request'}</button></div>
+                          </form>
+                        </div>
                       )
                     })()}
                     <PayoutMethod me={me} headers={authHeaders} money={money} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email }, payout_blocker: d.payout_blocker }))} />
