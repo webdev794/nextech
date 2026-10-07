@@ -9,8 +9,18 @@ use App\Models\Order;
 use App\Models\Setting;
 use App\Models\Store;
 use App\Support\CheckoutFees;
+use App\Support\Country;
+use App\Support\Courier;
+use App\Support\Fx;
 use App\Support\Geo;
+use App\Support\Market;
+use App\Support\Personalization;
 use App\Support\Purchasable;
+use App\Support\SalesTax;
+use App\Support\SellerLedger;
+use App\Support\SellerProgress;
+use App\Support\SellerShipping;
+use App\Support\SellerTax;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,10 +32,14 @@ class CheckoutController extends Controller
 {
     public function store(Request $request): JsonResponse
     {
+        // A cart of digital downloads only: nothing to deliver, so no address or phone needed.
+        $cartItems = Cart::query()->where('user_id', $request->user()->id)->with('items.product')->first()?->items ?? collect();
+        $digitalOnly = $cartItems->isNotEmpty() && $cartItems->every(fn ($i) => (bool) $i->product?->isDigital());
+
         $validated = $request->validate([
             'address_id' => ['sometimes', 'integer', 'exists:addresses,id'],
-            'address.name' => ['required_without:address_id', 'string', 'max:120'],
-            'address.line1' => ['required_without:address_id', 'string', 'max:255'],
+            'address.name' => [$digitalOnly ? 'nullable' : 'required_without:address_id', 'string', 'max:120'],
+            'address.line1' => [$digitalOnly ? 'nullable' : 'required_without:address_id', 'string', 'max:255'],
             'address.line2' => ['nullable', 'string', 'max:255'],
             'address.city' => ['nullable', 'string', 'max:100'],
             'address.state' => ['nullable', 'string', 'max:60'],
@@ -63,13 +77,13 @@ class CheckoutController extends Controller
         // request (and remember it on the account) or fall back to the saved one.
         $phone = trim((string) ($validated['phone'] ?? $request->user()->phone ?? ''));
 
-        if ($phone === '') {
+        if ($phone === '' && ! $digitalOnly) {
             throw ValidationException::withMessages([
                 'phone' => ['Add a phone number so your delivery rider can reach you.'],
             ]);
         }
 
-        if ($request->user()->phone !== $phone) {
+        if ($phone !== '' && $request->user()->phone !== $phone) {
             $request->user()->update(['phone' => $phone]);
         }
 
@@ -79,29 +93,80 @@ class CheckoutController extends Controller
             ]);
         }
 
-        $order = DB::transaction(function () use ($request, $validated, $paymentMethod, $phone, $giftCard): Order {
+        $order = DB::transaction(function () use ($request, $validated, $paymentMethod, $phone, $giftCard, $digitalOnly): Order {
             $address = isset($validated['address_id'])
                 ? $request->user()->addresses()->findOrFail($validated['address_id'])->toArray()
-                : $validated['address'];
+                : ($validated['address'] ?? null);
+            if ($digitalOnly && empty($address['line1'])) {
+                $address = ['name' => $request->user()->name, 'line1' => 'Digital delivery — download from Your downloads', 'email' => $request->user()->email];
+            }
 
             // Freeze the contact number onto the order snapshot so it stays put
             // even if the customer later edits their profile.
             $address['phone'] = $phone;
 
-            $fees = CheckoutFees::current();
-            $area = $this->resolveDelivery($address, $fees);
             $cart = Cart::query()->where('user_id', $request->user()->id)->first();
 
             if (! $cart) {
                 throw ValidationException::withMessages(['cart' => ['Your cart is empty.']]);
             }
 
-            $cart->load('items.product.category', 'items.productVariant');
+            $cart->load('items.product.category', 'items.product.shop', 'items.productVariant');
             if ($cart->items->isEmpty()) {
                 throw ValidationException::withMessages(['cart' => ['Your cart is empty.']]);
             }
 
+            // One market (country + currency) per order: every product must be
+            // sold in the market the shopper is browsing, or shipped here by a
+            // seller from another country (priced in this market's currency).
+            $market = Market::fromRequest($request);
+            $currency = Market::currency($market);
+            $foreign = $cart->items->first(fn ($cartItem) => $cartItem->product && $cartItem->product->market !== $market && ! $cartItem->product->crossBorderTerms($market));
+            if ($foreign) {
+                throw ValidationException::withMessages(['cart' => ["{$foreign->product->name} isn't sold in ".(Country::find($market)['name'] ?? $market).' — remove it to check out.']]);
+            }
+            $fxRates = []; // seller currency => multiplier into this order's currency, frozen on the order
+            $isHome = $market === Market::home();
+            if ($giftCard && ! $isHome) {
+                throw ValidationException::withMessages(['gift_card_code' => ['Gift cards can only be used in the '.(Country::find(Market::home())['name'] ?? Market::home()).' store.']]);
+            }
+
+            // Lines from sellers who ship themselves (own courier or a NexTech
+            // label) leave NexTech's rider/courier delivery entirely; everything
+            // else (NexTech stock, and sellers NexTech collects from) is
+            // delivered as before.
+            // Digital downloads aren't delivered at all.
+            $isDigital = fn ($cartItem) => (bool) $cartItem->product?->isDigital();
+            $sellerShips = fn ($cartItem) => ! $isDigital($cartItem) && (bool) $cartItem->product?->shop?->shipsItself();
+            $nextechLines = $cart->items->reject(fn ($cartItem) => $sellerShips($cartItem) || $isDigital($cartItem));
+            $sellerLines = $cart->items->filter($sellerShips);
+
+            // India: sellers selling with a PAN only (no GSTIN) may sell only
+            // within their own state (Notification No. 34/2023-Central Tax).
+            $deliveryState = SellerShipping::stateCode($address['state'] ?? null, $market);
+            foreach ($cart->items->reject($isDigital) as $cartItem) {
+                $onlyState = SellerTax::onlyState($cartItem->product?->shop?->seller);
+                if ($onlyState && $deliveryState !== $onlyState) {
+                    throw ValidationException::withMessages(['address' => ["{$cartItem->product->name} can only be delivered within ".(Market::states($market)[$onlyState] ?? $onlyState).' — remove it or use an address there.']]);
+                }
+            }
+
+            if ($paymentMethod === 'cod' && ($codBlocked = SellerProgress::codBlockedReason($cart->items->pluck('product'), $market))) {
+                throw ValidationException::withMessages(['payment_method' => [$codBlocked]]);
+            }
+
+            $hasShopItems = $nextechLines->contains(fn ($cartItem) => $cartItem->product?->shop_id !== null);
+
+            $fees = CheckoutFees::current($market);
+            $area = $nextechLines->isEmpty()
+                ? ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => $sellerLines->isEmpty() ? 'digital' : 'seller', 'courier_quote_cents' => null]
+                : $this->resolveDelivery($address, $fees, $hasShopItems, $market);
+            $taxIncluded = 0;
+            $nextechSubtotal = 0;
+            $sellerQuoteLines = [];
+
             $subtotal = 0;
+            $importedSubtotal = 0;
             $orderItems = [];
 
             foreach ($cart->items as $cartItem) {
@@ -133,24 +198,73 @@ class CheckoutController extends Controller
                     throw ValidationException::withMessages(['cart' => ["{$product->name} is no longer available."]]);
                 }
 
+                // Personalized product: the buyer's photo must come with it.
+                $personal = Personalization::settings($product);
+                if ($personal && $personal['required'] && empty($cartItem->personalization['photos'] ?? [])) {
+                    throw ValidationException::withMessages(['cart' => ["Upload your photo for {$product->name} — remove it from the cart and add it again with the photo."]]);
+                }
+
                 if ($cartItem->quantity > $state['inventory_quantity']) {
                     throw ValidationException::withMessages(['cart' => ["{$product->name} does not have enough inventory."]]);
                 }
 
+                // Shipped in from another country: its price in this order's currency.
+                $imported = $product->market !== $market;
+                $sellerUnit = $state['price_cents']; // the seller's own price, in their currency
+                if ($imported) {
+                    $from = Market::currency($product->market);
+                    $fxRates[$from] ??= Fx::multiplier($from, $currency);
+                    $state['price_cents'] = Fx::convert($state['price_cents'], $from, $currency, $fxRates[$from]);
+                    $state['compare_at_price_cents'] = $state['compare_at_price_cents'] === null ? null : Fx::convert($state['compare_at_price_cents'], $from, $currency, $fxRates[$from]);
+                }
+
                 $lineTotal = $state['price_cents'] * $cartItem->quantity;
                 $subtotal += $lineTotal;
+                if ($imported) {
+                    $importedSubtotal += $lineTotal;
+                }
+                // GST-inclusive markets: the rate (and HSN) are frozen on the line for
+                // the invoice. Imports carry none — duties/taxes are paid at customs.
+                $gstRate = Market::taxInclusive($market) && ! $imported ? (int) ($product->gst_rate_bps ?? Market::profile($market)['default_gst_rate_bps'] ?? 0) : null;
+                $taxIncluded += $gstRate ? Market::includedTaxCents($lineTotal, $gstRate) : 0;
+                $shippedBySeller = $sellerShips($cartItem);
+                $digitalLine = $isDigital($cartItem);
+                if ($digitalLine) {
+                    // nothing to ship or deliver
+                } elseif ($shippedBySeller) {
+                    $sellerQuoteLines[] = ['product' => $product->setRelation('shop', $cartItem->product->shop), 'quantity' => $cartItem->quantity, 'line_total_cents' => $lineTotal];
+                } else {
+                    $nextechSubtotal += $lineTotal;
+                }
                 $orderItems[] = [
                     'product_id' => $product->id,
                     'product_variant_id' => $variant?->id,
+                    // Frozen the same way product_name/sku are, so an admin
+                    // reassigning a product's shop later can't rewrite a
+                    // shop's earnings history.
+                    'shop_id' => $product->shop_id,
+                    'fulfilled_by' => $digitalLine ? 'digital' : ($shippedBySeller ? 'seller' : 'nextech'),
                     'product_name' => $product->name,
                     'sku' => $variant->sku ?? $product->sku,
+                    'hsn_code' => $product->hsn_code,
+                    'gst_rate_bps' => $gstRate,
                     'variant_label' => $state['label'],
+                    // The product as sold (name, details, warranty, return terms) — what this
+                    // buyer's warranty and returns are judged on, whatever changes later.
+                    'product_snapshot' => \App\Support\ProductSnapshot::of($product, $variant),
+                    'personalization' => $cartItem->personalization,
                     'quantity' => $cartItem->quantity,
                     'unit_price_cents' => $state['price_cents'],
                     // Freeze the "regular" price onto the line so the receipt can
                     // show the discount even if the product is repriced later.
                     'compare_at_price_cents' => $state['compare_at_price_cents'],
+                    // Frozen too: the return window this item was sold under,
+                    // which decides when the seller's earnings can be paid out.
+                    // Digital downloads can't be returned.
+                    'return_days' => $digitalLine ? 0 : ($product->return_days ?? SellerLedger::returnWindowDays()),
                     'line_total_cents' => $lineTotal,
+                    // Imports: what the seller is credited, exactly their listed price.
+                    'seller_line_total_cents' => $imported ? $sellerUnit * $cartItem->quantity : null,
                 ];
 
                 // Take the stock off the shelf it was sold from: the serving
@@ -170,8 +284,36 @@ class CheckoutController extends Controller
                 }
             }
 
-            $tax = (int) round($subtotal * $fees['tax_rate_bps'] / 10000);
-            $deliveryFee = CheckoutFees::deliveryFeeCents($fees, $subtotal, $area['km'], $area['radius_km']);
+            // Seller-shipped lines: each seller's template fee for this state
+            // (waived over the free-shipping threshold, which the seller covers).
+            $addressType = SellerShipping::addressType((array) $address);
+            $sellerQuote = SellerShipping::quote($sellerQuoteLines, $address['state'] ?? null, null, $addressType, $market);
+            if ($sellerQuote['unshippable']) {
+                $where = ['po_box' => 'a PO box', 'military' => 'a military (APO/FPO/DPO) address'][$addressType] ?? 'this state';
+                throw ValidationException::withMessages([
+                    'address' => ['The seller can\'t ship '.implode(', ', $sellerQuote['unshippable']).' to '.$where.' yet — remove it or use another address.'],
+                ]);
+            }
+            if (! $isHome && $sellerLines->isNotEmpty() && SellerShipping::stateCode($address['state'] ?? null, $market) === null) {
+                throw ValidationException::withMessages(['address' => ['Choose your state so the seller can ship to you.']]);
+            }
+            $sellerShipping = (int) $sellerQuote['total_cents'];
+
+            // Tax on top (US sales tax), or nothing extra where prices already include it (India GST).
+            // Imports aren't taxed here — duties/taxes are paid at customs.
+            // US: by the delivery address (ZIP lookup or state rate, see SalesTax).
+            $taxRate = SalesTax::rateBps($market, $address['state'] ?? null, $address['postal_code'] ?? null, (int) $fees['tax_rate_bps']);
+            $tax = Market::taxInclusive($market) ? 0 : (int) round(($subtotal - $importedSubtotal) * $taxRate / 10000);
+            // NexTech's delivery fee covers only what NexTech delivers. The
+            // online-courier path charges the flat courier quote instead of
+            // the near/far distance fee; the own-rider path is unchanged.
+            $deliveryFee = match (true) {
+                $nextechLines->isEmpty() => 0,
+                // Courier outside the US: the market's own flat delivery fee (with its free-delivery threshold).
+                $area['delivery_method'] === 'online_courier' && ! Market::usesLegacySettings($market) => CheckoutFees::deliveryFeeCents($fees, $nextechSubtotal, null, null),
+                $area['delivery_method'] === 'online_courier' => (int) $area['courier_quote_cents'],
+                default => CheckoutFees::deliveryFeeCents($fees, $nextechSubtotal, $area['km'], $area['radius_km']),
+            };
             $handlingFee = (int) $fees['handling_fee_cents'];
             $smallCartFee = $subtotal < $fees['small_cart_min_cents']
                 ? (int) $fees['small_cart_fee_cents']
@@ -179,9 +321,14 @@ class CheckoutController extends Controller
 
             $order = Order::create([
                 'user_id' => $request->user()->id,
+                'market' => $market,
+                'currency' => $currency,
+                'fx_rates' => $fxRates ?: null,
+                'tax_included_cents' => $taxIncluded,
                 // The store whose radius covers this address (null when no stores
                 // are configured); it's the one that packs and dispatches.
                 'store_id' => $area['store']?->id,
+                'delivery_method' => $area['delivery_method'],
                 // Cash-on-delivery skips Stripe, so the order is confirmed and
                 // enters the delivery pipeline immediately; cash is collected on
                 // hand-off and an admin marks it paid then.
@@ -191,13 +338,28 @@ class CheckoutController extends Controller
                 'subtotal_cents' => $subtotal,
                 'tax_cents' => $tax,
                 'delivery_fee_cents' => $deliveryFee,
+                'seller_shipping_cents' => $sellerShipping,
                 'handling_fee_cents' => $handlingFee,
                 'small_cart_fee_cents' => $smallCartFee,
-                'total_cents' => $subtotal + $tax + $deliveryFee + $handlingFee + $smallCartFee,
+                'total_cents' => $subtotal + $tax + $deliveryFee + $sellerShipping + $handlingFee + $smallCartFee,
                 'delivery_address' => $address,
                 'delivery_instructions' => $validated['delivery_instructions'] ?? null,
             ]);
             $order->items()->createMany($orderItems);
+            foreach ($sellerQuote['shops'] as $shopQuote) {
+                $order->shopShipping()->create([
+                    'shop_id' => $shopQuote['shop_id'],
+                    'mode' => $shopQuote['mode'],
+                    'fee_cents' => $shopQuote['fee_cents'],
+                    'seller_fee_cents' => $shopQuote['seller_fee_cents'] ?? null,
+                    'free_shipping' => $shopQuote['free_shipping'],
+                    'transit_min_days' => $shopQuote['transit_min_days'],
+                    'transit_max_days' => $shopQuote['transit_max_days'],
+                    'ship_by' => $shopQuote['ship_by'],
+                    'deliver_from' => $shopQuote['deliver_from'],
+                    'deliver_by' => $shopQuote['deliver_by'],
+                ]);
+            }
             $cart->items()->delete();
 
             // Apply the gift card: lock the row, spend up to the order total, and
@@ -223,6 +385,7 @@ class CheckoutController extends Controller
             // Nothing left to pay (gift card covered it) — settle immediately.
             if ((int) $order->total_cents <= 0) {
                 $order->update(['status' => 'confirmed', 'payment_status' => 'paid']);
+                SellerLedger::creditForOrder($order);
             }
 
             return $order->load('items');
@@ -232,27 +395,63 @@ class CheckoutController extends Controller
     }
 
     /**
-     * Resolve the delivery point against the active stores: find the store that
-     * serves the address (nearest one whose radius reaches it), reject an
-     * out-of-range address when radius enforcement is on, and return that
-     * store's distance + radius for a distance-based delivery fee. The returned
-     * `store` also drives the per-product availability check at checkout.
+     * Wraps the store-radius resolution below with one override: a cart
+     * holding any seller (shop_id) item can never actually be handed to a
+     * NexTech rider — nothing sends a rider to a seller's own address to
+     * collect it — so such a cart always ships by online courier, even when
+     * the address sits inside a store's delivery radius. The store/km/radius
+     * lookup itself is left untouched (still needed for any NexTech-owned
+     * items riding along in the same cart, and for per-store availability),
+     * only the final delivery_method/courier_quote_cents get overridden.
      *
      * @param  array<string, mixed>  $address
      * @param  array<string, int|string>  $fees
-     * @return array{km: float|null, radius_km: float|null, store: Store|null}
+     * @return array{km: float|null, radius_km: float|null, store: Store|null, delivery_method: string, courier_quote_cents: int|null}
      */
-    private function resolveDelivery(array $address, array $fees): array
+    private function resolveDelivery(array $address, array $fees, bool $hasShopItems = false, string $market = 'US'): array
+    {
+        $area = $this->resolveStoreDelivery($address, $fees, $market);
+
+        if ($hasShopItems && $area['delivery_method'] === 'own_rider') {
+            if (! Courier::isServiceable($address) && (bool) config('checkout.enforce_radius')) {
+                throw ValidationException::withMessages([
+                    'address' => ["We don't deliver to your area yet — we're expanding fast and will reach you soon."],
+                ]);
+            }
+
+            $area['delivery_method'] = 'online_courier';
+            $area['courier_quote_cents'] = Courier::quote($address)['cost_cents'];
+        }
+
+        return $area;
+    }
+
+    /**
+     * Resolve the delivery point against the active stores: find the store that
+     * serves the address (nearest one whose radius reaches it), reject an
+     * out-of-range address when radius enforcement is on (unless the online
+     * courier can reach it instead), and return that store's distance + radius
+     * for a distance-based delivery fee. The returned `store` also drives the
+     * per-product availability check at checkout.
+     *
+     * @param  array<string, mixed>  $address
+     * @param  array<string, int|string>  $fees
+     * @return array{km: float|null, radius_km: float|null, store: Store|null, delivery_method: string, courier_quote_cents: int|null}
+     */
+    private function resolveStoreDelivery(array $address, array $fees, string $market = 'US'): array
     {
         $enforce = (bool) config('checkout.enforce_radius');
-        $none = ['km' => null, 'radius_km' => null, 'store' => null];
+        $none = ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => 'own_rider', 'courier_quote_cents' => null];
 
-        $stores = Store::query()->where('is_active', true)
+        // This country's NexTech stores.
+        $stores = Store::query()->where('country', $market)->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')->get();
 
-        // No stores configured — nothing to check against.
+        // No NexTech stores in this country: the US keeps the original
+        // behaviour; elsewhere it goes by courier.
         if ($stores->isEmpty()) {
-            return $none;
+            return Market::usesLegacySettings($market) ? $none
+                : ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => 'online_courier', 'courier_quote_cents' => null];
         }
 
         $lat = $address['latitude'] ?? null;
@@ -284,6 +483,23 @@ class CheckoutController extends Controller
         // availability applies). Stores can be in different cities.
         $serving = Geo::servingStore($stores, (float) $lat, (float) $lng);
 
+        // Outside every store's radius: hand off to the online courier instead
+        // of hard-rejecting, when it can reach the address (the mock provider
+        // always can — a real integration is where "not serviceable" bites).
+        if ($serving === null && Courier::isServiceable($address)) {
+            $basis = Geo::nearestStore($stores, (float) $lat, (float) $lng);
+
+            return [
+                'km' => $basis['km'],
+                'radius_km' => (float) $basis['store']->delivery_radius_km,
+                // Sourced from the nearest store for inventory/fulfillment even
+                // though the courier — not that store's own riders — delivers it.
+                'store' => $basis['store'],
+                'delivery_method' => 'online_courier',
+                'courier_quote_cents' => Courier::quote($address)['cost_cents'],
+            ];
+        }
+
         if ($serving === null && $enforce) {
             throw ValidationException::withMessages([
                 'address' => ["We don't deliver to your area yet — we're expanding fast and will reach you soon."],
@@ -298,6 +514,8 @@ class CheckoutController extends Controller
             'km' => $basis['km'],
             'radius_km' => (float) $basis['store']->delivery_radius_km,
             'store' => $serving['store'] ?? null,
+            'delivery_method' => 'own_rider',
+            'courier_quote_cents' => null,
         ];
     }
 }

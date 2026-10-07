@@ -2,8 +2,14 @@
 
 namespace App\Models;
 
+use App\Notifications\OrderConfirmed;
 use App\Notifications\OrderDelivered;
+use App\Notifications\OrderShipped;
+use App\Support\CustomerMail;
+use App\Support\SellerOrderAlerts;
 use App\Support\Geo;
+use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -32,8 +38,8 @@ class Order extends Model
     ];
 
     protected $fillable = [
-        'user_id', 'store_id', 'status', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
-        'subtotal_cents', 'tax_cents', 'delivery_fee_cents', 'handling_fee_cents',
+        'user_id', 'market', 'currency', 'fx_rates', 'tax_included_cents', 'store_id', 'status', 'delivery_method', 'cancelled_by', 'cancel_reason', 'courier_name', 'payment_status', 'payment_method',
+        'subtotal_cents', 'tax_cents', 'delivery_fee_cents', 'seller_shipping_cents', 'handling_fee_cents',
         'small_cart_fee_cents', 'gift_card_discount_cents', 'total_cents', 'delivery_address', 'delivery_instructions',
         'stripe_payment_intent_id', 'stripe_refund_id', 'refunded_amount_cents',
         'delivery_partner_id',
@@ -60,6 +66,7 @@ class Order extends Model
             'total_cents' => 'integer',
             'refunded_amount_cents' => 'integer',
             'delivery_address' => 'array',
+            'fx_rates' => 'array',
             'rider_offer_expires_at' => 'datetime',
             'rider_accepted_at' => 'datetime',
             'rider_offer_declined_ids' => 'array',
@@ -72,6 +79,76 @@ class Order extends Model
             'delivery_code_expires_at' => 'datetime',
             'receipt_emailed_at' => 'datetime',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        // Order emails (the customer, and each seller with items on it). Sent after the surrounding transaction commits, so a
+        // rolled-back checkout never emails, and the order's items exist by then.
+        static::created(function (Order $order): void {
+            if ($order->status === 'confirmed') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+                DB::afterCommit(fn () => SellerOrderAlerts::newOrder($order->fresh()));
+            }
+        });
+        static::updated(function (Order $order): void {
+            // Paid: digital items become downloadable straight away.
+            if ($order->wasChanged('payment_status') && $order->payment_status === 'paid') {
+                DB::afterCommit(fn () => \App\Support\DigitalProducts::fulfill($order));
+            }
+            if (! $order->wasChanged('status')) {
+                return;
+            }
+            // Cancelled before delivery: the units go back on the shelf they came from.
+            if ($order->status === 'cancelled' && $order->getOriginal('status') !== 'completed') {
+                $order->restoreStock();
+            }
+            if ($order->status === 'confirmed' && $order->getOriginal('status') === 'pending_payment') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderConfirmed($order->fresh())));
+                DB::afterCommit(fn () => SellerOrderAlerts::newOrder($order->fresh()));
+            }
+            // Seller-shipped orders email per package instead (SellerFulfillment::createPackage).
+            if ($order->status === 'out_for_delivery' && $order->delivery_method !== 'seller') {
+                DB::afterCommit(fn () => $order->emailCustomer(new OrderShipped($order->fresh())));
+            }
+        });
+    }
+
+    /**
+     * Put a cancelled order's units back — mirroring where checkout took them
+     * from: the serving store's shelf for products on per-store stock,
+     * otherwise the variant's or the product's own counter.
+     */
+    public function restoreStock(): void
+    {
+        foreach ($this->items()->with('product')->get() as $item) {
+            $product = $item->product;
+            if (! $product || $item->quantity <= 0) {
+                continue;
+            }
+            $shelf = $this->store_id && $product->usesStoreInventory()
+                ? $product->storeInventory()->where('store_id', $this->store_id)->where('product_variant_id', $item->product_variant_id)->first()
+                : null;
+            if ($shelf) {
+                $shelf->increment('quantity', $item->quantity);
+            } elseif ($item->product_variant_id && ($variant = ProductVariant::find($item->product_variant_id))) {
+                $variant->increment('inventory_quantity', $item->quantity);
+            } else {
+                $product->increment('inventory_quantity', $item->quantity);
+            }
+        }
+    }
+
+    /** Send an order email to the customer (logged in the CRM; a failure never breaks the caller). */
+    public function emailCustomer(Notification $notification): void
+    {
+        if (! CustomerMail::orderEmailsEnabled()) {
+            return;
+        }
+        $this->loadMissing('user');
+        if ($this->user?->email) {
+            CustomerMail::send($this->user, $notification);
+        }
     }
 
     /**
@@ -197,9 +274,72 @@ class Order extends Model
         return $this->hasOne(RiderReview::class);
     }
 
+    public function shipment(): HasOne
+    {
+        return $this->hasOne(Shipment::class);
+    }
+
+    /** True when this order is fulfilled by the online-courier path rather than an own rider. */
+    /** Packages seller(s) shipped themselves for their items on this order. */
+    public function packages(): HasMany
+    {
+        return $this->hasMany(OrderPackage::class);
+    }
+
+    /** Per-seller shipping charged + delivery promise, for self/label-shipping sellers. */
+    public function labelRequests(): HasMany
+    {
+        return $this->hasMany(LabelRequest::class)->latest('id');
+    }
+
+    public function shopShipping(): HasMany
+    {
+        return $this->hasMany(OrderShopShipping::class);
+    }
+
+    /** Every line ships from a seller — NexTech has nothing to pack or deliver. */
+    /**
+     * Orders still needing attention: not delivered or cancelled yet — or marked
+     * delivered (NexTech's part of a mixed cart arrived) while a seller still has
+     * items to ship or a package on its way.
+     */
+    public function scopeOpen($query)
+    {
+        return $query->where(fn ($q) => $q->whereNotIn('status', ['completed', 'cancelled'])
+            ->orWhere(fn ($q) => $q->where('status', 'completed')->where(fn ($q) => $q
+                ->whereExists(fn ($p) => $p->selectRaw('1')->from('order_packages')->whereColumn('order_packages.order_id', 'orders.id')
+                    ->whereIn('order_packages.status', ['shipped', 'in_transit', 'out_for_delivery']))
+                ->orWhereExists(fn ($i) => $i->selectRaw('1')->from('order_items')->whereColumn('order_items.order_id', 'orders.id')
+                    ->where('order_items.fulfilled_by', 'seller')
+                    ->whereRaw('order_items.quantity > (select coalesce(sum(order_package_items.quantity), 0) from order_package_items where order_package_items.order_item_id = order_items.id)')))));
+    }
+
+    /** Cancelled orders whose money still has to go back (older admin cancellations stayed "paid"). */
+    public function scopeRefundDue($query)
+    {
+        return $query->where(fn ($q) => $q->where('payment_status', 'refund_pending')
+            ->orWhere(fn ($q) => $q->where('status', 'cancelled')->where('payment_status', 'paid')));
+    }
+
+    public function isSellerShippedOnly(): bool
+    {
+        return $this->delivery_method === 'seller';
+    }
+
+    public function usesOnlineCourier(): bool
+    {
+        return $this->delivery_method === 'online_courier';
+    }
+
     public function supportThreads(): HasMany
     {
         return $this->hasMany(SupportThread::class);
+    }
+
+    /** Buyer requests to change the shipping address before the order ships. */
+    public function addressChanges(): HasMany
+    {
+        return $this->hasMany(OrderAddressChange::class)->latest('id');
     }
 
     /** Store credit already issued against this order as a gift-card refund. */

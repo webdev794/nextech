@@ -3,7 +3,10 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\LiveTracking;
+use App\Support\SellerProgress;
 use App\Models\Order;
+use App\Support\SellerOrders;
 use App\Models\Setting;
 use App\Support\OrderReceipt;
 use Illuminate\Http\JsonResponse;
@@ -16,9 +19,10 @@ class OrderController extends Controller
     public function index(Request $request): JsonResponse
     {
         $orders = $request->user()->orders()
-            ->with(['items', 'riderReview'])
+            ->with(['items.review:id,order_item_id,rating,status', 'items.product:id,slug,product_details,return_policy', 'riderReview', 'packages.items', 'shopShipping.shop:id,name', 'addressChanges'])
             ->latest()
             ->paginate(20);
+        LiveTracking::refreshOrders($orders->getCollection());
 
         // The handover code is hidden by default; the owning customer sees it so
         // they can read it to the rider at the door.
@@ -117,6 +121,10 @@ class OrderController extends Controller
         if ($validated['payment_method'] === 'cod' && ! Setting::get('cod_enabled', false)) {
             return response()->json(['message' => 'Cash on delivery is not available right now.'], 422);
         }
+        if ($validated['payment_method'] === 'cod'
+            && ($blocked = SellerProgress::codBlockedReason($order->items()->with('product.shop')->get()->pluck('product'), (string) $order->market))) {
+            return response()->json(['message' => $blocked], 422);
+        }
 
         $order->update([
             'payment_method' => $validated['payment_method'],
@@ -151,5 +159,30 @@ class OrderController extends Controller
         $order->restoreGiftCardRedemptions();
 
         return response()->json(['data' => $order->load('items')]);
+    }
+
+    /**
+     * Ask to ship the order to a different address. Allowed until anything
+     * has left for it; the seller shipping it (or NexTech) accepts or declines.
+     */
+    public function requestAddressChange(Request $request, Order $order): JsonResponse
+    {
+        abort_unless($order->user_id === $request->user()->id, 404);
+        $order->load('packages');
+        abort_unless(SellerOrders::addressChangeable($order), 422, 'This order has already shipped, so its address can no longer be changed. Contact support if you need help.');
+        abort_if($order->addressChanges()->where('status', 'pending')->exists(), 422, 'You already asked to change this address — wait for the answer first.');
+
+        $address = $request->validate([
+            'name' => ['required', 'string', 'max:160'],
+            'line1' => ['required', 'string', 'max:255'],
+            'line2' => ['nullable', 'string', 'max:255'],
+            'city' => ['required', 'string', 'max:100'],
+            'state' => ['required', 'string', 'max:60'],
+            'postal_code' => ['required', 'string', 'max:12'],
+        ]);
+
+        $change = $order->addressChanges()->create(['address' => $address, 'status' => 'pending']);
+
+        return response()->json(['data' => $change], 201);
     }
 }

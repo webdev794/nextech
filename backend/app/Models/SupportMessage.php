@@ -7,11 +7,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SupportMessage extends Model
 {
-    protected $fillable = ['support_thread_id', 'user_id', 'is_staff', 'internal', 'body'];
+    protected $fillable = ['support_thread_id', 'user_id', 'is_staff', 'from_seller', 'internal', 'hidden_from_seller', 'body', 'attachments'];
 
     protected function casts(): array
     {
-        return ['is_staff' => 'boolean', 'internal' => 'boolean'];
+        return ['is_staff' => 'boolean', 'from_seller' => 'boolean', 'internal' => 'boolean', 'hidden_from_seller' => 'boolean', 'attachments' => 'array'];
     }
 
     public function thread(): BelongsTo

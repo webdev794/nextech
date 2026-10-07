@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Page;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Str;
 
 class PageController extends Controller
 {
@@ -15,7 +16,7 @@ class PageController extends Controller
     {
         return response()->json([
             'data' => Page::query()->published()->ordered()
-                ->get(['slug', 'title', 'show_in_footer', 'footer_group']),
+                ->get(['slug', 'parent_slug', 'title', 'show_in_footer', 'footer_group', 'menu_placements', 'sort_order']),
         ]);
     }
 
@@ -26,6 +27,9 @@ class PageController extends Controller
         return response()->json(['data' => [
             'slug' => $page->slug,
             'title' => $page->title,
+            'parent' => $page->parent_slug
+                ? Page::query()->published()->where('slug', $page->parent_slug)->first(['slug', 'title']) ?? ['slug' => null, 'title' => Str::headline($page->parent_slug)]
+                : null,
             'banner_image' => $page->banner_image,
             'content' => (string) $page->content,
             'sections' => is_array($page->sections) ? array_values($page->sections) : [],

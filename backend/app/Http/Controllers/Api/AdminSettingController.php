@@ -7,8 +7,17 @@ use App\Models\Setting;
 use App\Services\OtpService;
 use App\Support\Branding;
 use App\Support\CheckoutFees;
+use App\Support\Country;
+use App\Support\CourierCredentials;
 use App\Support\FooterConfig;
+use App\Support\Fx;
+use App\Support\Market;
 use App\Support\Payments;
+use App\Support\RiderLedger;
+use App\Support\SalesTax;
+use App\Support\SellerFulfillment;
+use App\Support\SellerLedger;
+use App\Support\SellerShipping;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -59,6 +68,18 @@ class AdminSettingController extends Controller
         'stripe_key' => ['sometimes', 'nullable', 'string', 'max:255'],
         'stripe_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
         'stripe_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
+    ];
+
+    /** Real-courier-provider credentials. */
+    private const COURIER_RULES = [
+        'courier_provider' => ['sometimes', 'in:mock,real'],
+        'courier_base_url' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_account_code' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'courier_api_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
+        // AfterShip live tracking (LiveTracking).
+        'tracking_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+        'tracking_webhook_secret' => ['sometimes', 'nullable', 'string', 'max:255'],
     ];
 
     /** Footer content (a nested blob, sanitised by FooterConfig). */
@@ -134,6 +155,7 @@ class AdminSettingController extends Controller
             'expires_in' => $this->ttlMinutes() * 60,
             'account' => $this->accountPayload($user),
             'payments' => $this->payload()['payments'],
+            'courier' => $this->payload()['courier'],
         ]]);
     }
 
@@ -141,6 +163,40 @@ class AdminSettingController extends Controller
      * Change the signed-in admin's own name / e-mail / phone. Requires the
      * Secure access unlock token.
      */
+    /** Settings → Charges → "Fetch automatically": fill the US state tax table from the lookup. */
+    public function fetchSalesTaxStates(): JsonResponse
+    {
+        $result = SalesTax::fetchStateRates();
+
+        return response()->json(['data' => $this->payload(), 'result' => $result]);
+    }
+
+    /** Secure access: sellers kept on an older commission rate, with their market's current rate. */
+    public function keptRates(Request $request): JsonResponse
+    {
+        $this->assertUnlocked($request);
+        $rates = SellerLedger::marketRates();
+        $shops = \App\Models\Shop::whereNotNull('commission_rate_bps')->orderBy('name')->get(['id', 'name', 'market', 'commission_rate_bps']);
+
+        return response()->json(['data' => $shops->map(fn ($shop) => [
+            'id' => $shop->id,
+            'name' => $shop->name,
+            'market' => $shop->market,
+            'kept_rate_bps' => (int) $shop->commission_rate_bps,
+            'current_rate_bps' => $rates[$shop->market] ?? SellerLedger::rate($shop->market),
+        ])->values()]);
+    }
+
+    /** Secure access: move the chosen sellers off their kept rate onto their market's current one. */
+    public function releaseKeptRates(Request $request): JsonResponse
+    {
+        $this->assertUnlocked($request);
+        $data = $request->validate(['shop_ids' => ['required', 'array', 'min:1', 'max:1000'], 'shop_ids.*' => ['integer']]);
+        $moved = \App\Models\Shop::whereIn('id', $data['shop_ids'])->whereNotNull('commission_rate_bps')->update(['commission_rate_bps' => null]);
+
+        return response()->json(['data' => ['moved' => $moved]]);
+    }
+
     public function updateAccount(Request $request): JsonResponse
     {
         $this->assertUnlocked($request);
@@ -167,19 +223,207 @@ class AdminSettingController extends Controller
             [
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
+                'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
+                'nextech_label_mode' => ['sometimes', Rule::in(['auto', 'manual'])],
+                'decoration_min_products' => ['sometimes', 'integer', 'min:0', 'max:1000'],
+                'decoration_spot_check_rate' => ['sometimes', 'numeric', 'min:0', 'max:1'],
+                'active_countries' => ['sometimes', 'array'],
+                'active_countries.*' => ['string', Rule::in(array_keys(config('countries', [])))],
+                'commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+                // New-seller commission (Secure access): null = same rate as established sellers.
+                'new_seller_commission_rate_bps' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:10000'],
+                'new_seller_days' => ['sometimes', 'integer', 'min:1', 'max:3650'],
+                // With a commission change: also move existing sellers to it (default: they keep their rate).
+                'commission_apply_existing' => ['sometimes', 'boolean'],
+                // US sales tax: by state/ZIP or one flat rate; per-state edits; ZIP-lookup key (Secure access).
+                'sales_tax_mode' => ['sometimes', Rule::in(['state', 'flat'])],
+                'sales_tax_states' => ['sometimes', 'array'],
+                'sales_tax_states.*' => ['nullable', 'integer', 'min:0', 'max:10000'],
+                'sales_tax_reset_states' => ['sometimes', 'boolean'],
+                'sales_tax_api_key' => ['sometimes', 'nullable', 'string', 'max:255'],
+                'sales_tax_clear_cache' => ['sometimes', 'boolean'],
+                'min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
+                'return_window_days' => ['sometimes', 'integer', 'min:0', 'max:365', 'lte:max_return_days'],
+                'max_return_days' => ['sometimes', 'integer', 'min:0', 'max:365'],
+                'return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'label_postage_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_base_pay_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_per_mile_cents' => ['sometimes', 'integer', 'min:0', 'max:100000'],
+                'rider_min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'rider_max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                // Other markets (e.g. India): fees + payout limits in their own currency.
+                'market' => ['sometimes', 'string', Rule::in(array_keys(config('markets', [])))],
+                'market_fees' => ['sometimes', 'array'],
+                'market_payouts' => ['sometimes', 'array'],
+                'market_payouts.min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.daily_payout_cap_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_payouts.return_pickup_fee_cents' => ['sometimes', 'integer', 'min:0', 'max:10000000'],
+                'market_payouts.label_postage_cents' => ['sometimes', 'integer', 'min:0', 'max:10000000'],
+                'market_payouts.commission_rate_bps' => ['sometimes', 'integer', 'min:0', 'max:10000'],
+                'home_market' => ['sometimes', 'string', Rule::in(array_keys(config('markets', [])))],
+                'market_rider_pay' => ['sometimes', 'array'],
+                'market_rider_pay.base_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.per_mile_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.min_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                'market_rider_pay.max_payout_cents' => ['sometimes', 'integer', 'min:0'],
+                // NexTech's own legal identity per country, printed as "Sold by" on bills for its own items.
+                // Digital downloads: upload limits (MB) — keep small on shared hosting.
+                'digital_max_file_mb' => ['sometimes', 'integer', 'min:1', 'max:4096'],
+                // Seller cash on delivery: off / only approved sellers / all, and the "owed" limit per country (cents).
+                'seller_cod_mode' => ['sometimes', Rule::in(\App\Support\SellerCod::MODES)],
+                'seller_cod_max_owed' => ['sometimes', 'array'],
+                'seller_cod_max_owed.*' => ['integer', 'min:0', 'max:100000000'],
+                'digital_max_product_mb' => ['sometimes', 'integer', 'min:1', 'max:20480'],
+                'business_details' => ['sometimes', 'array'],
+                'business_details.*' => ['nullable', 'array'],
+                'business_details.*.legal_name' => ['nullable', 'string', 'max:160'],
+                'business_details.*.address' => ['nullable', 'string', 'max:500'],
+                'business_details.*.tax_number' => ['nullable', 'string', 'max:40'],
+                'grievance_officer' => ['sometimes', 'nullable', 'array'],
+                'grievance_officer.name' => ['sometimes', 'nullable', 'string', 'max:120'],
+                'grievance_officer.designation' => ['sometimes', 'nullable', 'string', 'max:120'],
+                'grievance_officer.email' => ['sometimes', 'nullable', 'email', 'max:190'],
+                'grievance_officer.phone' => ['sometimes', 'nullable', 'string', 'max:32'],
+                'grievance_officer.address' => ['sometimes', 'nullable', 'string', 'max:500'],
+                // Cross-border currency conversion (Fx): platform margin, and optional fixed rates per 1 USD.
+                'fx_margin_bps' => ['sometimes', 'integer', 'min:0', 'max:2000'],
+                'fx_manual' => ['sometimes', 'array'],
+                'fx_manual.*' => ['nullable', 'numeric', 'gt:0', 'max:100000'],
+                'fx_refresh' => ['sometimes', 'boolean'],
             ]
-            + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::FOOTER_RULES
+            + collect(self::FEE_RULES)->mapWithKeys(fn ($rules, $key) => ['market_fees.'.$key => $rules])->all()
+            + self::FEE_RULES + self::BRANDING_RULES + self::PAYMENT_RULES + self::COURIER_RULES + self::FOOTER_RULES
         );
+
+        $ratesBefore = SellerLedger::marketRates();
 
         if (array_key_exists('cod_enabled', $validated)) {
             Setting::put('cod_enabled', (bool) $validated['cod_enabled']);
+        }
+
+        if (array_key_exists('nextech_label_mode', $validated)) {
+            Setting::put('nextech_label_mode', $validated['nextech_label_mode']);
+        }
+
+        foreach (['decoration_min_products' => 'intval', 'decoration_spot_check_rate' => 'floatval'] as $key => $cast) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, $cast($validated[$key]));
+            }
+        }
+
+        if (array_key_exists('nextech_pickup', $validated)) {
+            Setting::put('nextech_pickup', $validated['nextech_pickup']);
         }
 
         if (array_key_exists('rider_auto_assign', $validated)) {
             Setting::put('rider_auto_assign', (bool) $validated['rider_auto_assign']);
         }
 
+        if (array_key_exists('active_countries', $validated)) {
+            Setting::put('active_countries', array_values(array_unique(array_map('strtoupper', $validated['active_countries']))));
+        }
+
+        if (array_key_exists('commission_rate_bps', $validated)) {
+            Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        if (array_key_exists('sales_tax_mode', $validated)) {
+            Setting::put('sales_tax_mode', $validated['sales_tax_mode']);
+        }
+        if (array_key_exists('sales_tax_states', $validated)) {
+            // Blank = null: that state uses the default rate.
+            $known = array_keys((array) config('sales_tax.states', []));
+            Setting::put('sales_tax_states', collect($validated['sales_tax_states'])->only($known)->map(fn ($v) => $v === null ? null : (int) $v)->all());
+        }
+        if (! empty($validated['sales_tax_reset_states'])) {
+            Setting::put('sales_tax_states', []);
+        }
+        if (array_key_exists('sales_tax_api_key', $validated) || ! empty($validated['sales_tax_clear_cache'])) {
+            $this->assertUnlocked($request);
+            if (array_key_exists('sales_tax_api_key', $validated) && trim((string) $validated['sales_tax_api_key']) !== '') {
+                Setting::put('sales_tax_api_key', trim((string) $validated['sales_tax_api_key']));
+            }
+            if (! empty($validated['sales_tax_clear_cache'])) {
+                \App\Models\SalesTaxRate::query()->delete();
+            }
+        }
+
+        // New-seller commission lives behind the Secure access unlock.
+        if (array_key_exists('new_seller_commission_rate_bps', $validated) || array_key_exists('new_seller_days', $validated)) {
+            $this->assertUnlocked($request);
+            if (array_key_exists('new_seller_commission_rate_bps', $validated)) {
+                Setting::put('new_seller_commission_rate_bps', $validated['new_seller_commission_rate_bps'] === null ? null : (int) $validated['new_seller_commission_rate_bps']);
+            }
+            if (array_key_exists('new_seller_days', $validated)) {
+                Setting::put('new_seller_days', (int) $validated['new_seller_days']);
+            }
+        }
+
+        foreach (['min_payout_cents', 'max_payout_cents', 'daily_payout_cap_cents', 'return_window_days', 'max_return_days', 'return_pickup_fee_cents', 'label_postage_cents', 'rider_base_pay_cents', 'rider_per_mile_cents', 'rider_min_payout_cents', 'rider_max_payout_cents'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, (int) $validated[$key]);
+            }
+        }
+
         $this->mergeInto('checkout_fees', array_intersect_key($validated, self::FEE_RULES));
+
+        $market = strtoupper($validated['market'] ?? '');
+        if ($market !== '' && ! Market::usesLegacySettings($market)) {
+            $this->mergeInto('checkout_fees_'.$market, array_intersect_key((array) ($validated['market_fees'] ?? []), self::FEE_RULES));
+            $this->mergeInto('payouts_'.$market, (array) ($validated['market_payouts'] ?? []));
+            $this->mergeInto('rider_pay_'.$market, (array) ($validated['market_rider_pay'] ?? []));
+        }
+
+        if (array_key_exists('home_market', $validated)) {
+            Setting::put('home_market', strtoupper($validated['home_market']));
+        }
+
+        if (array_key_exists('fx_margin_bps', $validated) || array_key_exists('fx_manual', $validated)) {
+            $fx = Fx::settings();
+            if (array_key_exists('fx_margin_bps', $validated)) {
+                $fx['margin_bps'] = (int) $validated['fx_margin_bps'];
+            }
+            foreach ((array) ($validated['fx_manual'] ?? []) as $currency => $rate) {
+                $fx['manual'][strtolower((string) $currency)] = $rate !== null && $rate !== '' ? (float) $rate : null;
+            }
+            Setting::put('fx', $fx);
+        }
+        if (! empty($validated['fx_refresh'])) {
+            Fx::refresh();
+        }
+
+        if (array_key_exists('seller_cod_mode', $validated)) {
+            Setting::put('seller_cod_mode', $validated['seller_cod_mode']);
+        }
+        if (array_key_exists('seller_cod_max_owed', $validated)) {
+            Setting::put('seller_cod_max_owed', array_merge((array) Setting::get('seller_cod_max_owed', []), array_intersect_key(array_map('intval', $validated['seller_cod_max_owed']), array_flip(Market::codes()))));
+        }
+        foreach (['digital_max_file_mb', 'digital_max_product_mb'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, (int) $validated[$key]);
+            }
+        }
+        if (array_key_exists('business_details', $validated)) {
+            $details = (array) Setting::get('business_details', []);
+            foreach ((array) $validated['business_details'] as $code => $row) {
+                $code = strtoupper((string) $code);
+                abort_unless(in_array($code, Market::codes(), true), 422, 'Unknown country.');
+                $row = array_filter(array_map(fn ($v) => is_string($v) ? trim($v) : $v, (array) $row), fn ($v) => $v !== null && $v !== '');
+                if ($row) {
+                    $details[$code] = $row;
+                } else {
+                    unset($details[$code]);
+                }
+            }
+            Setting::put('business_details', $details ?: null);
+        }
+        if (array_key_exists('grievance_officer', $validated)) {
+            $officer = array_filter((array) $validated['grievance_officer'], fn ($v) => $v !== null && $v !== '');
+            Setting::put('grievance_officer', $officer ?: null);
+        }
         $this->mergeInto('branding', array_intersect_key($validated, self::BRANDING_RULES));
 
         if (array_key_exists('footer', $validated)) {
@@ -201,6 +445,30 @@ class AdminSettingController extends Controller
             }
         }
         $this->mergeInto('payments', $payments);
+
+        // Courier credentials live behind the same Secure access unlock.
+        $courier = array_intersect_key($validated, self::COURIER_RULES);
+        if ($courier !== []) {
+            $this->assertUnlocked($request);
+        }
+
+        foreach (['courier_api_key', 'courier_api_secret', 'tracking_api_key', 'tracking_webhook_secret'] as $secret) {
+            if (array_key_exists($secret, $courier) && trim((string) $courier[$secret]) === '') {
+                unset($courier[$secret]);
+            }
+        }
+        $this->mergeInto('courier', $courier);
+
+        // Commission changed: existing sellers keep their rate unless the admin applies it to them too.
+        $apply = (bool) ($validated['commission_apply_existing'] ?? false);
+        $forced = [];
+        if ($apply && array_key_exists('commission_rate_bps', $validated)) {
+            $forced = array_values(array_filter(Market::codes(), fn ($code) => Market::usesLegacySettings($code) || ! isset(((array) Setting::get('payouts_'.$code, []))['commission_rate_bps'])));
+        }
+        if ($apply && isset($validated['market_payouts']['commission_rate_bps'], $validated['market'])) {
+            $forced[] = strtoupper($validated['market']);
+        }
+        SellerLedger::lockShopRates($ratesBefore, $apply, $forced);
 
         return response()->json(['data' => $this->payload()]);
     }
@@ -224,11 +492,70 @@ class AdminSettingController extends Controller
     private function payload(): array
     {
         $stripe = Payments::stripe();
+        $courier = CourierCredentials::current();
 
         return [
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
-            ...CheckoutFees::current(),
+            'nextech_pickup' => SellerShipping::nextechPickup(),
+            'nextech_label_mode' => SellerFulfillment::labelMode(),
+            'decoration_min_products' => \App\Support\StoreDecorations::minProducts(),
+            'decoration_spot_check_rate' => \App\Support\StoreDecorations::spotCheckRate(),
+            'active_countries' => Country::active(),
+            'fx' => Fx::status(),
+            'all_countries' => collect(Country::all())->map(fn (array $c) => ['code' => $c['code'], 'name' => $c['name']])->values()->all(),
+            // The US forms (original settings keys).
+            'commission_rate_bps' => SellerLedger::rate('US'),
+            'new_seller_commission_rate_bps' => SellerLedger::newSellerRateBps(),
+            'new_seller_days' => SellerLedger::newSellerDays(),
+            'sales_tax' => SalesTax::adminPayload(),
+            // Sellers kept on an older commission rate, per market.
+            'kept_rate_sellers' => \App\Models\Shop::whereNotNull('commission_rate_bps')->selectRaw('market, count(*) as n')->groupBy('market')->pluck('n', 'market'),
+            'min_payout_cents' => SellerLedger::minPayoutCents('US'),
+            'max_payout_cents' => SellerLedger::maxPayoutCents('US'),
+            'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents('US'),
+            'return_window_days' => SellerLedger::returnWindowDays(),
+            'max_return_days' => SellerLedger::maxReturnDays(),
+            'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents('US'),
+            'label_postage_cents' => SellerLedger::labelPostageCents('US'),
+            'rider_base_pay_cents' => RiderLedger::baseCents('US'),
+            'rider_per_mile_cents' => RiderLedger::perMileCents('US'),
+            'rider_min_payout_cents' => RiderLedger::minPayoutCents('US'),
+            'rider_max_payout_cents' => RiderLedger::maxPayoutCents('US'),
+            ...CheckoutFees::current('US'),
+            'home_market' => Market::home(),
+            'home_market_name' => Country::find(Market::home())['name'] ?? Market::home(),
+            'home_currency' => Market::currency(Market::home()),
+            // Each non-home market's own fees and payout limits (its currency).
+            // Every open country for the admin's currency switch.
+            'all_markets' => collect(Market::codes())->map(fn ($code) => ['code' => $code, 'name' => Country::find($code)['name'] ?? $code, 'currency' => Market::currency($code)])->values(),
+            // Countries with their own (non-US) charge settings.
+            'markets' => collect(Market::codes())->reject(fn ($code) => Market::usesLegacySettings($code))->map(fn ($code) => [
+                'code' => $code,
+                'name' => Country::find($code)['name'] ?? $code,
+                'currency' => Market::currency($code),
+                'fees' => CheckoutFees::current($code),
+                'payouts' => [
+                    'min_payout_cents' => SellerLedger::minPayoutCents($code),
+                    'max_payout_cents' => SellerLedger::maxPayoutCents($code),
+                    'daily_payout_cap_cents' => SellerLedger::dailyPayoutCapCents($code),
+                    'return_pickup_fee_cents' => SellerLedger::returnPickupFeeCents($code),
+                    'label_postage_cents' => SellerLedger::labelPostageCents($code),
+                    'commission_rate_bps' => SellerLedger::rate($code),
+                ],
+                'rider_pay' => [
+                    'base_cents' => RiderLedger::baseCents($code),
+                    'per_mile_cents' => RiderLedger::perMileCents($code),
+                    'min_payout_cents' => RiderLedger::minPayoutCents($code),
+                    'max_payout_cents' => RiderLedger::maxPayoutCents($code),
+                ],
+            ])->values(),
+            'grievance_officer' => Setting::get('grievance_officer'),
+            'business_details' => (object) (Setting::get('business_details') ?? []),
+            'digital_max_file_mb' => (int) Setting::get('digital_max_file_mb', 50),
+            'seller_cod_mode' => \App\Support\SellerCod::mode(),
+            'seller_cod_max_owed' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerCod::maxOwedCents($c)]),
+            'digital_max_product_mb' => (int) Setting::get('digital_max_product_mb', 200),
             'branding' => Branding::current(),
             'footer' => FooterConfig::current(),
             'secure_access' => ['method' => $this->unlockMethod()],
@@ -240,6 +567,20 @@ class AdminSettingController extends Controller
                 'stripe_secret_hint' => self::hint($stripe['secret']),
                 'stripe_webhook_secret_set' => $stripe['webhook_secret'] !== '',
                 'stripe_webhook_secret_hint' => self::hint($stripe['webhook_secret']),
+            ],
+            'courier' => [
+                'provider' => $courier['provider'],
+                'base_url' => $courier['base_url'],
+                'account_code' => $courier['account_code'],
+                'api_key_set' => $courier['api_key'] !== '',
+                'api_key_hint' => self::hint($courier['api_key']),
+                'api_secret_set' => $courier['api_secret'] !== '',
+                'api_secret_hint' => self::hint($courier['api_secret']),
+                'tracking_api_key_set' => $courier['tracking_api_key'] !== '',
+                'tracking_api_key_hint' => self::hint($courier['tracking_api_key']),
+                'tracking_webhook_secret_set' => $courier['tracking_webhook_secret'] !== '',
+                'tracking_webhook_secret_hint' => self::hint($courier['tracking_webhook_secret']),
+                'tracking_webhook_url' => url('/api/webhooks/aftership'),
             ],
         ];
     }

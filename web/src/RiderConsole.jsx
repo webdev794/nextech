@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
+import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
+import RiderEarnings from './RiderEarnings'
+import { RiderChatDock } from './SurfaceChats'
+import { openChat } from './chatDockUtils'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const STORE_URL = import.meta.env.BASE_URL || '/'
 
-const money = (c) => `$${((c ?? 0) / 100).toFixed(2)}`
+// Order amounts in the order's own currency (India: ₹).
+const money = (c, currency) => formatMoney(c ?? 0, currency || 'usd')
 const STATUS_LABEL = {
   confirmed: 'Confirmed', packing: 'Being packed', ready_for_delivery: 'Ready for pickup',
   out_for_delivery: 'Out for delivery', completed: 'Delivered', cancelled: 'Cancelled',
@@ -68,7 +74,7 @@ function DeliveryCard({ order, pool, headers, onDone, onChat }) {
       <ul className="rider-card-items">
         {order.items?.map((it, i) => <li key={i}>{it.quantity} × {it.name}</li>)}
       </ul>
-      {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due)}</b></p>}
+      {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due, order.currency)}</b></p>}
 
       <div className="rider-card-actions">
         <a className="rider-btn ghost" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressText(a))}`} target="_blank" rel="noreferrer">Directions</a>
@@ -363,7 +369,7 @@ function OfferPrompt({ offers, headers, onResolved }) {
               <h3 className="rider-offer-h">New delivery — Order #{o.id}</h3>
               <p className="rider-offer-sub">{o.customer_name || 'Customer'}<br />{addressText(o.delivery_address)}</p>
               <p className="rider-offer-sub">{o.items?.reduce((n, i) => n + (i.quantity || 0), 0) ?? 0} item(s){o.delivery_instructions ? ` · “${o.delivery_instructions}”` : ''}</p>
-              {o.cod_due > 0 && <p className="rider-offer-cod">Collect cash {money(o.cod_due)}</p>}
+              {o.cod_due > 0 && <p className="rider-offer-cod">Collect cash {money(o.cod_due, o.currency)}</p>}
               <div className={`rider-offer-count${secs > 10 ? ' calm' : ''}`}>{fmtMMSS(secs)}</div>
               {secs === 0
                 ? <p className="rider-offer-wait">Re-offering to another rider…</p>
@@ -393,11 +399,8 @@ export default function RiderConsole({ token, onSignOut }) {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [chatOrder, setChatOrder] = useState(null)
-  const [chat, setChat] = useState({ messages: [], thread_id: null })
-  const [reply, setReply] = useState('')
   const [alertOpen, setAlertOpen] = useState(false)
-  const chatLogRef = useRef(null)
+  const [payKey, setPayKey] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -446,50 +449,16 @@ export default function RiderConsole({ token, onSignOut }) {
     return () => clearInterval(t)
   }, [loadStats])
 
-  const loadChat = useCallback(async (orderId) => {
-    try {
-      const res = await fetch(`${API_URL}/rider/orders/${orderId}/messages`, { headers: headers() })
-      const body = await readJson(res)
-      if (res.ok) setChat(body.data ?? { messages: [], thread_id: null })
-    } catch { /* keep last */ }
-  }, [headers])
-
-  useEffect(() => {
-    if (!chatOrder) return
-    const id = chatOrder
-    let alive = true
-    const tick = () => { if (alive) loadChat(id) }
-    Promise.resolve().then(tick)
-    const t = setInterval(tick, 4000)
-    return () => { alive = false; clearInterval(t) }
-  }, [chatOrder, loadChat])
-
-  useEffect(() => {
-    if (chatLogRef.current) chatLogRef.current.scrollTop = chatLogRef.current.scrollHeight
-  }, [chat])
-
-  async function sendReply() {
-    const text = reply.trim()
-    if (!text || !chatOrder) return
-    setReply('')
-    try {
-      const res = await fetch(`${API_URL}/rider/orders/${chatOrder}/messages`, {
-        method: 'POST', headers: headers(true), body: JSON.stringify({ body: text }),
-      })
-      const body = await readJson(res)
-      if (res.ok) setChat(body.data)
-      else { setReply(text); setError(body.message ?? 'Message not sent.') }
-    } catch { setReply(text); setError('Message not sent.') }
-  }
-
-  const refresh = () => { load(); loadStats() }
+  const refresh = () => { load(); loadStats(); setPayKey((k) => k + 1) }
+  // Customer chats open bottom right (RiderChatDock), beside the NexTech one.
+  const chatWithCustomer = (orderId) => openChat({ key: `order-${orderId}`, kind: 'order', id: orderId, name: `Order #${orderId}`, subtitle: 'Chat with the customer' })
 
   if (loading) return <div className="rider-shell"><div className="rider-loading">Loading your deliveries…</div></div>
 
   return (
     <div className="rider-shell">
       <header className="rider-bar">
-        <strong>Deliveries</strong>
+        <strong className="rider-brand"><BrandLogo onDark /> Deliveries</strong>
         <div>
           <div className="rider-alert-wrap">
             <button type="button" className="rider-link" aria-expanded={alertOpen} onClick={() => setAlertOpen((v) => !v)}>Alert sound</button>
@@ -511,6 +480,8 @@ export default function RiderConsole({ token, onSignOut }) {
 
       {stats && <RiderStats stats={stats} />}
 
+      <RiderEarnings headers={headers} refreshKey={payKey} />
+
       {(data.pending_returns ?? []).length > 0 && (
         <div className="rider-returns">
           <strong>Return items to the store</strong>
@@ -527,40 +498,18 @@ export default function RiderConsole({ token, onSignOut }) {
         <h2>My deliveries ({data.assigned.length})</h2>
         {data.assigned.length === 0
           ? <p className="rider-empty">Nothing assigned to you right now. New assignments appear here automatically.</p>
-          : data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={setChatOrder} />)}
+          : data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
       </section>
 
       {data.pool.length > 0 && (
         <section className="rider-section">
           <h2>Available to pick up ({data.pool.length})</h2>
-          {data.pool.map((o) => <DeliveryCard key={o.id} order={o} pool headers={headers} onDone={refresh} onChat={setChatOrder} />)}
+          {data.pool.map((o) => <DeliveryCard key={o.id} order={o} pool headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
         </section>
       )}
 
-      {chatOrder && (
-        <div className="rider-chat-overlay" role="presentation" onClick={() => setChatOrder(null)}>
-          <aside className="rider-chat" onClick={(e) => e.stopPropagation()}>
-            <div className="rider-chat-head">
-              <strong>Order #{chatOrder} · customer</strong>
-              <button type="button" onClick={() => setChatOrder(null)}>Close</button>
-            </div>
-            <div className="rider-chat-log" ref={chatLogRef}>
-              {chat.messages?.length
-                ? chat.messages.map((m) => (
-                    <div key={m.id} className={`rider-msg ${m.mine ? 'mine' : m.from}`}>
-                      <span>{m.body}</span>
-                      <em>{new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</em>
-                    </div>
-                  ))
-                : <p className="rider-empty">No messages yet. Say hello to the customer.</p>}
-            </div>
-            <div className="rider-chat-send">
-              <input placeholder="Message the customer" value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') sendReply() }} />
-              <button type="button" disabled={!reply.trim()} onClick={sendReply}>Send</button>
-            </div>
-          </aside>
-        </div>
-      )}
+      <RiderChatDock headers={headers} orders={data.assigned} />
+
     </div>
   )
 }

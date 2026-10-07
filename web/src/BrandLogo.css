@@ -1,0 +1,10 @@
+.brand-logo-wrap{display:inline-flex;align-items:center;height:30px}
+.brand-logo-wrap img{display:block;height:100%;width:auto;max-width:160px;object-fit:contain}
+.brand-logo-wrap.on-dark{height:32px;padding:3px 8px;border-radius:8px;background:#fff}
+.brand-logo-letter{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#8bd08f;color:#141a12;font-weight:700}
+.rider-brand{display:flex;align-items:center;gap:10px}
+.entry-logo{display:flex;justify-content:center;margin:0 0 12px}
+.entry-logo .brand-logo-wrap{height:44px}
+.entry-logo .brand-logo-wrap img{max-width:200px}
+.sc-brand-logo.brand-logo-wrap{height:36px}
+.sc-brand-logo.brand-logo-letter{width:36px;height:36px;border-radius:9px;background:#fb7701;color:#fff;font-size:20px}

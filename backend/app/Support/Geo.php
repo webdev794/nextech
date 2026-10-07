@@ -265,6 +265,8 @@ class Geo
             'city' => (string) $city,
             'state' => $state,
             'postal_code' => $postcode,
+            // ISO country ("IN", "US") — the storefront switches to that country's store.
+            'country' => strtoupper((string) ($a['country_code'] ?? '')),
             'lat' => (float) $place['lat'],
             'lon' => (float) $place['lon'],
         ];

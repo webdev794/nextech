@@ -13,39 +13,22 @@ class HomeTileTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_config_resolves_tiles_against_the_linked_category(): void
+    // The homepage category carousel is every active category ticked "Show on
+    // homepage", in the categories' own order (it replaced the separate tile list).
+    public function test_config_lists_categories_shown_on_the_homepage(): void
     {
-        $category = Category::factory()->create(['name' => 'Fresh Produce', 'slug' => 'fresh-produce', 'image_url' => 'https://x/cat.png']);
-
-        // Falls back to the category's name + image.
-        HomeTile::create(['category_slug' => 'fresh-produce', 'sort_order' => 2]);
-        // Custom title + image override.
-        HomeTile::create(['category_slug' => 'fresh-produce', 'title' => 'Weekend fruit deals', 'image_url' => 'https://x/custom.png', 'sort_order' => 1]);
-        // Inactive - hidden.
-        HomeTile::create(['category_slug' => 'fresh-produce', 'is_active' => false, 'sort_order' => 0]);
-
-        $response = $this->getJson('/api/config')->assertOk();
-
-        $response->assertJsonCount(2, 'data.home_tiles')
-            ->assertJsonPath('data.home_tiles.0.title', 'Weekend fruit deals')
-            ->assertJsonPath('data.home_tiles.0.image_url', 'https://x/custom.png')
-            ->assertJsonPath('data.home_tiles.0.category_slug', 'fresh-produce')
-            ->assertJsonPath('data.home_tiles.1.title', 'Fresh Produce')
-            ->assertJsonPath('data.home_tiles.1.image_url', 'https://x/cat.png');
-
-        unset($category);
-    }
-
-    public function test_a_tile_with_a_missing_category_and_no_link_is_dropped(): void
-    {
-        HomeTile::create(['category_slug' => 'gone', 'sort_order' => 1]);
-        HomeTile::create(['title' => 'Recipes', 'link_url' => 'https://example.com/recipes', 'sort_order' => 2]);
+        Category::factory()->create(['name' => 'Phones', 'slug' => 'phones', 'image_url' => 'https://x/phones.png', 'show_on_home' => true, 'sort_order' => 2]);
+        Category::factory()->create(['name' => 'Laptops', 'slug' => 'laptops', 'image_url' => 'https://x/laptops.png', 'show_on_home' => true, 'sort_order' => 1]);
+        Category::factory()->create(['name' => 'Cables', 'slug' => 'cables', 'show_on_home' => false]);
+        Category::factory()->create(['name' => 'Retired', 'slug' => 'retired', 'show_on_home' => true, 'is_active' => false]);
 
         $this->getJson('/api/config')
             ->assertOk()
-            ->assertJsonCount(1, 'data.home_tiles')
-            ->assertJsonPath('data.home_tiles.0.title', 'Recipes')
-            ->assertJsonPath('data.home_tiles.0.link_url', 'https://example.com/recipes');
+            ->assertJsonCount(2, 'data.home_tiles')
+            ->assertJsonPath('data.home_tiles.0.title', 'Laptops')
+            ->assertJsonPath('data.home_tiles.0.category_slug', 'laptops')
+            ->assertJsonPath('data.home_tiles.0.image_url', 'https://x/laptops.png')
+            ->assertJsonPath('data.home_tiles.1.title', 'Phones');
     }
 
     public function test_admin_can_manage_tiles(): void

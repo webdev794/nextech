@@ -3,9 +3,15 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\RiderLedgerEntry;
+use App\Models\RiderPayoutRequest;
 use App\Models\User;
 use App\Support\Geo;
+use App\Support\Market;
+use App\Support\Money;
 use App\Support\RiderAttendance;
+use App\Support\RiderLedger;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -13,11 +19,14 @@ use Illuminate\Validation\ValidationException;
 
 class AdminRiderController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        $market = Market::adminFilter($request);
         $riders = User::query()
             ->where('is_rider', true)
-            ->with('stores:id,name,city')
+            // Riders of this country's stores (and ones not linked to a store yet).
+            ->when($market, fn ($query) => $query->where(fn ($q) => $q->whereHas('stores', fn ($s) => $s->where('country', $market))->orWhereDoesntHave('stores')))
+            ->with('stores:id,name,city,country')
             ->withCount(['deliveries as active_deliveries' => fn ($query) => $query
                 ->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])])
             ->orderBy('name')
@@ -57,6 +66,7 @@ class AdminRiderController extends Controller
 
         return response()->json(['data' => [
             'rider' => $this->row($user) + ['completed_deliveries' => (int) ($user->completed_deliveries ?? 0)],
+            'pay' => $this->pay($user),
             'reviews' => $reviews,
             'attendance' => RiderAttendance::summary($user, 14),
         ]]);
@@ -214,6 +224,85 @@ class AdminRiderController extends Controller
     }
 
     /**
+     * Record a payout (sent outside the app) against a rider's earnings. Never
+     * more than they're owed (earnings minus COD cash still held) or the
+     * per-payout maximum. Settles their open payout request, if any.
+     */
+    public function payout(Request $request, User $user): JsonResponse
+    {
+        abort_unless($user->is_rider || RiderLedger::balanceCents($user) > 0, 404);
+
+        $data = $request->validate([
+            'amount_cents' => ['required', 'integer', 'min:1'],
+            'note' => ['sometimes', 'nullable', 'string', 'max:500'],
+        ]);
+
+        DB::transaction(function () use ($request, $user, $data): void {
+            User::whereKey($user->id)->lockForUpdate()->first();
+
+            $owed = RiderLedger::owedCents($user);
+            if ($data['amount_cents'] > $owed) {
+                $held = $user->codHoldingCents();
+                $cur = Market::currency(RiderLedger::marketFor($user));
+                abort(422, 'This rider is owed '.Money::format($owed, $cur)
+                    .($held > 0 ? ' (earnings minus '.Money::format($held, $cur).' cash they still hold).' : '.'));
+            }
+
+            $max = RiderLedger::maxPayoutCents(RiderLedger::marketFor($user));
+            abort_if($max > 0 && $data['amount_cents'] > $max, 422, 'A single rider payout can be at most '.Money::format($max, Market::currency(RiderLedger::marketFor($user))).'.');
+
+            $entry = RiderLedger::recordPayout($user, $data['amount_cents'], $data['note'] ?? null, $request->user());
+
+            RiderPayoutRequest::where('user_id', $user->id)->where('status', 'pending')->update([
+                'status' => 'paid',
+                'ledger_entry_id' => $entry->id,
+                'processed_by' => $request->user()->id,
+                'processed_at' => now(),
+            ]);
+        });
+
+        return response()->json(['data' => $this->pay($user->fresh())]);
+    }
+
+    public function rejectPayoutRequest(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate(['note' => ['required', 'string', 'max:500']]);
+
+        $payoutRequest = RiderPayoutRequest::where('user_id', $user->id)->where('status', 'pending')->first();
+        abort_unless($payoutRequest, 404, 'No open payout request.');
+
+        $payoutRequest->update([
+            'status' => 'rejected',
+            'admin_note' => $data['note'],
+            'processed_by' => $request->user()->id,
+            'processed_at' => now(),
+        ]);
+
+        return response()->json(['data' => $this->pay($user->fresh())]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function pay(User $rider): array
+    {
+        return [
+            'balance_cents' => RiderLedger::balanceCents($rider),
+            'cash_holding_cents' => $rider->codHoldingCents(),
+            'owed_cents' => RiderLedger::owedCents($rider),
+            'min_payout_cents' => RiderLedger::minPayoutCents(RiderLedger::marketFor($rider)),
+            'max_payout_cents' => RiderLedger::maxPayoutCents(RiderLedger::marketFor($rider)),
+            'currency' => Market::currency(RiderLedger::marketFor($rider)),
+            'payout_method' => $rider->rider_payout_method,
+            'payout_details' => $rider->rider_payout_details,
+            'pending_payout_request' => RiderPayoutRequest::where('user_id', $rider->id)->where('status', 'pending')->first(),
+            'paid_total_cents' => (int) -RiderLedgerEntry::where('user_id', $rider->id)->where('type', 'payout_debit')->sum('amount_cents'),
+            'entries' => RiderLedgerEntry::where('user_id', $rider->id)->latest('id')->limit(30)
+                ->get(['id', 'order_id', 'type', 'amount_cents', 'distance_miles', 'note', 'created_at']),
+        ];
+    }
+
+    /**
      * Confirm the rider has physically handed back all the cash they're
      * currently holding from cash-on-delivery orders. Clears their holding
      * balance immediately (on the admin list and the rider's own dashboard).
@@ -269,6 +358,8 @@ class AdminRiderController extends Controller
             'acceptance_rate' => $rider->riderAcceptanceRate(),
             'cash_holding_cents' => $rider->codHoldingCents(),
             'cash_holding_since' => $rider->codHoldingSince(),
+            'earnings_balance_cents' => RiderLedger::balanceCents($rider),
+            'payout_requested_cents' => RiderPayoutRequest::where('user_id', $rider->id)->where('status', 'pending')->value('amount_cents'),
             'stores' => $rider->relationLoaded('stores')
                 ? $rider->stores->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'city' => $s->city])->values()
                 : [],

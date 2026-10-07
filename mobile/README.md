@@ -32,7 +32,7 @@ to `127.0.0.1` only by default, which a phone cannot see. Bind to all interfaces
 
 ```cmd
 cd /d D:\edp\backend
-"D:\xampp8-2-12\php84\php.exe" artisan serve --host 0.0.0.0 --port 8000
+"D:\xampp\php84\php.exe" artisan serve --host 0.0.0.0 --port 8000
 ```
 
 Windows will likely prompt to allow PHP through the firewall — allow it (Private networks).

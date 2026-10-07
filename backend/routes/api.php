@@ -4,12 +4,16 @@ use App\Http\Controllers\Api\AddressController;
 use App\Http\Controllers\Api\AdminBannerController;
 use App\Http\Controllers\Api\AdminCategoryController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AdminCrmController;
 use App\Http\Controllers\Api\AdminGiftCardController;
 use App\Http\Controllers\Api\AdminHomeTileController;
+use App\Http\Controllers\Api\AdminLabelRequestController;
+use App\Http\Controllers\Api\AdminLabelTemplateController;
 use App\Http\Controllers\Api\AdminOrderController;
 use App\Http\Controllers\Api\AdminPageController;
 use App\Http\Controllers\Api\AdminProductController;
 use App\Http\Controllers\Api\AdminRiderController;
+use App\Http\Controllers\Api\AdminSellerController;
 use App\Http\Controllers\Api\AdminSettingController;
 use App\Http\Controllers\Api\AdminStoreController;
 use App\Http\Controllers\Api\AdminSupportController;
@@ -23,13 +27,39 @@ use App\Http\Controllers\Api\DeliveryController;
 use App\Http\Controllers\Api\GeocodeController;
 use App\Http\Controllers\Api\GiftCardController;
 use App\Http\Controllers\Api\MediaController;
+use App\Http\Controllers\Api\FavoriteController;
+use App\Http\Controllers\Api\DigitalDownloadController;
+use App\Http\Controllers\Api\SellerDigitalController;
+use App\Http\Controllers\Api\AdminDigitalController;
 use App\Http\Controllers\Api\OrderController;
 use App\Http\Controllers\Api\PageController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RiderController;
+use App\Http\Controllers\Api\SellerChatController;
+use App\Http\Controllers\Api\SellerController;
+use App\Http\Controllers\Api\SellerOnboardingController;
+use App\Http\Controllers\Api\SellerKycController;
+use App\Http\Controllers\Api\SellerOrderController;
+use App\Http\Controllers\Api\AdminRiderApplicationController;
+use App\Http\Controllers\Api\RiderApplicationController;
+use App\Http\Controllers\Api\RiderEarningsController;
+use App\Http\Controllers\Api\SellerCustomerChatController;
+use App\Http\Controllers\Api\SellerFulfillmentController;
+use App\Http\Controllers\Api\SellerShippingController;
+use App\Http\Controllers\Api\ShippingQuoteController;
+use App\Http\Controllers\Api\SellerProductController;
+use App\Http\Controllers\Api\SellerProductUploadController;
+use App\Http\Controllers\Api\SellerPricingController;
+use App\Http\Controllers\Api\SellerTrademarkController;
+use App\Http\Controllers\Api\AdminCatalogReviewController;
+use App\Http\Controllers\Api\SellerDecorationController;
+use App\Http\Controllers\Api\AdminDecorationController;
+use App\Http\Controllers\Api\ReviewController;
+use App\Http\Controllers\Api\AdminReviewController;
 use App\Http\Controllers\Api\SiteFeedbackController;
 use App\Http\Controllers\Api\SupportThreadController;
+use App\Http\Controllers\Api\TrackingWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -44,9 +74,12 @@ Route::middleware('throttle:12,1')->group(function () {
 });
 
 Route::get('/config', ConfigController::class);
+Route::get('/geo', [ConfigController::class, 'geo'])->middleware('throttle:30,1');
 
 // Public media stream — /api/media/file/{path} always hits PHP (unlike /storage/* on this host).
 Route::get('/media/file/{path}', [MediaController::class, 'show'])->where('path', '.*');
+// A purchased digital file through its signed, 10-minute link (DigitalDownloadController::link).
+Route::get('/digital/{item}/{file}', [DigitalDownloadController::class, 'download'])->middleware('signed')->name('digital.download');
 Route::get('/delivery-eta', DeliveryController::class);
 
 Route::middleware('throttle:30,1')->group(function () {
@@ -58,6 +91,12 @@ Route::get('/categories', [CatalogController::class, 'categories']);
 Route::get('/deals', [CatalogController::class, 'deals']);
 Route::get('/products', [CatalogController::class, 'products']);
 Route::get('/products/{product:slug}', [CatalogController::class, 'product']);
+Route::get('/shops/{slug}', [CatalogController::class, 'shop']);
+// Buyer reviews (approved only) for a product, and a reviewer's public profile.
+Route::get('/products/{product}/reviews', [ReviewController::class, 'forProduct'])->whereNumber('product');
+Route::get('/reviewers/{user}/reviews', [ReviewController::class, 'forReviewer'])->whereNumber('user');
+// Checkout estimate for items shipped directly by sellers (fees + delivery dates).
+Route::post('/shipping/quote', [ShippingQuoteController::class, 'quote']);
 
 Route::get('/pages', [PageController::class, 'index']);
 Route::get('/pages/{slug}', [PageController::class, 'show']);
@@ -81,23 +120,46 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::patch('/profile', [ProfileController::class, 'update']);
     Route::patch('/profile/password', [ProfileController::class, 'password']);
     Route::post('/checkout', [CheckoutController::class, 'store']);
+    Route::get('/gift-cards', [GiftCardController::class, 'index']);
     Route::post('/gift-cards/check', [GiftCardController::class, 'check']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::get('/orders/{order}', [OrderController::class, 'show']);
     Route::get('/orders/{order}/receipt', [OrderController::class, 'receipt']);
     Route::patch('/orders/{order}/payment-method', [OrderController::class, 'setPaymentMethod']);
     Route::post('/orders/{order}/cancel', [OrderController::class, 'cancel']);
+    Route::post('/orders/{order}/address-change', [OrderController::class, 'requestAddressChange']);
     Route::post('/orders/{order}/rider-review', [OrderController::class, 'storeRiderReview']);
     Route::post('/orders/{order}/payment-intent', [PaymentController::class, 'intent']);
 
     Route::get('/support/threads', [SupportThreadController::class, 'index']);
     Route::post('/support/threads', [SupportThreadController::class, 'store']);
     Route::get('/support/threads/{thread}', [SupportThreadController::class, 'show']);
+    Route::get('/support/threads/{thread}/chat', [SupportThreadController::class, 'chat']);
     Route::post('/support/threads/{thread}/messages', [SupportThreadController::class, 'message']);
     Route::post('/support/threads/{thread}/rating', [SupportThreadController::class, 'rate']);
+    Route::post('/support/threads/{thread}/end', [SupportThreadController::class, 'end']);
+    Route::post('/support/attachments', [MediaController::class, 'storeSupportAttachment']);
+    // Writing reviews (with photos) and marking others' reviews helpful.
+    Route::post('/review-images', [MediaController::class, 'storeReviewImage']);
+    Route::post('/personalization-images', [MediaController::class, 'storePersonalizationImage']);
+    Route::post('/orders/{order}/items/{item}/review', [ReviewController::class, 'store']);
+    Route::post('/reviews/{review}/helpful', [ReviewController::class, 'helpful']);
+    Route::get('/my/reviews', [ReviewController::class, 'mine']);
+    // My favourites.
+    Route::get('/favorites', [CatalogController::class, 'favorites']);
+    Route::get('/favorites/ids', [FavoriteController::class, 'ids']);
+    Route::post('/favorites/{product}', [FavoriteController::class, 'toggle'])->whereNumber('product');
+    // Digital products the buyer bought: list + a short-lived link per file.
+    Route::get('/downloads', [DigitalDownloadController::class, 'index']);
+    Route::post('/downloads/{item}/files/{file}/link', [DigitalDownloadController::class, 'link']);
+    Route::post('/orders/{order}/packages/{package}/received', [ShippingQuoteController::class, 'received']);
 });
 
 Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/reviews', [AdminReviewController::class, 'index']);
+    Route::post('/reviews/{review}/approve', [AdminReviewController::class, 'approve']);
+    Route::post('/reviews/{review}/reject', [AdminReviewController::class, 'reject']);
+    Route::delete('/reviews/{review}', [AdminReviewController::class, 'destroy']);
     Route::get('/metrics', [AdminController::class, 'metrics']);
     Route::get('/metrics/timeseries', [AdminController::class, 'ordersTimeseries']);
     Route::get('/metrics/compare', [AdminController::class, 'ordersCompare']);
@@ -105,11 +167,24 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/notifications', [AdminController::class, 'notifications']);
     Route::get('/settings', [AdminSettingController::class, 'index']);
     Route::patch('/settings', [AdminSettingController::class, 'update']);
+    Route::post('/settings/sales-tax/fetch', [AdminSettingController::class, 'fetchSalesTaxStates'])->middleware('throttle:6,1');
     Route::post('/secure-access/challenge', [AdminSettingController::class, 'secureAccessChallenge'])->middleware('throttle:6,1');
     Route::post('/secure-access/unlock', [AdminSettingController::class, 'secureAccessUnlock'])->middleware('throttle:10,1');
     Route::patch('/secure-access/account', [AdminSettingController::class, 'updateAccount']);
+    // Sellers kept on an older commission rate; move chosen ones to the current rate.
+    Route::get('/secure-access/kept-rates', [AdminSettingController::class, 'keptRates']);
+    Route::post('/secure-access/kept-rates/release', [AdminSettingController::class, 'releaseKeptRates']);
     Route::get('/customers', [AdminController::class, 'customers']);
-    Route::get('/customers/{user}', [AdminController::class, 'customer']);
+    Route::get('/customers/{user}', [AdminCrmController::class, 'customer']);
+    Route::post('/customers/{user}/email', [AdminCrmController::class, 'emailCustomer']);
+    Route::get('/customer-emails/{email}', [AdminCrmController::class, 'emailBody']);
+    Route::get('/email-campaigns', [AdminCrmController::class, 'campaigns']);
+    Route::post('/email-campaigns', [AdminCrmController::class, 'storeCampaign']);
+    Route::post('/email-campaigns/preview', [AdminCrmController::class, 'previewCampaign']);
+    Route::put('/email-campaigns/{campaign}', [AdminCrmController::class, 'updateCampaign']);
+    Route::delete('/email-campaigns/{campaign}', [AdminCrmController::class, 'cancelCampaign']);
+    Route::post('/email-campaigns/{campaign}/send-now', [AdminCrmController::class, 'sendCampaignNow']);
+    Route::post('/order-emails', [AdminCrmController::class, 'orderEmails']);
     Route::patch('/customers/{user}', [AdminController::class, 'updateCustomer']);
     Route::get('/riders', [AdminRiderController::class, 'index']);
     Route::get('/riders/attendance', [AdminRiderController::class, 'attendance']);
@@ -119,24 +194,87 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::patch('/riders/{user}', [AdminRiderController::class, 'update']);
     Route::delete('/riders/{user}', [AdminRiderController::class, 'destroy']);
     Route::post('/riders/{user}/cash-settle', [AdminRiderController::class, 'settleCash']);
+    Route::post('/riders/{user}/payout', [AdminRiderController::class, 'payout']);
+    Route::post('/riders/{user}/payout-request/reject', [AdminRiderController::class, 'rejectPayoutRequest']);
+    Route::get('/rider-applications', [AdminRiderApplicationController::class, 'index']);
+    Route::post('/rider-applications/{application}/approve', [AdminRiderApplicationController::class, 'approve']);
+    Route::post('/rider-applications/{application}/reject', [AdminRiderApplicationController::class, 'reject']);
+
+    // Static path before the {seller} binding, so "shops" isn't swallowed by it.
+    Route::get('/sellers/shops', [AdminSellerController::class, 'shops']);
+    Route::get('/sellers', [AdminSellerController::class, 'index']);
+    Route::get('/sellers/{seller}', [AdminSellerController::class, 'show']);
+    Route::post('/sellers/{seller}/approve', [AdminSellerController::class, 'approve']);
+    Route::post('/sellers/{seller}/reject', [AdminSellerController::class, 'reject']);
+    Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
+    Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
+    Route::delete('/sellers/{seller}', [AdminSellerController::class, 'remove']);
+    Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
+    Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
+    Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
+    Route::get('/sellers/{seller}/chat', [AdminSellerController::class, 'chat']);
+    Route::post('/sellers/{seller}/chat', [AdminSellerController::class, 'chatMessage']);
+    Route::get('/sellers/{seller}/ledger', [AdminSellerController::class, 'ledger']);
+    Route::post('/sellers/{seller}/request-changes', [AdminSellerController::class, 'requestChanges']);
+    Route::post('/sellers/{seller}/requirements', [AdminSellerController::class, 'requirements']);
+    Route::post('/sellers/{seller}/cod', [AdminSellerController::class, 'setCod']);
+    Route::post('/sellers/{seller}/onboarding/{task}', [AdminSellerController::class, 'reviewOnboarding'])->whereIn('task', ['tax', 'compliance', 'bank']);
+
     Route::get('/orders', [AdminOrderController::class, 'index']);
     Route::get('/orders/{order}', [AdminOrderController::class, 'show']);
     Route::patch('/orders/{order}', [AdminOrderController::class, 'update']);
+    Route::post('/orders/{order}/sync-tracking', [AdminOrderController::class, 'syncTracking']);
+    Route::post('/orders/{order}/address-change/{change}', [AdminOrderController::class, 'decideAddressChange']);
+    Route::post('/orders/{order}/escalate-to-courier', [AdminOrderController::class, 'escalateToCourier']);
     Route::post('/orders/{order}/refund', [PaymentController::class, 'refund']);
     Route::post('/orders/{order}/gift-card', [AdminGiftCardController::class, 'issue']);
     Route::post('/orders/{order}/apply-gift-card', [AdminGiftCardController::class, 'applyToOrder']);
 
     Route::get('/support/threads', [AdminSupportController::class, 'index']);
     Route::get('/support/threads/{thread}', [AdminSupportController::class, 'show']);
+    Route::get('/support/threads/{thread}/chat', [AdminSupportController::class, 'chat']);
+    Route::post('/support/threads/{thread}/notes', [AdminSupportController::class, 'addNote']);
+    Route::delete('/support/threads/{thread}/notes/{message}', [AdminSupportController::class, 'deleteNote']);
     Route::post('/support/threads/{thread}/messages', [AdminSupportController::class, 'message']);
     Route::patch('/support/threads/{thread}', [AdminSupportController::class, 'update']);
+    Route::post('/support/threads/{thread}/seller', [AdminSupportController::class, 'addSeller']);
+    Route::patch('/packages/{package}', [AdminOrderController::class, 'updatePackage']);
+    Route::get('/packages/{package}/label', [AdminLabelRequestController::class, 'download']);
+    Route::get('/label-requests/{labelRequest}/label', [AdminLabelRequestController::class, 'downloadRequest']);
+    Route::get('/label-requests', [AdminLabelRequestController::class, 'index']);
+    Route::get('/label-templates', [AdminLabelTemplateController::class, 'index']);
+    Route::post('/label-templates', [AdminLabelTemplateController::class, 'store']);
+    Route::put('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'update']);
+    Route::delete('/label-templates/{labelTemplate}', [AdminLabelTemplateController::class, 'destroy']);
+    Route::get('/label-templates/{labelTemplate}/preview', [AdminLabelTemplateController::class, 'preview']);
+    Route::post('/label-requests/{labelRequest}/fulfil', [AdminLabelRequestController::class, 'fulfil']);
+    Route::post('/label-requests/{labelRequest}/cancel', [AdminLabelRequestController::class, 'cancel']);
+    Route::post('/label-requests/{labelRequest}/replace', [AdminLabelRequestController::class, 'replace']);
 
     Route::get('/products', [AdminProductController::class, 'index']);
+    // A digital product's files, hosted links and download settings, for checking.
+    Route::get('/products/{product}/digital', [AdminDigitalController::class, 'show']);
+    Route::post('/products/{product}/files/{file}/check', [AdminDigitalController::class, 'checkLink']);
+    Route::get('/products/{product}/files/{file}/download', [AdminDigitalController::class, 'download']);
+    // Demo products: mark them, and show / hide them all on the store.
+    Route::post('/products/demo', [AdminProductController::class, 'bulkDemo']);
+    Route::post('/products/demo-visibility', [AdminProductController::class, 'demoVisibility']);
+    Route::patch('/products/{product}/demo', [AdminProductController::class, 'setDemo']);
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);
+    Route::post('/products/{product}/approve', [AdminProductController::class, 'approve']);
+    Route::get('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'salesBoost']);
+    Route::post('/products/{product}/sales-boost', [AdminCatalogReviewController::class, 'createSalesBoost']);
+    Route::get('/trademarks', [AdminCatalogReviewController::class, 'trademarks']);
+    Route::get('/decorations', [AdminDecorationController::class, 'index']);
+    Route::post('/decorations/{decoration}/review', [AdminDecorationController::class, 'review']);
+    Route::post('/trademarks/{trademark}/review', [AdminCatalogReviewController::class, 'reviewTrademark']);
+    Route::post('/products/{product}/reject', [AdminProductController::class, 'reject']);
     Route::delete('/products/{product}', [AdminProductController::class, 'destroy']);
+    Route::post('/products/{product}/deletion', [AdminProductController::class, 'decideDeletion']);
 
     Route::post('/media', [MediaController::class, 'store']);
+    Route::post('/media/video', [MediaController::class, 'storeSellerProductVideo']); // product videos (same rules as sellers')
 
     Route::get('/banners', [AdminBannerController::class, 'index']);
     Route::post('/banners', [AdminBannerController::class, 'store']);
@@ -164,9 +302,123 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
 });
 
+// Plain auth:sanctum, not `seller`-gated, so a first-time applicant (and an
+// admin reviewing documents) can reach these.
+Route::middleware('auth:sanctum')->group(function () {
+    Route::post('/seller/apply', [SellerController::class, 'apply']);
+    Route::get('/seller/me', [SellerController::class, 'me']);
+    Route::post('/seller/kyc-document', [SellerKycController::class, 'store']);
+    Route::get('/seller/kyc-document/{path}', [SellerKycController::class, 'show'])->where('path', '.*');
+    // Shop logo/banner: a first-time applicant has no Seller row yet, so this
+    // can't be `seller`-gated. storeShopAsset() forces folder=shops so this
+    // relaxed auth can't reach the admin-only folders store() also serves.
+    Route::post('/seller/media', [MediaController::class, 'storeShopAsset']);
+
+    // Rider applications — any signed-in user can apply (they're not a rider yet).
+    Route::get('/rider-application', [RiderApplicationController::class, 'show']);
+    Route::get('/rider-application/stores', [RiderApplicationController::class, 'stores']);
+    Route::post('/rider-application', [RiderApplicationController::class, 'apply']);
+});
+
+Route::middleware(['auth:sanctum', 'seller'])->group(function () {
+    Route::patch('/seller/shop', [SellerController::class, 'updateShop']);
+    // Onboarding tasks: tax information, compliance information, bank account.
+    Route::get('/seller/onboarding', [SellerOnboardingController::class, 'show']);
+    // The floating NexTech chat in Seller Center.
+    Route::get('/seller/chat', [SellerChatController::class, 'show']);
+    Route::post('/seller/chat', [SellerChatController::class, 'store']);
+    Route::post('/seller/onboarding/tax-number', [SellerOnboardingController::class, 'saveTaxNumber']);
+    Route::post('/seller/onboarding/tax-settings', [SellerOnboardingController::class, 'saveTaxSettings']);
+    Route::post('/seller/onboarding/compliance', [SellerOnboardingController::class, 'saveCompliance']);
+    Route::post('/seller/onboarding/bank', [SellerOnboardingController::class, 'saveBank']);
+    Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
+
+    // The `seller` middleware only requires having applied at all; the real
+    // "must be approved" gate for managing products is SellerProductController's
+    // own check (see its shop() helper), same reasoning as updateShop() above.
+    Route::get('/seller/products', [SellerProductController::class, 'index']);
+    Route::post('/seller/products', [SellerProductController::class, 'store']);
+    Route::patch('/seller/products/{product}', [SellerProductController::class, 'update']);
+    Route::post('/seller/products/{product}/active', [SellerProductController::class, 'setActive']);
+    Route::post('/seller/products/{product}/request-deletion', [SellerProductController::class, 'requestDeletion']);
+    Route::delete('/seller/products/{product}', [SellerProductController::class, 'destroy']);
+    Route::post('/seller/product-media', [MediaController::class, 'storeSellerProductAsset']);
+    // Digital products: download files (chunked upload or hosted link) and license keys.
+    Route::get('/seller/products/{product}/digital', [SellerDigitalController::class, 'show']);
+    Route::post('/seller/products/{product}/files/chunk', [SellerDigitalController::class, 'chunk']);
+    Route::post('/seller/products/{product}/files/link', [SellerDigitalController::class, 'storeLink']);
+    Route::patch('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'updateFile']);
+    Route::post('/seller/products/{product}/files/{file}/check', [SellerDigitalController::class, 'checkLink']);
+    Route::delete('/seller/products/{product}/files/{file}', [SellerDigitalController::class, 'destroyFile']);
+    Route::post('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'addKeys']);
+    Route::delete('/seller/products/{product}/license-keys', [SellerDigitalController::class, 'clearKeys']);
+    Route::post('/seller/product-video', [MediaController::class, 'storeSellerProductVideo']);
+    Route::post('/seller/product-document', [MediaController::class, 'storeSellerProductDocument']);
+    // Temu-style listing: categories / details / compliance config, drafts, compliance, bulk upload.
+    Route::get('/seller/catalog-config', [SellerProductController::class, 'catalogConfig']);
+    Route::patch('/seller/products/{product}/compliance', [SellerProductController::class, 'updateCompliance']);
+    Route::post('/seller/products/drafts-from-images', [SellerProductController::class, 'draftsFromImages']);
+    Route::get('/seller/product-uploads', [SellerProductUploadController::class, 'index']);
+    Route::post('/seller/product-uploads', [SellerProductUploadController::class, 'store']);
+    Route::get('/seller/product-uploads/{task}', [SellerProductUploadController::class, 'show']);
+    Route::get('/seller/product-uploads/{task}/file', [SellerProductUploadController::class, 'file']);
+    // Pricing health: sales boost offers and pricing records.
+    Route::get('/seller/sales-boost', [SellerPricingController::class, 'salesBoost']);
+    Route::post('/seller/sales-boost/decide', [SellerPricingController::class, 'decide']);
+    Route::get('/seller/pricing-records', [SellerPricingController::class, 'records']);
+    // My account -> Store decoration (desktop and mobile versions of the store page).
+    Route::get('/seller/decorations', [SellerDecorationController::class, 'index']);
+    Route::post('/seller/decorations/accept-terms', [SellerDecorationController::class, 'acceptTerms']);
+    Route::post('/seller/decorations', [SellerDecorationController::class, 'store']);
+    Route::patch('/seller/decorations/{decoration}', [SellerDecorationController::class, 'update']);
+    Route::post('/seller/decorations/{decoration}/submit', [SellerDecorationController::class, 'submit']);
+    Route::post('/seller/decorations/{decoration}/publish', [SellerDecorationController::class, 'publish']);
+    Route::post('/seller/decorations/{decoration}/unpublish', [SellerDecorationController::class, 'unpublish']);
+    Route::delete('/seller/decorations/{decoration}', [SellerDecorationController::class, 'destroy']);
+    // Account health: trademarks.
+    Route::get('/seller/trademarks', [SellerTrademarkController::class, 'index']);
+    Route::post('/seller/trademarks', [SellerTrademarkController::class, 'store']);
+    Route::patch('/seller/trademarks/{trademark}', [SellerTrademarkController::class, 'update']);
+    Route::get('/seller/orders', [SellerOrderController::class, 'index']);
+    Route::get('/seller/orders/alerts', [SellerOrderController::class, 'alerts']);
+    Route::post('/seller/orders/{order}/address-change/{change}', [SellerOrderController::class, 'decideAddressChange']);
+    Route::get('/seller/stats', [SellerOrderController::class, 'stats']);
+    Route::get('/seller/customer-chats', [SellerCustomerChatController::class, 'index']);
+    // Shipping settings (fulfillment mode, addresses, templates, working days).
+    Route::get('/seller/shipping', [SellerShippingController::class, 'show']);
+    Route::patch('/seller/shipping', [SellerShippingController::class, 'update']);
+    Route::post('/seller/shipping/addresses', [SellerShippingController::class, 'storeAddress']);
+    Route::patch('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'updateAddress']);
+    Route::delete('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'destroyAddress']);
+    Route::post('/seller/shipping/templates', [SellerShippingController::class, 'storeTemplate']);
+    Route::patch('/seller/shipping/templates/{template}', [SellerShippingController::class, 'updateTemplate']);
+    Route::delete('/seller/shipping/templates/{template}', [SellerShippingController::class, 'destroyTemplate']);
+    // Orders the seller ships themselves.
+    Route::get('/seller/fulfillment', [SellerFulfillmentController::class, 'index']);
+    Route::post('/seller/fulfillment/orders/{order}/ship', [SellerFulfillmentController::class, 'ship']);
+    Route::post('/seller/fulfillment/orders/{order}/label', [SellerFulfillmentController::class, 'buyLabel']);
+    Route::post('/seller/fulfillment/orders/{order}/label-request', [SellerFulfillmentController::class, 'requestLabel']);
+    Route::post('/seller/fulfillment/label-requests/{labelRequest}/cancel', [SellerFulfillmentController::class, 'cancelLabelRequest']);
+    Route::post('/seller/fulfillment/label-requests/{labelRequest}/template', [SellerFulfillmentController::class, 'changeLabelTemplate']);
+    Route::get('/seller/fulfillment/packages/{package}/label', [SellerFulfillmentController::class, 'downloadLabel']);
+    Route::get('/seller/fulfillment/label-requests/{labelRequest}/label', [SellerFulfillmentController::class, 'downloadRequestLabel']);
+    Route::patch('/seller/fulfillment/packages/{package}', [SellerFulfillmentController::class, 'updatePackage']);
+    Route::post('/seller/fulfillment/packages/bulk', [SellerFulfillmentController::class, 'bulkUpdate']);
+    Route::post('/seller/fulfillment/packages/{package}/delivered', [SellerFulfillmentController::class, 'markDelivered']);
+    Route::post('/seller/fulfillment/packages/{package}/progress', [SellerFulfillmentController::class, 'progress']);
+    Route::post('/seller/fulfillment/orders/{order}/packed', [SellerFulfillmentController::class, 'packed']);
+    Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
+    Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
+    Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);
+    Route::post('/seller/customer-chats/{thread}/messages', [SellerCustomerChatController::class, 'message']);
+});
+
 Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function () {
     Route::get('/orders', [RiderController::class, 'orders']);
     Route::get('/stats', [RiderController::class, 'stats']);
+    Route::get('/earnings', [RiderEarningsController::class, 'show']);
+    Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
+    Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);
     Route::post('/shift', [RiderController::class, 'shift']);
     Route::post('/location', [RiderController::class, 'location']);
     Route::post('/orders/{order}/claim', [RiderController::class, 'claim']);
@@ -177,10 +429,16 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
     Route::post('/orders/{order}/cash-collected', [RiderController::class, 'cashCollected']);
     Route::post('/orders/{order}/payment-refused', [RiderController::class, 'paymentRefused']);
     Route::get('/orders/{order}/messages', [RiderController::class, 'messages']);
+    Route::get('/orders/{order}/chat', [RiderController::class, 'chat']);
+    // The rider's own chat with NexTech.
+    Route::get('/support-chat', [SellerChatController::class, 'show']);
+    Route::post('/support-chat', [SellerChatController::class, 'store']);
     Route::post('/orders/{order}/messages', [RiderController::class, 'postMessage']);
 });
 
 Route::post('/payments/stripe/webhook', [PaymentController::class, 'webhook']);
+// AfterShip live courier tracking (LiveTracking).
+Route::post('/webhooks/aftership', [TrackingWebhookController::class, 'aftership']);
 
 Route::get('/user', function (Request $request) {
     return $request->user();

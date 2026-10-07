@@ -3,12 +3,22 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Support\LiveTracking;
+use App\Support\SellerShipping;
+use App\Support\SellerFulfillment;
+use App\Models\OrderPackage;
 use App\Models\Order;
+use App\Models\OrderAddressChange;
+use App\Support\SellerOrders;
 use App\Models\User;
 use App\Notifications\RiderAssigned;
+use App\Support\Courier;
 use App\Support\CustomerNames;
 use App\Support\DeliveryOfferSweeper;
 use App\Support\RiderAssignment;
+use App\Support\SellerLedger;
+use App\Support\CourierTracking;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -30,17 +40,25 @@ class AdminOrderController extends Controller
         }
 
         $orders = Order::query()
+            ->when(Market::adminFilter($request), fn ($q, $m) => $q->where('market', $m))
             ->with([
-                'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city',
+                'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
                 'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
                 'giftCards.issuedBy:id,name',
                 'refunds.creator:id,name',
             ])
-            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            // 'open' = not finished yet (anything short of delivered or cancelled).
+            ->when($validated['status'] ?? null, fn ($query, $status) => match ($status) {
+                'open' => $query->open(),
+                'refund_due' => $query->refundDue(),
+                default => $query->where('status', $status),
+            })
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
+        LiveTracking::refreshOrders($orders->getCollection());
 
         $this->attachCustomerNames($orders->items());
 
@@ -58,16 +76,37 @@ class AdminOrderController extends Controller
     public function show(Order $order): JsonResponse
     {
         $order->load([
-            'items', 'user:id,name,email,phone', 'store:id,name,city',
+            'items', 'user:id,name,email,phone', 'store:id,name,city', 'shipment',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
             'giftCards.issuedBy:id,name',
             'refunds.creator:id,name',
+            'addressChanges',
         ]);
         $this->attachCustomerNames([$order]);
 
         return response()->json(['data' => $order]);
+    }
+
+    /** Accept or decline a buyer's request to change the shipping address. */
+    public function decideAddressChange(Request $request, Order $order, OrderAddressChange $change): JsonResponse
+    {
+        abort_unless($change->order_id === $order->id && $change->status === 'pending', 404);
+        $data = $request->validate([
+            'decision' => ['required', Rule::in(['approve', 'decline'])],
+            'note' => ['required_if:decision,decline', 'nullable', 'string', 'max:500'],
+        ]);
+
+        $order->load('packages');
+        if ($data['decision'] === 'approve') {
+            abort_unless(SellerOrders::addressChangeable($order), 422, 'The order has already shipped — the address can no longer change.');
+            SellerOrders::applyAddressChange($change, null, $request->user()->id);
+        } else {
+            $change->update(['status' => 'declined', 'note' => $data['note'], 'decided_by_user_id' => $request->user()->id, 'decided_at' => now()]);
+        }
+
+        return $this->show($order->fresh());
     }
 
     public function update(Request $request, Order $order): JsonResponse
@@ -79,7 +118,9 @@ class AdminOrderController extends Controller
             'cash_collected' => ['sometimes', 'boolean'],
             'refunded' => ['sometimes', 'boolean'],
             'items_returned' => ['sometimes', 'boolean'],
-        ]);
+            // Why the admin cancelled (out of stock, customer asked…) — required to cancel.
+            'cancel_reason' => ['required_if:status,cancelled', 'nullable', 'string', 'max:500'],
+        ], ['cancel_reason.required_if' => 'Say why the order is being cancelled.']);
 
         if (! array_key_exists('status', $validated)
             && ! array_key_exists('courier_name', $validated)
@@ -88,6 +129,15 @@ class AdminOrderController extends Controller
             && ! array_key_exists('refunded', $validated)
             && ! array_key_exists('items_returned', $validated)) {
             return response()->json(['message' => 'Provide a status change, a courier assignment, or a payment update.'], 422);
+        }
+
+        // A seller-shipped-only order moves with its packages (see
+        // SellerFulfillment::sync) — NexTech doesn't pack or deliver it.
+        if (isset($validated['status']) && $order->isSellerShippedOnly()
+            && in_array($validated['status'], ['packing', 'ready_for_delivery', 'out_for_delivery', 'completed'], true)) {
+            return response()->json([
+                'message' => 'The seller ships this order themselves — it updates as they confirm shipment and delivery. You can still cancel it or mark packages delivered.',
+            ], 422);
         }
 
         if (isset($validated['status']) && ! $order->canTransitionTo($validated['status'])) {
@@ -168,6 +218,12 @@ class AdminOrderController extends Controller
 
         if (($changes['status'] ?? null) === 'cancelled') {
             $changes['cancelled_by'] = 'admin';
+            $changes['cancel_reason'] = trim((string) $validated['cancel_reason']);
+            // A paid order the admin cancels needs its money back — flag it like a
+            // customer cancellation so it shows under "Refund due" until refunded.
+            if ($order->payment_status === 'paid') {
+                $changes['payment_status'] = 'refund_pending';
+            }
         }
 
         // A gift card covered the whole order — restoring its balance below
@@ -189,8 +245,13 @@ class AdminOrderController extends Controller
         }
 
         $previousRiderId = $order->delivery_partner_id;
+        $becamePaid = ($changes['payment_status'] ?? null) === 'paid';
 
         $order->update($changes);
+
+        if ($becamePaid) {
+            SellerLedger::creditForOrder($order);
+        }
 
         // Cancelling voids any gift-card balance spent on this order at checkout.
         if (($changes['status'] ?? null) === 'cancelled') {
@@ -206,19 +267,95 @@ class AdminOrderController extends Controller
             $rider->notify(RiderAssigned::forOrder($order));
         }
 
-        // An order that just became ready for delivery with no rider gets one
-        // auto-assigned (nearest rider linked to its store); if none is eligible
-        // it drops into the first-come pool as before.
-        if (($changes['status'] ?? null) === 'ready_for_delivery' && ! $order->delivery_partner_id) {
-            RiderAssignment::assign($order);
+        // An order that just became ready for delivery is handed off per its
+        // delivery method: an online-courier order is booked with the courier
+        // (and — since there's no separate pickup step for a third party —
+        // goes straight out for delivery); an own-rider order with none yet
+        // gets one auto-assigned, or drops into the first-come pool as before.
+        if (($changes['status'] ?? null) === 'ready_for_delivery') {
+            if ($order->usesOnlineCourier()) {
+                if (! $order->shipment) {
+                    $shipment = Courier::book($order);
+                    $order->update(['courier_name' => $shipment->carrier, 'status' => 'out_for_delivery']);
+                }
+            } elseif (! $order->delivery_partner_id) {
+                RiderAssignment::assign($order);
+            }
         }
 
         // Marking delivered, or collecting cash on a delivered order, sends the
         // customer their summary email with the PDF bill.
         $order->refresh()->sendDeliveredReceiptIfReady();
 
+        $fresh = $this->detail($order);
+
+        return response()->json(['data' => $fresh]);
+    }
+
+    /**
+     * Pull the courier's current status for this order's shipment. A status of
+     * `delivered` completes the order the same way the rider app's override
+     * completion does — no handover code to check for a third-party courier.
+     */
+    public function syncTracking(Order $order): JsonResponse
+    {
+        if (! $order->usesOnlineCourier() || ! $order->shipment) {
+            return response()->json(['message' => 'This order has no online-courier shipment to track.'], 422);
+        }
+
+        CourierTracking::sync($order);
+
+        return response()->json(['data' => $this->detail($order)]);
+    }
+
+    /**
+     * Manual escalation for the "no rider ever available" case: an own-rider
+     * order sitting unassigned in the ready-for-delivery pool is handed off to
+     * the online courier instead, deliberately by hand rather than on a timer.
+     */
+    public function escalateToCourier(Order $order): JsonResponse
+    {
+        if ($order->usesOnlineCourier() || $order->status !== 'ready_for_delivery' || $order->delivery_partner_id) {
+            return response()->json(['message' => 'Only an unassigned, ready-for-delivery own-rider order can be sent via online courier.'], 422);
+        }
+
+        $order->update(['delivery_method' => 'online_courier']);
+        $shipment = Courier::book($order);
+        $order->update(['courier_name' => $shipment->carrier, 'status' => 'out_for_delivery']);
+
+        return response()->json(['data' => $this->detail($order)]);
+    }
+
+    /**
+     * Admin override on a seller's package: correct carrier/tracking (no edit
+     * limit for admin) or set its status (e.g. delivered, lost, returned).
+     */
+    public function updatePackage(Request $request, OrderPackage $package): JsonResponse
+    {
+        $data = $request->validate([
+            'carrier' => ['sometimes', Rule::in(array_keys(Market::allCarriers()))],
+            'tracking_number' => ['sometimes', 'string', 'min:6', 'max:60'],
+            'status' => ['sometimes', Rule::in(['shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'lost'])],
+        ]);
+
+        if (isset($data['tracking_number'])) {
+            $data['tracking_number'] = strtoupper(preg_replace('/\s+/', '', $data['tracking_number']));
+        }
+        if (isset($data['status'])) {
+            $data['delivered_at'] = $data['status'] === 'delivered' ? ($package->delivered_at ?? now()) : null;
+        }
+        $package->update($data);
+        SellerFulfillment::sync($package->order);
+
+        return response()->json(['data' => $this->detail($package->order)]);
+    }
+
+    /** The order shape shared by every action response here. */
+    private function detail(Order $order): Order
+    {
         $fresh = $order->fresh()->load([
-            'items', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city',
+            'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
+            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -227,7 +364,7 @@ class AdminOrderController extends Controller
         ]);
         $this->attachCustomerNames([$fresh]);
 
-        return response()->json(['data' => $fresh]);
+        return $fresh;
     }
 
     /** @param  iterable<Order>  $orders */

@@ -30,9 +30,9 @@ class RiderAssignedNotificationTest extends TestCase
 
     public function test_re_saving_the_same_rider_does_not_notify_again(): void
     {
-        Notification::fake();
         $rider = User::factory()->create(['is_rider' => true]);
         $order = $this->order(['delivery_partner_id' => $rider->id, 'courier_name' => $rider->name]);
+        Notification::fake(); // after setup: placing the order rightly emails "Order confirmed"
 
         Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
         $this->patchJson("/api/admin/orders/{$order->id}", ['delivery_partner_id' => $rider->id])->assertOk();
@@ -42,9 +42,9 @@ class RiderAssignedNotificationTest extends TestCase
 
     public function test_clearing_the_rider_notifies_no_one(): void
     {
-        Notification::fake();
         $rider = User::factory()->create(['is_rider' => true]);
         $order = $this->order(['delivery_partner_id' => $rider->id, 'courier_name' => $rider->name]);
+        Notification::fake(); // after setup: placing the order rightly emails "Order confirmed"
 
         Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
         $this->patchJson("/api/admin/orders/{$order->id}", ['delivery_partner_id' => null])->assertOk();

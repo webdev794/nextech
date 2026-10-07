@@ -1,9 +1,28 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { BrandLogo } from './BrandLogo'
+import { setBranding as setSharedBranding, brandName } from './useBranding'
+import { DecorationReview, ListingReview, TrademarkReview } from './AdminListingReview'
+import { AdminChatDock, SellerLedgerTable } from './AdminSellerChat'
+import { PackageProgress, TrackingTimeline } from './TrackingTimeline'
+import { PersonalizationView } from './Personalization'
+import { openSellerChat, openSupportChat } from './sellerChatEvents'
+import { CustomerCrm } from './AdminCustomer'
+import { EmailsPanel } from './AdminEmails'
+import { AdminReviews } from './AdminReviews'
+import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
+import { BusinessDetails, MarketSettings } from './AdminMarkets'
+import { CHANGE_ITEMS } from './sellerChangeItems'
+import { ReturnPolicyFields } from './returnPolicy'
+import { AdminDigitalFiles } from './AdminDigitalFiles'
+import { KeptRates } from './AdminKeptRates'
+import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
+import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
 import { Delta, Heatmap, LineChart, PieChart } from './Charts'
 import { renderMarkdown } from './markdown'
 import { SECTION_TYPES, blankSection } from './pageSectionTypes'
 import { mediaUrl } from './mediaUrl'
+import { checkProductImage } from './productImageCheck'
 import './Admin.css'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -15,7 +34,10 @@ const ADMIN_TZ = (() => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' } catch { return 'UTC' }
 })()
 
-const money = (cents) => `$${((cents ?? 0) / 100).toFixed(2)}`
+// Amounts are in the market's currency — pass it for anything tied to an
+// order, product or seller (India = INR); default is the home market's USD.
+const money = (cents, currency) => storeMoney(cents ?? 0, currency) // defaults to the admin's selected currency
+const MARKET_CURRENCY = { US: 'usd', IN: 'inr' }
 
 // Cap each notification-bell section so a busy week (dozens of refunds, say)
 // doesn't turn the dropdown into a wall of rows — the rest is a "+N more" line.
@@ -23,10 +45,13 @@ const BELL_ITEM_CAP = 5
 
 // The three selectable lines on the Orders trend chart, in the fixed order
 // they're always drawn (independent of toggle click order).
+// Revenue and refunds share one dollar axis so their heights compare directly;
+// orders (a count) get their own axis.
+const dollarTick = (cents) => `${currencySymbol()}${Math.round(cents / 100).toLocaleString()}`
 const CHART_LINES = [
-  { key: 'orders', label: 'Orders', color: '#3f7d43', format: (v) => v },
-  { key: 'revenue_cents', label: 'Revenue', color: '#1f5fae', format: money },
-  { key: 'refunded_cents', label: 'Refunds', color: '#a23b28', format: money },
+  { key: 'revenue_cents', label: 'Revenue', color: '#1f5fae', axis: 'usd', format: money, tickFormat: dollarTick },
+  { key: 'refunded_cents', label: 'Refunds', color: '#a23b28', axis: 'usd', format: money, tickFormat: dollarTick },
+  { key: 'orders', label: 'Orders', color: '#3f7d43', axis: 'count', format: (v) => v },
 ]
 
 // A rider still holding cash collected on a day other than today (not returned
@@ -67,7 +92,17 @@ const NEXT_ACTIONS = {
   cancelled: [],
 }
 
-const STATUS_FILTERS = ['all', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
+// Pages: the storefront address a page lives at, and turning typed text into a URL slug.
+const STORE_PAGE_BASE = `${window.location.origin}${import.meta.env.BASE_URL || '/'}#/p/`
+const toSlug = (text, typing = false) => {
+  const s = String(text ?? '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '')
+  return typing ? s.slice(0, 160) : s.replace(/-+$/, '').slice(0, 160)
+}
+
+// Why an admin cancels an order (the customer and the order record see it).
+const CANCEL_REASONS = ['Item out of stock / missing', 'Item damaged before dispatch', 'Customer asked to cancel', 'Can’t deliver to this address', 'Payment problem / suspected fraud', 'Duplicate order', 'Other']
+
+const STATUS_FILTERS = ['all', 'open', 'refund_due', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
 const PAGE_SIZES = [5, 10, 20, 50, 100, 500, 1000]
 
 // Rows-per-page + page nav shown under a list. `total`/`pageCount` come from the
@@ -94,6 +129,41 @@ function Pager({ page, pageCount, total, onPage, pageSize, onPageSize }) {
 }
 
 // A rotating ring of dots + label, for every "Loading…" placeholder.
+// A dropdown that opens *above* its button with its own scrollbar — for pickers
+// near the bottom of a drawer, where a native <select> list would drop off
+// the screen. options: [{ value, label }]
+function UpwardPicker({ placeholder, options, onPick }) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    if (!open) return undefined
+    const onDown = (event) => { if (!wrapRef.current?.contains(event.target)) setOpen(false) }
+    const onKey = (event) => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [open])
+
+  return (
+    <div className="admin-up-picker" ref={wrapRef}>
+      <button type="button" className="admin-order-picker admin-up-picker-btn" aria-haspopup="listbox" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span>{placeholder}</span><span aria-hidden>{open ? '▾' : '▴'}</span>
+      </button>
+      {open && (
+        <ul className="admin-up-picker-list" role="listbox">
+          {options.map((o) => (
+            <li key={o.value}>
+              <button type="button" role="option" aria-selected="false" onClick={() => { setOpen(false); onPick(o.value) }}>{o.label}</button>
+            </li>
+          ))}
+          {options.length === 0 && <li className="muted">Nothing to choose.</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function Loading({ children }) {
   return (
     <p className="admin-empty admin-loading" role="status">
@@ -106,32 +176,114 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'categories', 'customers', 'riders', 'stores', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'reviews', 'categories', 'customers', 'emails', 'riders', 'sellers', 'stores', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
-  dashboard: 'Dashboard', orders: 'Orders', products: 'Products', categories: 'Categories',
-  customers: 'Customers', riders: 'Riders', stores: 'Stores', branding: 'Store settings', secure: 'Secure access',
-  homepage: 'Homepage', support: 'Support', settings: 'Settings',
+  dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
+  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', branding: 'Store settings', secure: 'Secure access',
+  support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
-  dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', riders: '\u{1F6F5}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
-  homepage: '\u{1F5BC}️',
+  dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', reviews: '\u{2B50}', categories: '\u{1F5C2}️',
+  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
+// Cross-border currency conversion: the market rate (fetched daily from two
+// sources and cross-checked), an optional fixed rate, and the platform margin
+// buyers pay on top. Sellers are always paid their own listed price.
+function CurrencySettings({ fx, saveSetting, onSaved }) {
+  const [margin, setMargin] = useState(() => String(fx.margin_bps / 100))
+  const [manual, setManual] = useState(() => Object.fromEntries(fx.currencies.map((c) => [c.currency, c.manual_rate ?? ''])))
+  const [busy, setBusy] = useState(false)
+  const run = async (patch, msg) => { setBusy(true); const saved = await saveSetting(patch); setBusy(false); if (saved) onSaved(msg) }
+  return (
+    <form className="admin-form" onSubmit={(e) => { e.preventDefault(); run({ fx_margin_bps: Math.round(Number(margin || 0) * 100), fx_manual: Object.fromEntries(Object.entries(manual).map(([c, v]) => [c, v === '' ? null : Number(v)])) }, 'Currency settings saved.') }}>
+      <h3>Currency conversion (cross-border orders)</h3>
+      <p className="muted">When a buyer orders from a seller in another country, prices are converted into the buyer&rsquo;s currency at the rate below plus your margin. The seller is paid their own listed price; the margin stays with {brandName()} (it covers the card&rsquo;s currency-conversion fee). Each order keeps the rate it was placed at.</p>
+      {fx.currencies.map((c) => (
+        <div key={c.currency} className="admin-fx-row">
+          <p><b>1 USD = {c.in_use} {c.currency.toUpperCase()}</b>{c.manual_rate ? ' (your fixed rate)' : ' (market rate)'} · buyers pay <b>{c.buyer_rate} {c.currency.toUpperCase()}</b> per USD with the margin
+            <span className="admin-note admin-fx-note">Market rate: {c.market_rate ?? 'not fetched yet'}{fx.fetched_at ? ` · updated ${new Date(fx.fetched_at).toLocaleString()}` : ''}{fx.sources?.length ? ` · from ${fx.sources.join(' + ')}` : ''}</span></p>
+          <label>Fixed rate (optional — leave blank to follow the market)
+            <input type="number" min="0" step="0.0001" value={manual[c.currency] ?? ''} placeholder={String(c.market_rate ?? '')} onChange={(e) => setManual((m) => ({ ...m, [c.currency]: e.target.value }))} />
+          </label>
+        </div>
+      ))}
+      <label>Margin added for buyers (%)
+        <input type="number" min="0" max="20" step="0.1" value={margin} onChange={(e) => setMargin(e.target.value)} />
+      </label>
+      <div className="admin-form-actions">
+        <button className="act" type="submit" disabled={busy}>Save currency settings</button>
+        <button type="button" className="act ghost" disabled={busy} onClick={() => run({ fx_refresh: true }, 'Market rate updated.')}>Update market rate now</button>
+      </div>
+    </form>
+  )
+}
+
+// A seller-shipped package still on its way with no update for 2+ days (and
+// no live courier tracking): how many days, else 0.
+function staleSellerUpdate(pk) {
+  if (!['shipped', 'in_transit', 'out_for_delivery'].includes(pk.status) || pk.tracking_ref) return 0
+  const last = new Date(pk.progress_updated_at ?? pk.shipped_at).getTime()
+  const days = Math.floor((Date.now() - last) / 86400000)
+  return days >= 2 ? days : 0
+}
+
+// Who sells the items on an order and who ships them: each seller shop
+// ("ships itself" or NexTech delivering), plus NexTech's own stock.
+function orderSellers(order) {
+  const shops = new Map()
+  let nextechStock = false
+  for (const item of order.items ?? []) {
+    if (!item.shop_id) { nextechStock = true; continue }
+    const cur = shops.get(item.shop_id) ?? { name: item.shop?.name ?? `Shop #${item.shop_id}`, ships: false }
+    if (item.fulfilled_by === 'seller') cur.ships = true
+    shops.set(item.shop_id, cur)
+  }
+  if (!shops.size) return <span className="muted">{brandName()}</span>
+  return (
+    <>
+      {[...shops.values()].map((shop) => (
+        <span key={shop.name} className="admin-order-seller"><b>{shop.name}</b><span className="admin-note">{shop.ships ? 'seller ships' : `${brandName()} delivers`}</span></span>
+      ))}
+      {nextechStock && <span className="admin-note">+ {brandName()} items</span>}
+    </>
+  )
+}
+
+const SELLER_STATUS_FILTERS = ['pending', 'needs_changes', 'approved', 'rejected', 'suspended', 'removed']
+const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes requested', approved: 'Approved', rejected: 'Rejected', suspended: 'Deactivated', removed: 'Removed' }
+const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved', 'deletion']
+const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing', deletion: 'Removal requested' }
+const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
-const EMPTY_FOOTER = { copyright: '© {year} NexTech', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
+const EMPTY_FOOTER = { copyright: `© {year} ${brandName()}`, app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
 
 const ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other',
   delivery: 'Delivery message',
+  seller_product_issue: 'Seller: product issue', seller_other: 'Seller: other',
 }
+const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
-const EMPTY_PRODUCT = { category_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
+const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
 
 // Build the per-store stock grid ({ [storeId]: { is_stocked, base, variants: { [variantIndex]: qty } } })
 // from a product's store_inventory rows.
+// A store's row in the Store stock grid. Anything not yet set for that store
+// falls back to the product's own Inventory / each variant's Stock, so the
+// grid starts pre-filled and saving an untouched store keeps those numbers.
+const storeStockRow = (form, storeId) => {
+  const saved = form.store_stock?.[storeId] ?? {}
+  const variants = {}
+  ;(form.variants ?? []).forEach((v, i) => { variants[i] = saved.variants?.[i] ?? String(v.stock ?? '') })
+  return { is_stocked: saved.is_stocked ?? true, base: saved.base ?? String(form.inventory_quantity ?? ''), variants }
+}
+
+const storeAddress = (store) => [store.line1, store.city, [store.state, store.postal_code].filter(Boolean).join(' ')].filter(Boolean).join(', ')
+
 const storeStockFrom = (product) => {
   const idxById = new Map((product.variants ?? []).map((v, i) => [v.id, i]))
   const map = {}
@@ -146,6 +298,10 @@ const storeStockFrom = (product) => {
   }
   return map
 }
+// Variant SKUs are numbered -V1…-V30 (App\Support\Sku::MAX_VARIANTS).
+const MAX_VARIANTS = 30
+// Mirrors App\Support\ProductImages::MAX_IMAGES.
+const MAX_IMAGES = 8
 const EMPTY_VARIANT = { label: '', sku: '', price: '', compare_at: '', stock: 0, image_url: '', is_active: true }
 const dollarsOrBlank = (cents) => (cents != null ? (cents / 100).toFixed(2) : '')
 
@@ -153,8 +309,10 @@ const variantRowsFrom = (product) => (product.variants ?? []).map((v) => ({
   id: v.id, label: v.label, sku: v.sku, price: (v.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(v.compare_at_price_cents),
   stock: v.inventory_quantity, image_url: v.image_url ?? '', is_active: v.is_active,
 }))
-const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true }
-const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
+const EMPTY_CATEGORY = { name: '', slug: '', image_url: '', sort_order: 0, is_active: true, show_on_home: true, parent_id: '', kind: 'physical' }
+// A category's place in the tree, for pickers: "Downloadable › Games › Arcade".
+const categoryLabel = (c) => c?.path ?? c?.name ?? ''
+const EMPTY_STORE = { name: '', line1: '', line2: '', city: '', state: '', postal_code: '', country: '', latitude: '', longitude: '', delivery_radius_km: 5, is_active: true }
 const riderFormFrom = (rider) => ({
   id: rider.id,
   name: rider.name,
@@ -204,10 +362,13 @@ function riderStatusChip(rider) {
     </>
   )
 }
-const EMPTY_BANNER = { image_url: '', headline: '', category_slug: '', link_url: '', placement: 'strip', sort_order: 0, is_active: true }
-const EMPTY_TILE = { title: '', image_url: '', category_slug: '', link_url: '', sort_order: 0, is_active: true }
-const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', show_in_footer: true, is_published: true, sort_order: 0 }
+const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', menu_placements: ['main_footer'], show_in_footer: true, is_published: true, sort_order: 0 }
 const FOOTER_GROUP_LABELS = { company: 'Company info', legal: 'Customer service', help: 'Help', bottom: 'Lower footer', blog: 'Blog (not shown in footer columns)' }
+const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
+// Where a page is actually linked from on the live site — purely for admin
+// tracking/organization; show_in_footer is still what gates the real render.
+const MENU_PLACEMENT_OPTIONS = ['main_menu', 'main_footer', 'seller_footer', 'blog']
+const MENU_PLACEMENT_LABELS = { main_menu: 'Main menu (storefront Help menu)', main_footer: 'Main footer', seller_footer: 'Seller Center footer', blog: 'Blog' }
 const sectionLabel = (type) => (SECTION_TYPES.find(([value]) => value === type) ?? [type, type])[1]
 
 // Reference rows for the "Formatting guide" tab. Each `code` is fed through the
@@ -284,6 +445,11 @@ function playOrderAlert() {
 }
 
 // Fee settings <-> a dollar/percent form the admin edits.
+// Secure access → new-seller commission (bps on the server, % in the form).
+function sellerRateToForm(s) {
+  return { new_pct: s.new_seller_commission_rate_bps == null ? '' : (s.new_seller_commission_rate_bps / 100).toFixed(2), days: String(s.new_seller_days ?? 90) }
+}
+
 function feesToForm(s) {
   return {
     delivery_mode: s.delivery_mode ?? 'fixed',
@@ -295,6 +461,18 @@ function feesToForm(s) {
     small_cart_fee: dollars(s.small_cart_fee_cents),
     small_cart_min: dollars(s.small_cart_min_cents),
     tax_rate_pct: ((s.tax_rate_bps ?? 0) / 100).toFixed(2),
+    commission_rate_pct: ((s.commission_rate_bps ?? 0) / 100).toFixed(2),
+    min_payout: dollars(s.min_payout_cents),
+    max_payout: dollars(s.max_payout_cents),
+    daily_payout_cap: dollars(s.daily_payout_cap_cents),
+    return_window_days: String(s.return_window_days ?? 30),
+    max_return_days: String(s.max_return_days ?? 90),
+    return_pickup_fee: dollars(s.return_pickup_fee_cents),
+    label_postage: dollars(s.label_postage_cents),
+    rider_base_pay: dollars(s.rider_base_pay_cents),
+    rider_per_mile: dollars(s.rider_per_mile_cents),
+    rider_min_payout: dollars(s.rider_min_payout_cents),
+    rider_max_payout: dollars(s.rider_max_payout_cents),
   }
 }
 
@@ -309,6 +487,19 @@ function formToFees(f) {
     small_cart_fee_cents: toCents(f.small_cart_fee),
     small_cart_min_cents: toCents(f.small_cart_min),
     tax_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.tax_rate_pct || 0) * 100))),
+    commission_rate_bps: Math.max(0, Math.min(10000, Math.round(Number(f.commission_rate_pct || 0) * 100))),
+    commission_apply_existing: !!f.commission_apply_existing,
+    min_payout_cents: toCents(f.min_payout),
+    max_payout_cents: toCents(f.max_payout),
+    daily_payout_cap_cents: toCents(f.daily_payout_cap),
+    return_window_days: Math.max(0, Math.min(365, Math.round(Number(f.return_window_days || 0)))),
+    max_return_days: Math.max(0, Math.min(365, Math.round(Number(f.max_return_days || 0)))),
+    return_pickup_fee_cents: toCents(f.return_pickup_fee),
+    label_postage_cents: toCents(f.label_postage),
+    rider_base_pay_cents: toCents(f.rider_base_pay),
+    rider_per_mile_cents: toCents(f.rider_per_mile),
+    rider_min_payout_cents: toCents(f.rider_min_payout),
+    rider_max_payout_cents: toCents(f.rider_max_payout),
   }
 }
 
@@ -353,12 +544,18 @@ export default function Admin({ token, onClose }) {
   const [categories, setCategories] = useState([])
   const [customers, setCustomers] = useState([])
   const [customerDetail, setCustomerDetail] = useState(null)
+  const [customerQuery, setCustomerQuery] = useState('') // Customers search
   const [orderDetail, setOrderDetail] = useState(null)
+  const [listingReview, setListingReview] = useState(null) // a seller product being reviewed
   const [statusFilter, setStatusFilter] = useState('all')
   const [productSearch, setProductSearch] = useState('')
   const [productSort, setProductSort] = useState('newest')
   const [productStore, setProductStore] = useState('')
   const [productCategory, setProductCategory] = useState('')
+  // Default 'all' — admin's own products (always approved) stay visible by
+  // default; a pending seller submission is flagged by its status pill rather
+  // than requiring the admin to switch filters to notice it exists.
+  const [productStatus, setProductStatus] = useState('all')
   // Rows per page — shared across every list, remembered per browser.
   const [pageSize, setPageSizeRaw] = useState(() => {
     const n = Number(localStorage.getItem('gdp_admin_page_size'))
@@ -369,45 +566,87 @@ export default function Admin({ token, onClose }) {
   const [ordersMeta, setOrdersMeta] = useState(null)
   const [productsPage, setProductsPage] = useState(1)
   const [productsMeta, setProductsMeta] = useState(null)
+  const [productDemo, setProductDemo] = useState('all') // all | only | none — the Demo filter
   const [customersPage, setCustomersPage] = useState(1)
   const [customersMeta, setCustomersMeta] = useState(null)
   // Small lists paged client-side.
   const [categoriesPage, setCategoriesPage] = useState(1)
   const [ridersPage, setRidersPage] = useState(1)
   const [storesPage, setStoresPage] = useState(1)
+  const [sellersPage, setSellersPage] = useState(1)
   const setPageSize = useCallback((n) => {
     setPageSizeRaw(n)
     try { localStorage.setItem('gdp_admin_page_size', String(n)) } catch { /* private mode */ }
     setOrdersPage(1); setProductsPage(1); setCustomersPage(1)
-    setCategoriesPage(1); setRidersPage(1); setStoresPage(1)
+    setCategoriesPage(1); setRidersPage(1); setStoresPage(1); setSellersPage(1)
   }, [])
   const pageSlice = (list, page) => list.slice((page - 1) * pageSize, page * pageSize)
   const [productForm, setProductForm] = useState(null)
   const [categoryForm, setCategoryForm] = useState(null)
   const [stores, setStores] = useState([])
   const [storeForm, setStoreForm] = useState(null)
-  const [banners, setBanners] = useState([])
-  const [bannerForm, setBannerForm] = useState(null)
-  const [homeTiles, setHomeTiles] = useState([])
-  const [tileForm, setTileForm] = useState(null)
   const [pages, setPages] = useState([])
   const [pageForm, setPageForm] = useState(null)
   const [pagePreview, setPagePreview] = useState(false)
   const [pagesExpanded, setPagesExpanded] = useState(false)
-  const [blogsExpanded, setBlogsExpanded] = useState(false)
+  const [expandedPageGroups, setExpandedPageGroups] = useState({})
+  const [pageGroupFilter, setPageGroupFilter] = useState(null)
+  const [pageSettingsOpen, setPageSettingsOpen] = useState(false)
+
+  // Clicking a group's own header should actually show that group — not just
+  // expand/collapse the sidebar while the main panel keeps showing whatever
+  // page (or none) was open before. WordPress-style: shows the group's page
+  // list (scopes the table to it) rather than jumping into an editor — the
+  // admin picks a page from the list and hits Edit there. A second click
+  // (already open) just collapses it — including its sub-sub-groups, e.g.
+  // Main footer's columns — without touching whatever's shown on the right.
+  function selectPageGroup(key) {
+    const willOpen = !expandedPageGroups[key]
+    setExpandedPageGroups((cur) => ({ ...cur, [key]: willOpen }))
+    if (!willOpen) return
+    setPageGroupFilter(key)
+    goTab('pages')
+    setPageForm(null)
+  }
+
+  function selectPageInGroup(page, key) {
+    setPageGroupFilter(key)
+    goTab('pages')
+    editPage(page)
+  }
   const [courierDraft, setCourierDraft] = useState({})
   const [riders, setRiders] = useState([])
   const [riderForm, setRiderForm] = useState(null)
   const [riderEmail, setRiderEmail] = useState('')
   const [riderHireStoreId, setRiderHireStoreId] = useState('')
   const [riderDetail, setRiderDetail] = useState(null)
+  const [riderApps, setRiderApps] = useState([])
+  const [sellers, setSellers] = useState([])
+  const [sellerStatus, setSellerStatus] = useState('all')
+  const [sellersElsewhere, setSellersElsewhere] = useState({}) // other countries' seller counts, for the empty list
+  const [sellerDetail, setSellerDetail] = useState(null)
+  // "Request changes": { seller, picked: { itemKey: note }, reason }
+  const [changeRequest, setChangeRequest] = useState(null)
+  const [digitalFilesOf, setDigitalFilesOf] = useState(null) // Products → Files panel
+  // Products / Categories submenus: clicking the open section again folds its submenu.
+  const [subnavFolded, setSubnavFolded] = useState(false)
+  // Admin cancelling an order: { order, reason, note } — a reason is required.
+  const [cancelling, setCancelling] = useState(null)
+  const [shops, setShops] = useState([])
   const [riderMonth, setRiderMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1) })
   const [riderReport, setRiderReport] = useState(null)
   const [settings, setSettings] = useState(null)
+  // The admin's currency / country switch (top bar): Dashboard, Orders,
+  // Products, Sellers and Settings → charges show only that market's entries.
+  const [adminMarket, setAdminMarket] = useState(() => { try { return localStorage.getItem('nextech_admin_market') || 'ALL' } catch { return 'ALL' } })
   const [feesForm, setFeesForm] = useState(null)
   const [brandingForm, setBrandingForm] = useState(null)
   const [footerForm, setFooterForm] = useState(null)
   const [paymentsForm, setPaymentsForm] = useState(null)
+  const [sellerRateForm, setSellerRateForm] = useState(null)
+  const [courierForm, setCourierForm] = useState(null)
+  const [pendingReviews, setPendingReviews] = useState(0)
+  const [openOrders, setOpenOrders] = useState(0)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
   const [secureGate, setSecureGate] = useState('locked') // locked | code | unlocked
   const [secureSecret, setSecureSecret] = useState('') // password or OTP code
@@ -417,8 +656,8 @@ export default function Admin({ token, onClose }) {
   const [threads, setThreads] = useState([])
   const [threadStatus, setThreadStatus] = useState('open')
   const [thread, setThread] = useState(null)
-  const [threadReply, setThreadReply] = useState('')
-  const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '' })
+  const [noteDraft, setNoteDraft] = useState('')
+  const [refundForm, setRefundForm] = useState({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
   const [giftIssued, setGiftIssued] = useState(null)
   const [supportBadge, setSupportBadge] = useState(0)
   const [pendingThreads, setPendingThreads] = useState([])
@@ -428,6 +667,7 @@ export default function Admin({ token, onClose }) {
   const [speakerOpen, setSpeakerOpen] = useState(false)
   const [notifications, setNotifications] = useState({ awaiting_packing: [], refused_cod: [], cash_overdue: [], negative_feedback: [], negative_feedback_total: 0, financial_activity: [], financial_activity_total: 0, recent_ratings: [] })
   const [bellOpen, setBellOpen] = useState(false)
+  const [sellerBellOpen, setSellerBellOpen] = useState(false)
   const [dismissedNotifs, setDismissedNotifs] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('gdp_dismissed_notifs') ?? '[]')) } catch { return new Set() }
   })
@@ -456,8 +696,9 @@ export default function Admin({ token, onClose }) {
     return promise.finally(() => setListBusy((b) => ({ ...b, [key]: false })))
   }, [])
 
-  const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}` }), [token])
+  const authHeaders = useCallback(() => ({ Accept: 'application/json', Authorization: `Bearer ${token}`, ...(adminMarket ? { 'X-Market': adminMarket } : {}) }), [token, adminMarket])
   const jsonHeaders = useCallback(() => ({ ...authHeaders(), 'Content-Type': 'application/json' }), [authHeaders])
+  const secureHeaders = useCallback(() => ({ ...jsonHeaders(), 'X-Secure-Access': secureToken }), [jsonHeaders, secureToken])
 
   const fail = (error) => setMessage(error?.message ?? 'Something went wrong.')
 
@@ -496,9 +737,42 @@ export default function Admin({ token, onClose }) {
     if (productSearch.trim()) qs.set('search', productSearch.trim())
     if (productStore) qs.set('store_id', productStore)
     if (productCategory) qs.set('category_id', productCategory)
+    if (productStatus !== 'all') qs.set('status', productStatus)
+    if (productDemo !== 'all') qs.set('demo', productDemo)
     track('products', fetch(`${API_URL}/admin/products?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setProducts(data.data ?? []); setProductsMeta(data.meta ?? null) }).catch(() => setMessage('Could not load products.')))
-  }, [authHeaders, productSearch, productSort, productStore, productCategory, productsPage, pageSize, track])
+  }, [authHeaders, productSearch, productSort, productStore, productCategory, productStatus, productDemo, productsPage, pageSize, track])
+
+  // Demo products: flag one, flag everything the filters match, or show / hide them all on the store.
+  async function setProductDemoFlag(product, isDemo) {
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/demo`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ is_demo: isDemo }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not update the product.')
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
+
+  async function markAllDemo(isDemo) {
+    const total = productsMeta?.total ?? products.length
+    if (!window.confirm(`Mark all ${total} product${total === 1 ? '' : 's'} matching the current filters as ${isDemo ? 'demo' : 'not demo'}?`)) return
+    try {
+      const body = { is_demo: isDemo, search: productSearch.trim() || null, category_id: productCategory ? Number(productCategory) : null, status: productStatus !== 'all' ? productStatus : null }
+      const response = await fetch(`${API_URL}/admin/products/demo`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the products.')
+      setMessage(`${data.data.updated} product${data.data.updated === 1 ? '' : 's'} marked as ${isDemo ? 'demo' : 'not demo'}.`)
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
+
+  async function setDemosHidden(hidden) {
+    try {
+      const response = await fetch(`${API_URL}/admin/products/demo-visibility`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ hidden }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not change demo products.')
+      setMessage(hidden ? 'Demo products are now hidden from the store.' : 'Demo products are shown on the store again.')
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
 
   const loadCategories = useCallback(() => {
     track('categories', fetch(`${API_URL}/admin/categories`, { headers: authHeaders() }).then(readJson)
@@ -506,15 +780,28 @@ export default function Admin({ token, onClose }) {
   }, [authHeaders, track])
 
   const loadCustomers = useCallback(() => {
-    const qs = new URLSearchParams({ page: customersPage, per_page: pageSize })
+    const qs = new URLSearchParams({ page: customersPage, per_page: pageSize, ...(customerQuery.trim().length >= 2 ? { search: customerQuery.trim() } : {}) })
     track('customers', fetch(`${API_URL}/admin/customers?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setCustomers(data.data ?? []); setCustomersMeta(data.meta ?? null) }).catch(() => setMessage('Could not load customers.')))
-  }, [authHeaders, customersPage, pageSize, track])
+  }, [authHeaders, customersPage, pageSize, track, customerQuery])
 
   const loadRiders = useCallback(() => {
     track('riders', fetch(`${API_URL}/admin/riders`, { headers: authHeaders() }).then(readJson)
       .then((data) => setRiders(data.data ?? [])).catch(() => setMessage('Could not load riders.')))
   }, [authHeaders, track])
+
+  const loadSellers = useCallback(() => {
+    const qs = new URLSearchParams(sellerStatus === 'all' ? {} : { status: sellerStatus })
+    track('sellers', fetch(`${API_URL}/admin/sellers?${qs}`, { headers: authHeaders() }).then(readJson)
+      .then((data) => { setSellers(data.data ?? []); setSellersElsewhere(data.elsewhere ?? {}) }).catch(() => setMessage('Could not load seller applications.')))
+  }, [authHeaders, sellerStatus, track])
+
+  // Approved shops, for the Products form's Shop picker — kept separate from
+  // loadSellers() since it's needed on the Products tab too, not just Sellers.
+  const loadShops = useCallback(() => {
+    fetch(`${API_URL}/admin/sellers/shops`, { headers: authHeaders() }).then(readJson)
+      .then((data) => setShops(data.data ?? [])).catch(() => {})
+  }, [authHeaders])
 
   const loadSettings = useCallback(() => {
     fetch(`${API_URL}/admin/settings`, { headers: authHeaders() }).then(readJson)
@@ -524,6 +811,16 @@ export default function Admin({ token, onClose }) {
         setBrandingForm({ ...EMPTY_BRANDING, ...(data.data.branding ?? {}) })
         setFooterForm({ ...EMPTY_FOOTER, ...(data.data.footer ?? {}), socials: { ...EMPTY_FOOTER.socials, ...(data.data.footer?.socials ?? {}) }, links: (data.data.footer?.links ?? []).map((l) => ({ ...l })) })
         setPaymentsForm({ stripe_key: data.data.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
+        setSellerRateForm(sellerRateToForm(data.data))
+        setCourierForm({
+          courier_provider: data.data.courier?.provider ?? 'mock',
+          courier_base_url: data.data.courier?.base_url ?? '',
+          courier_account_code: data.data.courier?.account_code ?? '',
+          courier_api_key: '',
+          courier_api_secret: '',
+          tracking_api_key: '',
+          tracking_webhook_secret: '',
+        })
       })
       .catch(() => setMessage('Could not load settings.'))
   }, [authHeaders])
@@ -533,23 +830,17 @@ export default function Admin({ token, onClose }) {
       .then((data) => setStores(data.data ?? [])).catch(() => setMessage('Could not load stores.')))
   }, [authHeaders, track])
 
-  const loadBanners = useCallback(() => {
-    fetch(`${API_URL}/admin/banners`, { headers: authHeaders() }).then(readJson)
-      .then((data) => setBanners(data.data ?? [])).catch(() => setMessage('Could not load banners.'))
-  }, [authHeaders])
-
-  const loadHomeTiles = useCallback(() => {
-    fetch(`${API_URL}/admin/home-tiles`, { headers: authHeaders() }).then(readJson)
-      .then((data) => setHomeTiles(data.data ?? [])).catch(() => setMessage('Could not load homepage tiles.'))
-  }, [authHeaders])
-
   const loadPages = useCallback(() => {
     fetch(`${API_URL}/admin/pages`, { headers: authHeaders() }).then(readJson)
       .then((data) => setPages(data.data ?? [])).catch(() => setMessage('Could not load pages.'))
   }, [authHeaders])
 
   const loadThreads = useCallback(() => {
-    const query = threadStatus === 'all' ? '' : `?status=${threadStatus}`
+    // "sellers" isn't a status — it swaps the filter dimension to issue_type,
+    // sent as a comma-separated list (AdminSupportController::index() accepts
+    // either a single value or several this way).
+    const query = threadStatus === 'sellers' ? `?issue_type=${SELLER_ISSUE_TYPES.join(',')}`
+      : threadStatus === 'all' ? '' : `?status=${threadStatus}`
     fetch(`${API_URL}/admin/support/threads${query}`, { headers: authHeaders() }).then(readJson)
       .then((data) => setThreads(data.data ?? [])).catch(() => setMessage('Could not load support threads.'))
   }, [authHeaders, threadStatus])
@@ -567,12 +858,38 @@ export default function Admin({ token, onClose }) {
     const t = setInterval(loadOrders, 15000)
     return () => clearInterval(t)
   }, [tab, loadOrders])
-  useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores() } }, [tab, loadProducts, loadCategories, loadStores])
+  useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
   useEffect(() => { if (tab === 'customers') loadCustomers() }, [tab, loadCustomers])
-  useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores() } }, [tab, loadRiders, loadStores])
+  // Orders not finished yet (awaiting payment through out for delivery), for the
+  // count in the top bar; refreshed with the orders list and every minute.
+  useEffect(() => {
+    let stopped = false
+    const check = () => fetch(`${API_URL}/admin/orders?status=open&per_page=1`, { headers: authHeaders() }).then(readJson)
+      .then((d) => { if (!stopped && typeof d.meta?.total === 'number') setOpenOrders(d.meta.total) }).catch(() => {})
+    check()
+    const timer = setInterval(check, 60000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [authHeaders, orders])
+  // Reviews waiting for approval, for the badge on the Reviews menu item.
+  useEffect(() => {
+    let stopped = false
+    const check = () => fetch(`${API_URL}/admin/reviews?status=pending`, { headers: authHeaders() }).then(readJson)
+      .then((d) => { if (!stopped && typeof d.pending === 'number') setPendingReviews(d.pending) }).catch(() => {})
+    check()
+    const timer = setInterval(check, 120000)
+    return () => { stopped = true; clearInterval(timer) }
+  }, [authHeaders])
+  const loadRiderApps = useCallback(() => {
+    fetch(`${API_URL}/admin/rider-applications`, { headers: authHeaders() })
+      .then(readJson)
+      .then((data) => setRiderApps(data?.data ?? []))
+      .catch(() => {})
+  }, [authHeaders])
+
+  useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores(); loadRiderApps() } }, [tab, loadRiders, loadStores, loadRiderApps])
+  useEffect(() => { if (tab === 'sellers') loadSellers() }, [tab, loadSellers])
   useEffect(() => { if (tab === 'stores') loadStores() }, [tab, loadStores])
-  useEffect(() => { if (tab === 'homepage') { loadBanners(); loadHomeTiles(); loadCategories() } }, [tab, loadBanners, loadHomeTiles, loadCategories])
   useEffect(() => { if (tab === 'support') loadThreads() }, [tab, loadThreads])
   const threadId = thread?.id ?? null
   useEffect(() => {
@@ -584,6 +901,8 @@ export default function Admin({ token, onClose }) {
     return () => clearInterval(timer)
   }, [threadId, authHeaders])
   useEffect(() => { if (tab === 'settings') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
+  // The country dropdown in the top bar is built from the settings — load them on open.
+  useEffect(() => { if (!settings) loadSettings() }, [settings, loadSettings])
   useEffect(() => { if (tab === 'branding' || tab === 'secure' || tab === 'footer') loadSettings() }, [tab, loadSettings])
 
   // Background notification poll — runs on every admin tab so a new customer
@@ -598,8 +917,8 @@ export default function Admin({ token, onClose }) {
         setSupportBadge(pending.length)
         setPendingThreads(pending)
         const map = Object.fromEntries(pending.map((t) => [t.id, t.last_message_at]))
-        if (seenRef.current === null) { seenRef.current = map; return } // seed, don't chime on first load
-        const fresh = pending.filter((t) => seenRef.current[t.id] !== t.last_message_at)
+        // First load: seed without chiming — and carry on, so the bells load straight away too.
+        const fresh = seenRef.current === null ? [] : pending.filter((t) => seenRef.current[t.id] !== t.last_message_at)
         seenRef.current = map
         if (fresh.length) {
           if (!soundMuted) playChime()
@@ -624,7 +943,7 @@ export default function Admin({ token, onClose }) {
           if (fresh.length) {
             if (!soundMuted) playOrderAlert()
             setOrderToasts((cur) => [
-              ...fresh.map((o) => ({ id: o.id, text: `New order #${o.id} — ${money(o.total_cents)} · ${o.user?.email ?? 'customer'} — start packing` })),
+              ...fresh.map((o) => ({ id: o.id, text: `New order #${o.id} — ${money(o.total_cents, o.currency)} · ${o.user?.email ?? 'customer'} — start packing` })),
               ...cur,
             ].slice(0, 4))
           }
@@ -709,7 +1028,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, latitude, longitude, ...rest } = storeForm
-    const payload = { ...rest, delivery_radius_km: Number(rest.delivery_radius_km) }
+    const payload = { ...rest, country: rest.country || workMarket, delivery_radius_km: Number(rest.delivery_radius_km) }
     if (String(latitude).trim() !== '' && String(longitude).trim() !== '') {
       payload.latitude = Number(latitude)
       payload.longitude = Number(longitude)
@@ -792,67 +1111,6 @@ export default function Admin({ token, onClose }) {
     } catch (error) { fail(error) }
   }
 
-  async function saveBanner(event) {
-    event.preventDefault()
-    setMessage('')
-    const { id, ...rest } = bannerForm
-    const payload = {
-      ...rest,
-      headline: rest.headline.trim() || null,
-      category_slug: rest.category_slug || null,
-      link_url: rest.link_url.trim() || null,
-      sort_order: Number(rest.sort_order) || 0,
-    }
-    try {
-      const response = await fetch(`${API_URL}/admin/banners${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the banner.')
-      setBannerForm(null)
-      loadBanners()
-    } catch (error) { fail(error) }
-  }
-
-  async function removeBanner(banner) {
-    if (!window.confirm('Delete this banner?')) return
-    setMessage('')
-    try {
-      const response = await fetch(`${API_URL}/admin/banners/${banner.id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!response.ok && response.status !== 204) throw new Error((await readJson(response)).message ?? 'Could not delete the banner.')
-      loadBanners()
-    } catch (error) { fail(error) }
-  }
-
-  async function saveTile(event) {
-    event.preventDefault()
-    setMessage('')
-    const { id, ...rest } = tileForm
-    const payload = {
-      ...rest,
-      title: rest.title.trim() || null,
-      image_url: rest.image_url.trim() || null,
-      category_slug: rest.category_slug || null,
-      link_url: rest.link_url.trim() || null,
-      sort_order: Number(rest.sort_order) || 0,
-    }
-    try {
-      const response = await fetch(`${API_URL}/admin/home-tiles${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
-      const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the tile.')
-      setTileForm(null)
-      loadHomeTiles()
-    } catch (error) { fail(error) }
-  }
-
-  async function removeTile(tile) {
-    if (!window.confirm('Delete this homepage tile?')) return
-    setMessage('')
-    try {
-      const response = await fetch(`${API_URL}/admin/home-tiles/${tile.id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!response.ok && response.status !== 204) throw new Error((await readJson(response)).message ?? 'Could not delete the tile.')
-      loadHomeTiles()
-    } catch (error) { fail(error) }
-  }
-
   const scrollAdminTop = () => {
     requestAnimationFrame(() => {
       document.querySelector('.admin-main')?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -871,11 +1129,14 @@ export default function Admin({ token, onClose }) {
 
   function editPage(page) {
     setPagePreview(false)
+    setPageSettingsOpen(false)
     setPageForm({
-      id: page.id, title: page.title ?? '', slug: page.slug ?? '', banner_image: page.banner_image ?? '',
+      id: page.id, title: page.title ?? '', slug: page.slug ?? '', parent_slug: page.parent_slug ?? '', banner_image: page.banner_image ?? '',
       content: page.content ?? '',
       sections: Array.isArray(page.sections) ? page.sections : [],
-      footer_group: page.footer_group ?? 'useful_links', show_in_footer: page.show_in_footer,
+      footer_group: page.footer_group ?? 'useful_links',
+      menu_placements: Array.isArray(page.menu_placements) ? page.menu_placements : [],
+      show_in_footer: page.show_in_footer,
       is_published: page.is_published, sort_order: page.sort_order ?? 0,
     })
     scrollAdminTop()
@@ -883,6 +1144,7 @@ export default function Admin({ token, onClose }) {
 
   function newPage(extra = {}) {
     setPagePreview(false)
+    setPageSettingsOpen(false)
     setPageForm({ ...EMPTY_PAGE, ...extra })
     scrollAdminTop()
   }
@@ -891,7 +1153,7 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, ...rest } = pageForm
-    const payload = { ...rest, slug: rest.slug.trim(), sort_order: Number(rest.sort_order) || 0 }
+    const payload = { ...rest, slug: rest.slug.trim(), parent_slug: (rest.parent_slug ?? '').trim() || null, sort_order: Number(rest.sort_order) || 0 }
     try {
       const response = await fetch(`${API_URL}/admin/pages${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
       const data = await readJson(response)
@@ -946,7 +1208,7 @@ export default function Admin({ token, onClose }) {
   async function saveBranding(event) {
     event.preventDefault()
     const saved = await saveSetting({
-      store_name: brandingForm.store_name.trim() || 'NexTech',
+      store_name: brandingForm.store_name.trim() || `${brandName()}`,
       tagline: brandingForm.tagline.trim(),
       logo_url: brandingForm.logo_url.trim(),
       favicon_url: brandingForm.favicon_url.trim(),
@@ -956,7 +1218,8 @@ export default function Admin({ token, onClose }) {
       color_accent: brandingForm.color_accent,
       color_heading: brandingForm.color_heading,
     })
-    if (saved) { setBrandingForm({ ...EMPTY_BRANDING, ...(saved.branding ?? {}) }); setMessage('Store settings saved — refresh the storefront to see them.') }
+    // The new logo/name shows everywhere straight away (admin, Seller Center, rider, storefront).
+    if (saved) { setBrandingForm({ ...EMPTY_BRANDING, ...(saved.branding ?? {}) }); setSharedBranding(saved.branding ?? {}); setMessage('Store settings saved — the new logo and name show everywhere.') }
   }
 
   async function saveFooter(event) {
@@ -1001,6 +1264,7 @@ export default function Admin({ token, onClose }) {
       setSecureGate('unlocked')
       if (data.data.account) setAccountForm({ name: data.data.account.name ?? '', email: data.data.account.email ?? '', phone: data.data.account.phone ?? '' })
       if (data.data.payments) setSettings((s) => (s ? { ...s, payments: data.data.payments } : s))
+      if (data.data.courier) setSettings((s) => (s ? { ...s, courier: data.data.courier } : s))
     } catch (error) { setSecureMsg(error.message) }
   }
 
@@ -1013,6 +1277,46 @@ export default function Admin({ token, onClose }) {
     if (saved) {
       setPaymentsForm({ stripe_key: saved.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
       setMessage('Payment settings saved — they take effect immediately.')
+    } else {
+      setSecureGate('locked'); setSecureToken('')
+    }
+  }
+
+  // Secure access → commission for new sellers (their first N days after approval).
+  async function saveSellerRates(event) {
+    event.preventDefault()
+    const pct = sellerRateForm.new_pct.trim()
+    const patch = {
+      new_seller_commission_rate_bps: pct === '' ? null : Math.max(0, Math.min(10000, Math.round(Number(pct) * 100))),
+      new_seller_days: Math.max(1, Math.min(3650, Math.round(Number(sellerRateForm.days) || 90))),
+    }
+    const saved = await saveSetting(patch, { 'X-Secure-Access': secureToken })
+    if (saved) { setSellerRateForm(sellerRateToForm(saved)); setMessage('Seller commission saved — applies to new orders.') }
+  }
+
+  async function saveCourier(event) {
+    event.preventDefault()
+    const patch = {
+      courier_provider: courierForm.courier_provider,
+      courier_base_url: courierForm.courier_base_url.trim(),
+      courier_account_code: courierForm.courier_account_code.trim(),
+    }
+    if (courierForm.courier_api_key.trim()) patch.courier_api_key = courierForm.courier_api_key.trim()
+    if (courierForm.courier_api_secret.trim()) patch.courier_api_secret = courierForm.courier_api_secret.trim()
+    if (courierForm.tracking_api_key.trim()) patch.tracking_api_key = courierForm.tracking_api_key.trim()
+    if (courierForm.tracking_webhook_secret.trim()) patch.tracking_webhook_secret = courierForm.tracking_webhook_secret.trim()
+    const saved = await saveSetting(patch, { 'X-Secure-Access': secureToken })
+    if (saved) {
+      setCourierForm({
+        courier_provider: saved.courier?.provider ?? 'mock',
+        courier_base_url: saved.courier?.base_url ?? '',
+        courier_account_code: saved.courier?.account_code ?? '',
+        courier_api_key: '',
+        courier_api_secret: '',
+          tracking_api_key: '',
+          tracking_webhook_secret: '',
+      })
+      setMessage('Courier settings saved — they take effect immediately.')
     } else {
       setSecureGate('locked'); setSecureToken('')
     }
@@ -1049,7 +1353,7 @@ export default function Admin({ token, onClose }) {
   }
 
   async function refundOrder(order) {
-    if (!window.confirm(`Refund ${money(order.total_cents)} to the customer via Stripe?`)) return
+    if (!window.confirm(`Refund ${money(order.total_cents, order.currency)} to the customer via Stripe?`)) return
     setBusyId(order.id)
     setMessage('')
     try {
@@ -1058,6 +1362,62 @@ export default function Admin({ token, onClose }) {
       if (!response.ok) throw new Error(data.message ?? 'Refund failed.')
       setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
       setMessage('Refund issued.')
+      loadMetrics()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Pulls the courier's current tracking status; a `delivered` result
+  // auto-completes the order (handled server-side).
+  // Admin override on a seller's package: fix carrier/tracking or set its status.
+  async function patchPackage(order, pkg, body) {
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/packages/${pkg.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the package.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  async function downloadPackageLabel(pkg) {
+    try {
+      const response = await fetch(`${API_URL}/admin/packages/${pkg.id}/label`, { headers: authHeaders() })
+      if (!response.ok) throw new Error('Could not download the label.')
+      const url = URL.createObjectURL(await response.blob())
+      window.open(url, '_blank', 'noopener')
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (error) { fail(error) }
+  }
+
+  function editPackageTracking(order, pkg) {
+    const tracking = window.prompt(`Tracking number for ${pkg.carrier} package on order #${order.id}:`, pkg.tracking_number)
+    if (tracking && tracking.trim() !== pkg.tracking_number) patchPackage(order, pkg, { tracking_number: tracking.trim() })
+  }
+
+  async function syncTracking(order) {
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/orders/${order.id}/sync-tracking`, { method: 'POST', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not pull tracking.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
+      loadMetrics()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Manual escalation for an own-rider order stuck unassigned in the pool —
+  // hands it to the online courier instead, immediately booking a shipment.
+  async function escalateToCourier(order) {
+    if (!window.confirm('Send this order via online courier instead of waiting for a rider?')) return
+    setBusyId(order.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/orders/${order.id}/escalate-to-courier`, { method: 'POST', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not escalate to courier.')
+      setOrders((current) => current.map((row) => row.id === order.id ? { ...row, ...data.data } : row))
       loadMetrics()
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
@@ -1077,7 +1437,7 @@ export default function Admin({ token, onClose }) {
     const giftCards = order.gift_cards ?? []
     const needsItemReturn = order.cancelled_by === 'rider' && !order.items_returned_at
     const itemsReturned = order.cancelled_by === 'rider' && !!order.items_returned_at
-    const steps = NEXT_ACTIONS[order.status] ?? []
+    const steps = (NEXT_ACTIONS[order.status] ?? []).filter(([status]) => order.delivery_method !== 'seller' || status === 'cancelled')
     if (!codCollect && !needsRefund && !refundedLink && !refundedNote && !giftCards.length && !needsItemReturn && !itemsReturned && steps.length === 0) return null
     return (
       <>
@@ -1094,8 +1454,8 @@ export default function Admin({ token, onClose }) {
         )}
         {refundedNote && (
           <span className="admin-note" style={{ color: '#2f5a8a' }} title={(order.refunds ?? []).length
-            ? order.refunds.map((r) => `${money(r.amount_cents)}${r.reason ? ` — ${r.reason}` : ''}${r.creator?.name ? ` — by ${r.creator.name}` : ''}`).join('\n')
-            : `Refunded ${money(order.refunded_amount_cents ?? 0)}`}>↩ refunded{order.payment_status === 'partially_refunded' ? ' (partial)' : ''}</span>
+            ? order.refunds.map((r) => `${money(r.amount_cents, order.currency)}${r.reason ? ` — ${r.reason}` : ''}${r.creator?.name ? ` — by ${r.creator.name}` : ''}`).join('\n')
+            : `Refunded ${money(order.refunded_amount_cents ?? 0, order.currency)}`}>↩ refunded{order.payment_status === 'partially_refunded' ? ' (partial)' : ''}</span>
         )}
         {giftCards.length > 0 && (
           <span className="admin-note" style={{ color: '#6b4f12' }} title={giftCards.map((g) => `${g.code} — ${money(g.initial_cents)}${g.reason ? ` (${g.reason})` : ''}${g.issued_by?.name ? ` — by ${g.issued_by.name}` : ''}`).join('\n')}>🎁 gift card issued{giftCards.length > 1 ? ` ×${giftCards.length}` : ''}</span>
@@ -1107,7 +1467,7 @@ export default function Admin({ token, onClose }) {
           <span className="admin-note" style={{ color: '#2f6d34' }} title={`Confirmed ${new Date(order.items_returned_at).toLocaleString()}`}>✓ items returned</span>
         )}
         {steps.map(([status, label]) => (
-          <button key={status} type="button" disabled={busyId === order.id} className={status === 'cancelled' ? 'act danger' : 'act'} onClick={() => patchOrder(order, { status })}>{label}</button>
+          <button key={status} type="button" disabled={busyId === order.id} className={status === 'cancelled' ? 'act danger' : 'act'} onClick={() => (status === 'cancelled' ? setCancelling({ order, reason: '', note: '' }) : patchOrder(order, { status }))}>{label}</button>
         ))}
       </>
     )
@@ -1136,7 +1496,8 @@ export default function Admin({ token, onClose }) {
 
   async function openThread(id) {
     setMessage('')
-    setRefundForm({ items: [], amount: '', reason: '' })
+    setNoteDraft('')
+    setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
     setSupportToasts((cur) => cur.filter((t) => t.id !== id))
     try {
       const data = await readJson(await fetch(`${API_URL}/admin/support/threads/${id}`, { headers: authHeaders() }))
@@ -1145,14 +1506,24 @@ export default function Admin({ token, onClose }) {
     } catch (error) { fail(error) }
   }
 
-  async function replyThread() {
-    const body = threadReply.trim()
-    if (!body || !thread) return
+  // Internal notes on a support thread (staff only, never in the chat).
+  async function addThreadNote() {
+    if (!thread || !noteDraft.trim()) return
     try {
-      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/messages`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body }) })
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/notes`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ body: noteDraft.trim() }) })
       const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? 'Message not sent.')
-      setThreadReply('')
+      if (!response.ok) throw new Error(data.message ?? 'Note not saved.')
+      setNoteDraft('')
+      setThread(data.data)
+    } catch (error) { fail(error) }
+  }
+
+  async function deleteThreadNote(noteId) {
+    if (!thread || !window.confirm('Delete this note?')) return
+    try {
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/notes/${noteId}`, { method: 'DELETE', headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Note not deleted.')
       setThread(data.data)
     } catch (error) { fail(error) }
   }
@@ -1195,23 +1566,29 @@ export default function Admin({ token, onClose }) {
   // order/threadId: threadId is set when issuing from a Support conversation
   // (the code + password are posted into it); null when issuing straight from
   // the Orders tab's order-summary drawer.
+  // Return costs charged to the seller(s) on this refund — only sent when the
+  // order actually has seller items.
+  const sellerChargeFlags = (order) => ((order.items ?? []).some((i) => i.shop_id)
+    ? { charge_seller_pickup: !!refundForm.charge_pickup, charge_seller_delivery: !!refundForm.charge_delivery }
+    : {})
+
   async function issueRefund(order, threadId) {
     if (!order) return
-    const body = { reason: refundForm.reason.trim() || undefined }
+    const body = { reason: refundForm.reason.trim() || undefined, ...sellerChargeFlags(order) }
     if (threadId) body.support_thread_id = threadId
     if (refundForm.items.length) body.item_ids = refundForm.items
     else if (refundForm.amount) body.amount_cents = Math.round(Number(refundForm.amount) * 100)
     const allItemsPicked = refundForm.items.length > 0 && refundForm.items.length === (order.items ?? []).length
     const label = refundForm.items.length
-      ? money(allItemsPicked ? order.total_cents - (order.refunded_amount_cents ?? 0) : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0))
-      : (refundForm.amount ? `$${refundForm.amount}` : money(order.total_cents - (order.refunded_amount_cents ?? 0)))
+      ? money(allItemsPicked ? order.total_cents - (order.refunded_amount_cents ?? 0) : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0), order.currency)
+      : (refundForm.amount ? money(Math.round(Number(refundForm.amount) * 100), order.currency) : money(order.total_cents - (order.refunded_amount_cents ?? 0), order.currency))
     if (!window.confirm(`Refund ${label} to the customer via Stripe?`)) return
     setBusyId(threadId ?? order.id)
     try {
       const response = await fetch(`${API_URL}/admin/orders/${order.id}/refund`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Refund failed.')
-      setRefundForm({ items: [], amount: '', reason: '' })
+      setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
       if (threadId) openThread(threadId)
       refreshOrderInList(order.id)
       loadMetrics()
@@ -1224,15 +1601,15 @@ export default function Admin({ token, onClose }) {
   // the Orders drawer they're shown here for the admin to relay themselves.
   async function issueGiftCard(order, threadId) {
     if (!order) return
-    const body = { reason: refundForm.reason.trim() || undefined }
+    const body = { reason: refundForm.reason.trim() || undefined, ...sellerChargeFlags(order) }
     if (threadId) body.support_thread_id = threadId
     if (refundForm.items.length) body.item_ids = refundForm.items
     else if (refundForm.amount) body.amount_cents = Math.round(Number(refundForm.amount) * 100)
     const allItemsPicked = refundForm.items.length > 0 && refundForm.items.length === (order.items ?? []).length
     const room = order.total_cents - (order.refunded_amount_cents ?? 0) - (order.gift_cards ?? []).reduce((s, g) => s + g.initial_cents, 0)
     const label = refundForm.items.length
-      ? money(allItemsPicked ? room : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0))
-      : (refundForm.amount ? `$${refundForm.amount}` : '')
+      ? money(allItemsPicked ? room : order.items.filter((i) => refundForm.items.includes(i.id)).reduce((s, i) => s + i.line_total_cents, 0), order.currency)
+      : (refundForm.amount ? money(Math.round(Number(refundForm.amount) * 100), order.currency) : '')
     if (!window.confirm(`Issue a ${label || 'store-credit'} gift card to the customer?`)) return
     setBusyId(threadId ?? order.id)
     try {
@@ -1240,10 +1617,10 @@ export default function Admin({ token, onClose }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'Could not issue the gift card.')
       setGiftIssued(data.data)
-      setRefundForm({ items: [], amount: '', reason: '' })
+      setRefundForm({ items: [], amount: '', reason: '', charge_pickup: true, charge_delivery: true })
       if (threadId) openThread(threadId)
       refreshOrderInList(order.id)
-      setMessage(`Gift card ${data.data.code} for ${money(data.data.amount_cents)} issued.`)
+      setMessage(`Gift card ${data.data.code} for ${money(data.data.amount_cents, order.currency)} issued.`)
     } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
@@ -1251,7 +1628,7 @@ export default function Admin({ token, onClose }) {
   // different order that's still unpaid — for when they ask in chat instead
   // of entering the code themselves at checkout.
   async function applyGiftCardToOrder(card, order, threadId) {
-    const label = money(Math.min(card.balance_cents, order.total_cents))
+    const label = money(Math.min(card.balance_cents, order.total_cents), order.currency)
     if (!window.confirm(`Apply ${label} from gift card ${card.code} to order #${order.id}?`)) return
     setBusyId(threadId ?? order.id)
     try {
@@ -1286,29 +1663,37 @@ export default function Admin({ token, onClose }) {
     const amountOk = bare ? remaining > 0 : (amountCents > 0 && amountCents <= remaining)
     const giftLast = giftIssued && giftIssued.order_id === o.id ? giftIssued : null
     const alreadyIssuedCard = (o.gift_cards ?? [])[0]
-    const alreadyIssuedTitle = alreadyIssuedCard ? `${alreadyIssuedCard.code} — ${money(alreadyIssuedCard.initial_cents)}` : undefined
+    const alreadyIssuedTitle = alreadyIssuedCard ? `${alreadyIssuedCard.code} — ${money(alreadyIssuedCard.initial_cents, o.currency)}` : undefined
     const busyKey = threadId ?? o.id
     return (
       <div className="admin-form" style={{ marginTop: 16 }}>
         <h4>Refund</h4>
-        <p className="muted">Paid {money(o.total_cents)} · refunded {money(o.refunded_amount_cents ?? 0)} · remaining {money(remaining)}</p>
+        <p className="muted">Paid {money(o.total_cents, o.currency)} · refunded {money(o.refunded_amount_cents ?? 0, o.currency)} · remaining {money(remaining, o.currency)}</p>
         {stateOk && remaining > 0 ? (
           <>
             {(o.items ?? []).map((item) => (
               <label key={item.id} className="admin-check">
                 <input type="checkbox" checked={refundForm.items.includes(item.id)} onChange={(event) => setRefundForm((f) => ({ ...f, items: event.target.checked ? [...f.items, item.id] : f.items.filter((x) => x !== item.id) }))} />
-                {item.product_name}{item.variant_label ? ` · ${item.variant_label}` : ''} × {item.quantity} — {money(item.line_total_cents)}
+                {item.product_name}{item.variant_label ? ` · ${item.variant_label}` : ''} × {item.quantity} — {money(item.line_total_cents, o.currency)}
               </label>
             ))}
             <div className="admin-form-grid" style={{ marginTop: 10 }}>
-              <label>Or amount ($)<input type="number" min="0" step="0.01" disabled={refundForm.items.length > 0} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
+              <label>Or amount ({currencySymbol(o.currency)})<input type="number" min="0" step="0.01" disabled={refundForm.items.length > 0} value={refundForm.amount} onChange={(event) => setRefundForm({ ...refundForm, amount: event.target.value })} /></label>
               <label>Reason<input value={refundForm.reason} onChange={(event) => setRefundForm({ ...refundForm, reason: event.target.value })} /></label>
             </div>
+            {(o.items ?? []).some((i) => i.shop_id) && (
+              <div className="admin-seller-charges">
+                <strong>Charge the seller</strong>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_pickup} onChange={(event) => setRefundForm({ ...refundForm, charge_pickup: event.target.checked })} /> Return pickup fee ({money(settings?.return_pickup_fee_cents ?? 499, o.currency)} per seller)</label>
+                <label className="admin-check"><input type="checkbox" checked={!!refundForm.charge_delivery} onChange={(event) => setRefundForm({ ...refundForm, charge_delivery: event.target.checked })} /> Their share of the delivery fee ({money(o.delivery_fee_cents ?? 0, o.currency)} on this order, charged once)</label>
+                <span className="muted">The refunded item value (less the commission they paid) is always taken back from the seller. Untick these for a {brandName()} fault, e.g. delivery damage.</span>
+              </div>
+            )}
             {refundForm.items.length > 0 && (
               <p className="muted">
                 {allItemsSelected
-                  ? `Every item selected — full refund of ${money(remaining)} (includes tax and fees).`
-                  : `Selected items: ${money(selectedSum)}${selectedSum > remaining ? ' — more than the remaining balance' : ' (tax and fees are refunded separately)'}.`}
+                  ? `Every item selected — full refund of ${money(remaining, o.currency)} (includes tax and fees).`
+                  : `Selected items: ${money(selectedSum, o.currency)}${selectedSum > remaining ? ' — more than the remaining balance' : ' (tax and fees are refunded separately)'}.`}
               </p>
             )}
             <div className="admin-form-actions">
@@ -1328,7 +1713,7 @@ export default function Admin({ token, onClose }) {
           </>
         )}
         {giftLast && (
-          <p className="admin-gift-issued">Gift card <b>{giftLast.code}</b> · password <b>{giftLast.pin}</b> · {money(giftLast.amount_cents)}{threadId ? ' — sent to the customer in this chat.' : ' — share this with the customer.'}</p>
+          <p className="admin-gift-issued">Gift card <b>{giftLast.code}</b> · password <b>{giftLast.pin}</b> · {money(giftLast.amount_cents, o.currency)}{threadId ? ' — sent to the customer in this chat.' : ' — share this with the customer.'}</p>
         )}
       </div>
     )
@@ -1338,29 +1723,35 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
-    const payload = { ...rest, category_id: Number(rest.category_id), inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, image_url: rest.image_url?.trim() || null }
+    rest.sku = rest.sku?.trim() || null
+    if (!rest.image_url?.trim() && !(rest.images ?? []).filter(Boolean).length) { setMessage('Add a product image — a product can’t go live without one.'); return }
+    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || workMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
-    // sent as [] so the backend drops any rows.
-    const liveVariants = (variants ?? []).filter((v) => !v._delete && (v.sku || '').trim())
+    // sent as [] so the backend drops any rows. `rows` below (sent as
+    // payload.variants) is what the backend indexes `variant_index` against,
+    // so store-stock rows must reference positions in `rows`, not `variants`.
+    const rows = (variants ?? []).filter((row) => row.id || !row._delete)
+    const liveVariants = rows.filter((v) => !v._delete && (v.label || '').trim())
     payload.store_stock = perStore
-      ? Object.entries(storeStockMap ?? {}).flatMap(([sid, row]) => {
+      ? (stores.length ? stores.map((store) => String(store.id)) : Object.keys(storeStockMap ?? {})).flatMap((sid) => {
+          const row = storeStockRow(productForm, sid)
           const stocked = row.is_stocked !== false
-          const base = { store_id: Number(sid), variant_sku: null, is_stocked: stocked, quantity: Number(row.base || 0) }
+          const base = { store_id: Number(sid), variant_index: null, is_stocked: stocked, quantity: Number(row.base || 0) }
           const vRows = liveVariants.map((v) => {
-            const idx = variants.indexOf(v)
-            return { store_id: Number(sid), variant_sku: v.sku.trim(), is_stocked: stocked, quantity: Number(row.variants?.[idx] || 0) }
+            const localIdx = variants.indexOf(v)
+            const payloadIdx = rows.indexOf(v)
+            return { store_id: Number(sid), variant_index: payloadIdx, is_stocked: stocked, quantity: Number(row.variants?.[localIdx] || 0) }
           })
           return [base, ...vRows]
         })
       : []
-    const rows = (variants ?? []).filter((row) => row.id || !row._delete)
     if (id || rows.length) {
       payload.variants = rows.map((row) => ({
         ...(row.id ? { id: row.id } : {}),
         ...(row._delete ? { _delete: true } : {}),
         label: (row.label || '').trim(),
-        sku: (row.sku || '').trim(),
+        sku: row.sku?.trim() || null,
         price_cents: Math.round(Number(row.price || 0) * 100),
         compare_at_price_cents: String(row.compare_at ?? '').trim() ? Math.round(Number(row.compare_at) * 100) : null,
         inventory_quantity: Number(row.stock) || 0,
@@ -1379,18 +1770,58 @@ export default function Admin({ token, onClose }) {
   }
 
   // Upload an image file to /api/admin/media and hand the stored URL to `apply`.
-  async function uploadImage(file, apply) {
+  // `folder` defaults to 'products' — product/variant photos, which the
+  // server holds to a stricter bar (square, JPEG/PNG, 800KB) than category,
+  // banner, page, or branding images, so only that folder gets the client-side
+  // pre-check too.
+  // Product video: MP4 / WebM / MOV up to 100 MB (same as sellers').
+  async function uploadVideo(file) {
     if (!file) return
     setMessage('')
+    if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type)) { fail(new Error('Videos must be MP4, WebM or MOV.')); return }
+    if (file.size > 100 * 1024 * 1024) { fail(new Error('Videos can be up to 100 MB.')); return }
     setImgBusy(true)
     try {
       const body = new FormData()
       body.append('file', file)
+      const response = await fetch(`${API_URL}/admin/media/video`, { method: 'POST', headers: authHeaders(), body })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Upload failed.')
+      setProductForm((form) => ({ ...form, video_url: data.data.url }))
+    } catch (error) { fail(error) } finally { setImgBusy(false) }
+  }
+
+  async function uploadImage(file, apply, folder = 'products') {
+    if (!file) return
+    setMessage('')
+    if (folder === 'products') {
+      const problem = await checkProductImage(file)
+      if (problem) { fail(new Error(problem)); return }
+    }
+    setImgBusy(true)
+    try {
+      const body = new FormData()
+      body.append('file', file)
+      if (folder !== 'products') body.append('folder', folder)
       const response = await fetch(`${API_URL}/admin/media`, { method: 'POST', headers: authHeaders(), body })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Upload failed.')
       apply(data.data.url)
     } catch (error) { fail(error) } finally { setImgBusy(false) }
+  }
+
+  // A seller asked to remove a product (it's already hidden). Remove = deleted,
+  // or archived when it's on past orders; Keep = stays hidden, request cleared.
+  async function decideDeletion(product, decision) {
+    if (decision === 'remove' && !window.confirm(`Remove ${product.name}? It's taken out of the catalog and the seller's list. ${product.support_until ? `Past buyers are still under returns/warranty until ${new Date(product.support_until).toLocaleDateString()} — they keep a "no longer sold" page and the seller still owes them support.` : 'Past orders keep their record.'}`)) return
+    setMessage('')
+    setBusyId(product.id)
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/deletion`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not update the product.')
+      setMessage(decision === 'remove' ? `${product.name} removed.` : `${product.name} kept (still hidden).`)
+      loadProducts()
+    } catch (error) { fail(error) } finally { setBusyId(null) }
   }
 
   async function removeProduct(product) {
@@ -1408,8 +1839,9 @@ export default function Admin({ token, onClose }) {
     event.preventDefault()
     setMessage('')
     const { id, ...rest } = categoryForm
-    const payload = { ...rest, sort_order: Number(rest.sort_order) }
+    const payload = { ...rest, sort_order: Number(rest.sort_order), parent_id: rest.parent_id ? Number(rest.parent_id) : null }
     if (!payload.slug) delete payload.slug
+    if (payload.parent_id) delete payload.kind // a subcategory takes its parent's kind
     try {
       const response = await fetch(`${API_URL}/admin/categories${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
       const data = await readJson(response)
@@ -1438,6 +1870,208 @@ export default function Admin({ token, onClose }) {
       if (!response.ok) throw new Error(data.message ?? 'Could not load the customer.')
       setCustomerDetail(data.data)
     } catch (error) { setCustomerDetail(null); fail(error) }
+  }
+
+  async function openSellerDetail(id) {
+    setMessage('')
+    setSellerDetail({ loading: true })
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${id}`, { headers: authHeaders() })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not load the application.')
+      setSellerDetail(data.data)
+    } catch (error) { setSellerDetail(null); fail(error) }
+  }
+
+  async function sellerAction(seller, action, body) {
+    setBusyId(seller.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the application.')
+      setSellers((cur) => cur.map((s) => (s.id === seller.id ? data.data : s)))
+      setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, ...data.data } : cur))
+      if (action === 'approve') loadShops()
+      if (action === 'payout' || action === 'payout-request/reject') {
+        setNotifications((cur) => ({ ...cur, payout_requests: (cur.payout_requests ?? []).filter((r) => r.seller_id !== seller.id) }))
+      }
+      return true
+    } catch (error) { fail(error); return false } finally { setBusyId(null) }
+  }
+
+  // Seller Center onboarding tasks (tax information, compliance information, bank account).
+  function reviewOnboarding(seller, task, decision) {
+    const note = decision === 'reject' ? window.prompt('What does the seller need to fix? They see this on the task and get it as a message.', '') : null
+    if (decision === 'reject' && !note) return
+    sellerAction(seller, `onboarding/${task}`, { decision, note })
+  }
+
+  function rejectSeller(seller) {
+    const reason = window.prompt('Reason for rejecting this application:', '')
+    if (reason) sellerAction(seller, 'reject', { reason })
+  }
+
+  async function productAction(product, action, body) {
+    setBusyId(product.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/products/${product.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the product.')
+      setProducts((cur) => cur.map((p) => (p.id === product.id ? { ...p, ...data.data } : p)))
+      setListingReview((cur) => (cur?.id === product.id ? { ...cur, ...data.data } : cur))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Approve; when details are still missing (HSN / GST rate, compliance
+  // documents, or the seller never submitted it), confirm "approve anyway" —
+  // it goes live and the seller is emailed to add them soon.
+  function approveProduct(product) {
+    const f = product.followups ?? { blocking: [], later: [] }
+    if (f.blocking?.length) { setMessage(`Can’t go live yet: ${f.blocking.join(' ')}`); return }
+    const missing = f.later ?? []
+    if (missing.length || product.status === 'draft') {
+      const list = missing.length ? missing.map((m) => `• ${m}`).join('\n') : '• The seller hasn’t submitted it yet.'
+      if (!window.confirm(`Approve "${product.name}" anyway? It goes live now and the seller is asked to add soon:\n\n${list}`)) return
+      productAction(product, 'approve', { override: true })
+      return
+    }
+    productAction(product, 'approve')
+  }
+
+  function rejectProduct(product) {
+    const reason = window.prompt(`Reason for rejecting "${product.name}":`, '')
+    if (reason) productAction(product, 'reject', { reason })
+  }
+  // Remove a seller for good: products never ordered are deleted, the rest switched off.
+  async function removeSeller(seller) {
+    const name = seller.shop?.name ?? seller.company_name ?? 'this seller'
+    const reason = window.prompt(`Remove ${name} permanently? Their shop closes, products never ordered are deleted, and products with orders are switched off. They can't re-apply.
+
+Reason:`, '')
+    if (!reason?.trim()) return
+    setBusyId(seller.id)
+    try {
+      const response = await fetch(`${API_URL}/admin/sellers/${seller.id}`, { method: 'DELETE', headers: jsonHeaders(), body: JSON.stringify({ reason: reason.trim() }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not remove the seller.')
+      setSellers((cur) => cur.map((s) => (s.id === seller.id ? data.data : s)))
+      setSellerDetail((cur) => (cur?.id === seller.id ? { ...cur, ...data.data } : cur))
+      setMessage(`${name} removed — ${data.meta.deleted} product${data.meta.deleted === 1 ? '' : 's'} deleted${data.meta.kept ? `, ${data.meta.kept} with orders switched off` : ''}.`)
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function suspendSeller(seller) {
+    const reason = window.prompt(`Reason for suspending ${seller.shop?.name ?? 'this seller'}:`, '')
+    if (reason) sellerAction(seller, 'suspend', { reason })
+  }
+
+  function recordSellerPayout(seller) {
+    const balance = Math.max(0, seller.available_cents ?? seller.balance_cents ?? 0)
+    const max = seller.max_payout_cents ?? 0
+    const suggested = seller.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(balance, max) : balance)
+    const limits = [max > 0 ? `max ${money(max, seller.currency)} per payout` : null, seller.daily_payout_remaining_cents != null ? `${money(seller.daily_payout_remaining_cents, seller.currency)} left today` : null].filter(Boolean).join(', ')
+    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} (${currencySymbol(seller.currency)}) — available ${money(balance, seller.currency)}${limits ? ` (${limits})` : ''}:`, (suggested / 100).toFixed(2))
+    if (!amountStr) return
+    const amount_cents = toCents(amountStr)
+    if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
+    const note = window.prompt('Note (optional):', '') ?? ''
+    sellerAction(seller, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  function rejectPayoutRequest(seller) {
+    const note = window.prompt('Reason for declining this payout request (the seller sees it):', '')
+    if (note?.trim()) sellerAction(seller, 'payout-request/reject', { note: note.trim() })
+  }
+
+  // Opens (or brings up) the chat window with this seller, bottom right.
+  function messageSeller(seller) {
+    openSellerChat(seller)
+  }
+
+  // Temu-style: tick the items the seller must fix (each with an optional note).
+  function requestSellerChanges(seller) {
+    setChangeRequest({ seller, picked: {}, reason: '' })
+  }
+
+  async function sendChangeRequest(event) {
+    event.preventDefault()
+    const { seller, picked, reason } = changeRequest
+    const items = Object.entries(picked).map(([key, note]) => ({ key, note }))
+    if (items.length === 0 && !reason.trim()) return
+    if (await sellerAction(seller, 'request-changes', { items, reason: reason.trim() || null })) setChangeRequest(null)
+  }
+
+  // KYC documents live on the private disk, gated by auth — not a plain <a
+  // href>, since the browser needs the bearer token to fetch them.
+  async function viewKycDocument(path) {
+    if (!path) return
+    try {
+      const response = await fetch(`${API_URL}/seller/kyc-document/${path}`, { headers: authHeaders() })
+      if (!response.ok) throw new Error('Could not load the document.')
+      const blob = await response.blob()
+      window.open(URL.createObjectURL(blob), '_blank')
+    } catch (error) { fail(error) }
+  }
+
+  async function riderAppAction(app, action, body) {
+    setBusyId(`app-${app.id}`)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/rider-applications/${app.id}/${action}`, { method: 'POST', headers: jsonHeaders(), body: body ? JSON.stringify(body) : undefined })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the application.')
+      setRiderApps((cur) => cur.map((a) => (a.id === app.id ? data.data : a)))
+      setNotifications((cur) => ({ ...cur, rider_applications: (cur.rider_applications ?? []).filter((a) => a.id !== app.id) }))
+      if (action === 'approve') { loadRiders(); setMessage(`${app.user?.name ?? 'Rider'} hired at ${data.data.store?.name ?? 'their store'}.`) }
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  // Bring the order's seller into this customer chat (one-way — they stay in
+  // it until it's resolved).
+  async function bringInSeller(shopId) {
+    if (!thread) return
+    try {
+      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/seller`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ shop_id: shopId }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update the chat.')
+      setThread(data.data)
+    } catch (error) { fail(error) }
+  }
+
+  function rejectRiderApp(app) {
+    const reason = window.prompt(`Reason for rejecting ${app.user?.name ?? 'this applicant'} (they see it):`, '')
+    if (reason?.trim()) riderAppAction(app, 'reject', { reason: reason.trim() })
+  }
+
+  async function riderPayAction(rider, path, body) {
+    setBusyId(rider.id)
+    setMessage('')
+    try {
+      const response = await fetch(`${API_URL}/admin/riders/${rider.id}/${path}`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update rider pay.')
+      setRiderDetail((cur) => (cur?.rider?.id === rider.id ? { ...cur, pay: data.data } : cur))
+      setRiders((cur) => cur.map((r) => (r.id === rider.id ? { ...r, earnings_balance_cents: data.data.balance_cents, payout_requested_cents: data.data.pending_payout_request?.amount_cents ?? null } : r)))
+      setNotifications((cur) => ({ ...cur, rider_payout_requests: (cur.rider_payout_requests ?? []).filter((r) => r.rider_id !== rider.id) }))
+    } catch (error) { fail(error) } finally { setBusyId(null) }
+  }
+
+  function recordRiderPayout(rider, pay) {
+    const max = pay.max_payout_cents ?? 0
+    const suggested = pay.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(pay.owed_cents, max) : pay.owed_cents)
+    const amountStr = window.prompt(`Payout to ${rider.name} ($) — owed ${money(pay.owed_cents)}${max > 0 ? `, max ${money(max)} per payout` : ''}:`, (suggested / 100).toFixed(2))
+    if (!amountStr) return
+    const amount_cents = toCents(amountStr)
+    if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
+    const note = window.prompt('Note (optional, e.g. transfer reference):', '') ?? ''
+    riderPayAction(rider, 'payout', { amount_cents, note: note.trim() || undefined })
+  }
+
+  function declineRiderPayout(rider) {
+    const note = window.prompt('Reason for declining this payout request (the rider sees it):', '')
+    if (note?.trim()) riderPayAction(rider, 'payout-request/reject', { note: note.trim() })
   }
 
   async function openRiderDetail(id, view = 'full') {
@@ -1519,10 +2153,46 @@ export default function Admin({ token, onClose }) {
   const negativeFeedbackHidden = (notifications.negative_feedback ?? []).length - visibleNegativeFeedback.length
   const financialActivityHidden = (notifications.financial_activity ?? []).length - visibleFinancialActivity.length
 
-  const notificationCount = visibleRefusedCod.length
+  const payoutRequests = notifications.payout_requests ?? []
+  const labelRequests = notifications.label_requests ?? []
+  const riderPayoutRequests = notifications.rider_payout_requests ?? []
+  const riderApplications = notifications.rider_applications ?? []
+  const sellerApplications = notifications.seller_applications ?? []
+  const categorySuggestions = notifications.category_suggestions ?? []
+  const refundsDue = notifications.refunds_due ?? []
+  const sellerTasks = notifications.seller_tasks ?? []
+  const codKept = notifications.cod_kept ?? []
+  const sellersOwing = notifications.sellers_owing ?? []
+  const productsWaiting = notifications.products_waiting ?? 0
+  const removalRequests = notifications.removal_requests ?? 0
+  // Seller items live under the top-bar "Sellers" button, not the main bell.
+  const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length
+    + labelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0)
+  const notificationCount = refundsDue.length
+    + riderPayoutRequests.length
+    + riderApplications.length
+    + visibleRefusedCod.length
     + visibleCashOverdue.length
     + visibleNegativeFeedback.length
     + visibleFinancialActivity.length
+
+  const homeMarket = settings?.home_market ?? 'US'
+  const marketOptions = settings?.all_markets?.length ? settings.all_markets : [{ code: homeMarket, name: settings?.home_market_name ?? 'United States', currency: settings?.home_currency ?? 'usd' }]
+  // 'ALL' = every country in the lists (each row carries a country badge); totals,
+  // charts and charge settings can't add up different currencies, so they use
+  // the default country then (workMarket).
+  const activeMarket = adminMarket === 'ALL' || !marketOptions.some((m) => m.code === adminMarket) ? (marketOptions.length > 1 ? 'ALL' : homeMarket) : adminMarket
+  const workMarket = activeMarket === 'ALL' ? homeMarket : activeMarket
+  const activeCurrency = marketOptions.find((m) => m.code === workMarket)?.currency ?? 'usd'
+  const countryBadge = (code) => (activeMarket === 'ALL' && code ? <span className="pill pill-country" title={marketOptions.find((m) => m.code === code)?.name ?? code}>{code}</span> : null)
+  setStoreCurrency(activeCurrency)
+  const chargesMarket = workMarket === 'US' ? 'home' : workMarket // the US uses the original charge forms
+  const switchAdminMarket = (code) => {
+    setAdminMarket(code)
+    try { localStorage.setItem('nextech_admin_market', code) } catch { /* ignore */ }
+    setOrderDetail(null)
+    setProductForm(null)
+  }
 
   const toggleNav = () => setNavOpen((open) => {
     const next = !open
@@ -1543,7 +2213,7 @@ export default function Admin({ token, onClose }) {
     setMessage('')
     // Any open edit form belongs to the tab you're leaving — close them all.
     setProductForm(null); setCategoryForm(null); setStoreForm(null); setRiderForm(null)
-    setBannerForm(null); setTileForm(null); setPageForm(null)
+    setPageForm(null)
     // On a narrow screen the sidebar overlays the content — close it after a pick.
     if (typeof window !== 'undefined' && window.matchMedia('(max-width: 860px)').matches) {
       setNavOpen(false)
@@ -1554,15 +2224,148 @@ export default function Admin({ token, onClose }) {
     <div className={`admin-shell${navOpen ? '' : ' nav-collapsed'}`}>
       <header className="admin-bar">
         <button className="admin-menu-toggle" type="button" aria-label={navOpen ? 'Hide menu' : 'Show menu'} aria-expanded={navOpen} onClick={toggleNav}>☰</button>
-        <div className="admin-brand"><span>g</span> Admin console</div>
+        <div className="admin-brand"><BrandLogo onDark /> Admin console</div>
         <div className="admin-bar-right">
+          {marketOptions.length > 1 && (
+            <select className="admin-market-select" aria-label="Currency" title="Show entries for this currency / country" value={activeMarket} onChange={(event) => switchAdminMarket(event.target.value)}>
+              <option value="ALL">All countries</option>
+              {marketOptions.map((m) => <option key={m.code} value={m.code}>{currencySymbol(m.currency)} {m.currency.toUpperCase()} · {m.name}</option>)}
+            </select>
+          )}
+          {openOrders > 0 && (
+            <button type="button" className={`admin-top-tab${tab === 'orders' && statusFilter === 'open' ? ' active' : ''}`} title="Orders not delivered or cancelled yet" onClick={() => { goTab('orders'); setStatusFilter('open'); setOrdersPage(1) }}>
+              Open orders<span className="tab-badge">{openOrders > 99 ? '99+' : openOrders}</span>
+            </button>
+          )}
           {TOP_TABS.map((name) => (
             <button key={name} type="button" className={`admin-top-tab${tab === name ? ' active' : ''}`} onClick={() => goTab(name)}>
               {TAB_LABELS[name]}{name === 'support' && supportBadge > 0 && <span className="tab-badge">{supportBadge}</span>}
             </button>
           ))}
+          {/* Seller notifications, kept apart from the main bell: applications, onboarding
+              reviews, products, payouts, labels and category requests. */}
           <div className="admin-bell-wrap">
-            <button className={`admin-close${bellShaking ? ' shaking' : ''}`} type="button" title="Notifications" aria-expanded={bellOpen} onClick={() => setBellOpen((v) => !v)}>
+            <button className="admin-top-tab admin-seller-bell" type="button" title="Seller notifications" aria-expanded={sellerBellOpen} onClick={() => { setSellerBellOpen((v) => !v); setBellOpen(false) }}>
+              Sellers{sellerNotificationCount > 0 && <span className="tab-badge">{sellerNotificationCount > 99 ? '99+' : sellerNotificationCount}</span>}
+            </button>
+            {sellerBellOpen && (
+              <div className="admin-bell-pop" role="menu">
+                <h4>Sellers — needs attention</h4>
+                {sellerNotificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
+                  <>
+                    {codKept.length > 0 && (
+                      <section>
+                        <h5>Cash kept by sellers (7 days)</h5>
+                        {codKept.slice(0, BELL_ITEM_CAP).map((c) => (
+                          <div className="admin-bell-row" key={`cod-${c.order_id}-${c.seller_id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); openOrderById(c.order_id) }}>
+                              💵 {c.shop_name ?? 'Seller'} kept {money(c.amount_cents, c.currency)} — order #{c.order_id} · {new Date(c.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {sellersOwing.length > 0 && (
+                      <section>
+                        <h5>Sellers owing {brandName()}</h5>
+                        {sellersOwing.slice(0, BELL_ITEM_CAP).map((o) => (
+                          <div className="admin-bell-row" key={`owe-${o.seller_id}`}>
+                            <button type="button" className={o.over_limit ? 'admin-bell-item warn' : 'admin-bell-item'} onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (o.seller_id) openSellerDetail(o.seller_id) }}>
+                              ⚖️ {o.shop_name} owes {money(o.owed_cents, o.currency)}{o.over_limit ? ' — over the limit, cash on delivery paused' : ' — comes out of their next orders'}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {sellerTasks.length > 0 && (
+                      <section>
+                        <h5>Onboarding to review</h5>
+                        {sellerTasks.slice(0, BELL_ITEM_CAP).map((t) => (
+                          <div className="admin-bell-row" key={`stask-${t.seller_id}-${t.task}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(t.seller_id) }}>
+                              📝 {t.name ?? 'Seller'} — {t.label}{t.at ? ` · ${new Date(t.at).toLocaleDateString()}` : ''}
+                            </button>
+                          </div>
+                        ))}
+                        {sellerTasks.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{sellerTasks.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {(productsWaiting > 0 || removalRequests > 0) && (
+                      <section>
+                        <h5>Seller products</h5>
+                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button></div>}
+                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button></div>}
+                      </section>
+                    )}
+                    {sellerApplications.length > 0 && (
+                      <section>
+                        <h5>New seller applications</h5>
+                        {sellerApplications.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`sapp-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('sellers'); openSellerDetail(a.id) }}>
+                              🏪 {a.name ?? 'New seller'} · {new Date(a.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {sellerApplications.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{sellerApplications.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {categorySuggestions.length > 0 && (
+                      <section>
+                        <h5>New categories sellers asked for</h5>
+                        {categorySuggestions.slice(0, BELL_ITEM_CAP).map((c) => (
+                          <div className="admin-bell-row" key={`cat-${c.name}`}>
+                            <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setSellerBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
+                              🗂️ &ldquo;{c.name}&rdquo; — {c.shop_name ?? 'Seller'}, {c.products > 1 ? `${c.products} products` : c.product_name} · {new Date(c.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {categorySuggestions.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('products') }}>+{categorySuggestions.length - BELL_ITEM_CAP} more — see Products</button>
+                        )}
+                      </section>
+                    )}
+                    {payoutRequests.length > 0 && (
+                      <section>
+                        <h5>Seller payout requests</h5>
+                        {payoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`payout-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
+                              💸 {r.shop_name ?? 'Seller'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {payoutRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Sellers</button>
+                        )}
+                      </section>
+                    )}
+                    {labelRequests.length > 0 && (
+                      <section>
+                        <h5>Shipping labels to upload</h5>
+                        {labelRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`label-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>
+                              🏷️ {r.shop_name ?? 'Seller'} — order #{r.order_id} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {labelRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('orders') }}>+{labelRequests.length - BELL_ITEM_CAP} more — see Orders</button>
+                        )}
+                      </section>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="admin-bell-wrap">
+            <button className={`admin-close${bellShaking ? ' shaking' : ''}`} type="button" title="Notifications" aria-expanded={bellOpen} onClick={() => { setBellOpen((v) => !v); setSellerBellOpen(false) }}>
               🔔{notificationCount > 0 && <span className="admin-bell-badge">{notificationCount > 99 ? '99+' : notificationCount}</span>}
             </button>
             {bellOpen && (
@@ -1570,6 +2373,51 @@ export default function Admin({ token, onClose }) {
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {refundsDue.length > 0 && (
+                      <section>
+                        <h5>Refunds to issue</h5>
+                        {refundsDue.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`refund-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" title={r.reason ?? ''} onClick={() => openOrderById(r.id)}>
+                              ↩ Order #{r.id} — {money(r.amount_cents, r.currency)}{r.customer ? ` · ${r.customer}` : ''} · cancelled{r.cancelled_by ? ` by ${r.cancelled_by === 'admin' ? `${brandName()}` : r.cancelled_by}` : ''}
+                            </button>
+                          </div>
+                        ))}
+                        {refundsDue.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('orders'); setStatusFilter('refund_due'); setOrdersPage(1) }}>+{refundsDue.length - BELL_ITEM_CAP} more — see Orders</button>
+                        )}
+                      </section>
+                    )}
+                    {riderPayoutRequests.length > 0 && (
+                      <section>
+                        <h5>Rider payout requests</h5>
+                        {riderPayoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`rpay-${r.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setBellOpen(false); goTab('riders'); openRiderDetail(r.rider_id) }}>
+                              🛵 {r.rider_name ?? 'Rider'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {riderPayoutRequests.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('riders') }}>+{riderPayoutRequests.length - BELL_ITEM_CAP} more — see Riders</button>
+                        )}
+                      </section>
+                    )}
+                    {riderApplications.length > 0 && (
+                      <section>
+                        <h5>Rider applications</h5>
+                        {riderApplications.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`rapp-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('riders') }}>
+                              🙋 {a.name ?? 'Applicant'}{a.store_name ? ` — ${a.store_name}` : ''} · {new Date(a.at).toLocaleDateString()}
+                            </button>
+                          </div>
+                        ))}
+                        {riderApplications.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('riders') }}>+{riderApplications.length - BELL_ITEM_CAP} more — see Riders</button>
+                        )}
+                      </section>
+                    )}
                     {visibleRefusedCod.length > 0 && (
                       <section>
                         <h5>Customer refused C.O.D.</h5>
@@ -1659,7 +2507,7 @@ export default function Admin({ token, onClose }) {
                         <h5>New orders to pack</h5>
                         {visibleAwaitingPacking.slice(0, BELL_ITEM_CAP).map((o) => (
                           <button key={packKey(o)} type="button" className="admin-bell-item" onClick={goToOrder}>
-                            🆕 Order #{o.order_id} — {money(o.total_cents)}{o.customer ? ` — ${o.customer}` : ''}
+                            🆕 Order #{o.order_id} — {money(o.total_cents, o.currency)}{o.customer ? ` — ${o.customer}` : ''}
                           </button>
                         ))}
                         {visibleAwaitingPacking.length > BELL_ITEM_CAP && (
@@ -1671,7 +2519,7 @@ export default function Admin({ token, onClose }) {
                       <section>
                         <h5>New chat messages</h5>
                         {pendingThreads.slice(0, BELL_ITEM_CAP).map((t) => (
-                          <button key={t.id} type="button" className="admin-bell-item" onClick={() => { setSpeakerOpen(false); goTab('support'); openThread(t.id) }}>
+                          <button key={t.id} type="button" className="admin-bell-item" onClick={() => { setSpeakerOpen(false); setSupportToasts((cur) => cur.filter((x) => x.id !== t.id)); openSupportChat(t, ISSUE_LABELS) }}>
                             💬 {t.user?.email ?? 'Customer'}{t.order_id ? ` · order #${t.order_id}` : ''}
                           </button>
                         ))}
@@ -1701,7 +2549,7 @@ export default function Admin({ token, onClose }) {
           ))}
           {supportToasts.map((t) => (
             <div key={`${t.id}-${t.text}`} className="admin-toast">
-              <button type="button" className="admin-toast-body" onClick={() => { goTab('support'); openThread(t.id) }}>
+              <button type="button" className="admin-toast-body" onClick={() => { setSupportToasts((cur) => cur.filter((x) => x.id !== t.id)); openSupportChat(t, ISSUE_LABELS) }}>
                 💬 {t.text} <span>Open →</span>
               </button>
               <button type="button" className="admin-bell-x" title="Dismiss" onClick={() => setSupportToasts((cur) => cur.filter((x) => x.id !== t.id))}>×</button>
@@ -1720,14 +2568,31 @@ export default function Admin({ token, onClose }) {
 
       <div className="admin-body">
         <nav className="admin-sidebar" aria-label="Admin sections">
-          {PRIMARY_TABS.map((name) => (
-            <button key={name} type="button" className={tab === name ? 'active' : ''} onClick={() => goTab(name)}>
+          {PRIMARY_TABS.map((name) => (<Fragment key={name}>
+            <button type="button" className={tab === name ? 'active' : ''} aria-expanded={['products', 'categories'].includes(name) ? (tab === name && !subnavFolded) : undefined}
+              onClick={() => { if (tab === name && ['products', 'categories'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
               <span className="nav-ico" aria-hidden>{TAB_ICONS[name]}</span>
               <span className="nav-label">{TAB_LABELS[name]}</span>
+              {name === 'reviews' && pendingReviews > 0 && <span className="nav-badge">{pendingReviews}</span>}
+              {['products', 'categories'].includes(name) && <span className="nav-caret" aria-hidden>{tab === name && !subnavFolded ? '▾' : '▸'}</span>}
             </button>
-          ))}
+            {name === 'categories' && tab === 'categories' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={!categoryForm ? 'active' : ''} onClick={() => setCategoryForm(null)}>All categories</button>
+                <button type="button" className={categoryForm && !categoryForm.id ? 'active nav-sub-add' : 'nav-sub-add'} onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY }); scrollAdminTop() }}>+ Add new category</button>
+                {categoryForm?.id && <button type="button" className="active">Editing #{categoryForm.id}</button>}
+              </div>
+            )}
+            {name === 'products' && tab === 'products' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={!productForm ? 'active' : ''} onClick={() => setProductForm(null)}>All products</button>
+                <button type="button" className={productForm && !productForm.id ? 'active nav-sub-add' : 'nav-sub-add'} onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollAdminTop() }}>+ Add new product</button>
+                {productForm?.id && <button type="button" className="active">Editing #{productForm.id}</button>}
+              </div>
+            )}
+          </Fragment>))}
 
-          {(() => { const inGroup = tab === 'pages' || tab === 'homepage' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded || inGroup; return <>
+          {(() => { const inGroup = tab === 'pages' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
           <button type="button" className={`nav-group-toggle${inGroup ? ' active' : ''}`} aria-expanded={open} onClick={() => setPagesExpanded((v) => !v)}>
             <span className="nav-ico" aria-hidden>{'\u{1F4C4}'}</span>
             <span className="nav-label">Pages</span>
@@ -1735,25 +2600,64 @@ export default function Admin({ token, onClose }) {
           </button>
           {open && (
             <div className="admin-nav-sub">
-              <button type="button" className={tab === 'homepage' ? 'active' : ''} onClick={() => goTab('homepage')}>Homepage</button>
               <button type="button" className={tab === 'footer' ? 'active' : ''} onClick={() => goTab('footer')}>Footer</button>
-              <button type="button" className={tab === 'pages' && !pageForm ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null) }}>All pages</button>
-              {pages.filter((p) => p.footer_group !== 'blog').map((p) => (
-                <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => { goTab('pages'); editPage(p) }}>{p.title}</button>
-              ))}
-              <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); newPage() }}>+ New page</button>
-              {(() => { const blogPages = pages.filter((p) => p.footer_group === 'blog'); const blogOpen = blogsExpanded || (tab === 'pages' && pageForm?.footer_group === 'blog'); return <>
-                <button type="button" className="nav-subgroup-toggle" aria-expanded={blogOpen} onClick={() => setBlogsExpanded((v) => !v)}>Blogs<span className="nav-caret" aria-hidden>{blogOpen ? '▾' : '▸'}</span></button>
-                {blogOpen && (
-                  <div className="admin-nav-sub">
-                    {blogPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No blog posts</button>}
-                    {blogPages.map((p) => (
-                      <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => { goTab('pages'); editPage(p) }}>{p.title}</button>
-                    ))}
-                    <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); newPage({ footer_group: 'blog', show_in_footer: false }) }}>+ New blog post</button>
+              <button type="button" className={tab === 'pages' && !pageForm && !pageGroupFilter ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null); setPageGroupFilter(null) }}>All pages</button>
+
+              {MENU_PLACEMENT_OPTIONS.map((key) => {
+                const groupPages = pages.filter((p) => Array.isArray(p.menu_placements) && p.menu_placements.includes(key))
+                const isOpen = !!expandedPageGroups[key]
+                return (
+                  <div key={key}>
+                    <button type="button" className={`nav-subgroup-toggle${pageGroupFilter === key ? ' active' : ''}`} aria-expanded={isOpen} onClick={() => selectPageGroup(key)}>
+                      {MENU_PLACEMENT_LABELS[key]}<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="admin-nav-sub">
+                        {key === 'main_footer' ? FOOTER_COLUMNS.map((fg) => {
+                          const colPages = groupPages.filter((p) => (p.footer_group || 'company') === fg)
+                          return (
+                            <div key={fg}>
+                              <span className="nav-sub-label">{FOOTER_GROUP_LABELS[fg]}</span>
+                              {colPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No pages</button>}
+                              {colPages.map((p) => (
+                                <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, key)}>{p.title}</button>
+                              ))}
+                            </div>
+                          )
+                        }) : <>
+                          {groupPages.length === 0 && <button type="button" disabled className="nav-sub-empty">No pages</button>}
+                          {groupPages.map((p) => (
+                            <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, key)}>{p.title}</button>
+                          ))}
+                        </>}
+                        <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); setPageGroupFilter(key); newPage({ menu_placements: [key], ...(key === 'blog' ? { show_in_footer: false } : {}) }) }}>+ New page</button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </> })()}
+                )
+              })}
+
+              {(() => {
+                const unassigned = pages.filter((p) => !Array.isArray(p.menu_placements) || p.menu_placements.length === 0)
+                if (unassigned.length === 0) return null
+                const isOpen = !!expandedPageGroups.unassigned
+                return (
+                  <div>
+                    <button type="button" className={`nav-subgroup-toggle${pageGroupFilter === 'unassigned' ? ' active' : ''}`} aria-expanded={isOpen} onClick={() => selectPageGroup('unassigned')}>
+                      Unassigned<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                    </button>
+                    {isOpen && (
+                      <div className="admin-nav-sub">
+                        {unassigned.map((p) => (
+                          <button key={p.id} type="button" className={tab === 'pages' && pageForm?.id === p.id ? 'active' : ''} onClick={() => selectPageInGroup(p, 'unassigned')}>{p.title}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              <button type="button" className="nav-sub-add" onClick={() => { goTab('pages'); setPageGroupFilter(null); newPage() }}>+ New page</button>
               <button type="button" className={tab === 'formatting' ? 'active' : ''} onClick={() => goTab('formatting')}>Formatting guide</button>
             </div>
           )}
@@ -1764,6 +2668,7 @@ export default function Admin({ token, onClose }) {
         <main className="admin-main">
       {message && <p className="admin-message">{message}</p>}
 
+      {tab === 'dashboard' && activeMarket === 'ALL' && <p className="muted admin-currency-note">Totals and charts can&rsquo;t add up different currencies — showing <b>{marketOptions.find((m) => m.code === workMarket)?.name}</b>. Pick a country in the top bar to see another.</p>}
       {tab === 'dashboard' && (
         <>
           <section className="admin-grid">
@@ -1914,28 +2819,46 @@ export default function Admin({ token, onClose }) {
 
       {tab === 'orders' && (
         <section className="admin-panel">
+          <LabelRequestsPanel authHeaders={authHeaders} onMessage={setMessage} onOpenOrder={openOrderById} refreshKey={labelRequests.length} />
           <div className="admin-filters">
             {STATUS_FILTERS.map((value) => (
               <button key={value} type="button" className={statusFilter === value ? 'chip active' : 'chip'} onClick={() => { setStatusFilter(value); setOrdersPage(1) }}>
-                {value === 'all' ? 'All' : STATUS_LABELS[value]}
+                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : value === 'refund_due' ? `Refund due${refundsDue.length > 0 ? ` (${refundsDue.length})` : ''}` : STATUS_LABELS[value]}
               </button>
             ))}
           </div>
           {listBusy.orders && orders.length === 0 ? <Loading>Loading orders…</Loading> : orders.length === 0 ? <p className="admin-empty">No orders for this filter.</p> : (
             <div className="admin-table-wrap">
             <table className="admin-table">
-              <thead><tr><th>#</th><th>Customer</th><th>Placed</th><th>Total</th><th>Payment</th><th>Delivery</th><th>Courier</th><th>Actions</th></tr></thead>
+              <thead><tr><th>#</th><th>Customer</th><th>Seller</th><th>Placed</th><th>Total</th><th>Payment</th><th>Delivery</th><th>Courier</th><th>Actions</th></tr></thead>
               <tbody>
                 {orders.map((order) => { const feedback = orderFeedbackTone(order); return (
                   <tr key={order.id}>
-                    <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button></td>
-                    <td>{order.user?.display_name ?? '—'}</td>
+                    <td><button type="button" className="link" title="View order summary" onClick={() => setOrderDetail(order)}>#{order.id}</button>{countryBadge(order.market)}</td>
+                    <td className="admin-td-name">{order.user?.display_name ?? '—'}</td>
+                    <td className="admin-td-name">{orderSellers(order)}</td>
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
-                    <td>{money(order.total_cents)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
-                    <td><span className={`pill pill-${order.payment_status}`}>{order.payment_status}</span><span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
-                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
+                    <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
+                    <td>{order.payment_status === 'refund_pending' || (order.status === 'cancelled' && order.payment_status === 'paid') ? <span className="pill pill-refund_due">refund due</span> : <span className={`pill pill-${order.payment_status}`}>{order.payment_status.replace('_', ' ')}</span>}<span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
+                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.status === 'cancelled' && order.cancel_reason && <span className="admin-note" title={order.cancel_reason}>{order.cancelled_by === 'customer' ? 'By customer' : order.cancelled_by === 'rider' ? 'At the door' : `By ${brandName()}`}: {order.cancel_reason}</span>}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
-                      {order.status === 'completed' || order.status === 'cancelled' ? (
+                      {order.delivery_method === 'seller' ? (
+                        <>
+                          <span className="pill pill-seller">Seller ships</span>
+                          {(order.packages ?? []).filter((pk) => staleSellerUpdate(pk)).slice(0, 1).map((pk) => <span key={`stale-${pk.id}`} className="pill pill-stale" title="The seller hasn't updated this package for 2+ days">No seller update {staleSellerUpdate(pk)}d</span>)}{(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note" title={pk.tracking_detail ?? undefined}>{pk.carrier} · {pk.tracking_number} · {pk.tracking_label ?? pk.status.replace('_', ' ')}{pk.tracking_events?.[0]?.location ? ` · ${pk.tracking_events[0].location}` : ''}</span>)}
+                          {(order.packages ?? []).length === 0 && order.status !== 'cancelled' && <span className="admin-note">awaiting seller shipment</span>}
+                        </>
+                      ) : order.delivery_method === 'online_courier' ? (
+                        order.shipment ? (
+                          <>
+                            <span className="admin-note">{order.shipment.carrier} · {order.shipment.tracking_number}</span>
+                            <span className={`pill pill-${order.shipment.status}`}>{order.shipment.status.replace('_', ' ')}</span>
+                            {order.status !== 'completed' && order.status !== 'cancelled' && order.shipment.status !== 'delivered' && (
+                              <button type="button" disabled={busyId === order.id} onClick={() => syncTracking(order)}>Sync tracking</button>
+                            )}
+                          </>
+                        ) : <span className="muted">booking…</span>
+                      ) : order.status === 'completed' || order.status === 'cancelled' ? (
                         order.courier_name || <span className="muted">—</span>
                       ) : riders.length > 0 ? (
                         <>
@@ -1949,6 +2872,9 @@ export default function Admin({ token, onClose }) {
                               <button type="button" className="link" disabled={busyId === order.id} onClick={() => patchOrder(order, { courier_name: null })}> clear</button>
                             </span>
                           )}
+                          {order.status === 'ready_for_delivery' && !order.delivery_partner_id && (
+                            <button type="button" disabled={busyId === order.id} onClick={() => escalateToCourier(order)}>Send via online courier instead</button>
+                          )}
                         </>
                       ) : (
                         // No riders configured yet — fall back to a free-text courier name.
@@ -1956,6 +2882,9 @@ export default function Admin({ token, onClose }) {
                           <input value={courierDraft[order.id] ?? (order.courier_name ?? '')} placeholder="courier name"
                             onChange={(event) => setCourierDraft((current) => ({ ...current, [order.id]: event.target.value }))} />
                           <button type="button" disabled={busyId === order.id || courierDraft[order.id] === undefined} onClick={() => patchOrder(order, { courier_name: (courierDraft[order.id] ?? '').trim() || null })}>Save</button>
+                          {order.status === 'ready_for_delivery' && (
+                            <button type="button" disabled={busyId === order.id} onClick={() => escalateToCourier(order)}>Send via online courier instead</button>
+                          )}
                         </>
                       )}
                     </td>
@@ -1976,8 +2905,21 @@ export default function Admin({ token, onClose }) {
 
       {tab === 'products' && (
         <section className="admin-panel">
+          {/* While a product is open, just its form — back via Products → All products (WordPress-style). */}
+          {!productForm && <>
+          {/* Quick filters: what still needs work, with counts. */}
+          <div className="admin-filters admin-prod-quick">
+            {[['all', 'All products'], ['unapproved', 'Not approved yet'], ['pending', 'Waiting for review'], ['draft', 'Drafts'], ['rejected', 'Rejected'], ['followups', 'Live — details missing'], ['deletion', 'Removal requested']].map(([value, label]) => {
+              const n = value === 'all' ? null : productsMeta?.status_counts?.[value]
+              return (
+                <button key={value} type="button" className={productStatus === value ? 'chip active' : 'chip'} onClick={() => { setProductStatus(value); setProductsPage(1); setProductForm(null) }}>
+                  {label}{n != null && <span className={`chip-count${n > 0 && value !== 'all' ? ' hot' : ''}`}>{n}</span>}
+                </button>
+              )
+            })}
+          </div>
           <div className="admin-toolbar">
-            <input className="admin-search" value={productSearch} placeholder="Search name or SKU" onChange={(event) => { setProductSearch(event.target.value); setProductsPage(1); setProductForm(null) }} />
+            <input className="admin-search" value={productSearch} placeholder="Search name, SKU or seller" onChange={(event) => { setProductSearch(event.target.value); setProductsPage(1); setProductForm(null) }} />
             <label>Sort
               <select value={productSort} onChange={(event) => { setProductSort(event.target.value); setProductsPage(1); setProductForm(null) }}>
                 <option value="newest">Newest first</option>
@@ -1991,7 +2933,7 @@ export default function Admin({ token, onClose }) {
               <label>Category
                 <select value={productCategory} onChange={(event) => { setProductCategory(event.target.value); setProductsPage(1); setProductForm(null) }}>
                   <option value="">All categories</option>
-                  {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {categories.map((c) => <option key={c.id} value={c.id}>{categoryLabel(c)}</option>)}
                 </select>
               </label>
             )}
@@ -2003,27 +2945,58 @@ export default function Admin({ token, onClose }) {
                 </select>
               </label>
             )}
+            <label>Status
+              <select value={productStatus} onChange={(event) => { setProductStatus(event.target.value); setProductsPage(1) }}>
+                <option value="all">All</option>
+                {PRODUCT_STATUS_FILTERS.map((s) => <option key={s} value={s}>{PRODUCT_STATUS_LABELS[s]}</option>)}
+              </select>
+            </label>
+            <label>Demo
+              <select value={productDemo} onChange={(event) => { setProductDemo(event.target.value); setProductsPage(1) }}>
+                <option value="all">All products</option>
+                <option value="only">Demo only</option>
+                <option value="none">Not demo</option>
+              </select>
+            </label>
             <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollFormIntoView('admin-product-form') }}>New product</button>
           </div>
+          </>}
 
           {productForm && (
             <form id="admin-product-form" className="admin-form" onSubmit={saveProduct}>
+              <button type="button" className="act ghost admin-back" onClick={() => setProductForm(null)}>&larr; All products</button>
               <h3>{productForm.id ? `Edit product #${productForm.id}` : 'New product'}</h3>
+              <section className="admin-form-section"><h4>Product details</h4>
               <div className="admin-form-grid">
-                <label>Category
+                <label>Category<b className="admin-req" title="Required"> *</b>
                   <select required value={productForm.category_id} onChange={(event) => setProductForm({ ...productForm, category_id: event.target.value })}>
                     <option value="" disabled>Choose…</option>
-                    {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                    {categories.map((category) => <option key={category.id} value={category.id}>{categoryLabel(category)}</option>)}
+                  </select>
+                  {productForm.suggested_category_name && <p className="admin-note">Seller suggested a new category: &ldquo;{productForm.suggested_category_name}&rdquo;</p>}
+                </label>
+                <label>Shop
+                  <select value={productForm.shop_id ?? ''} onChange={(event) => setProductForm({ ...productForm, shop_id: event.target.value })}>
+                    <option value="">Sold directly by {brandName()}</option>
+                    {shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                   </select>
                 </label>
-                <label>Name<input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
-                <label>SKU<input required value={productForm.sku} onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
-                <label>Price (USD)<input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
-                <label>Regular price ($)<input type="number" min="0" step="0.01" placeholder="pre-sale price; blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                {!productForm.shop_id ? (
+                  <label>Sold in (country store)
+                    <select value={productForm.market || workMarket} onChange={(event) => setProductForm({ ...productForm, market: event.target.value })}>
+                      {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({currencySymbol(m.currency)} {m.currency.toUpperCase()})</option>)}
+                    </select>
+                  </label>
+                ) : <p className="admin-note">Sold in the seller&rsquo;s country store.</p>}
+                <label>Name<b className="admin-req" title="Required"> *</b><input required value={productForm.name} onChange={(event) => setProductForm({ ...productForm, name: event.target.value })} /></label>
+                <label>SKU<input value={productForm.sku ?? ''} placeholder="Auto-generated if left blank" onChange={(event) => setProductForm({ ...productForm, sku: event.target.value })} /></label>
+                <label>Regular price ({currencySymbol()})<input type="number" min="0" step="0.01" placeholder="blank = not on sale" value={productForm.compare_at} onChange={(event) => setProductForm({ ...productForm, compare_at: event.target.value })} /></label>
+                <label>Sale price ({currencySymbol()})<b className="admin-req" title="Required"> *</b><input required type="number" min="0" step="0.01" value={productForm.price} onChange={(event) => setProductForm({ ...productForm, price: event.target.value })} /></label>
+                <label>Return window (days, max {feesForm?.max_return_days ?? 90})<input type="number" min="0" max={feesForm?.max_return_days ?? 90} placeholder={`default ${feesForm?.return_window_days ?? 30} · 0 = non-returnable`} value={productForm.return_days ?? ''} onChange={(event) => setProductForm({ ...productForm, return_days: event.target.value })} /></label>
                 {productForm.per_store_stock
                   ? <label>Inventory<input type="text" value="Per store — see below" disabled title="This product tracks stock per store; the counts are in the Store stock section." /></label>
                   : <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>}
-                <label className="admin-check"><input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} /> Active</label>
+                <label className={productForm.is_active ? 'admin-check admin-check-live on' : 'admin-check admin-check-live'}><input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} /> Active (visible in store)</label>
                 <label>Deal type
                   <select value={productForm.deal_type ?? ''} onChange={(event) => setProductForm({ ...productForm, deal_type: event.target.value })}>
                     <option value="">— none —</option>
@@ -2033,7 +3006,9 @@ export default function Admin({ token, onClose }) {
                 </label>
                 <label className="admin-check"><input type="checkbox" checked={!!productForm.is_exclusive_offer} onChange={(event) => setProductForm({ ...productForm, is_exclusive_offer: event.target.checked })} /> Exclusive Offer</label>
               </div>
-              <label>Image
+              </section>
+              <section className="admin-form-section"><h4>Images</h4>
+              <label>Image<b className="admin-req" title="Required"> *</b> <span className="muted">(a product can&rsquo;t go live without a name, category, image and price)</span>
                 <div className="admin-image-field">
                   {productForm.image_url && <img src={mediaUrl(productForm.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Image URL, or upload →" value={productForm.image_url ?? ''} onChange={(event) => setProductForm({ ...productForm, image_url: event.target.value })} />
@@ -2041,17 +3016,54 @@ export default function Admin({ token, onClose }) {
                   {productForm.image_url && <button type="button" className="act ghost" onClick={() => setProductForm({ ...productForm, image_url: '' })}>Clear</button>}
                 </div>
               </label>
+              <div className="admin-gallery-field">
+                <span>More photos <span className="muted">({(productForm.images ?? []).length}/{MAX_IMAGES}) — click a photo to make it the main image</span></span>
+                <div className="admin-gallery">
+                  {(productForm.images ?? []).map((url, index) => (
+                    <div key={url} className={url === productForm.image_url ? 'admin-gallery-item active' : 'admin-gallery-item'}>
+                      <button type="button" title="Use as main image" onClick={() => setProductForm({ ...productForm, image_url: url })}>
+                        <img src={mediaUrl(url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />
+                      </button>
+                      <button type="button" className="admin-gallery-remove" title="Remove photo" onClick={() => setProductForm((form) => ({ ...form, images: form.images.filter((_, i) => i !== index), image_url: form.image_url === url ? (form.images.find((u) => u !== url) ?? '') : form.image_url }))}>&times;</button>
+                    </div>
+                  ))}
+                  {(productForm.images ?? []).length < MAX_IMAGES && (
+                    <label className="admin-gallery-add">+ Add
+                      <input type="file" accept="image/*" multiple disabled={imgBusy} onChange={async (event) => {
+                        const files = [...(event.target.files ?? [])]
+                        event.target.value = ''
+                        for (const file of files) {
+                          await uploadImage(file, (url) => setProductForm((form) => (form.images ?? []).length >= MAX_IMAGES ? form : { ...form, images: [...(form.images ?? []), url], image_url: form.image_url || url }))
+                        }
+                      }} />
+                    </label>
+                  )}
+                </div>
+              </div>
+              </section>
+              <section className="admin-form-section"><h4>Video</h4>
+              <label>Video <span className="muted">(optional — plays on hover over the product image)</span>
+                <div className="admin-image-field">
+                  {productForm.video_url && <video src={mediaUrl(productForm.video_url)} className="admin-image-preview" muted loop onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+                  <input placeholder="Video URL (mp4), or upload →" value={productForm.video_url ?? ''} onChange={(event) => setProductForm({ ...productForm, video_url: event.target.value })} />
+                  <input type="file" accept="video/mp4,video/webm,video/quicktime" disabled={imgBusy} onChange={(event) => { uploadVideo(event.target.files?.[0]); event.target.value = '' }} />
+                  {productForm.video_url && <button type="button" className="act ghost" onClick={() => setProductForm({ ...productForm, video_url: '' })}>Clear</button>}
+                </div>
+              </label>
+              </section>
+              <section className="admin-form-section"><h4>Description</h4>
               <label>Description<textarea rows="2" value={productForm.description ?? ''} onChange={(event) => setProductForm({ ...productForm, description: event.target.value })} /></label>
+              </section>
 
               <fieldset className="admin-fieldset">
                 <legend>Options / variants</legend>
-                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock, SKU and image.</p>
+                <p className="muted">Leave empty for a single-price product. Add a row per variant &mdash; pack size, weight, colour, flavour, or a mix (e.g. &ldquo;1 kg&rdquo;, &ldquo;Red / Large&rdquo;). Each has its own price, compare-at price, stock and image; its SKU is generated automatically if left blank.</p>
                 {(productForm.variants ?? []).map((row, index) => row._delete ? null : (
                   <div className="admin-variant-row" key={row.id ?? `new-${index}`}>
                     <input placeholder="Label (1 kg, Red / Large…)" value={row.label} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, label: event.target.value } : r) })} />
-                    <input placeholder="SKU" value={row.sku} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, sku: event.target.value } : r) })} />
-                    <input type="number" min="0" step="0.01" placeholder="Price $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
-                    <input type="number" min="0" step="0.01" placeholder="Reg. $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
+                    <input placeholder="SKU (auto if blank)" value={row.sku ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, sku: event.target.value } : r) })} />
+                    <input type="number" min="0" step="0.01" placeholder="Regular $" value={row.compare_at ?? ''} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, compare_at: event.target.value } : r) })} />
+                    <input type="number" min="0" step="0.01" placeholder="Sale $" value={row.price} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, price: event.target.value } : r) })} />
                     <input type="number" min="0" placeholder="Stock" value={row.stock} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, stock: event.target.value } : r) })} />
                     <span className="admin-variant-img">
                       <input placeholder="Image URL" value={row.image_url} onChange={(event) => setProductForm({ ...productForm, variants: productForm.variants.map((r, i) => i === index ? { ...r, image_url: event.target.value } : r) })} />
@@ -2063,7 +3075,7 @@ export default function Admin({ token, onClose }) {
                       : productForm.variants.filter((_, i) => i !== index) })}>Remove</button>
                   </div>
                 ))}
-                <button type="button" className="act" onClick={() => setProductForm({ ...productForm, variants: [...(productForm.variants ?? []), { ...EMPTY_VARIANT }] })}>Add variant</button>
+                <button type="button" className="act" disabled={(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS} onClick={() => setProductForm({ ...productForm, variants: [...(productForm.variants ?? []), { ...EMPTY_VARIANT }] })}>Add variant{(productForm.variants ?? []).filter((v) => !v._delete).length >= MAX_VARIANTS ? ` (max ${MAX_VARIANTS})` : ''}</button>
               </fieldset>
 
               <fieldset className="admin-fieldset">
@@ -2087,13 +3099,11 @@ export default function Admin({ token, onClose }) {
                             </tr></thead>
                             <tbody>
                               {stores.map((store) => {
-                                // Pre-fill a store's count from the product's single Inventory
-                                // value until it's edited, so the grid isn't all blanks.
-                                const row = productForm.store_stock?.[store.id] ?? { is_stocked: true, base: String(productForm.inventory_quantity ?? ''), variants: {} }
+                                const row = storeStockRow(productForm, store.id)
                                 const setRow = (patch) => setProductForm((form) => ({ ...form, store_stock: { ...form.store_stock, [store.id]: { ...row, ...patch } } }))
                                 return (
                                   <tr key={store.id}>
-                                    <td>{store.name || `#${store.id}`}{store.city ? ` — ${store.city}` : ''}</td>
+                                    <td><strong>{store.name || `#${store.id}`}</strong>{storeAddress(store) && <small className="muted admin-store-addr">{storeAddress(store)}</small>}</td>
                                     <td><input type="checkbox" checked={row.is_stocked !== false} onChange={(event) => setRow({ is_stocked: event.target.checked })} /></td>
                                     <td><input type="number" min="0" value={row.base ?? ''} disabled={row.is_stocked === false} onChange={(event) => setRow({ base: event.target.value })} /></td>
                                     {(productForm.variants ?? []).map((v, i) => v._delete ? null : (
@@ -2105,9 +3115,12 @@ export default function Admin({ token, onClose }) {
                             </tbody>
                           </table>
                         </div>
+                        <p className="muted">New stores show up here automatically. <button type="button" className="act ghost" onClick={() => setTab('stores')}>Add a store</button></p>
                       </>}
               </fieldset>
 
+              {/* Last: return conditions don't apply to every product (e.g. downloads). */}
+              {String(productForm.return_days ?? '') !== '0' && <ReturnPolicyFields value={productForm.return_policy} onChange={(return_policy) => setProductForm({ ...productForm, return_policy })} />}
               <div className="admin-form-actions">
                 <button className="act" type="submit">Save</button>
                 <button className="act ghost" type="button" onClick={() => setProductForm(null)}>Cancel</button>
@@ -2115,24 +3128,52 @@ export default function Admin({ token, onClose }) {
             </form>
           )}
 
+          {!productForm && <>
+          {productsMeta && (
+            <div className={`admin-demo-bar${productsMeta.demos_hidden ? ' hidden' : ''}`}>
+              <span><b>Demo products:</b> {productsMeta.demo_count} · {productsMeta.demos_hidden ? 'hidden from the store' : 'shown on the store'}</span>
+              <button className="act" type="button" onClick={() => setDemosHidden(!productsMeta.demos_hidden)}>{productsMeta.demos_hidden ? 'Show demo products' : 'Hide demo products'}</button>
+              <button className="act ghost" type="button" onClick={() => markAllDemo(true)}>Mark all listed as demo</button>
+              <button className="act ghost" type="button" onClick={() => markAllDemo(false)}>Mark all listed as not demo</button>
+            </div>
+          )}
           {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th>Demo</th><th></th></tr></thead>
               <tbody>
                 {products.map((product) => {
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
                   return (
                   <tr key={product.id}>
-                    <td>{product.name}</td>
+                    <td>{product.name}{countryBadge(product.market)}{product.product_type === 'digital' && <span className="pill pill-digital" title="Digital download">⬇ Digital</span>}{(product.followup_items ?? []).length > 0 && <span className="admin-note" title={product.followup_items.join(' ')}>⚠ seller to add {product.followup_items.length} detail{product.followup_items.length === 1 ? '' : 's'}</span>}{product.shop_id && ['pending', 'draft'].includes(product.status) && (product.followups?.later ?? []).length > 0 && <span className="admin-note" title={product.followups.later.join(' ')}>⚠ {product.followups.later.length} detail{product.followups.later.length === 1 ? '' : 's'} missing</span>}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
-                    <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)))}+` : <>{money(product.price_cents)}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents)}</s>}</>}</td>
+                    <td>{product.shop?.name ?? <span className="muted">{brandName()}</span>}</td>
+                    <td><span className={`pill pill-${product.status}`}>{PRODUCT_STATUS_LABELS[product.status] ?? product.status}</span>{product.low_traffic_offers > 0 && <span className="pill pill-rejected" title="A sales boost offer is waiting for the seller">Low traffic</span>}{product.status === 'rejected' && product.rejection_reason && <p className="admin-note">{product.rejection_reason}</p>}{(product.missing_compliance ?? []).length > 0 && <p className="admin-note">Docs missing: {product.missing_compliance.join(', ')}</p>}</td>
+                    <td>{packs ? `${money(Math.min(...product.variants.filter((v) => v.is_active).map((v) => v.price_cents)), MARKET_CURRENCY[product.market])}+` : <>{money(product.price_cents, MARKET_CURRENCY[product.market])}{product.compare_at_price_cents > product.price_cents && <s className="muted" style={{ marginLeft: 5 }}>{money(product.compare_at_price_cents, MARKET_CURRENCY[product.market])}</s>}</>}</td>
                     <td className={(product.effective_stock ?? product.inventory_quantity) <= 5 ? 'low' : ''}>{packs ? '—' : (product.effective_stock ?? product.inventory_quantity)}{productStore && !packs ? <span className="admin-note">at {stores.find((s) => String(s.id) === String(productStore))?.name ?? 'store'}</span> : null}</td>
                     <td>{packs || '—'}</td>
-                    <td>{product.is_active ? 'Yes' : 'No'}</td>
+                    <td>{product.is_active ? 'Yes' : 'No'}{product.deletion_requested_at && <span className="pill pill-rejected" title={product.deletion_reason ? `Seller: ${product.deletion_reason}` : 'The seller no longer has this product'}>Removal requested</span>}{product.support_until && <span className="admin-note">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>}</td>
+                    <td>
+                      <select className={`admin-demo-select${product.is_demo ? ' on' : ''}`} value={product.is_demo ? 'demo' : 'real'} aria-label="Demo product" onChange={(event) => setProductDemoFlag(product, event.target.value === 'demo')}>
+                        <option value="real">Not demo</option>
+                        <option value="demo">Demo</option>
+                      </select>
+                    </td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer }); scrollFormIntoView('admin-product-form') }}>Edit</button>
-                      <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>
+                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      {product.product_type === 'digital' && <button className="act ghost" type="button" onClick={() => setDigitalFilesOf(product)}>Files</button>}
+                      {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
+                      {product.shop_id && ['pending', 'draft'].includes(product.status) && <>
+                        <button className="act" type="button" disabled={busyId === product.id} title={(product.followups?.later ?? []).length ? `Still missing: ${product.followups.later.join(' ')}` : undefined} onClick={() => approveProduct(product)}>{(product.followups?.later ?? []).length || product.status === 'draft' ? 'Approve anyway' : 'Approve'}</button>
+                        <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>
+                      </>}
+                      {product.shop_id && product.status === 'approved' && <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => rejectProduct(product)}>Reject</button>}
+                      {product.shop_id && product.status === 'rejected' && <button className="act" type="button" disabled={busyId === product.id} onClick={() => approveProduct(product)}>Approve</button>}
+                      {product.deletion_requested_at ? <>
+                        {product.support_until ? <span className="muted" title="Past buyers are covered by returns / warranty — it can be removed after this date">Can remove after {new Date(product.support_until).toLocaleDateString()}</span> : <button className="act danger" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'remove')}>Remove</button>}
+                        <button className="act ghost" type="button" disabled={busyId === product.id} onClick={() => decideDeletion(product, 'decline')}>Keep</button>
+                      </> : <button className="act danger" type="button" onClick={() => removeProduct(product)}>Delete</button>}
                     </td>
                   </tr>
                 )})}
@@ -2140,17 +3181,22 @@ export default function Admin({ token, onClose }) {
             </table>
           )}
           <Pager page={productsMeta?.current_page ?? productsPage} pageCount={productsMeta?.last_page ?? 1} total={productsMeta?.total ?? products.length} onPage={setProductsPage} pageSize={pageSize} onPageSize={setPageSize} />
+          </>}
         </section>
       )}
 
       {tab === 'categories' && (
         <section className="admin-panel">
+          {/* While a category is open, just its form — back via Categories → All categories. */}
+          {!categoryForm && <>
           <div className="admin-toolbar">
             <button className="act" type="button" onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY }); scrollFormIntoView('admin-category-form') }}>New category</button>
           </div>
+          </>}
 
           {categoryForm && (
             <form id="admin-category-form" className="admin-form" onSubmit={saveCategory}>
+              <button type="button" className="act ghost admin-back" onClick={() => setCategoryForm(null)}>&larr; All categories</button>
               <h3>{categoryForm.id ? `Edit category #${categoryForm.id}` : 'New category'}</h3>
               <div className="admin-image-field">
                 {categoryForm.image_url
@@ -2158,16 +3204,30 @@ export default function Admin({ token, onClose }) {
                   : <div className="admin-banner-thumb placeholder">category image</div>}
                 <div>
                   <label>Image URL<input value={categoryForm.image_url} onChange={(event) => setCategoryForm({ ...categoryForm, image_url: event.target.value })} /></label>
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setCategoryForm((form) => ({ ...form, image_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setCategoryForm((form) => ({ ...form, image_url: url })), 'categories')} />
                   {imgBusy && <span className="muted"> uploading…</span>}
                 </div>
               </div>
               <div className="admin-form-grid">
                 <label>Name<input required value={categoryForm.name} onChange={(event) => setCategoryForm({ ...categoryForm, name: event.target.value })} /></label>
+                <label>Parent category
+                  <select value={categoryForm.parent_id ?? ''} onChange={(event) => setCategoryForm({ ...categoryForm, parent_id: event.target.value })}>
+                    <option value="">— None (top level) —</option>
+                    {categories.filter((c) => c.id !== categoryForm.id && (c.depth ?? 0) < 2 && !(c.path ?? '').startsWith(`${categoryLabel(categories.find((x) => x.id === categoryForm.id))} ›`)).map((c) => <option key={c.id} value={c.id}>{categoryLabel(c)}</option>)}
+                  </select>
+                </label>
+                <label>Type
+                  <select value={categoryForm.parent_id ? (categories.find((c) => String(c.id) === String(categoryForm.parent_id))?.kind ?? 'physical') : (categoryForm.kind ?? 'physical')} disabled={!!categoryForm.parent_id} onChange={(event) => setCategoryForm({ ...categoryForm, kind: event.target.value })}>
+                    <option value="physical">Physical products</option>
+                    <option value="digital">Digital downloads</option>
+                  </select>
+                </label>
                 <label>Slug (optional)<input value={categoryForm.slug ?? ''} onChange={(event) => setCategoryForm({ ...categoryForm, slug: event.target.value })} /></label>
                 <label>Sort order<input type="number" min="0" value={categoryForm.sort_order} onChange={(event) => setCategoryForm({ ...categoryForm, sort_order: event.target.value })} /></label>
                 <label className="admin-check"><input type="checkbox" checked={categoryForm.is_active} onChange={(event) => setCategoryForm({ ...categoryForm, is_active: event.target.checked })} /> Active</label>
+                <label className="admin-check"><input type="checkbox" checked={categoryForm.show_on_home !== false} onChange={(event) => setCategoryForm({ ...categoryForm, show_on_home: event.target.checked })} /> Show on homepage</label>
               </div>
+              <p className="muted">Up to 3 levels, e.g. Downloadable &rsaquo; Games &rsaquo; Arcade. A subcategory takes its top category&rsquo;s type: sellers see only physical categories for physical products and only digital ones for downloads. Shoppers opening a category also see its subcategories&rsquo; products. Homepage category tiles use this category&rsquo;s name, image and sort order.</p>
               <div className="admin-form-actions">
                 <button className="act" type="submit">Save</button>
                 <button className="act ghost" type="button" onClick={() => setCategoryForm(null)}>Cancel</button>
@@ -2175,20 +3235,24 @@ export default function Admin({ token, onClose }) {
             </form>
           )}
 
+          {!categoryForm && <>
           {listBusy.categories && categories.length === 0 ? <Loading>Loading categories…</Loading> : categories.length === 0 ? <p className="admin-empty">No categories.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Image</th><th>Name</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Image</th><th>Name</th><th>Type</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(categories, categoriesPage).map((category) => (
                   <tr key={category.id}>
                     <td>{category.image_url ? <img className="admin-banner-thumb" src={mediaUrl(category.image_url)} alt="" /> : <span className="muted">—</span>}</td>
-                    <td>{category.name}</td>
+                    <td style={{ paddingLeft: 16 + (category.depth ?? 0) * 22 }}>{(category.depth ?? 0) > 0 && <span className="muted">&#8627; </span>}{category.name}{category.children_count > 0 && <span className="admin-note">{category.children_count} subcategor{category.children_count === 1 ? 'y' : 'ies'}</span>}</td>
+                    <td>{category.kind === 'digital' ? 'Digital' : 'Physical'}</td>
                     <td>{category.slug}</td>
                     <td>{category.products_count ?? 0}</td>
                     <td>{category.sort_order}</td>
                     <td>{category.is_active ? 'Yes' : 'No'}</td>
+                    <td>{category.show_on_home !== false ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active }); scrollFormIntoView('admin-category-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setCategoryForm({ id: category.id, name: category.name, slug: category.slug, image_url: category.image_url ?? '', sort_order: category.sort_order, is_active: category.is_active, show_on_home: category.show_on_home !== false, parent_id: category.parent_id ? String(category.parent_id) : '', kind: category.kind ?? 'physical' }); scrollFormIntoView('admin-category-form') }}>Edit</button>
+                      {(category.depth ?? 0) < 2 && <button className="act ghost" type="button" title="Add a subcategory under this one" onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY, parent_id: String(category.id), show_on_home: false }); scrollFormIntoView('admin-category-form') }}>+ Sub</button>}
                       <button className="act danger" type="button" onClick={() => removeCategory(category)}>Delete</button>
                     </td>
                   </tr>
@@ -2197,14 +3261,19 @@ export default function Admin({ token, onClose }) {
             </table>
           )}
           <Pager page={categoriesPage} pageCount={Math.max(1, Math.ceil(categories.length / pageSize))} total={categories.length} onPage={setCategoriesPage} pageSize={pageSize} onPageSize={setPageSize} />
+          </>}
         </section>
       )}
 
+      {tab === 'reviews' && <AdminReviews authHeaders={authHeaders} onMessage={setMessage} onPending={setPendingReviews} />}
+      {tab === 'emails' && <EmailsPanel authHeaders={authHeaders} defaultMarket={workMarket} onMessage={setMessage} />}
+
       {tab === 'customers' && (
         <section className="admin-panel">
+          <div className="admin-filters"><input className="admin-search" type="search" placeholder="Search name, email or phone" value={customerQuery} onChange={(event) => { setCustomerQuery(event.target.value); setCustomersPage(1) }} /></div>
           {listBusy.customers && customers.length === 0 ? <Loading>Loading customers…</Loading> : customers.length === 0 ? <p className="admin-empty">No customers yet.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Paid spend</th><th>Joined</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Paid spend</th><th>Last order</th><th>Emails</th><th>Joined</th><th></th></tr></thead>
               <tbody>
                 {customers.map((customer) => (
                   <tr key={customer.id}>
@@ -2212,6 +3281,8 @@ export default function Admin({ token, onClose }) {
                     <td>{customer.email}</td>
                     <td>{customer.orders_count}</td>
                     <td>{money(customer.spent_cents)}</td>
+                    <td>{customer.last_order_at ? new Date(customer.last_order_at).toLocaleDateString() : '—'}</td>
+                    <td>{customer.emails_count ?? 0}</td>
                     <td>{new Date(customer.joined_at).toLocaleDateString()}</td>
                     <td className="admin-actions"><button className="act" type="button" onClick={() => openCustomer(customer.id)}>View</button></td>
                   </tr>
@@ -2291,13 +3362,45 @@ export default function Admin({ token, onClose }) {
             </form>
           )}
 
+          {riderApps.length > 0 && (
+            <>
+              <h3 className="admin-subhead">Rider applications{riderApps.filter((a) => a.status === 'pending').length ? ` (${riderApps.filter((a) => a.status === 'pending').length} waiting)` : ''}</h3>
+              <p className="muted">People apply at /rider, choosing a store near them. Approving makes them a rider for that store.</p>
+              <table className="admin-table">
+                <thead><tr><th>Applicant</th><th>Store</th><th>Vehicle</th><th>Home</th><th>Licence</th><th>Status</th><th>Applied</th><th></th></tr></thead>
+                <tbody>
+                  {riderApps.map((app) => (
+                    <tr key={app.id}>
+                      <td>{app.user?.name}<br /><span className="muted">{app.user?.email} · {app.phone}</span></td>
+                      <td>{app.store?.name ?? <span className="muted">—</span>}</td>
+                      <td>{app.vehicle_type}</td>
+                      <td>{app.home_address}</td>
+                      <td>{app.license_number || <span className="muted">—</span>}{app.license_document_path && <> <button type="button" className="act ghost" onClick={() => viewKycDocument(app.license_document_path)}>View</button></>}</td>
+                      <td>{app.status === 'pending' ? <span className="admin-status-chip pending">Pending</span> : app.status === 'approved' ? <span className="admin-status-chip ok">Approved</span> : <span className="admin-status-chip bad" title={app.rejection_reason ?? ''}>Rejected</span>}</td>
+                      <td>{new Date(app.created_at).toLocaleDateString()}</td>
+                      <td className="admin-actions">
+                        {app.status === 'pending' && (
+                          <>
+                            <button className="act" type="button" disabled={busyId === `app-${app.id}`} onClick={() => riderAppAction(app, 'approve')}>Approve</button>
+                            <button className="act danger" type="button" disabled={busyId === `app-${app.id}`} onClick={() => rejectRiderApp(app)}>Reject</button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <h3 className="admin-subhead">Riders</h3>
+            </>
+          )}
+
           {listBusy.riders && riders.length === 0 ? <Loading>Loading riders…</Loading> : riders.length === 0 ? <p className="admin-empty">No riders yet. Add one by email above.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stores</th><th>Location</th><th>Rating</th><th>Active jobs</th><th>On shift</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stores</th><th>Location</th><th>Rating</th><th>Active jobs</th><th>Earnings</th><th>On shift</th><th></th></tr></thead>
               <tbody>
                 {pageSlice(riders, ridersPage).map((rider) => (
                   <tr key={rider.id}>
-                    <td>{rider.name}</td>
+                    <td>{rider.name}{countryBadge(rider.stores?.[0]?.country)}</td>
                     <td>{rider.phone || <span className="muted">—</span>}</td>
                     <td>{riderStatusChip(rider)}</td>
                     <td className={rider.cash_holding_cents > 0 ? (cashHoldingOverdue(rider.cash_holding_since) ? 'admin-td-cash-overdue' : 'admin-td-cash-today') : undefined}>{(rider.stores ?? []).length
@@ -2313,6 +3416,7 @@ export default function Admin({ token, onClose }) {
                       : <span className="muted">no base set</span>}</td>
                     <td><button className="act ghost" type="button" onClick={() => openRiderDetail(rider.id, 'reviews')}>{rider.rating_count ? `★ ${(rider.rating_avg ?? 0).toFixed(1)} (${rider.rating_count})` : 'Reviews'}</button></td>
                     <td className={rider.active_deliveries > 0 ? 'low' : ''}>{rider.active_deliveries}</td>
+                    <td>{money(rider.earnings_balance_cents ?? 0)}{rider.payout_requested_cents != null && <span className="admin-note admin-cash-note">💸 {money(rider.payout_requested_cents)} requested</span>}</td>
                     <td>{rider.rider_is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
                       <button className="act" type="button" onClick={() => openRiderDetail(rider.id)}>Attendance &amp; stats</button>
@@ -2331,16 +3435,55 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
+      {tab === 'sellers' && (
+        <section className="admin-panel">
+          <div className="admin-toolbar">
+            <label>Status
+              <select value={sellerStatus} onChange={(event) => { setSellerStatus(event.target.value); setSellersPage(1) }}>
+                {SELLER_STATUS_FILTERS.map((s) => <option key={s} value={s}>{SELLER_STATUS_LABELS[s]}</option>)}
+                <option value="all">All</option>
+              </select>
+            </label>
+            <span className="muted">Applications sellers submit at /seller. Approving flips the shop live on the storefront.</span>
+          </div>
+          <TrademarkReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} viewDocument={viewKycDocument} fail={fail} />
+          <DecorationReview authHeaders={authHeaders} jsonHeaders={jsonHeaders} fail={fail} />
+
+          {listBusy.sellers && sellers.length === 0 ? <Loading>Loading applications…</Loading> : sellers.length === 0 ? <p className="admin-empty">No {sellerStatus === 'all' ? '' : SELLER_STATUS_LABELS[sellerStatus].toLowerCase() + ' '}applications{activeMarket === 'ALL' ? '' : ` in ${marketOptions.find((m) => m.code === activeMarket)?.name ?? activeMarket}`}.{Object.entries(sellersElsewhere).filter(([, n]) => n > 0).map(([code, n]) => <> {n} seller{n === 1 ? ' is' : 's are'} in {marketOptions.find((m) => m.code === code)?.name ?? code} — <button key={code} type="button" className="link" onClick={() => switchAdminMarket(code)}>switch to {(marketOptions.find((m) => m.code === code)?.currency ?? '').toUpperCase()}</button>.</>)}</p> : (
+            <table className="admin-table">
+              <thead><tr><th>Shop</th><th>Contact</th><th>Country</th><th>Business type</th><th>Status</th><th>Last message</th><th>Submitted</th><th></th></tr></thead>
+              <tbody>
+                {pageSlice(sellers, sellersPage).map((seller) => (
+                  <tr key={seller.id}>
+                    <td>{seller.shop?.name ?? '—'}{countryBadge(seller.shop?.market ?? seller.country)}</td>
+                    <td>{seller.user?.name}<br /><span className="muted">{seller.user?.email}</span></td>
+                    <td>{seller.country}</td>
+                    <td>{seller.business_type}</td>
+                    <td><span className={`pill pill-${seller.status}`}>{SELLER_STATUS_LABELS[seller.status] ?? seller.status}</span>{seller.reviews_pending > 0 && <span className="pill pill-pending" title="Onboarding tasks (tax, compliance, bank) waiting for review">{seller.reviews_pending} to review</span>}</td>
+                    <td>{seller.last_message ? <span className="muted">{seller.last_message.is_staff ? 'You: ' : ''}{seller.last_message.body.length > 60 ? `${seller.last_message.body.slice(0, 60)}…` : seller.last_message.body}</span> : <span className="muted">—</span>}</td>
+                    <td>{seller.submitted_at ? new Date(seller.submitted_at).toLocaleDateString() : '—'}</td>
+                    <td className="admin-actions">
+                      <button className="act" type="button" onClick={() => openSellerDetail(seller.id)}>{seller.status === 'pending' || seller.reviews_pending > 0 ? 'Review' : 'View'}</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <Pager page={sellersPage} pageCount={Math.max(1, Math.ceil(sellers.length / pageSize))} total={sellers.length} onPage={setSellersPage} pageSize={pageSize} onPageSize={setPageSize} />
+        </section>
+      )}
+
       {tab === 'stores' && (
         <section className="admin-panel">
           <div className="admin-toolbar">
             <button className="act" type="button" onClick={() => { setStoreForm({ ...EMPTY_STORE }); scrollFormIntoView('admin-store-form') }}>New store</button>
-            <span className="muted">Customers outside every active store&rsquo;s radius can browse but can&rsquo;t check out.</span>
+            <span className="muted"><b>Stores are your warehouses or delivery hubs</b> — where stock is kept, riders pick up orders, and each delivery radius starts. Customers outside every active store&rsquo;s radius can browse but can&rsquo;t check out. (Your company&rsquo;s registered address for bills is in Settings &rarr; Business &amp; tax details.)</span>
           </div>
 
           {storeForm && (
             <form id="admin-store-form" className="admin-form" onSubmit={saveStore}>
-              <h3>{storeForm.id ? `Edit store #${storeForm.id}` : 'New store'}</h3>
+              <h3>{storeForm.id ? `Edit store #${storeForm.id}` : 'New store (warehouse / hub)'}</h3>
               <div className="admin-form-grid">
                 <label>Name<input value={storeForm.name} placeholder="Main Store" onChange={(event) => setStoreForm({ ...storeForm, name: event.target.value })} /></label>
                 <label>Street<input required value={storeForm.line1} onChange={(event) => setStoreForm({ ...storeForm, line1: event.target.value })} /></label>
@@ -2348,6 +3491,7 @@ export default function Admin({ token, onClose }) {
                 <label>City<input required value={storeForm.city} onChange={(event) => setStoreForm({ ...storeForm, city: event.target.value })} /></label>
                 <label>State<input required maxLength="60" value={storeForm.state} onChange={(event) => setStoreForm({ ...storeForm, state: event.target.value })} /></label>
                 <label>Postal code<input required maxLength="12" value={storeForm.postal_code} onChange={(event) => setStoreForm({ ...storeForm, postal_code: event.target.value })} /></label>
+                <label>Country<select value={storeForm.country || workMarket} onChange={(event) => setStoreForm({ ...storeForm, country: event.target.value })}>{marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}</select></label>
                 <label>Delivery radius (km)<input required type="number" min="1" max="200" value={storeForm.delivery_radius_km} onChange={(event) => setStoreForm({ ...storeForm, delivery_radius_km: event.target.value })} /></label>
                 <label>Latitude (optional)<input type="number" step="any" value={storeForm.latitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, latitude: event.target.value })} /></label>
                 <label>Longitude (optional)<input type="number" step="any" value={storeForm.longitude ?? ''} onChange={(event) => setStoreForm({ ...storeForm, longitude: event.target.value })} /></label>
@@ -2381,7 +3525,7 @@ export default function Admin({ token, onClose }) {
                       : <span className="muted">not located — add coordinates</span>}</td>
                     <td>{store.is_active ? 'Yes' : 'No'}</td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', country: store.country ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
                       <button className="act danger" type="button" onClick={() => removeStore(store)}>Delete</button>
                     </td>
                   </tr>
@@ -2393,148 +3537,112 @@ export default function Admin({ token, onClose }) {
         </section>
       )}
 
-      {tab === 'homepage' && (
+      {tab === 'pages' && (() => {
+        const visiblePages = pageGroupFilter
+          ? pages.filter((p) => (pageGroupFilter === 'unassigned'
+            ? !Array.isArray(p.menu_placements) || p.menu_placements.length === 0
+            : Array.isArray(p.menu_placements) && p.menu_placements.includes(pageGroupFilter)))
+          : pages
+        const filterLabel = pageGroupFilter === 'unassigned' ? 'Unassigned' : MENU_PLACEMENT_LABELS[pageGroupFilter]
+        return (
         <section className="admin-panel">
-          <h3 className="admin-subhead">Promo banners</h3>
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => { setBannerForm({ ...EMPTY_BANNER }); scrollFormIntoView('admin-banner-form') }}>New banner</button>
-            <span className="muted">Set each banner&rsquo;s <strong>Placement</strong>: <strong>Hero</strong> = full-width image at the top, <strong>Strip</strong> = the 3-up row below. Add as many as you like with &ldquo;New banner&rdquo;; &ldquo;Order&rdquo; sorts them within each row.</span>
-          </div>
+          {!pageForm && (
+            <>
+              <div className="admin-toolbar">
+                <button className="act" type="button" onClick={() => { setPageGroupFilter(null); newPage() }}>New page</button>
+                <span className="muted">Content pages linked from the storefront footer. Content is Markdown (## heading, **bold**, - list, [text](url)).</span>
+              </div>
 
-          {bannerForm && (
-            <form id="admin-banner-form" className="admin-form" onSubmit={saveBanner}>
-              <h3>{bannerForm.id ? `Edit banner #${bannerForm.id}` : 'New banner'}</h3>
-              <div className="admin-image-field">
-                {bannerForm.image_url
-                  ? <img className="admin-banner-preview" src={mediaUrl(bannerForm.image_url)} alt="" />
-                  : <div className="admin-banner-preview placeholder">No image</div>}
-                <div>
-                  <label>Image URL<input value={bannerForm.image_url} onChange={(event) => setBannerForm({ ...bannerForm, image_url: event.target.value })} placeholder="https://…" /></label>
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBannerForm((form) => ({ ...form, image_url: url })))} />
-                  {imgBusy && <span className="muted"> uploading…</span>}
-                </div>
-              </div>
-              <div className="admin-form-grid">
-                <label>Headline (optional)<input maxLength="120" value={bannerForm.headline} onChange={(event) => setBannerForm({ ...bannerForm, headline: event.target.value })} placeholder="Fresh fruits & veg, in minutes" /></label>
-                <label>Links to category<select value={bannerForm.category_slug} onChange={(event) => setBannerForm({ ...bannerForm, category_slug: event.target.value })}><option value="">— none —</option>{categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}</select></label>
-                <label>Or link URL<input value={bannerForm.link_url} onChange={(event) => setBannerForm({ ...bannerForm, link_url: event.target.value })} placeholder="https://… (used only if no category)" /></label>
-                <label>Placement<select value={bannerForm.placement} onChange={(event) => setBannerForm({ ...bannerForm, placement: event.target.value })}><option value="hero">Hero — full-width top</option><option value="strip">Strip — 3-up row</option></select></label>
-                <label>Sort order<input type="number" min="0" max="9999" value={bannerForm.sort_order} onChange={(event) => setBannerForm({ ...bannerForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={bannerForm.is_active} onChange={(event) => setBannerForm({ ...bannerForm, is_active: event.target.checked })} /> Active</label>
-              </div>
-              <div className="admin-form-actions">
-                <button className="act" type="submit" disabled={!bannerForm.image_url}>Save</button>
-                <button className="act ghost" type="button" onClick={() => setBannerForm(null)}>Cancel</button>
-              </div>
-            </form>
+              {pageGroupFilter && (
+                <p className="admin-filter-note">Showing <strong>{filterLabel}</strong> pages only — <button type="button" className="act ghost" onClick={() => setPageGroupFilter(null)}>Show all pages</button></p>
+              )}
+            </>
           )}
-
-          {banners.length === 0 ? <p className="admin-empty">No banners yet. Add one to fill the homepage promo area.</p> : (
-            <table className="admin-table">
-              <thead><tr><th>Preview</th><th>Headline</th><th>Placement</th><th>Target</th><th>Order</th><th>Active</th><th></th></tr></thead>
-              <tbody>
-                {banners.map((banner) => (
-                  <tr key={banner.id}>
-                    <td><img className="admin-banner-thumb" src={mediaUrl(banner.image_url)} alt="" /></td>
-                    <td>{banner.headline || <span className="muted">—</span>}</td>
-                    <td>{banner.placement === 'strip' ? 'Strip' : 'Hero'}</td>
-                    <td>{banner.category_slug ? `#${banner.category_slug}` : (banner.link_url || <span className="muted">—</span>)}</td>
-                    <td>{banner.sort_order}</td>
-                    <td>{banner.is_active ? 'Yes' : 'No'}</td>
-                    <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setBannerForm({ id: banner.id, image_url: banner.image_url ?? '', headline: banner.headline ?? '', category_slug: banner.category_slug ?? '', link_url: banner.link_url ?? '', placement: banner.placement ?? 'strip', sort_order: banner.sort_order ?? 0, is_active: banner.is_active }); scrollFormIntoView('admin-banner-form') }}>Edit</button>
-                      <button className="act danger" type="button" onClick={() => removeBanner(banner)}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-
-          <h3 className="admin-subhead">Category tiles</h3>
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => { setTileForm({ ...EMPTY_TILE }); scrollFormIntoView('admin-tile-form') }}>New tile</button>
-            <span className="muted">The homepage shows these in order — first three as large cards, the rest as a grid. Leave the title blank to use the category&rsquo;s own; edit category images in the Categories tab. With no active tiles the homepage lists every category.</span>
-          </div>
-
-          {tileForm && (
-            <form id="admin-tile-form" className="admin-form" onSubmit={saveTile}>
-              <h3>{tileForm.id ? `Edit tile #${tileForm.id}` : 'New tile'}</h3>
-              <div className="admin-form-grid">
-                <label>Category<select value={tileForm.category_slug} onChange={(event) => setTileForm({ ...tileForm, category_slug: event.target.value })}><option value="">— none (use link) —</option>{categories.map((c) => <option key={c.id} value={c.slug}>{c.name}</option>)}</select></label>
-                <label>Custom title (optional)<input maxLength="120" value={tileForm.title} onChange={(event) => setTileForm({ ...tileForm, title: event.target.value })} placeholder="blank = category name" /></label>
-                <label>Or link URL<input value={tileForm.link_url} onChange={(event) => setTileForm({ ...tileForm, link_url: event.target.value })} placeholder="used only if no category" /></label>
-                <label>Sort order<input type="number" min="0" max="9999" value={tileForm.sort_order} onChange={(event) => setTileForm({ ...tileForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={tileForm.is_active} onChange={(event) => setTileForm({ ...tileForm, is_active: event.target.checked })} /> Active</label>
-              </div>
-              <div className="admin-form-actions">
-                <button className="act" type="submit" disabled={!tileForm.category_slug && !tileForm.link_url.trim()}>Save</button>
-                <button className="act ghost" type="button" onClick={() => setTileForm(null)}>Cancel</button>
-              </div>
-            </form>
-          )}
-
-          {homeTiles.length === 0 ? <p className="admin-empty">No tiles — the homepage is listing every category.</p> : (
-            <table className="admin-table">
-              <thead><tr><th>Image</th><th>Title</th><th>Target</th><th>Order</th><th>Active</th><th></th></tr></thead>
-              <tbody>
-                {homeTiles.map((tile) => {
-                  const tileImage = tile.image_url || categories.find((c) => c.slug === tile.category_slug)?.image_url
-                  return (
-                  <tr key={tile.id}>
-                    <td>{tileImage ? <img className="admin-banner-thumb" src={mediaUrl(tileImage)} alt="" /> : <span className="muted">—</span>}</td>
-                    <td>{tile.title || <span className="muted">category name</span>}</td>
-                    <td>{tile.category_slug ? `#${tile.category_slug}` : (tile.link_url || <span className="muted">—</span>)}</td>
-                    <td>{tile.sort_order}</td>
-                    <td>{tile.is_active ? 'Yes' : 'No'}</td>
-                    <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setTileForm({ id: tile.id, title: tile.title ?? '', image_url: tile.image_url ?? '', category_slug: tile.category_slug ?? '', link_url: tile.link_url ?? '', sort_order: tile.sort_order ?? 0, is_active: tile.is_active }); scrollFormIntoView('admin-tile-form') }}>Edit</button>
-                      <button className="act danger" type="button" onClick={() => removeTile(tile)}>Delete</button>
-                    </td>
-                  </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          )}
-        </section>
-      )}
-
-      {tab === 'pages' && (
-        <section className="admin-panel">
-          <div className="admin-toolbar">
-            <button className="act" type="button" onClick={() => newPage()}>New page</button>
-            <span className="muted">Content pages linked from the storefront footer. Content is Markdown (## heading, **bold**, - list, [text](url)).</span>
-          </div>
 
           {pageForm && (
             <form className="admin-form" onSubmit={savePage}>
-              <h3>{pageForm.id ? `Edit “${pageForm.title || 'page'}”` : 'New page'}</h3>
-              <div className="admin-form-grid">
-                <label>Title<input required maxLength="160" value={pageForm.title} onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })} /></label>
-                <label>Slug (optional)<input value={pageForm.slug} placeholder="auto from title" onChange={(event) => setPageForm({ ...pageForm, slug: event.target.value })} /></label>
-                <label>Footer placement
-                  <select value={pageForm.footer_group} onChange={(event) => setPageForm({ ...pageForm, footer_group: event.target.value })}>
-                    <option value="company">Upper footer — Company info</option>
-                    <option value="legal">Upper footer — Customer service</option>
-                    <option value="help">Upper footer — Help</option>
-                    <option value="bottom">Lower footer (legal links bar)</option>
-                  </select>
-                </label>
-                <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
-                <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
-                <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
-              </div>
-              <label>Banner image — shown above the title
-                <div className="admin-image-field">
-                  {pageForm.banner_image && <img src={mediaUrl(pageForm.banner_image)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
-                  <input value={pageForm.banner_image ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => setPageForm({ ...pageForm, banner_image: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })))} />
-                  {pageForm.banner_image && <button type="button" className="act ghost" onClick={() => setPageForm({ ...pageForm, banner_image: '' })}>Clear</button>}
+              <div className="admin-form-topbar">
+                <h3>{pageForm.id ? `Edit “${pageForm.title || 'page'}”` : 'New page'}</h3>
+                <div className="admin-form-actions admin-form-actions-top">
+                  <button className="act" type="submit">Save</button>
+                  <button className="act ghost" type="button" onClick={() => setPageForm(null)}>&larr; Back to pages</button>
+                  {pageForm.id && <button className="act danger" type="button" onClick={() => removePage(pageForm)}>Delete</button>}
                 </div>
+              </div>
+              <label className="admin-page-title-field">Title
+                <input required maxLength="160" value={pageForm.title} onChange={(event) => setPageForm({ ...pageForm, title: event.target.value })} placeholder="Page title" />
               </label>
-              <div className="admin-sections">
-                <div className="admin-subhead" style={{ marginTop: 4 }}>Sections</div>
+              {/* Custom page URL: letters, numbers and dashes; blank = made from the title. */}
+              <label className="admin-page-url-field">Page URL
+                <span className="admin-url-row">
+                  <span className="admin-url-prefix">{STORE_PAGE_BASE}</span>
+                  <input value={pageForm.slug} maxLength={160} placeholder={toSlug(pageForm.title) || 'made-from-the-title'} readOnly={!!pageForm.id}
+                    onChange={(event) => setPageForm({ ...pageForm, slug: toSlug(event.target.value, true) })}
+                    onBlur={() => setPageForm((f) => ({ ...f, slug: toSlug(f.slug) }))} />
+                </span>
+                <span className="muted">{pageForm.id
+                  ? 'A page’s URL can’t be changed once it’s created. For a different URL, create a new page with it (and delete this one if it’s no longer needed).'
+                  : 'Leave blank to make it from the title. Letters, numbers and dashes only — it can’t be changed after the page is created.'}</span>
+              </label>
+
+              <div className="admin-fieldset admin-collapsible-box">
+                <div className="admin-collapsible-header">
+                  <span>Page settings</span>
+                  <button type="button" className="admin-collapsible-arrow" aria-expanded={pageSettingsOpen} aria-label={pageSettingsOpen ? 'Collapse page settings' : 'Expand page settings'} onClick={() => setPageSettingsOpen((v) => !v)}>
+                    {pageSettingsOpen ? '▾' : '▸'}
+                  </button>
+                </div>
+                {pageSettingsOpen && (
+                  <div className="admin-collapsible-body">
+                    <div className="admin-form-grid">
+                      <label>Parent page (optional)
+                        <input list="admin-page-slugs" value={pageForm.parent_slug ?? ''} placeholder="e.g. seller-services-agreement" onChange={(event) => setPageForm({ ...pageForm, parent_slug: event.target.value })} />
+                        <datalist id="admin-page-slugs">{pages.filter((p) => p.slug !== pageForm.slug).map((p) => <option key={p.slug} value={p.slug}>{p.title}</option>)}</datalist>
+                      </label>
+                      <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
+                    </div>
+
+                    <div className="admin-subhead" style={{ marginTop: 4 }}>Placement</div>
+                    <p className="muted">Where this page is tracked as belonging, for the sidebar/list here — tick every menu it's actually linked from on the live site (a page can be in more than one).</p>
+                    <div className="admin-check-list">
+                      {MENU_PLACEMENT_OPTIONS.map((opt) => (
+                        <label className="admin-check" key={opt}>
+                          <input type="checkbox" checked={pageForm.menu_placements.includes(opt)}
+                            onChange={(event) => setPageForm((f) => ({
+                              ...f,
+                              menu_placements: event.target.checked ? [...f.menu_placements, opt] : f.menu_placements.filter((v) => v !== opt),
+                            }))} /> {MENU_PLACEMENT_LABELS[opt]}
+                        </label>
+                      ))}
+                    </div>
+                    {pageForm.menu_placements.includes('main_footer') && (
+                      <label>Footer column
+                        <select value={pageForm.footer_group} onChange={(event) => setPageForm({ ...pageForm, footer_group: event.target.value })}>
+                          <option value="company">Company info</option>
+                          <option value="legal">Customer service</option>
+                          <option value="help">Help</option>
+                          <option value="bottom">Lower footer (legal links bar)</option>
+                        </select>
+                      </label>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <fieldset className="admin-fieldset admin-fieldset-content">
+                <legend>Content</legend>
+                <label>Banner image — shown above the title
+                  <div className="admin-image-field">
+                    {pageForm.banner_image && <img src={mediaUrl(pageForm.banner_image)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
+                    <input value={pageForm.banner_image ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => setPageForm({ ...pageForm, banner_image: event.target.value })} />
+                    <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setPageForm((form) => ({ ...form, banner_image: url })), 'pages')} />
+                    {pageForm.banner_image && <button type="button" className="act ghost" onClick={() => setPageForm({ ...pageForm, banner_image: '' })}>Clear</button>}
+                  </div>
+                </label>
+                <div className="admin-sections">
+                  <div className="admin-subhead" style={{ marginTop: 4 }}>Sections</div>
                 {(pageForm.sections ?? []).length === 0
                   ? <p className="muted">No sections yet — the page shows the body text below. Add sections for a richer layout; preview on the storefront at <code>/#/p/{pageForm.slug || 'slug'}</code>.</p>
                   : null}
@@ -2558,7 +3666,7 @@ export default function Admin({ token, onClose }) {
                             <div className="admin-image-field">
                               {s.image_url && <img src={mediaUrl(s.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                               <input value={s.image_url ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => patchSection(i, { image_url: event.target.value })} />
-                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }))} />
+                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }), 'pages')} />
                               {s.image_url && <button type="button" className="act ghost" onClick={() => patchSection(i, { image_url: '' })}>Clear</button>}
                             </div>
                           </label>
@@ -2577,7 +3685,7 @@ export default function Admin({ token, onClose }) {
                           <div className="admin-image-field">
                             {s.image_url && <img src={mediaUrl(s.image_url)} alt="" className="admin-image-preview" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                             <input value={s.image_url ?? ''} placeholder="/img/… or https://…, or upload →" onChange={(event) => patchSection(i, { image_url: event.target.value })} />
-                            <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }))} />
+                            <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchSection(i, { image_url: url }), 'pages')} />
                             {s.image_url && <button type="button" className="act ghost" onClick={() => patchSection(i, { image_url: '' })}>Clear</button>}
                           </div>
                         </label>
@@ -2593,7 +3701,7 @@ export default function Admin({ token, onClose }) {
                           <div className="admin-feature-row admin-feature-row--quad" key={ii}>
                             <span className="admin-variant-img">
                               <input placeholder="Icon / image URL" value={it.image_url ?? ''} onChange={(event) => patchItem(i, ii, { image_url: event.target.value })} />
-                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchItem(i, ii, { image_url: url }))} />
+                              <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => patchItem(i, ii, { image_url: url }), 'pages')} />
                             </span>
                             <input placeholder="Title" value={it.title ?? ''} onChange={(event) => patchItem(i, ii, { title: event.target.value })} />
                             <input placeholder="Text" value={it.text ?? ''} onChange={(event) => patchItem(i, ii, { text: event.target.value })} />
@@ -2645,35 +3753,34 @@ export default function Admin({ token, onClose }) {
                 </div>
               </div>
 
-              <label>Page body (Markdown) — shown when the page has no sections
-                <div className="admin-page-editor">
-                  <div className="admin-page-tabs">
-                    <button type="button" className={!pagePreview ? 'active' : ''} onClick={() => setPagePreview(false)}>Write</button>
-                    <button type="button" className={pagePreview ? 'active' : ''} onClick={() => setPagePreview(true)}>Preview</button>
+                <label>Page body (Markdown) — shown when the page has no sections
+                  <div className="admin-page-editor">
+                    <div className="admin-page-tabs">
+                      <button type="button" className={!pagePreview ? 'active' : ''} onClick={() => setPagePreview(false)}>Write</button>
+                      <button type="button" className={pagePreview ? 'active' : ''} onClick={() => setPagePreview(true)}>Preview</button>
+                    </div>
+                    {pagePreview
+                      ? <div className="admin-page-preview page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageForm.content) }} />
+                      : <textarea rows="16" value={pageForm.content} onChange={(event) => setPageForm({ ...pageForm, content: event.target.value })} />}
                   </div>
-                  {pagePreview
-                    ? <div className="admin-page-preview page-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(pageForm.content) }} />
-                    : <textarea rows="16" value={pageForm.content} onChange={(event) => setPageForm({ ...pageForm, content: event.target.value })} />}
-                </div>
-              </label>
+                </label>
+              </fieldset>
               {pageForm.id && pageForm.is_published && <p className="muted">Storefront link: <code>/#/p/{pageForm.slug}</code></p>}
-              <div className="admin-form-actions">
-                <button className="act" type="submit">Save</button>
-                <button className="act ghost" type="button" onClick={() => setPageForm(null)}>Cancel</button>
-                {pageForm.id && <button className="act danger" type="button" onClick={() => removePage(pageForm)}>Delete</button>}
-              </div>
             </form>
           )}
 
-          {pages.length === 0 ? <p className="admin-empty">No pages yet.</p> : (
+          {!pageForm && (visiblePages.length === 0 ? <p className="admin-empty">{pageGroupFilter ? `No ${filterLabel.toLowerCase()} pages yet.` : 'No pages yet.'}</p> : (
             <table className="admin-table">
-              <thead><tr><th>Title</th><th>Slug</th><th>Footer group</th><th>In footer</th><th>Published</th><th></th></tr></thead>
+              <thead><tr><th>Title</th><th>Slug</th><th>Placement</th><th>In footer</th><th>Published</th><th></th></tr></thead>
               <tbody>
-                {pages.map((page) => (
+                {visiblePages.map((page) => (
                   <tr key={page.id}>
                     <td>{page.title}</td>
                     <td><code>{page.slug}</code></td>
-                    <td>{FOOTER_GROUP_LABELS[page.footer_group] ?? page.footer_group}</td>
+                    <td>{Array.isArray(page.menu_placements) && page.menu_placements.length > 0
+                      ? page.menu_placements.map((p) => MENU_PLACEMENT_LABELS[p]?.split(' (')[0] ?? p).join(', ')
+                        + (page.menu_placements.includes('main_footer') ? ` — ${FOOTER_GROUP_LABELS[page.footer_group] ?? page.footer_group}` : '')
+                      : <span className="muted">Unassigned</span>}</td>
                     <td>{page.show_in_footer ? 'Yes' : 'No'}</td>
                     <td>{page.is_published ? 'Yes' : <span className="muted">Draft</span>}</td>
                     <td className="admin-actions">
@@ -2684,14 +3791,15 @@ export default function Admin({ token, onClose }) {
                 ))}
               </tbody>
             </table>
-          )}
+          ))}
         </section>
-      )}
+        )
+      })()}
 
       {tab === 'support' && (
         <section className="admin-panel">
           <div className="admin-filters">
-            {['open', 'resolved', 'all'].map((value) => (
+            {['open', 'resolved', 'all', 'sellers'].map((value) => (
               <button key={value} type="button" className={threadStatus === value ? 'chip active' : 'chip'} onClick={() => setThreadStatus(value)}>{value}</button>
             ))}
           </div>
@@ -2707,7 +3815,7 @@ export default function Admin({ token, onClose }) {
                     <td><span className={`pill pill-${t.status === 'open' ? 'failed' : 'paid'}`}>{t.status}</span></td>
                     <td>{t.rating != null ? <span className="admin-review-stars" title={t.rating_comment || ''}>{'★'.repeat(t.rating)}<span className="dim">{'★'.repeat(5 - t.rating)}</span></span> : <span className="muted">—</span>}</td>
                     <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>
-                    <td className="admin-actions"><button className="act" type="button" onClick={() => openThread(t.id)}>Open</button></td>
+                    <td className="admin-actions"><button className="act" type="button" onClick={() => openSupportChat(t, ISSUE_LABELS)}>Open</button><button className="act ghost" type="button" onClick={() => openThread(t.id)}>Details</button></td>
                   </tr>
                 ))}
               </tbody>
@@ -2723,7 +3831,7 @@ export default function Admin({ token, onClose }) {
               <h3>Footer</h3>
               <p className="muted">The storefront footer. &ldquo;Useful Links&rdquo; also lists your published content pages; the links below are added after them.</p>
               <div className="admin-form-grid">
-                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder="© {year} NexTech" /></label>
+                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder={`© {year} ${brandName()}`} /></label>
                 <label>App Store URL<input value={footerForm.app_store_url} onChange={(event) => setFooterForm({ ...footerForm, app_store_url: event.target.value })} placeholder="https://apps.apple.com/…" /></label>
                 <label>Google Play URL<input value={footerForm.play_store_url} onChange={(event) => setFooterForm({ ...footerForm, play_store_url: event.target.value })} placeholder="https://play.google.com/…" /></label>
               </div>
@@ -2824,7 +3932,7 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-image-field">
                   {brandingForm.logo_url && <img className="admin-image-preview" src={mediaUrl(brandingForm.logo_url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Logo image URL, or upload →" value={brandingForm.logo_url} onChange={(event) => setBrandingForm({ ...brandingForm, logo_url: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, logo_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, logo_url: url })), 'branding')} />
                   {brandingForm.logo_url && <button type="button" className="act ghost" onClick={() => setBrandingForm({ ...brandingForm, logo_url: '' })}>Clear</button>}
                 </div>
               </label>
@@ -2832,7 +3940,7 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-image-field">
                   {brandingForm.favicon_url && <img className="admin-image-preview" src={mediaUrl(brandingForm.favicon_url)} alt="" onError={(event) => { event.currentTarget.style.display = 'none' }} />}
                   <input placeholder="Favicon URL (.png / .ico / .svg), or upload →" value={brandingForm.favicon_url} onChange={(event) => setBrandingForm({ ...brandingForm, favicon_url: event.target.value })} />
-                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, favicon_url: url })))} />
+                  <input type="file" accept="image/*" disabled={imgBusy} onChange={(event) => uploadImage(event.target.files?.[0], (url) => setBrandingForm((form) => ({ ...form, favicon_url: url })), 'branding')} />
                   {brandingForm.favicon_url && <button type="button" className="act ghost" onClick={() => setBrandingForm({ ...brandingForm, favicon_url: '' })}>Clear</button>}
                 </div>
               </label>
@@ -2903,6 +4011,30 @@ export default function Admin({ token, onClose }) {
                 <div className="admin-form-actions"><button className="act" type="submit">Save account</button></div>
               </form>
 
+              {sellerRateForm && settings && (
+                <form className="admin-form" onSubmit={saveSellerRates}>
+                  <h3>Seller commission — new vs. established sellers</h3>
+                  <p className="muted">
+                    Established sellers pay the commission rate under Charges ({((settings.commission_rate_bps ?? 0) / 100).toFixed(2)}% in {settings.home_market_name ?? 'the home market'}; other countries use their own rate).
+                    Give sellers a different rate for their first days after approval — e.g. a lower intro rate to attract new shops.
+                  </p>
+                  <div className="admin-form-grid">
+                    <label>New-seller commission (%)
+                      <input type="number" min="0" max="100" step="0.01" value={sellerRateForm.new_pct} placeholder="Same as established" onChange={(event) => setSellerRateForm({ ...sellerRateForm, new_pct: event.target.value })} />
+                    </label>
+                    <label>Counts as new for (days after approval)
+                      <input type="number" min="1" max="3650" step="1" value={sellerRateForm.days} onChange={(event) => setSellerRateForm({ ...sellerRateForm, days: event.target.value })} />
+                    </label>
+                  </div>
+                  <p className="muted">Leave the new-seller rate blank to charge everyone the same. Applies to all countries, judged by each order&rsquo;s date; refunds take back the same rate the order paid.</p>
+                  <div className="admin-form-actions"><button className="act" type="submit">Save seller commission</button></div>
+                </form>
+              )}
+
+              <KeptRates headers={secureHeaders} onMessage={setMessage} onError={fail} />
+
+              <SalesTaxKey settings={settings} save={(patch) => saveSetting(patch, { 'X-Secure-Access': secureToken })} />
+
               {paymentsForm && settings && (
                 <form className="admin-form" onSubmit={savePayments}>
                   <h3>Payments — Stripe</h3>
@@ -2927,6 +4059,57 @@ export default function Admin({ token, onClose }) {
                   <div className="admin-form-actions"><button className="act" type="submit">Save payment settings</button></div>
                 </form>
               )}
+
+              {courierForm && settings && (
+                <form className="admin-form" onSubmit={saveCourier}>
+                  <h3>Courier — real provider</h3>
+                  <p className="muted">
+                    Deliveries fall back to the built-in mock courier whenever the real provider isn&rsquo;t configured or a call fails, so switching this on is always safe.
+                    The real provider is a generic REST template — adjust its endpoint/field names once you have a specific carrier&rsquo;s API docs.
+                  </p>
+                  <label>Provider
+                    <select value={courierForm.courier_provider} onChange={(event) => setCourierForm({ ...courierForm, courier_provider: event.target.value })}>
+                      <option value="mock">Mock (default)</option>
+                      <option value="real">Real</option>
+                    </select>
+                  </label>
+                  <label>Base URL
+                    <input value={courierForm.courier_base_url} placeholder="https://api.example-courier.com"
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_base_url: event.target.value })} />
+                  </label>
+                  <label>Account code
+                    <input value={courierForm.courier_account_code} onChange={(event) => setCourierForm({ ...courierForm, courier_account_code: event.target.value })} />
+                  </label>
+                  <label>API key
+                    <input type="password" autoComplete="off" value={courierForm.courier_api_key}
+                      placeholder={settings.courier?.api_key_set ? `current: ${settings.courier.api_key_hint} — leave blank to keep` : 'API key'}
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_api_key: event.target.value })} />
+                  </label>
+                  <label>API secret
+                    <input type="password" autoComplete="off" value={courierForm.courier_api_secret}
+                      placeholder={settings.courier?.api_secret_set ? `current: ${settings.courier.api_secret_hint} — leave blank to keep` : 'API secret'}
+                      onChange={(event) => setCourierForm({ ...courierForm, courier_api_secret: event.target.value })} />
+                  </label>
+                  <h3 style={{ marginTop: 18 }}>Live tracking — AfterShip</h3>
+                  <p className="muted">
+                    Tracks every package sellers ship with their own courier (Delhivery, Blue Dart, UPS, FedEx, USPS and hundreds more) from its tracking number,
+                    and shows the courier&rsquo;s latest status to the buyer, the seller and you. {settings.courier?.tracking_api_key_set ? <b>On.</b> : <b>Off until you add an API key.</b>}
+                  </p>
+                  <label>AfterShip API key
+                    <input type="password" autoComplete="off" value={courierForm.tracking_api_key}
+                      placeholder={settings.courier?.tracking_api_key_set ? `current: ${settings.courier.tracking_api_key_hint} — leave blank to keep` : 'From AfterShip → Settings → API keys'}
+                      onChange={(event) => setCourierForm({ ...courierForm, tracking_api_key: event.target.value })} />
+                  </label>
+                  <label>Webhook secret (optional)
+                    <input type="password" autoComplete="off" value={courierForm.tracking_webhook_secret}
+                      placeholder={settings.courier?.tracking_webhook_secret_set ? `current: ${settings.courier.tracking_webhook_secret_hint} — leave blank to keep` : 'From AfterShip → Settings → Webhooks'}
+                      onChange={(event) => setCourierForm({ ...courierForm, tracking_webhook_secret: event.target.value })} />
+                  </label>
+                  {settings.courier?.tracking_webhook_url && <p className="muted">For instant updates, add this webhook URL in AfterShip (Settings → Webhooks): <code>{settings.courier.tracking_webhook_url}</code>. Without it, tracking still refreshes whenever an order is viewed.</p>}
+                  <p className="muted">Secrets are stored in the database and shown afterwards only as a hint.</p>
+                  <div className="admin-form-actions"><button className="act" type="submit">Save courier settings</button></div>
+                </form>
+              )}
             </>
           )}
         </section>
@@ -2945,6 +4128,118 @@ export default function Admin({ token, onClose }) {
                 <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
               </div>
 
+              {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
+
+              <div className="admin-form">
+                <h3>Seller shipping</h3>
+                <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
+                  <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
+                    <option value="available">Available — sellers can choose it</option>
+                    <option value="disabled">Shown but unselectable</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+                <label>{brandName()} shipping labels (&ldquo;I ship, {brandName()} label&rdquo;)
+                  <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
+                    <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
+                    <option value="auto">Courier API — paid carrier label bought through the courier connection</option>
+                  </select>
+                </label>
+                <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
+                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
+                <label>Cash on delivery on sellers&rsquo; own deliveries
+                  <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
+                    <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
+                    <option value="off">Off for every seller</option>
+                    <option value="all">On for any seller who switches it on</option>
+                  </select>
+                </label>
+                <div className="admin-form-grid">
+                  {marketOptions.map((m) => (
+                    <label key={m.code}>Pause it when a seller owes {brandName()} more than ({currencySymbol(m.currency)}, {m.name})
+                      <input type="number" min="0" step="1" defaultValue={((settings.seller_cod_max_owed?.[m.code] ?? 0) / 100).toFixed(0)} onBlur={(event) => saveSetting({ seller_cod_max_owed: { [m.code]: Math.max(0, Math.round(Number(event.target.value || 0) * 100)) } })} />
+                    </label>
+                  ))}
+                </div>
+                <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
+              </div>
+
+              <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
+
+              <div className="admin-form">
+                <h3>Digital downloads</h3>
+                <div className="admin-form-grid">
+                  <label>Largest file a seller can upload (MB)<input type="number" min="1" max="4096" defaultValue={settings.digital_max_file_mb ?? 50} onBlur={(event) => saveSetting({ digital_max_file_mb: Math.max(1, Number(event.target.value) || 50) })} /></label>
+                  <label>All uploads of one product, total (MB)<input type="number" min="1" max="20480" defaultValue={settings.digital_max_product_mb ?? 200} onBlur={(event) => saveSetting({ digital_max_product_mb: Math.max(1, Number(event.target.value) || 200) })} /></label>
+                </div>
+                <p className="muted">Uploaded files sit on this server&rsquo;s disk — shared hosting may object to large ZIPs. Sellers add bigger files as a download link to where they host them (Google Drive, Dropbox, their own server).</p>
+              </div>
+
+              <div className="admin-form">
+                <h3>Store decoration</h3>
+                <div className="admin-form-grid">
+                  <label>Live products a store needs before its design shows<input type="number" min="0" max="1000" defaultValue={settings.decoration_min_products ?? 30} onBlur={(event) => saveSetting({ decoration_min_products: Number(event.target.value) || 0 })} /></label>
+                  <label>Share of submitted designs to spot-check (%)<input type="number" min="0" max="100" defaultValue={Math.round((settings.decoration_spot_check_rate ?? 0.3) * 100)} onBlur={(event) => saveSetting({ decoration_spot_check_rate: Math.max(0, Math.min(100, Number(event.target.value) || 0)) / 100 })} /></label>
+                </div>
+                <p className="muted">Below the product minimum, shoppers see the store’s default page even if a design is live. Spot-checked designs wait on the Sellers tab until you approve them.</p>
+              </div>
+
+              <div className="admin-form">
+                <h3>Countries</h3>
+                <p className="muted">Countries enabled here appear as options in seller registration (business type, tax-ID format, and address labels all follow whichever country a seller picks). Enabling just one keeps the platform single-country; enabling several turns on multi-country selection everywhere that depends on it.</p>
+                {(settings.all_countries ?? []).map((country) => {
+                  const activeCodes = (settings.active_countries ?? []).map((c) => c.code)
+                  const checked = activeCodes.includes(country.code)
+                  return <label className="admin-check" key={country.code}>
+                    <input type="checkbox" checked={checked} onChange={(event) => {
+                      const next = event.target.checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
+                      saveSetting({ active_countries: next })
+                    }} />
+                    {country.name} ({country.code})
+                  </label>
+                })}
+                <label style={{ marginTop: 10 }}>Default country (shoppers and this console start here)
+                  <select value={settings.home_market ?? 'US'} onChange={(event) => saveSetting({ home_market: event.target.value })}>
+                    {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.currency.toUpperCase()})</option>)}
+                  </select>
+                </label>
+                <p className="muted">Every country can have its own {brandName()} stores, riders and products — pick the country in the top bar before adding them. Running only in India? Make India the default and untick the United States.</p>
+              </div>
+
+              <BusinessDetails settings={settings} save={saveSetting} onSaved={setMessage} />
+
+              <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === workMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
+              {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
+                ? <MarketSettings key={chargesMarket} settings={settings} only={chargesMarket} save={saveSetting} onSaved={setMessage} />
+                : <>
+              <form className="admin-form" onSubmit={saveFees}>
+                <h3>Marketplace commission &amp; seller payouts ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <p className="muted">The platform's cut of every order line sold through a seller's shop, credited to the seller's ledger balance net of this commission. Doesn&rsquo;t apply to {brandName()}&rsquo;s own catalog.</p>
+                <div className="admin-form-grid">
+                  <label>Commission rate — established sellers (%)<input type="number" min="0" step="0.01" value={feesForm.commission_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, commission_rate_pct: event.target.value })} /></label>
+                  <label className="admin-check"><input type="checkbox" checked={!!feesForm.commission_apply_existing} onChange={(event) => setFeesForm({ ...feesForm, commission_apply_existing: event.target.checked })} /> Apply a rate change to existing sellers too{settings.kept_rate_sellers?.[settings.home_market] ? ` (${settings.kept_rate_sellers[settings.home_market]} on an older rate)` : ''} — unticked, they keep their current rate; move chosen ones later in Secure access</label>
+                  <label>Minimum payout ($)<input type="number" min="0" step="0.01" value={feesForm.min_payout} onChange={(event) => setFeesForm({ ...feesForm, min_payout: event.target.value })} /></label>
+                  <label>Maximum per payout ($)<input type="number" min="0" step="0.01" value={feesForm.max_payout} onChange={(event) => setFeesForm({ ...feesForm, max_payout: event.target.value })} /></label>
+                  <label>Daily payout cap, all sellers ($)<input type="number" min="0" step="0.01" placeholder="0 = no cap" value={feesForm.daily_payout_cap} onChange={(event) => setFeesForm({ ...feesForm, daily_payout_cap: event.target.value })} /></label>
+                  <label>Default return window (days)<input type="number" min="0" max={feesForm.max_return_days || 365} value={feesForm.return_window_days} onChange={(event) => setFeesForm({ ...feesForm, return_window_days: event.target.value })} /></label>
+                  <label>Maximum return window (days)<input type="number" min="0" max="365" value={feesForm.max_return_days} onChange={(event) => setFeesForm({ ...feesForm, max_return_days: event.target.value })} /></label>
+                  <label>Return pickup fee charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.return_pickup_fee} onChange={(event) => setFeesForm({ ...feesForm, return_pickup_fee: event.target.value })} /></label>
+                  <label>{brandName()} label postage charged to seller ($)<input type="number" min="0" step="0.01" value={feesForm.label_postage} onChange={(event) => setFeesForm({ ...feesForm, label_postage: event.target.value })} /></label>
+                </div>
+                <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per {brandName()}-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
+
+                <h3>Rider pay</h3>
+                <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
+                <div className="admin-form-grid">
+                  <label>Base pay per delivery ($)<input type="number" min="0" step="0.01" value={feesForm.rider_base_pay} onChange={(event) => setFeesForm({ ...feesForm, rider_base_pay: event.target.value })} /></label>
+                  <label>Per mile ($)<input type="number" min="0" step="0.01" value={feesForm.rider_per_mile} onChange={(event) => setFeesForm({ ...feesForm, rider_per_mile: event.target.value })} /></label>
+                  <label>Minimum rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_min_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_min_payout: event.target.value })} /></label>
+                  <label>Maximum per rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_max_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_max_payout: event.target.value })} /></label>
+                </div>
+                <p className="muted">Each completed delivery credits the rider the base pay plus the per-mile rate for the straight-line distance from the store to the customer. Riders can request a payout once they&rsquo;re owed the minimum — COD cash they still hold is deducted first.</p>
+                <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
+              </form>
+
               <div className="admin-form">
                 <h3>Delivery</h3>
                 <label className="admin-check">
@@ -2955,7 +4250,8 @@ export default function Admin({ token, onClose }) {
               </div>
 
               <form className="admin-form" onSubmit={saveFees}>
-                <h3>Delivery &amp; charges</h3>
+                <h3>Delivery &amp; checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
 
                 <fieldset className="admin-fieldset">
                   <legend>Delivery fee</legend>
@@ -2989,12 +4285,14 @@ export default function Admin({ token, onClose }) {
                     <label>Handling fee ($)<input type="number" min="0" step="0.01" value={feesForm.handling_fee} onChange={(event) => setFeesForm({ ...feesForm, handling_fee: event.target.value })} /></label>
                     <label>Small-cart fee ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_fee} onChange={(event) => setFeesForm({ ...feesForm, small_cart_fee: event.target.value })} /></label>
                     <label>…applied below ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_min} onChange={(event) => setFeesForm({ ...feesForm, small_cart_min: event.target.value })} /></label>
-                    <label>Tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
+                    <label>Default tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
                   </div>
                 </fieldset>
 
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
+              {settings?.sales_tax && <SalesTaxSettings key={settings.sales_tax.mode + JSON.stringify(settings.sales_tax.states.map((x) => x.rate_bps))} settings={settings} save={saveSetting} headers={jsonHeaders} onSettings={setSettings} onMessage={setMessage} onError={fail} />}
+                </>}
             </>
           )}
         </section>
@@ -3011,6 +4309,7 @@ export default function Admin({ token, onClose }) {
               {thread.status === 'open'
                 ? <button className="act" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('resolved')}>Mark resolved</button>
                 : <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('open')}>Re-open</button>}
+              <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => openSupportChat(thread, ISSUE_LABELS)}>Open chat</button>
             </p>
             {thread.rating != null && (
               <p className="admin-chat-rating">
@@ -3019,21 +4318,32 @@ export default function Admin({ token, onClose }) {
                 {thread.rating_comment && <span className="admin-chat-rating-c">“{thread.rating_comment}”</span>}
               </p>
             )}
-            <div className="chat-log">{(thread.messages ?? []).map((m) => (
-              <div key={m.id} className={`chat-msg ${m.internal ? 'internal' : m.is_staff && m.user_id ? 'staff' : m.user_id ? 'customer' : 'system'}`}>
-                <span>{m.internal && '🔒 '}{m.body}</span>
-                <em>{m.internal ? 'Internal note — not visible to customer · ' : ''}{new Date(m.created_at).toLocaleString()}</em>
-              </div>
-            ))}</div>
-            <div className="chat-send">
-              <input placeholder="Reply to the customer" value={threadReply} onChange={(event) => setThreadReply(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') replyThread() }} />
-              <button type="button" disabled={!threadReply.trim()} onClick={replyThread}>Send</button>
+            <div className="admin-form admin-notes" style={{ marginTop: 12 }}>
+              <h4>Internal notes</h4>
+              <p className="muted">Only staff see these — never shown in the chat.</p>
+              {(thread.messages ?? []).filter((m) => m.internal).map((m) => (
+                <div key={m.id} className="admin-note-row">
+                  <span>🔒 {m.body}<small className="muted"> · {new Date(m.created_at).toLocaleString()}</small></span>
+                  <button className="act ghost" type="button" onClick={() => deleteThreadNote(m.id)}>Delete</button>
+                </div>
+              ))}
+              <textarea rows="2" maxLength="2000" placeholder="Add a note for later…" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} />
+              <div className="admin-form-actions"><button className="act" type="button" disabled={!noteDraft.trim()} onClick={addThreadNote}>Add note</button></div>
             </div>
+            {thread.order_id && !String(thread.issue_type).startsWith('seller_') && (
+              thread.seller_shop
+                ? <p className="muted">Seller in this chat: <b>{thread.seller_shop.name}</b></p>
+                : (thread.seller_options ?? []).length > 0 && (
+                  <p className="muted">Needs the seller?{' '}
+                    {thread.seller_options.map((shop) => <button key={shop.id} className="act ghost" type="button" style={{ marginLeft: 6 }} onClick={() => bringInSeller(shop.id)}>Bring in {shop.name}</button>)}
+                  </p>
+                )
+            )}
 
             {thread.order && thread.order.payment_status === 'pending' && (thread.user?.gift_cards ?? []).length > 0 && (
               <div className="admin-form" style={{ marginTop: 16 }}>
                 <h4>Apply an existing gift card</h4>
-                <p className="muted">Order #{thread.order.id} is still open — total {money(thread.order.total_cents)}.</p>
+                <p className="muted">Order #{thread.order.id} is still open — total {money(thread.order.total_cents, thread.order.currency)}.</p>
                 {thread.user.gift_cards.map((card) => (
                   <button key={card.id} type="button" className="act" disabled={busyId === thread.id} onClick={() => applyGiftCardToOrder(card, thread.order, thread.id)}>
                     Apply {card.code} — {money(card.balance_cents)} balance
@@ -3046,12 +4356,11 @@ export default function Admin({ token, onClose }) {
               <div className="admin-form" style={{ marginTop: 16 }}>
                 <h4>Attach an order</h4>
                 <p className="muted">This chat wasn&rsquo;t opened against a specific order — pick one of {thread.user?.email ?? 'this customer'}&rsquo;s orders to unlock refunds &amp; gift cards.</p>
-                <select defaultValue="" onChange={(event) => { if (event.target.value) linkThreadOrder(event.target.value) }}>
-                  <option value="" disabled>Choose an order…</option>
-                  {thread.user.orders.map((o) => (
-                    <option key={o.id} value={o.id}>#{o.id} — {money(o.total_cents)} — {STATUS_LABELS[o.status] ?? o.status} — {new Date(o.created_at).toLocaleDateString()}</option>
-                  ))}
-                </select>
+                <UpwardPicker
+                  placeholder="Choose an order…"
+                  options={thread.user.orders.map((o) => ({ value: o.id, label: `#${o.id} — ${money(o.total_cents, o.currency)} — ${STATUS_LABELS[o.status] ?? o.status} — ${new Date(o.created_at).toLocaleDateString()}` }))}
+                  onPick={(id) => linkThreadOrder(id)}
+                />
               </div>
             )}
 
@@ -3061,31 +4370,268 @@ export default function Admin({ token, onClose }) {
       )}
 
       {customerDetail && (
-        <div className="admin-drawer" role="presentation" onClick={() => setCustomerDetail(null)}>
-          <aside onClick={(event) => event.stopPropagation()}>
-            <button className="admin-close" type="button" onClick={() => setCustomerDetail(null)}>Close</button>
-            {customerDetail.loading ? <Loading>Loading…</Loading> : (
-              <>
-                <h3>{customerDetail.display_name ?? customerDetail.name}</h3>
-                <p className="muted">{customerDetail.email} · {customerDetail.phone || 'no phone'} · joined {new Date(customerDetail.joined_at).toLocaleDateString()}</p>
-                <label className="admin-check">
-                  <input type="checkbox" checked={!!customerDetail.is_rider} onChange={(event) => toggleRider(customerDetail.id, event.target.checked)} />
-                  Delivery rider (can log into the rider app and deliver orders)
-                </label>
-                <h4>Orders ({customerDetail.orders?.length ?? 0})</h4>
-                <ul className="admin-order-list">
-                  {(customerDetail.orders ?? []).map((order) => (
-                    <li key={order.id}>
-                      <strong>#{order.id}</strong> {money(order.total_cents)} · {order.payment_status} · {STATUS_LABELS[order.status] ?? order.status}
-                      <span>{order.items?.length ?? 0} items · {new Date(order.created_at).toLocaleDateString()}</span>
-                    </li>
-                  ))}
-                  {(customerDetail.orders ?? []).length === 0 && <li className="muted">No orders.</li>}
-                </ul>
-              </>
-            )}
-          </aside>
+        <CustomerCrm
+          detail={customerDetail}
+          authHeaders={authHeaders}
+          money={money}
+          statusLabels={STATUS_LABELS}
+          onClose={() => setCustomerDetail(null)}
+          onToggleRider={toggleRider}
+          onReload={() => openCustomer(customerDetail.id)}
+          onMessage={setMessage}
+        />
+      )}
+
+      {cancelling && (
+        <div className="admin-change-overlay" role="dialog" aria-modal="true" aria-label="Cancel order">
+          <form className="admin-change-box" onSubmit={async (event) => {
+            event.preventDefault()
+            const reason = [cancelling.reason, cancelling.note.trim()].filter(Boolean).join(' — ')
+            if (!reason) return
+            await patchOrder(cancelling.order, { status: 'cancelled', cancel_reason: reason })
+            setCancelling(null)
+          }}>
+            <h3>Cancel order #{cancelling.order.id}</h3>
+            {['paid', 'partially_refunded'].includes(cancelling.order.payment_status) && <p className="muted">This order is paid — it&rsquo;ll show as <b>Refund due</b> (Orders filter and the 🔔 bell) until you refund it.</p>}
+            <label>Reason
+              <select required value={cancelling.reason} onChange={(event) => setCancelling((c) => ({ ...c, reason: event.target.value }))}>
+                <option value="" disabled>Choose…</option>
+                {CANCEL_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </label>
+            <label>Details {cancelling.reason === 'Other' ? '' : '(optional)'}<textarea rows={2} maxLength={400} required={cancelling.reason === 'Other'} value={cancelling.note} placeholder="e.g. which item is missing" onChange={(event) => setCancelling((c) => ({ ...c, note: event.target.value }))} /></label>
+            <div className="admin-form-actions">
+              <button className="act danger" type="submit" disabled={busyId === cancelling.order.id}>Cancel order</button>
+              <button className="act ghost" type="button" onClick={() => setCancelling(null)}>Keep order</button>
+            </div>
+          </form>
         </div>
+      )}
+
+      {digitalFilesOf && <AdminDigitalFiles product={digitalFilesOf} authHeaders={authHeaders} onClose={() => setDigitalFilesOf(null)} />}
+
+      {changeRequest && (
+        <div className="admin-change-overlay" role="dialog" aria-modal="true" aria-label="Request changes">
+          <form className="admin-change-box" onSubmit={sendChangeRequest}>
+            <h3>Request changes — {changeRequest.seller.shop?.name ?? changeRequest.seller.company_name}</h3>
+            <p className="muted">Tick what the seller needs to fix. They see these items highlighted in their application and get them as a message.</p>
+            <div className="admin-change-items">
+              {CHANGE_ITEMS.map(([key, label]) => {
+                const on = key in changeRequest.picked
+                return (
+                  <div key={key} className={on ? 'admin-change-item on' : 'admin-change-item'}>
+                    <label className="admin-check"><input type="checkbox" checked={on} onChange={(event) => setChangeRequest((c) => {
+                      const picked = { ...c.picked }
+                      if (event.target.checked) picked[key] = ''; else delete picked[key]
+                      return { ...c, picked }
+                    })} /> {label}</label>
+                    {on && <input placeholder="What's wrong (optional)" maxLength={500} value={changeRequest.picked[key]} onChange={(event) => setChangeRequest((c) => ({ ...c, picked: { ...c.picked, [key]: event.target.value } }))} />}
+                  </div>
+                )
+              })}
+            </div>
+            <label>Message to the seller (optional)<textarea rows={3} maxLength={2000} value={changeRequest.reason} onChange={(event) => setChangeRequest((c) => ({ ...c, reason: event.target.value }))} /></label>
+            <div className="admin-form-actions">
+              <button className="act" type="submit" disabled={busyId === changeRequest.seller.id || (Object.keys(changeRequest.picked).length === 0 && !changeRequest.reason.trim())}>Send back {Object.keys(changeRequest.picked).length > 0 ? `(${Object.keys(changeRequest.picked).length} item${Object.keys(changeRequest.picked).length === 1 ? '' : 's'})` : ''}</button>
+              <button className="act ghost" type="button" onClick={() => setChangeRequest(null)}>Cancel</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {sellerDetail && (
+        <div className="seller-page-overlay" role="dialog" aria-modal="true" aria-label="Seller details">
+          <div className="seller-page">
+            {sellerDetail.loading ? <Loading>Loading…</Loading> : (() => {
+              const d = sellerDetail
+              const STATUS_TEXT = { pending: 'Waiting for review', approved: 'Approved', rejected: 'Sent back', processing: 'Waiting for verification', linked: 'Linked', failed: 'Verification failed' }
+              const reviewButtons = (task, status, waiting) => status && (
+                <div className="admin-form-actions">
+                  {status !== (task === 'bank' ? 'linked' : 'approved') && <button className="act" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'approve')}>{task === 'bank' ? 'Verify & link' : 'Approve'}</button>}
+                  {status !== (task === 'bank' ? 'failed' : 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => reviewOnboarding(d, task, 'reject')}>{waiting ? 'Send back' : 'Revoke'}</button>}
+                </div>
+              )
+              const people = d.compliance?.people ?? []
+              const roleNames = { ubo: 'beneficial owner', director: 'director', executive: 'executive' }
+              const address = (parts) => parts.filter(Boolean).join(', ') || '—'
+              return (
+                <>
+                  <header className="seller-page-head">
+                    <div>
+                      <button className="link" type="button" onClick={() => setSellerDetail(null)}>&larr; All sellers</button>
+                      <h2>{d.shop?.name ?? d.company_name} {countryBadge(d.shop?.market ?? d.country)}</h2>
+                      <p className="muted"><span className={`pill pill-${d.status}`}>{SELLER_STATUS_LABELS[d.status] ?? d.status}</span> · submitted {d.submitted_at ? new Date(d.submitted_at).toLocaleString() : '—'}{d.reviewer ? ` · reviewed by ${d.reviewer.name}${d.reviewed_at ? ` on ${new Date(d.reviewed_at).toLocaleDateString()}` : ''}` : ''}</p>
+                    </div>
+                    <div className="admin-form-actions">
+                      <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => messageSeller(d)}>Message seller</button>
+                      {(d.status === 'pending' || d.status === 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => requestSellerChanges(d)}>Request changes</button>}
+                      {d.status === 'pending' && <>
+                        <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'approve')}>Approve</button>
+                        <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => rejectSeller(d)}>Reject</button>
+                      </>}
+                      {d.status === 'approved' && <button className="act danger" type="button" disabled={busyId === d.id} title="Hides the shop and all its products; you can reinstate later" onClick={() => suspendSeller(d)}>Deactivate</button>}
+                      {d.status !== 'removed' && <button className="act danger" type="button" disabled={busyId === d.id} title="Deletes their products and closes the shop for good" onClick={() => removeSeller(d)}>Remove seller</button>}
+                      {d.status === 'suspended' && <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'reinstate')}>Reinstate</button>}
+                      <button className="act ghost" type="button" onClick={() => setSellerDetail(null)}>Close</button>
+                    </div>
+                  </header>
+                  {d.rejection_reason && <p className="admin-cash-holding overdue">{d.status === 'needs_changes' ? 'Changes requested: ' : 'Reason: '}{d.rejection_reason}</p>}
+                  {d.status === 'needs_changes' && <p className="muted">Waiting on the seller to edit and resubmit.</p>}
+
+                  {d.shop && (
+                    <div className="crm-stats">
+                      <div><b>{money(Math.max(0, d.available_cents ?? 0), d.currency)}</b><span>Available to pay out</span></div>
+                      <div><b>{money(d.pending_cents ?? 0, d.currency)}</b><span>Held for returns</span></div>
+                      <div><b>{money(d.balance_cents ?? 0, d.currency)}</b><span>Total balance</span></div>
+                      <div><b>{money(d.min_payout_cents ?? 0, d.currency)}</b><span>Minimum payout</span></div>
+                      <div><b>{d.shop.is_active ? 'Live' : 'Hidden'}</b><span>Shop</span></div>
+                    </div>
+                  )}
+
+                  <div className="seller-page-grid">
+                    <section className="seller-card">
+                      <h4>Business</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Company</dt><dd>{d.company_name}</dd></div>
+                        <div><dt>Type</dt><dd>{d.business_type}</dd></div>
+                        <div><dt>Country</dt><dd>{d.country}</dd></div>
+                        <div><dt>Tax ID</dt><dd>{d.tax_id}</dd></div>
+                        <div><dt>Registered address</dt><dd>{address([d.registered_line1, d.registered_line2, d.registered_city, d.registered_state, d.registered_postal_code, d.registered_country])}</dd></div>
+                      </dl>
+                    </section>
+
+                    <section className="seller-card">
+                      <h4>Tax information</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Registered tax ID</dt><dd>{d.tax_id || '—'}</dd></div>
+                        <div><dt>{d.country === 'IN' ? 'GSTIN / PAN' : 'Tax number'}</dt><dd>{d.tax_info?.tax_number || 'Not added yet'}</dd></div>
+                        {d.tax_info?.enrolment_number && <div><dt>GST enrolment</dt><dd>{d.tax_info.enrolment_number}</dd></div>}
+                        {d.tax_info?.tax_code && <div><dt>Default item tax code</dt><dd>{d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}</dd></div>}
+                        <div><dt>Status</dt><dd>{d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}</dd></div>
+                        {d.tax_info?.terms_accepted_at && <div><dt>Tax terms accepted</dt><dd>{new Date(d.tax_info.terms_accepted_at).toLocaleString()}</dd></div>}
+                      </dl>
+                      {d.tax_info?.certificate_path && <div className="admin-form-actions"><button className="act ghost" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>Tax certificate{d.tax_info.certificate_name ? ` (${d.tax_info.certificate_name})` : ''}</button></div>}
+                    </section>
+
+                    <section className="seller-card">
+                      <h4>Seller &amp; contact</h4>
+                      <dl className="admin-dl">
+                        <div><dt>Name</dt><dd>{d.contact_name}</dd></div>
+                        <div><dt>Email</dt><dd>{d.user?.email}</dd></div>
+                        <div><dt>ID</dt><dd>{SELLER_ID_TYPE_LABELS[d.id_type] ?? d.id_type}: {d.id_number}</dd></div>
+                        <div><dt>Date of birth</dt><dd>{String(d.date_of_birth ?? '').slice(0, 10)}</dd></div>
+                        <div><dt>Pickup</dt><dd>{d.pickup_phone}{d.pickup_phone ? ' · ' : ''}{d.pickup_same_as_registered ? 'Same as registered address' : address([d.pickup_line1, d.pickup_line2, d.pickup_city, d.pickup_state, d.pickup_postal_code, d.pickup_country])}</dd></div>
+                      </dl>
+                      <div className="admin-form-actions">
+                        <button className="act ghost" type="button" onClick={() => viewKycDocument(d.id_document_path)}>ID document</button>
+                        <button className="act ghost" type="button" onClick={() => viewKycDocument(d.business_document_path)}>Business document</button>
+                      </div>
+                    </section>
+
+                    {d.shop && (
+                      <section className="seller-card">
+                        <h4>Shop &amp; shipping</h4>
+                        <dl className="admin-dl">
+                          <div><dt>Shop</dt><dd>{d.shop.name} ({d.shop.is_active ? 'live' : 'hidden'})</dd></div>
+                          {d.cod && <div><dt>Cash on delivery</dt><dd>
+                            {d.cod.mode === 'off' ? 'Off for all sellers (Settings → Seller shipping)' : d.cod.mode === 'all' ? `Allowed for all sellers — ${d.cod.accepts ? 'on in their shop' : 'they haven’t switched it on'}` : d.cod.approved ? `Allowed — ${d.cod.accepts ? 'on in their shop' : 'they haven’t switched it on'}` : 'Not allowed'}
+                            {d.cod.owed_cents > 0 && <span className="admin-note" style={{ color: '#a23b28' }}>Owes {brandName()} {money(d.cod.owed_cents, d.currency)}{d.cod.owed_cents > d.cod.max_owed_cents ? ' — over the limit, paused' : ''}</span>}
+                            {d.cod.mode === 'approved' && <button className={d.cod.approved ? 'act ghost' : 'act'} type="button" disabled={busyId === d.id} style={{ marginLeft: 8 }} onClick={() => { if (d.cod.approved || window.confirm(`Allow cash on delivery for ${d.shop.name}? They keep the cash; ${brandName()}’s share comes out of their next orders’ earnings.`)) sellerAction(d, 'cod', { approved: !d.cod.approved }) }}>{d.cod.approved ? 'Stop cash on delivery' : 'Allow cash on delivery'}</button>}
+                          </dd></div>}
+                          <div><dt>Shipping</dt><dd>{{ nextech: `${brandName()} collects & delivers this seller’s orders`, self: 'Ships with their own courier (tracking entered in Seller Center)', label: `Ships on ${brandName()}-bought labels (postage deducted from earnings)` }[d.shop.fulfillment_mode ?? 'nextech']}</dd></div>
+                        </dl>
+                      </section>
+                    )}
+
+                    {d.shop && d.requirement_rules && (
+                      <section className="seller-card">
+                        <h4>Requirements</h4>
+                        <p className="muted">Extra rules for this seller — off by default. Listing checks, shipping setup, the onboarding checklist and the store-design minimum always apply.</p>
+                        <div className="seller-switches">
+                          {Object.entries(d.requirement_rules).map(([key, [label, help]]) => (
+                            <label className="seller-switch" key={key}>
+                              <input type="checkbox" checked={!!d.requirements?.[key]} disabled={busyId === d.id} onChange={(event) => sellerAction(d, 'requirements', { [key]: event.target.checked })} />
+                              <span><b>{label}</b><small className="muted">{help}</small></span>
+                            </label>
+                          ))}
+                        </div>
+                      </section>
+                    )}
+
+                    {d.status === 'approved' && (
+                      <section className="seller-card wide">
+                        <h4>Onboarding tasks</h4>
+                        <div className="seller-tasks">
+                          <div>
+                            <p><b>1. Tax information</b> — {d.tax_status ? STATUS_TEXT[d.tax_status] : d.tax_info?.tax_number ? 'Step 2 not done' : 'Not started'}{d.tax_submitted_at ? ` · submitted ${new Date(d.tax_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.tax_note && <p className="muted">“{d.tax_note}”</p>}
+                            {d.tax_info?.tax_number && <p className="muted">Tax number {d.tax_info.tax_number} (registered: {d.tax_id}){d.tax_info.enrolment_number ? ` · GST enrolment ${d.tax_info.enrolment_number}` : ''}{d.tax_info.tax_code ? ` · default item tax code: ${d.tax_codes?.[d.tax_info.tax_code] ?? d.tax_info.tax_code}` : ''}{d.tax_info.certificate_path && <> · <button className="link" type="button" onClick={() => viewKycDocument(d.tax_info.certificate_path)}>View certificate</button></>}</p>}
+                            {reviewButtons('tax', d.tax_status, d.tax_status === 'pending')}
+                          </div>
+                          <div>
+                            <p><b>2. Compliance information</b> — {d.compliance_status ? STATUS_TEXT[d.compliance_status] : 'Not started'}{d.compliance_submitted_at ? ` · submitted ${new Date(d.compliance_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.compliance_note && <p className="muted">“{d.compliance_note}”</p>}
+                            {people.map((p) => (
+                              <p className="muted" key={p.id}>{p.legal_name}{p.is_primary ? ' (primary contact)' : ''} — {p.roles.map((r) => roleNames[r]).join(', ')}{p.ownership_pct != null ? ` · ${p.ownership_pct}% owned` : ''} · born {p.date_of_birth} in {p.place_of_birth} · citizen of {p.citizenship} · {p.id_type} {p.id_number} ({p.id_country}, expires {p.id_expiry}) · {address([p.address?.line1, p.address?.line2, p.address?.city, p.address?.state, p.address?.postal_code, p.address?.country])}</p>
+                            ))}
+                            {(d.compliance?.documents ?? []).length > 0 && (
+                              <div className="admin-form-actions">
+                                {d.compliance.documents.map((doc) => <button key={doc.path} className="act ghost" type="button" onClick={() => viewKycDocument(doc.path)}>{d.corporate_document_types?.[doc.type] ?? doc.type}</button>)}
+                              </div>
+                            )}
+                            {reviewButtons('compliance', d.compliance_status, d.compliance_status === 'pending')}
+                          </div>
+                          <div>
+                            <p><b>3. Bank account</b> — {d.bank_status ? STATUS_TEXT[d.bank_status] : 'Not started'}{d.bank_submitted_at ? ` · submitted ${new Date(d.bank_submitted_at).toLocaleDateString()}` : ''}</p>
+                            {d.bank_note && <p className="muted">“{d.bank_note}”</p>}
+                            {d.payout_details?.document_path && <p className="muted">Check the bank document matches: holder, {d.payout_details.bank_code_label ?? 'routing number'} and account number, issued {d.payout_details.document_issued_on} (must be within 180 days). <button className="link" type="button" onClick={() => viewKycDocument(d.payout_details.document_path)}>View bank document</button></p>}
+                            {reviewButtons('bank', d.bank_status, d.bank_status === 'processing')}
+                          </div>
+                        </div>
+                      </section>
+                    )}
+
+                    {d.shop && (
+                      <section className="seller-card wide">
+                        <h4>Payouts</h4>
+                        {d.pending_payout_request && <p className="admin-payout-request">💸 Seller requested <strong>{money(d.pending_payout_request.amount_cents, d.currency)}</strong> on {new Date(d.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>}
+                        <p className="muted">{d.payout_method
+                          ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.email}</>)
+                          : 'No payout method on file yet.'}
+                          {d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
+                        {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => (p.order_missing ? `${money(p.amount_cents, d.currency)} sale credit with no order on record (held — check the ledger)` : `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`)).join(' · ')}</p>}
+                        {d.status === 'approved' && (
+                          <div className="admin-form-actions">
+                            {(d.available_cents ?? 0) >= (d.min_payout_cents ?? 0) && (d.available_cents ?? 0) > 0 && <button className="act" type="button" disabled={busyId === d.id} onClick={() => recordSellerPayout(d)}>Record payout</button>}
+                            {d.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => rejectPayoutRequest(d)}>Decline request</button>}
+                            {(d.available_cents ?? 0) < (d.min_payout_cents ?? 0) && <span className="muted">Available balance is below the {money(d.min_payout_cents ?? 0, d.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</span>}
+                          </div>
+                        )}
+                        <SellerLedgerTable sellerId={d.id} authHeaders={authHeaders} labels={LEDGER_TYPE_LABELS} />
+                      </section>
+                    )}
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
+      <AdminChatDock authHeaders={authHeaders} issueLabels={ISSUE_LABELS} onSupportDetails={openThread} />
+
+      {listingReview && (
+        <ListingReview
+          product={listingReview}
+          currency={MARKET_CURRENCY[listingReview.market]}
+          authHeaders={authHeaders}
+          jsonHeaders={jsonHeaders}
+          viewDocument={viewKycDocument}
+          busy={busyId === listingReview.id}
+          fail={fail}
+          onClose={() => setListingReview(null)}
+          onAction={(action) => (action === 'approve' ? approveProduct(listingReview) : rejectProduct(listingReview))}
+        />
       )}
 
       {orderDetail && (() => {
@@ -3100,16 +4646,45 @@ export default function Admin({ token, onClose }) {
               <p className="muted">{new Date(o.created_at).toLocaleString()} · <span className={`pill pill-${o.payment_status}`}>{o.payment_status}</span> · {STATUS_LABELS[o.status] ?? o.status}</p>
               <p className="muted">{o.user?.display_name ? `${o.user.display_name} · ` : ''}{o.user?.email ?? '—'}{(addr.phone || o.user?.phone) ? ` · ☎ ${addr.phone || o.user.phone}` : ''}</p>
 
+              {(() => {
+                // A buyer asked to ship somewhere else before the order left.
+                const change = (orderDetail.address_changes ?? o.address_changes ?? []).find((c) => c.status === 'pending')
+                if (!change) return null
+                const a = change.address ?? {}
+                const decide = async (decision) => {
+                  const note = decision === 'decline' ? window.prompt('Why can’t the address be changed? The buyer sees this.', '') : null
+                  if (decision === 'decline' && !note) return
+                  try {
+                    const response = await fetch(`${API_URL}/admin/orders/${o.id}/address-change/${change.id}`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision, note }) })
+                    const data = await readJson(response)
+                    if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not update the request.')
+                    setOrderDetail(data.data)
+                    setOrders((current) => current.map((x) => (x.id === o.id ? { ...x, ...data.data } : x)))
+                  } catch (error) { fail(error) }
+                }
+                return (
+                  <div className="admin-payout-request">
+                    <p><strong>Buyer asked to change the shipping address</strong> ({new Date(change.created_at).toLocaleString()})</p>
+                    <p className="muted">New: {[a.name, a.line1, a.line2, [a.city, a.state, a.postal_code].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</p>
+                    {(o.items ?? []).some((i) => i.fulfilled_by === 'seller') && <p className="muted">The seller shipping it can also accept or decline this in their Seller Center.</p>}
+                    <div className="admin-form-actions">
+                      <button className="act" type="button" onClick={() => decide('approve')}>Accept new address</button>
+                      <button className="act ghost" type="button" onClick={() => decide('decline')}>Decline</button>
+                    </div>
+                  </div>
+                )
+              })()}
+
               <h4>Items ({o.items?.length ?? 0})</h4>
               <table className="admin-table admin-order-items">
                 <thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr></thead>
                 <tbody>
                   {(o.items ?? []).map((it) => (
                     <tr key={it.id}>
-                      <td>{it.product_name}{it.variant_label && <span className="admin-note">{it.variant_label}</span>}</td>
+                      <td>{it.product_name}{it.variant_label && <span className="admin-note">{it.variant_label}</span>}<PersonalizationView value={it.personalization} download /></td>
                       <td>{it.quantity}</td>
-                      <td>{money(it.unit_price_cents)}</td>
-                      <td>{money(it.line_total_cents)}</td>
+                      <td>{money(it.unit_price_cents, o.currency)}</td>
+                      <td>{money(it.line_total_cents, o.currency)}</td>
                     </tr>
                   ))}
                   {(o.items ?? []).length === 0 && <tr><td colSpan="4" className="muted">No items recorded.</td></tr>}
@@ -3117,20 +4692,20 @@ export default function Admin({ token, onClose }) {
               </table>
 
               <dl className="admin-order-totals">
-                <div><dt>Subtotal</dt><dd>{money(o.subtotal_cents)}</dd></div>
-                {o.tax_cents > 0 && <div><dt>Tax</dt><dd>{money(o.tax_cents)}</dd></div>}
-                {o.delivery_fee_cents > 0 && <div><dt>Delivery</dt><dd>{money(o.delivery_fee_cents)}</dd></div>}
-                {o.handling_fee_cents > 0 && <div><dt>Handling</dt><dd>{money(o.handling_fee_cents)}</dd></div>}
-                {o.small_cart_fee_cents > 0 && <div><dt>Small-cart fee</dt><dd>{money(o.small_cart_fee_cents)}</dd></div>}
-                {o.gift_card_discount_cents > 0 && <div><dt>Gift card</dt><dd>−{money(o.gift_card_discount_cents)}</dd></div>}
-                {o.refunded_amount_cents > 0 && <div><dt>Refunded</dt><dd>−{money(o.refunded_amount_cents)}</dd></div>}
-                <div className="admin-order-grand"><dt>Total</dt><dd>{money(o.total_cents)}</dd></div>
+                <div><dt>Subtotal</dt><dd>{money(o.subtotal_cents, o.currency)}</dd></div>
+                {o.tax_cents > 0 && <div><dt>Tax</dt><dd>{money(o.tax_cents, o.currency)}</dd></div>}
+                {o.delivery_fee_cents > 0 && <div><dt>Delivery</dt><dd>{money(o.delivery_fee_cents, o.currency)}</dd></div>}
+                {o.handling_fee_cents > 0 && <div><dt>Handling</dt><dd>{money(o.handling_fee_cents, o.currency)}</dd></div>}
+                {o.small_cart_fee_cents > 0 && <div><dt>Small-cart fee</dt><dd>{money(o.small_cart_fee_cents, o.currency)}</dd></div>}
+                {o.gift_card_discount_cents > 0 && <div><dt>Gift card</dt><dd>−{money(o.gift_card_discount_cents, o.currency)}</dd></div>}
+                {o.refunded_amount_cents > 0 && <div><dt>Refunded</dt><dd>−{money(o.refunded_amount_cents, o.currency)}</dd></div>}
+                <div className="admin-order-grand"><dt>Total</dt><dd>{money(o.total_cents, o.currency)}</dd></div>
               </dl>
 
               {(o.gift_cards ?? []).length > 0 && (
                 <div className="admin-gift-issued">
                   {o.gift_cards.map((g) => (
-                    <p key={g.id}>🎁 Gift card <b>{g.code}</b> — {money(g.initial_cents)} issued{g.balance_cents !== g.initial_cents ? `, ${money(g.balance_cents)} left` : ''}{g.reason ? ` — ${g.reason}` : ''}{g.issued_by?.name ? ` (by ${g.issued_by.name})` : ''}</p>
+                    <p key={g.id}>🎁 Gift card <b>{g.code}</b> — {money(g.initial_cents, o.currency)} issued{g.balance_cents !== g.initial_cents ? `, ${money(g.balance_cents, o.currency)} left` : ''}{g.reason ? ` — ${g.reason}` : ''}{g.issued_by?.name ? ` (by ${g.issued_by.name})` : ''}</p>
                   ))}
                 </div>
               )}
@@ -3138,7 +4713,7 @@ export default function Admin({ token, onClose }) {
               {(o.refunds ?? []).length > 0 && (
                 <div className="admin-gift-issued">
                   {o.refunds.map((r) => (
-                    <p key={r.id}>↩ Refund <b>{money(r.amount_cents)}</b>{r.reason ? ` — ${r.reason}` : ''}{r.creator?.name ? ` (by ${r.creator.name})` : ''} · {new Date(r.created_at).toLocaleDateString()}</p>
+                    <p key={r.id}>↩ Refund <b>{money(r.amount_cents, o.currency)}</b>{r.reason ? ` — ${r.reason}` : ''}{r.creator?.name ? ` (by ${r.creator.name})` : ''} · {new Date(r.created_at).toLocaleDateString()}</p>
                   ))}
                 </div>
               )}
@@ -3147,6 +4722,42 @@ export default function Admin({ token, onClose }) {
               <p className="muted">{addrLine || 'No address on file'}</p>
               {o.delivery_instructions && <p className="muted">Note: &ldquo;{o.delivery_instructions}&rdquo;</p>}
               <p className="muted">{o.payment_method === 'cod' ? 'Cash on delivery (C.O.D.)' : 'Card'}{(o.delivery_partner?.name || o.courier_name) ? ` · Courier: ${o.delivery_partner?.name || o.courier_name}` : ''}{o.store ? ` · Fulfilled by ${o.store.name}` : ''}</p>
+              <OrderLabelRequests order={o} authHeaders={authHeaders} onChanged={(msg) => { setMessage(msg); openOrderById(o.id) }} />
+              {(o.shop_shipping ?? []).length > 0 && (
+                <div className="admin-seller-ship">
+                  {o.shop_shipping.map((ss) => {
+                    const pks = (o.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
+                    return (
+                      <div key={ss.id}>
+                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
+                        {pks.length === 0 && <p className="muted">Not shipped yet{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
+                        {pks.map((pk) => (
+                          <div key={pk.id} className="muted admin-pkg">
+                            📦 {pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number}
+                            {' · '}<span className={`pill pill-${pk.status}`}>{pk.status.replace('_', ' ')}</span>
+                            {' · '}{(pk.items ?? []).reduce((n, it) => n + it.quantity, 0)} item(s) · shipped {new Date(pk.shipped_at).toLocaleDateString()}{pk.edit_count ? ` · tracking edited ${pk.edit_count}×` : ''}
+                            <PackageProgress pkg={pk} packedAt={ss.packed_at} cod={o.payment_method === 'cod'} />
+                            <TrackingTimeline pkg={pk} />
+                            {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}
+                            {' '}<button type="button" className="link" disabled={busyId === o.id} onClick={() => editPackageTracking(o, pk)}>Edit tracking</button>
+                            {pk.status !== 'delivered' && <button type="button" className="link" disabled={busyId === o.id} onClick={() => patchPackage(o, pk, { status: 'delivered' })}> Mark delivered</button>}
+                            {!['lost', 'delivered'].includes(pk.status) && <button type="button" className="link" disabled={busyId === o.id} onClick={() => { if (window.confirm('Mark this package as lost?')) patchPackage(o, pk, { status: 'lost' }) }}> Lost</button>}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+              {o.delivery_method === 'online_courier' && (
+                o.shipment ? (
+                  <p className="muted">Tracking {o.shipment.tracking_number} · <span className={`pill pill-${o.shipment.status}`}>{o.shipment.status.replace('_', ' ')}</span>
+                    {o.status !== 'completed' && o.status !== 'cancelled' && o.shipment.status !== 'delivered' && (
+                      <button type="button" className="link" disabled={busyId === o.id} onClick={() => syncTracking(o)}> Sync tracking</button>
+                    )}
+                  </p>
+                ) : <p className="muted">Online courier — awaiting booking.</p>
+              )}
               {o.rider_accepted_at && <p className="muted">Accepted{o.delivery_partner?.name ? ` by ${o.delivery_partner.name}` : ''} · {new Date(o.rider_accepted_at).toLocaleString()}</p>}
               {!o.rider_accepted_at && o.rider_offer_expires_at && <p className="muted">Offered{o.delivery_partner?.name ? ` to ${o.delivery_partner.name}` : ''}, expires {new Date(o.rider_offer_expires_at).toLocaleString()}</p>}
               {o.rider_offer_decline_count > 0 && <p className="muted">Declined or missed by {o.rider_offer_decline_count} rider{o.rider_offer_decline_count === 1 ? '' : 's'} before this assignment.</p>}
@@ -3244,6 +4855,35 @@ export default function Admin({ token, onClose }) {
                         Holding <b>{money(riderDetail.rider.cash_holding_cents)}</b> in cash{riderDetail.rider.cash_holding_since ? ` from ${new Date(riderDetail.rider.cash_holding_since).toLocaleDateString()}` : ''} on COD deliveries.
                         <button type="button" className="act" disabled={busyId === riderDetail.rider.id} onClick={() => settleRiderCash(riderDetail.rider)}>Confirm cash returned</button>
                       </p>
+                    )}
+
+                    {riderDetail.pay && (
+                      <>
+                        <h4>Pay</h4>
+                        <div className="admin-rider-stats">
+                          <span><strong>{money(riderDetail.pay.balance_cents)}</strong> earned, unpaid</span>
+                          <span><strong>{money(riderDetail.pay.cash_holding_cents)}</strong> cash held</span>
+                          <span><strong>{money(riderDetail.pay.owed_cents)}</strong> owed</span>
+                          <span><strong>{money(riderDetail.pay.paid_total_cents)}</strong> paid to date</span>
+                        </div>
+                        <p className="muted">{riderDetail.pay.payout_method === 'bank'
+                          ? `Bank — ${riderDetail.pay.payout_details?.holder_name}, ${riderDetail.pay.payout_details?.bank_name}, acct ${riderDetail.pay.payout_details?.account_number} · routing ${riderDetail.pay.payout_details?.routing_number}`
+                          : riderDetail.pay.payout_method === 'paypal' ? `PayPal — ${riderDetail.pay.payout_details?.email}` : 'No payout method on file yet.'}</p>
+                        {riderDetail.pay.pending_payout_request && (
+                          <p className="admin-payout-request">🛵 Rider requested <strong>{money(riderDetail.pay.pending_payout_request.amount_cents)}</strong> on {new Date(riderDetail.pay.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>
+                        )}
+                        <div className="admin-form-actions">
+                          <button className="act" type="button" disabled={busyId === riderDetail.rider.id || riderDetail.pay.owed_cents <= 0} onClick={() => recordRiderPayout(riderDetail.rider, riderDetail.pay)}>Record payout</button>
+                          {riderDetail.pay.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === riderDetail.rider.id} onClick={() => declineRiderPayout(riderDetail.rider)}>Decline request</button>}
+                        </div>
+                        {(riderDetail.pay.entries ?? []).length > 0 && (
+                          <div className="admin-gift-issued">
+                            {riderDetail.pay.entries.map((e) => (
+                              <p key={e.id}>{e.type === 'payout_debit' ? 'Payout' : `Delivery #${e.order_id ?? '—'}`} <b>{e.amount_cents >= 0 ? '+' : '−'}{money(Math.abs(e.amount_cents))}</b>{e.distance_miles != null ? ` · ${e.distance_miles} mi` : ''}{e.note ? ` — ${e.note}` : ''} · {new Date(e.created_at).toLocaleDateString()}</p>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <h4>Attendance</h4>

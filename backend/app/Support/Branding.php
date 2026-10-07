@@ -12,6 +12,14 @@ class Branding
     /** @var list<string> */
     private const COLORS = ['color_brand', 'color_accent', 'color_heading'];
 
+    /** The store's name as set in Store settings — used wherever the store names itself (emails, messages, errors). */
+    public static function name(): string
+    {
+        $name = trim((string) (self::current()['store_name'] ?? ''));
+
+        return $name !== '' ? $name : (string) config('app.name', 'NexTech');
+    }
+
     /**
      * Effective branding: config defaults overlaid with the admin-saved values,
      * normalised so the storefront can trust every field.

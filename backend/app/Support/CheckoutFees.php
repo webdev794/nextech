@@ -14,8 +14,16 @@ class CheckoutFees
     /**
      * @return array<string, int|string>
      */
-    public static function current(): array
+    public static function current(?string $market = null): array
     {
+        // Other markets: their own defaults (config/markets.php) with admin
+        // overrides under "checkout_fees_<CODE>".
+        $market = $market === null ? Market::home() : strtoupper($market);
+        $marketDefaults = Market::profile($market)['fees'] ?? null;
+        if (is_array($marketDefaults)) {
+            return self::merge($marketDefaults, Setting::get('checkout_fees_'.$market, []));
+        }
+
         $defaults = [
             'delivery_mode' => (string) config('checkout.delivery_mode', 'fixed'),
             'delivery_fee_cents' => (int) config('checkout.delivery_fee_cents'),
@@ -28,7 +36,15 @@ class CheckoutFees
             'tax_rate_bps' => (int) config('checkout.tax_rate_bps'),
         ];
 
-        $override = Setting::get('checkout_fees', []);
+        return self::merge($defaults, Setting::get('checkout_fees', []));
+    }
+
+    /**
+     * @param  array<string, int|string>  $defaults
+     * @return array<string, int|string>
+     */
+    private static function merge(array $defaults, mixed $override): array
+    {
         $override = is_array($override) ? array_intersect_key($override, $defaults) : [];
 
         $merged = array_merge($defaults, $override);

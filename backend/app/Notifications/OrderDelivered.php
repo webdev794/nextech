@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\Order;
 use App\Support\Branding;
+use App\Support\Money;
 use App\Support\OrderReceipt;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -27,7 +28,7 @@ class OrderDelivered extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $order = $this->order->loadMissing('items');
-        $money = fn ($cents) => '$'.number_format(((int) $cents) / 100, 2);
+        $money = fn ($cents) => Money::format((int) $cents, $order->currency);
 
         $brand = Branding::current();
         $brandName = ($brand['store_name'] ?? '') !== '' ? $brand['store_name'] : config('app.name');

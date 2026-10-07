@@ -1,0 +1,294 @@
+<?php
+
+namespace App\Support;
+
+use App\Support\DownloadLinkCheck;
+use App\Support\DigitalProducts;
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\Shop;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+/**
+ * Products -> Bulk import products. The seller fills in the template the
+ * browser generated (one row per SKU; rows sharing a "Contribution Goods"
+ * code are one product) and uploads it; the browser reads the sheet into
+ * rows keyed by the template's column keys and this turns them into
+ * products. Complete products are submitted for review; ones with errors
+ * are saved as drafts (Manage products -> Incomplete) and the result for
+ * every row says what to fix.
+ */
+class ProductUpload
+{
+    public const MAX_CATEGORIES = 5;
+
+    public const MAX_ROWS = 500;
+
+    /** Columns that describe the product and must match on every row (SKU) of it. */
+    private const PRODUCT_COLUMNS = [
+        'category', 'product_name', 'brand', 'description', 'variation_theme', 'handling_time', 'shipping_template',
+        'country_of_origin', 'province_of_origin', 'product_video_url', 'detail_video_url', 'hsn_code', 'gst_rate', 'manufacturer_info',
+    ];
+
+    /**
+     * @param  list<array<string, mixed>>  $rows
+     * @param  list<int>  $categoryIds  the categories the template was generated for
+     * @return array{results: list<array<string, mixed>>, error_records: int}
+     */
+    public static function process(Shop $shop, array $rows, array $categoryIds, bool $digital = false): array
+    {
+        $picked = Category::whereIn('id', $categoryIds)->get();
+        // A category can be written as its name or its full path ("Downloadable › Games › Arcade").
+        $categories = $picked->keyBy(fn ($c) => mb_strtolower($c->name))->merge($picked->keyBy(fn ($c) => mb_strtolower($c->path())));
+        $trademarks = $shop->trademarks()->where('status', 'approved')->get()->keyBy(fn ($t) => mb_strtolower($t->name));
+        $templates = $shop->shippingTemplates()->get()->keyBy(fn ($t) => mb_strtolower($t->name));
+        $types = (array) config('product_catalog.variation_types');
+
+        // Same gate as the Add product form: without a way to ship, products
+        // can only be saved as drafts.
+        $strict = SellerRequirements::on($shop, 'listing_details');
+        $gstRequired = SellerRequirements::on($shop, 'gst_details');
+        $shippingBlock = $digital || ! SellerRequirements::on($shop, 'shipping_setup') ? null : match (true) {
+            $shop->shipsItself() && ! $shop->shippingTemplates()->exists() => 'Create a shipping template in Shipping settings before submitting products.',
+            ! $shop->shipsItself() && SellerShipping::nextechPickup() !== 'available' => \App\Support\Branding::name().' pickup isn’t offered anymore — set up your own shipping in Shipping settings before submitting products.',
+            default => null,
+        };
+
+        $groups = [];
+        foreach ($rows as $i => $row) {
+            $row = array_map(fn ($v) => is_string($v) ? trim($v) : $v, (array) $row);
+            if (! array_filter($row, fn ($v) => $v !== null && $v !== '')) {
+                continue; // blank line
+            }
+            $code = $digital ? '' : (string) ($row['contribution_goods'] ?? '');
+            $groups[$code !== '' ? 'g:'.mb_strtolower($code) : 'r:'.$i][] = ['index' => $i, 'row' => $row];
+        }
+
+        $results = [];
+        $errorRows = 0;
+        foreach ($groups as $group) {
+            $first = $group[0]['row'];
+            $messages = [];
+
+            foreach (self::PRODUCT_COLUMNS as $column) {
+                $values = collect($group)->map(fn ($g) => (string) ($g['row'][$column] ?? ''))->unique();
+                if ($values->count() > 1) {
+                    $messages[] = self::label($column).' must be the same on every SKU of the product.';
+                }
+            }
+
+            $category = $categories->get(mb_strtolower((string) ($first['category'] ?? '')));
+            if ($category && ($category->kind === 'digital') !== $digital) {
+                $messages[] = '"'.$category->name.'" is a '.($digital ? 'physical' : 'digital').' category — use the '.($category->kind === 'digital' ? 'Digital downloads' : 'Physical products').' template for it.';
+            }
+            if (! $category) {
+                $messages[] = ($first['category'] ?? '') === ''
+                    ? 'Choose a category.'
+                    : '"'.$first['category'].'" isn’t one of the categories this template was made for — generate a new template to add it.';
+            }
+
+            $trademarkId = null;
+            if (($first['brand'] ?? '') !== '') {
+                $trademarkId = $trademarks->get(mb_strtolower($first['brand']))?->id;
+                if (! $trademarkId) {
+                    $messages[] = 'Brand "'.$first['brand'].'" isn’t an approved trademark — register it under Account health first.';
+                }
+            }
+
+            $templateId = null;
+            if (($first['shipping_template'] ?? '') !== '') {
+                $templateId = $templates->get(mb_strtolower($first['shipping_template']))?->id;
+                if (! $templateId) {
+                    $messages[] = 'No shipping template is called "'.$first['shipping_template'].'".';
+                }
+            }
+
+            $theme = $digital ? [] : array_values(array_filter(array_map('trim', preg_split('/\s*(?:×|x|X|\*|\+)\s*/u', (string) ($first['variation_theme'] ?? '')) ?: [])));
+            if (array_diff($theme, $types)) {
+                $messages[] = 'Variation theme "'.$first['variation_theme'].'" isn’t one of: '.implode(', ', $types).'.';
+                $theme = array_values(array_intersect($theme, $types));
+            }
+            if (! $theme && count($group) > 1) {
+                $messages[] = 'Several SKUs share this Contribution Goods code — choose a variation theme.';
+            }
+
+            $details = [];
+            foreach (ProductCatalog::attributesFor($category, $digital) as $field) {
+                $value = $first['detail_'.$field['key']] ?? null;
+                if ($value === null || $value === '') {
+                    continue;
+                }
+                $details[$field['key']] = $field['type'] === 'multiselect'
+                    ? array_values(array_filter(array_map('trim', explode(';', (string) $value))))
+                    : (string) $value;
+            }
+
+            $urls = fn (array $row, string $prefix, int $max) => collect(range(1, $max))->map(fn ($n) => (string) ($row[$prefix.$n] ?? ''))->filter()->values();
+            // Product images: image_url_1…10 (older templates: sku_image_url_1…10).
+            $productImages = fn (array $row) => $urls($row, 'image_url_', 10)->whenEmpty(fn () => $urls($row, 'sku_image_url_', 10));
+            $badUrls = collect($group)->flatMap(fn ($g) => [
+                ...$productImages($g['row']), $g['row']['variant_image_url'] ?? '', ...$urls($g['row'], 'detail_image_url_', 5),
+                $g['row']['product_video_url'] ?? '', $g['row']['detail_video_url'] ?? '', $g['row']['price_reference_url'] ?? '',
+            ])->filter()->reject(fn ($u) => preg_match('#^https?://\S+$#i', $u))->unique();
+            foreach ($badUrls as $bad) {
+                $messages[] = '"'.Str::limit($bad, 60).'" isn’t a public web address (it must start with http:// or https://).';
+            }
+
+            $variants = [];
+            if ($theme) {
+                foreach ($group as $n => $g) {
+                    $options = [];
+                    foreach ($theme as $t => $type) {
+                        $options[$type] = (string) ($g['row']['variation_value_'.($t + 1)] ?? '');
+                    }
+                    $variants[] = [
+                        'label' => implode(' / ', array_filter($options)) ?: 'Option '.($n + 1),
+                        'options' => $options,
+                        'seller_code' => ($g['row']['contribution_sku'] ?? '') ?: null, // older templates only
+                        'price_cents' => self::cents($g['row']['base_price'] ?? null),
+                        'inventory_quantity' => (int) ($g['row']['quantity'] ?? 0),
+                        'image_url' => ($g['row']['variant_image_url'] ?? '') ?: $productImages($g['row'])->first(),
+                        'weight_grams' => self::int($g['row']['weight_g'] ?? null),
+                        'length_mm' => self::int($g['row']['length_mm'] ?? null),
+                        'width_mm' => self::int($g['row']['width_mm'] ?? null),
+                        'height_mm' => self::int($g['row']['height_mm'] ?? null),
+                    ];
+                }
+            }
+
+            $images = $productImages($first)->all();
+            $handling = self::int($first['handling_time'] ?? null);
+            if ($handling !== null && ! in_array($handling, (array) config('product_catalog.handling_days'), true)) {
+                $messages[] = 'Handling time must be one of: '.implode(', ', (array) config('product_catalog.handling_days')).' days.';
+                $handling = null;
+            }
+            $data = [
+                'category_id' => $category?->id,
+                'name' => Str::limit((string) ($first['product_name'] ?? ''), 160, ''),
+                'seller_code' => ($first['contribution_goods'] ?? '') ?: null,
+                'trademark_id' => $trademarkId,
+                'description' => (string) ($first['description'] ?? ''),
+                'bullet_points' => $urls($first, 'bullet_point_', 5)->all(),
+                'detail_images' => $urls($first, 'detail_image_url_', 5)->all(),
+                'video_url' => ($first['product_video_url'] ?? '') ?: null,
+                'detail_video_url' => ($first['detail_video_url'] ?? '') ?: null,
+                'product_details' => $details,
+                'variation_theme' => $theme ?: null,
+                'price_cents' => $theme ? 0 : self::cents($first['base_price'] ?? null),
+                'inventory_quantity' => $theme ? 0 : (int) ($first['quantity'] ?? 0),
+                'handling_days' => $handling,
+                'shipping_template_id' => $templateId,
+                'country_of_origin' => trim(($first['country_of_origin'] ?? '').(($first['province_of_origin'] ?? '') !== '' ? ' ('.$first['province_of_origin'].')' : '')) ?: null,
+                'price_references' => ($first['price_reference_url'] ?? '') !== '' ? [$first['price_reference_url']] : null,
+            ];
+            $download = null;
+            if ($digital) {
+                // A download: no shipping, stock follows license keys (unlimited by default),
+                // and the file is the seller's hosted link from the sheet.
+                $data['product_type'] = 'digital';
+                $data['inventory_quantity'] = DigitalProducts::UNLIMITED;
+                $data['handling_days'] = null;
+                $data['shipping_template_id'] = null;
+                $data['digital_settings'] = array_filter([
+                    'download_limit' => ($first['download_limit'] ?? '') !== '' ? max(0, min(100, (int) $first['download_limit'])) : null,
+                    'instructions' => ($first['install_instructions'] ?? '') ?: null,
+                ], fn ($v) => $v !== null);
+                $url = trim((string) ($first['download_url'] ?? ''));
+                if ($url === '') {
+                    $messages[] = 'Add the download link (or upload the file on the product after import).';
+                } else {
+                    $url = DownloadLinkCheck::normalize($url);
+                    $check = DownloadLinkCheck::check($url);
+                    if ($check['status'] === 'broken') {
+                        $messages[] = 'Download link: '.$check['note'];
+                    }
+                    $download = ['name' => (string) (($first['download_name'] ?? '') ?: 'Download'), 'external_url' => $url,
+                        'link_status' => $check['status'], 'link_note' => $check['note'], 'link_checked_at' => now(), 'size_bytes' => $check['size']];
+                }
+            }
+            if (Market::taxInclusive($shop->market)) {
+                $data['hsn_code'] = ($first['hsn_code'] ?? '') ?: null;
+                $data['gst_rate_bps'] = ($first['gst_rate'] ?? '') !== '' ? (int) round((float) $first['gst_rate'] * 100) : null;
+                $data['manufacturer_info'] = ($first['manufacturer_info'] ?? '') ?: null;
+                foreach (['hsn_code' => 'HSN code', 'gst_rate_bps' => 'GST rate', 'manufacturer_info' => 'Manufacturer / packer / importer'] as $key => $label) {
+                    if ($strict && empty($data[$key]) && ($key === 'manufacturer_info' || $gstRequired)) {
+                        $messages[] = $label.' is required.';
+                    }
+                }
+            }
+
+            if ($shippingBlock) {
+                $messages[] = $shippingBlock;
+            }
+            $messages = [...$messages, ...array_values(ProductCatalog::listingErrors($data, $category, $variants, $images, $shop->shipsItself(), $strict))];
+            if (count($variants) > Sku::MAX_VARIANTS) {
+                $messages[] = 'A product can have at most '.Sku::MAX_VARIANTS.' SKUs.';
+                $variants = array_slice($variants, 0, Sku::MAX_VARIANTS);
+            }
+
+            $productId = null;
+            if ($data['name'] !== '') {
+                $productId = DB::transaction(function () use ($shop, $data, $variants, $images, $messages, $download) {
+                    $product = Product::create($data + [
+                        'shop_id' => $shop->id,
+                        'status' => $messages ? 'draft' : 'pending',
+                        'slug' => self::slug($data['name']),
+                        'sku' => Sku::nextForShop($shop),
+                    ]);
+                    ProductVariants::sync($product, $variants);
+                    ProductImages::sync($product, $images);
+                    if ($download) {
+                        $product->files()->create($download + ['sort_order' => 1]);
+                    }
+
+                    return $product->id;
+                });
+            } else {
+                $messages[] = 'Enter a product name.';
+            }
+
+            $status = ! $productId ? 'failed' : ($messages ? 'draft' : 'submitted');
+            foreach ($group as $g) {
+                $results[] = ['row' => $g['index'], 'status' => $status, 'product_id' => $productId, 'messages' => array_values(array_unique($messages))];
+            }
+            if ($messages) {
+                $errorRows += count($group);
+            }
+        }
+
+        usort($results, fn ($a, $b) => $a['row'] <=> $b['row']);
+
+        return ['results' => $results, 'error_records' => $errorRows];
+    }
+
+    private static function cents(mixed $value): int
+    {
+        $number = (float) preg_replace('/[^\d.]/', '', (string) $value);
+
+        return (int) round($number * 100);
+    }
+
+    private static function int(mixed $value): ?int
+    {
+        $digits = preg_replace('/[^\d]/', '', (string) $value);
+
+        return $digits === '' ? null : (int) $digits;
+    }
+
+    private static function label(string $column): string
+    {
+        return Str::of($column)->replace('_', ' ')->ucfirst()->toString();
+    }
+
+    private static function slug(string $name): string
+    {
+        $base = Str::slug($name) ?: 'product';
+        $slug = $base;
+        for ($n = 2; Product::where('slug', $slug)->exists(); $n++) {
+            $slug = "{$base}-{$n}";
+        }
+
+        return $slug;
+    }
+}

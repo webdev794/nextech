@@ -8,11 +8,24 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Throwable;
 
 class MediaController extends Controller
 {
+    /**
+     * Product photos (folder=products, both the admin and seller upload paths
+     * land here) get a stricter bar than other image folders: square (1:1,
+     * like Temu's non-apparel image standard), at most 3 MB, JPEG/PNG only. Other folders (categories/stores/banners/shops) have their own
+     * natural aspect ratios and are unaffected.
+     */
+    private const PRODUCT_IMAGE_RULES = [
+        'mimes:jpg,jpeg,png',
+        'max:3072',
+        'dimensions:min_width=400,min_height=400,ratio=1/1',
+    ];
+
     /**
      * Store on storage/app/public/{folder} (unchanged layout).
      *
@@ -22,9 +35,14 @@ class MediaController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $folder = $request->input('folder', 'products');
+
         $validated = $request->validate([
-            'file' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
-            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners'],
+            'file' => array_merge(
+                ['required', 'file'],
+                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', $folder === 'personalization' ? 'max:15360' : 'max:4096']
+            ),
+            'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support,reviews,personalization'],
         ]);
 
         $folder = $validated['folder'] ?? 'products';
@@ -62,6 +80,86 @@ class MediaController extends Controller
     }
 
     /**
+     * Shop logo/banner uploads, reachable by any authenticated user (a
+     * first-time seller applicant has no Seller row yet, so the `seller`
+     * middleware can't gate this). Forces folder=shops regardless of what's
+     * sent, so this relaxed auth can't be used to write into the admin-only
+     * folders store() otherwise allows.
+     */
+    /**
+     * Seller product videos (shown at the top of the product page) and detail
+     * videos (in the details section): MP4 / WebM / MOV up to 100 MB. Length
+     * (3 minutes) and resolution (720p) are checked in the browser before upload.
+     */
+    public function storeSellerProductVideo(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimetypes:video/mp4,video/webm,video/quicktime', 'max:102400']]);
+        $path = $request->file('file')->store('product-videos', 'public');
+        abort_unless($path && Storage::disk('public')->exists($path), 500, 'Could not save the video.');
+
+        return response()->json(['data' => ['url' => '/api/media/file/'.$path, 'path' => $path]], 201);
+    }
+
+    /** Product guides and documents (user manuals etc.): PDF up to 20 MB, public like product photos. */
+    public function storeSellerProductDocument(Request $request): JsonResponse
+    {
+        $request->validate(['file' => ['required', 'file', 'mimes:pdf', 'mimetypes:application/pdf', 'max:20480']]);
+        $file = $request->file('file');
+        $path = $file->storeAs('product-documents', Str::random(32).'.pdf', 'public');
+        abort_unless($path && Storage::disk('public')->exists($path), 500, 'Could not save the document.');
+
+        return response()->json(['data' => ['url' => '/api/media/file/'.$path, 'path' => $path, 'size_bytes' => $file->getSize()]], 201);
+    }
+
+    public function storeShopAsset(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'shops']);
+
+        return $this->store($request);
+    }
+
+    /**
+     * Photos attached to a support chat (e.g. a damaged item), by any signed-in
+     * customer, seller or admin. Forces folder=support, same reasoning as
+     * storeShopAsset().
+     */
+    /** Photos buyers add to a product review. Forces folder=reviews, like storeSupportAttachment(). */
+    public function storeReviewImage(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'reviews']);
+
+        return $this->store($request);
+    }
+
+    /** A buyer's photo for a personalized product (shown to the seller with the order). */
+    public function storePersonalizationImage(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'personalization']);
+
+        return $this->store($request);
+    }
+
+    public function storeSupportAttachment(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'support']);
+
+        return $this->store($request);
+    }
+
+    /**
+     * Seller product-gallery uploads. Forces folder=products regardless of
+     * what's sent, same reasoning as storeShopAsset() above. The `seller`
+     * middleware on this route only requires having applied at all — the real
+     * "must be approved" gate lives in SellerProductController.
+     */
+    public function storeSellerProductAsset(Request $request): JsonResponse
+    {
+        $request->merge(['folder' => 'products']);
+
+        return $this->store($request);
+    }
+
+    /**
      * Stream a file from storage/app/public. Public, no auth — same visibility
      * as a normal /storage link. Path is constrained under the public disk root.
      */
@@ -91,6 +189,14 @@ class MediaController extends Controller
         }
 
         abort_unless(is_file($file) && is_readable($file), 404);
+
+        // ?download=<name>: save it as a file instead of opening it (e.g. a product's PDF manual).
+        $name = trim((string) request()->query('download', ''));
+        if ($name !== '') {
+            $name = preg_replace('/[^\pL\pN ()._-]+/u', '', $name) ?: 'download';
+
+            return response()->download($file, str_ends_with(strtolower($name), '.'.strtolower(pathinfo($file, PATHINFO_EXTENSION))) ? $name : $name.'.'.pathinfo($file, PATHINFO_EXTENSION));
+        }
 
         return response()->file($file, [
             'Cache-Control' => 'public, max-age=31536000, immutable',

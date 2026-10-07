@@ -5,7 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
+use App\Support\ProductCatalog;
+use App\Support\StoreDecorations;
+use App\Support\SellerRequirements;
 use App\Models\ProductVariant;
+use App\Models\Shop;
+use App\Support\Country;
+use App\Support\Fx;
+use App\Support\Market;
 use App\Support\StoreLocator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -31,24 +38,76 @@ class CatalogController extends Controller
         )?->id;
     }
 
+    /** Shop columns the catalog needs: shipping terms for cross-border products, name/link for the product page. */
+    // seller_id: whether the shop is live (Product::hiddenFromShoppers) needs its seller.
+    private const SHOP_COLUMNS = 'id,seller_id,name,slug,market,fulfillment_mode,intl_shipping';
+
+    /**
+     * A product shipped in from another country's seller: prices converted
+     * into the shopper's currency (with the platform margin), plus where it
+     * ships from and the seller's international shipping fee and transit.
+     */
+    private function presentCrossBorder(Product $product, ?string $market): void
+    {
+        $terms = $market ? $product->crossBorderTerms($market) : null;
+        if (! $terms) {
+            return;
+        }
+        $from = Market::currency($product->market);
+        $to = Market::currency($market);
+        $rate = Fx::multiplier($from, $to);
+        $conv = fn ($cents) => $cents === null ? null : Fx::convert((int) $cents, $from, $to, $rate);
+
+        $product->setAttribute('price_cents', $conv($product->price_cents));
+        $product->setAttribute('compare_at_price_cents', $conv($product->compare_at_price_cents));
+        foreach ($product->variants as $variant) {
+            $variant->setAttribute('price_cents', $conv($variant->price_cents));
+            $variant->setAttribute('compare_at_price_cents', $conv($variant->compare_at_price_cents));
+        }
+        $product->setAttribute('currency', $to);
+        $product->setAttribute('ships_from', $product->market);
+        $product->setAttribute('ships_from_name', Country::find($product->market)['name'] ?? $product->market);
+        $product->setAttribute('intl_shipping', [
+            'fee_cents' => $conv((int) ($terms['fee_cents'] ?? 0)),
+            'transit_min_days' => (int) ($terms['transit_min_days'] ?? 0),
+            'transit_max_days' => (int) ($terms['transit_max_days'] ?? 0),
+        ]);
+    }
+
     public function categories(Request $request): JsonResponse
     {
         $storeId = $this->servingStoreId($request);
+        $market = Market::fromRequest($request);
 
-        return response()->json([
-            'data' => Category::query()
+        $filtered = Category::query()
                 ->where('is_active', true)
+                // Outside the home market, only categories that market sells in.
+                ->when($market !== Market::home(), fn ($query) => $query->whereHas(
+                    'products',
+                    fn ($inner) => $inner->availableIn($market)->where('is_active', true)->where('status', 'approved'),
+                ))
                 // When a store serves this customer, hide a category with nothing
                 // for sale there (an out-of-stock item still counts). With no
                 // store in context, list them all as before.
                 ->when($storeId !== null, fn ($query) => $query->whereHas(
                     'products',
-                    fn ($inner) => $inner->where('is_active', true)->visibleAtStore($storeId),
+                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->visibleAtStore($storeId),
                 ))
-                ->orderBy('sort_order')
-                ->orderBy('name')
-                ->get(),
-        ]);
+                // Demo products hidden: drop categories that only had demo products.
+                ->when(Product::demosHidden(), fn ($query) => $query->whereHas(
+                    'products',
+                    fn ($inner) => $inner->where('is_active', true)->where('status', 'approved')->shownToShoppers(),
+                ))
+                ->pluck('id')->all();
+
+        // A parent stays listed when any of its subcategories has products; each
+        // category carries its parent and kind so the storefront can show the tree.
+        $listed = Category::query()->where('is_active', true)->orderBy('sort_order')->orderBy('name')->get()
+            ->filter(fn (Category $c) => array_intersect(Category::withDescendantIds($c->id), $filtered) !== [])
+            ->map(fn (Category $c) => $c->setAttribute('path', $c->path()))
+            ->values();
+
+        return response()->json(['data' => $listed]);
     }
 
     public function products(Request $request): JsonResponse
@@ -58,18 +117,26 @@ class CatalogController extends Controller
             'search' => ['sometimes', 'string', 'min:2', 'max:100'],
             'deal_type' => ['sometimes', Rule::in(['lightning', 'unbeatable'])],
             'exclusive' => ['sometimes', 'boolean'],
+            'sort' => ['sometimes', Rule::in(['best_selling', 'top_rated', 'newest'])],
+            'shop' => ['sometimes', 'string', 'max:180'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            // Also say which categories have products for these filters (ignoring the
+            // category one) — so a deals page's carousel shows only categories with items.
+            'with_categories' => ['sometimes', 'boolean'],
         ]);
 
         $storeId = $this->servingStoreId($request);
+        $shopId = isset($validated['shop']) ? (self::publicShop($validated['shop'])?->id ?? 0) : null;
+        $market = Market::fromRequest($request);
 
-        $products = Product::query()
-            ->with([
-                'category',
-                'variants' => fn ($query) => $query->where('is_active', true),
-                'storeInventory',
-            ])
+        $base = Product::query()
             ->where('is_active', true)
+            ->where('status', 'approved')
+            ->shownToShoppers()
+            // Shoppers see their market's products and those shipped in from
+            // other countries — except on a shop's own page, which lists that
+            // shop whatever market it's in.
+            ->when($shopId === null, fn ($query) => $query->availableIn($market))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->when(isset($validated['search']), function ($query) use ($validated) {
@@ -85,17 +152,72 @@ class CatalogController extends Controller
                             ->orWhere('sku', 'like', "%{$search}%"));
                 });
             })
-            ->when(isset($validated['category']), fn ($query) => $query->whereHas(
-                'category',
-                fn ($categoryQuery) => $categoryQuery->where('slug', $validated['category'])
-            ))
+            ->when($shopId !== null, fn ($query) => $query->where('shop_id', $shopId))
             ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
-            ->orderBy('name')
-            ->paginate($validated['per_page'] ?? 20)
-            ->through(fn (Product $product) => $this->present($product, $storeId));
+            ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5));
 
-        return response()->json($products);
+        // Categories with matching products (and their parents), before the category filter.
+        $categorySlugs = null;
+        if ($validated['with_categories'] ?? false) {
+            $tree = Category::tree();
+            $categorySlugs = (clone $base)->distinct()->pluck('category_id')
+                ->flatMap(fn ($id) => $tree->get($id)?->lineage() ?? [])
+                ->map(fn (Category $c) => $c->slug)->unique()->values();
+        }
+
+        $products = $base
+            ->with([
+                'category',
+                'variants' => fn ($query) => $query->where('is_active', true),
+                'storeInventory',
+                'images',
+                'shop:'.self::SHOP_COLUMNS,
+            ])
+            // A category shows its own products and its subcategories' (Games → Arcade, Puzzle…).
+            ->when(isset($validated['category']), fn ($query) => $query->whereIn(
+                'category_id',
+                Category::withDescendantIds((int) Category::where('slug', $validated['category'])->value('id'))
+            ))
+            // "Low traffic" products (a sales boost offer still pending) rank below the rest.
+            ->orderByRaw("EXISTS (SELECT 1 FROM sales_boost_offers sbo WHERE sbo.product_id = products.id AND sbo.status = 'pending')")
+            ->when(
+                $validated['sort'] ?? null,
+                fn ($query, $sort) => match ($sort) {
+                    'best_selling' => $query->orderByDesc('units_sold'),
+                    'top_rated' => $query->orderByDesc('rating_avg')->orderByDesc('rating_count'),
+                    'newest' => $query->orderByDesc('created_at'),
+                },
+                fn ($query) => $query->orderBy('name'),
+            )
+            ->paginate($validated['per_page'] ?? 20)
+            ->through(fn (Product $product) => $this->present($product, $storeId, $market));
+
+        return response()->json($categorySlugs === null ? $products : $products->toArray() + ['category_slugs' => $categorySlugs]);
+    }
+
+    /**
+     * The signed-in buyer's favourites that are on sale in the store being
+     * browsed, newest saved first, shaped like any product list.
+     */
+    public function favorites(Request $request): JsonResponse
+    {
+        $market = Market::fromRequest($request);
+        $ids = \App\Models\Favorite::where('user_id', $request->user()->id)->latest()->pluck('product_id');
+
+        $products = Product::query()
+            ->with(['category', 'variants' => fn ($query) => $query->where('is_active', true), 'storeInventory', 'images', 'shop:'.self::SHOP_COLUMNS])
+            ->whereIn('id', $ids)
+            ->where('is_active', true)
+            ->where('status', 'approved')
+            ->shownToShoppers()
+            ->availableIn($market)
+            ->get()
+            ->sortBy(fn (Product $p) => $ids->search($p->id))
+            ->values()
+            ->map(fn (Product $product) => $this->present($product, null, $market));
+
+        return response()->json(['data' => $products, 'saved_elsewhere' => $ids->count() - $products->count()]);
     }
 
     /**
@@ -112,24 +234,88 @@ class CatalogController extends Controller
         ]);
 
         $storeId = $this->servingStoreId($request);
+        $market = Market::fromRequest($request);
 
         $products = Product::query()
             ->with([
                 'category',
                 'variants' => fn ($query) => $query->where('is_active', true),
                 'storeInventory',
+                'images',
+                'shop:'.self::SHOP_COLUMNS,
             ])
             ->where('is_active', true)
+            ->where('status', 'approved')
             ->where('deal_type', $validated['deal_type'])
+            ->shownToShoppers()
+            ->availableIn($market)
             ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->inRandomOrder()
             ->limit($validated['limit'] ?? 3)
             ->get()
-            ->map(fn (Product $product) => $this->present($product, $storeId));
+            ->map(fn (Product $product) => $this->present($product, $storeId, $market));
 
         return response()->json(['data' => $products]);
+    }
+
+    /**
+     * A seller's public shop page: name, logo/banner, description and product
+     * count — the storefront lists its products via GET /products?shop=<slug>.
+     * Only live shops (active, seller approved) are visible.
+     */
+    public function shop(string $slug): JsonResponse
+    {
+        $shop = self::publicShop($slug);
+        abort_unless($shop, 404, 'Shop not found.');
+
+        // Only the categories this shop actually sells in, for the shop
+        // page's category strip.
+        $live = $shop->products()
+            ->where('is_active', true)
+            ->where('status', 'approved')
+            ->shownToShoppers()
+            ->whereHas('category', fn ($q) => $q->where('is_active', true));
+        $categories = Category::query()
+            ->whereIn('id', (clone $live)->select('category_id'))
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'slug', 'image_url'])
+            ->map(fn (Category $c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'slug' => $c->slug,
+                'image_url' => $c->image_url,
+                'count' => (clone $live)->where('category_id', $c->id)->count(),
+            ]);
+
+        return response()->json(['data' => [
+            'name' => $shop->name,
+            'slug' => $shop->slug,
+            'market' => $shop->market,
+            'logo_url' => $shop->logo_url,
+            'banner_url' => $shop->banner_url,
+            'description' => $shop->description,
+            'category' => $shop->category?->name,
+            'since' => $shop->created_at?->toDateString(),
+            'products_count' => (clone $live)->count(),
+            'categories' => $categories,
+            // The seller's decorated store page, per platform — only once the
+            // store has enough live products; otherwise the default page.
+            'decoration' => (! SellerRequirements::on($shop, 'store_min_products') || (clone $live)->count() >= StoreDecorations::minProducts())
+                ? collect(StoreDecorations::PLATFORMS)->mapWithKeys(fn ($platform) => [$platform => ($d = $shop->decorations()->where('platform', $platform)->where('is_live', true)->first()) ? StoreDecorations::resolve($d, $shop) : null])->all()
+                : null,
+        ]]);
+    }
+
+    private static function publicShop(string $slug): ?Shop
+    {
+        return Shop::query()
+            ->where('slug', $slug)
+            ->where('is_active', true)
+            ->whereHas('seller', fn ($q) => $q->where('status', 'approved'))
+            ->first();
     }
 
     public function product(Request $request, Product $product): JsonResponse
@@ -137,13 +323,23 @@ class CatalogController extends Controller
         $storeId = $this->servingStoreId($request);
 
         $product->load([
+            'shop:'.self::SHOP_COLUMNS.',is_active',
             'category',
             'variants' => fn ($query) => $query->where('is_active', true),
             'storeInventory',
+            'images',
+            'trademark:id,name,logo_url',
         ]);
 
+        // Taken off sale by the seller, or removed after they asked: past
+        // buyers can still open it (warranty, reviews) — it just can't be bought.
+        $noLongerSold = ! $product->is_active && $product->status === 'approved'
+            && ($product->deactivated_by === 'seller' || $product->archived_at !== null);
+
         abort_unless(
-            $product->is_active
+            ($product->is_active || $noLongerSold)
+                && $product->status === 'approved'
+                && ! $product->hiddenFromShoppers()
                 && $product->category?->is_active
                 && ($storeId === null || ! $product->usesStoreInventory()
                     || $product->availabilityAt($storeId)['sold']
@@ -153,9 +349,13 @@ class CatalogController extends Controller
             404
         );
 
-        return response()->json([
-            'data' => $this->present($product, $storeId),
-        ]);
+        $data = $this->present($product, $storeId, Market::fromRequest($request), keepShop: true);
+        if ($noLongerSold) {
+            $data->setAttribute('no_longer_sold', true);
+            $data->setAttribute('support_until', ProductCatalog::supportUntil($product)?->toDateString());
+        }
+
+        return response()->json(['data' => $data]);
     }
 
     /**
@@ -165,8 +365,10 @@ class CatalogController extends Controller
      * working; `out_of_stock` flags a stocked-but-empty line, and variants the
      * store doesn't carry are dropped.
      */
-    private function present(Product $product, ?int $storeId): Product
+    private function present(Product $product, ?int $storeId, ?string $market = null, bool $keepShop = false): Product
     {
+        $this->presentCrossBorder($product, $market);
+
         if ($storeId !== null && $product->usesStoreInventory()) {
             $kept = [];
 
@@ -198,9 +400,29 @@ class CatalogController extends Controller
         $prices = $product->variants->pluck('price_cents')->push($product->price_cents);
         $product->setAttribute('price_min_cents', (int) $prices->min());
         $product->setAttribute('price_max_cents', (int) $prices->max());
+        if (! $product->getAttribute('ships_from')) {
+            $product->setAttribute('currency', Market::currency($product->market));
+        }
 
         // storeInventory was only loaded to compute the above; don't ship it.
         $product->unsetRelation('storeInventory');
+        // The shop was loaded for its shipping terms; only the product page shows it (name/link).
+        if (! $keepShop) {
+            $product->unsetRelation('shop');
+        } else {
+            $product->shop?->makeHidden(['intl_shipping', 'fulfillment_mode', 'market', 'seller_id', 'seller']);
+        }
+
+        // Seller-only listing data never reaches shoppers.
+        $product->makeHidden(['compliance', 'price_references', 'seller_code', 'rejection_reason', 'suggested_category_name']);
+        if ($product->relationLoaded('category') && $product->product_details) {
+            // Product details as labelled specifications for the product page.
+            $fields = collect(ProductCatalog::attributesFor($product->category, $product->isDigital()))->keyBy('key');
+            $product->setAttribute('specifications', collect($product->product_details)
+                ->filter(fn ($v, $k) => $fields->has($k) && $v !== null && $v !== '' && $v !== [] && ProductCatalog::applies($fields[$k], $product->product_details))
+                ->map(fn ($v, $k) => ['label' => $fields[$k]['label'], 'value' => implode(', ', (array) $v).(isset($fields[$k]['unit']) ? ' '.$fields[$k]['unit'] : '')])
+                ->values());
+        }
 
         return $product;
     }

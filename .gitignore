@@ -1,5 +1,5 @@
 # Local temporary output and package caches
 /.tmp/
 
-# Database dumps kept locally for safekeeping only
-/backend/web_deploy/
+# backend/web_deploy/ (deploy zip, DB dump, demo videos, docs) IS committed as
+# a backup; its large files go through Git LFS (see .gitattributes).

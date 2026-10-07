@@ -32,18 +32,19 @@ class DeliveryRadiusTest extends TestCase
             ->assertCreated();
     }
 
-    public function test_order_outside_every_store_radius_is_rejected(): void
+    public function test_order_outside_every_store_radius_falls_back_to_online_courier(): void
     {
         $this->store(40.7580, -73.9855, 5);
         $this->shopAsCustomer();
 
-        // ~40 km north of the store.
+        // ~40 km north of the store — outside its radius, but the mock courier
+        // (used in tests via the default `courier.provider` config) is always
+        // serviceable, so this now succeeds instead of the old hard reject.
         $this->postJson('/api/checkout', ['address' => $this->address(41.10, -73.9855)])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors(['address'])
-            ->assertJsonPath('errors.address.0', "We don't deliver to your area yet — we're expanding fast and will reach you soon.");
+            ->assertCreated()
+            ->assertJsonPath('data.delivery_method', 'online_courier');
 
-        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('orders', 1);
     }
 
     public function test_order_accepted_if_within_range_of_any_store(): void

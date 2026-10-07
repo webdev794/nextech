@@ -58,7 +58,7 @@ class DeliveryWorkflowTest extends TestCase
         $order = $this->paidOrder(['status' => 'packing']);
         Sanctum::actingAs($this->admin());
 
-        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled'])
+        $this->patchJson("/api/admin/orders/{$order->id}", ['status' => 'cancelled', 'cancel_reason' => 'Item out of stock'])
             ->assertOk()
             ->assertJsonPath('data.status', 'cancelled');
     }

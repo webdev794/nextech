@@ -7,6 +7,9 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Support\Country;
+use App\Support\Market;
+use App\Support\Personalization;
 use App\Support\Purchasable;
 use App\Support\StoreLocator;
 use Illuminate\Http\JsonResponse;
@@ -45,21 +48,45 @@ class CartController extends Controller
             'quantity' => ['required', 'integer', 'min:1', 'max:1000'],
             'lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
+            // Personalized products: the buyer's photos (and note).
+            'personalization' => ['sometimes', 'nullable', 'array'],
+            'personalization.photos' => ['sometimes', 'array'],
+            'personalization.photos.*' => ['string', 'max:500'],
+            'personalization.note' => ['sometimes', 'nullable', 'string', 'max:500'],
         ]);
 
         $storeId = $this->servingStoreId($validated);
         $cart = $this->cartFor($request);
+        // The store being shopped (X-Market / ?market=); older clients don't send one.
+        $market = ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null;
 
-        DB::transaction(function () use ($cart, $validated, $storeId): void {
+        DB::transaction(function () use ($cart, $validated, $storeId, $market): void {
             $product = Product::query()->whereKey($validated['product_id'])->lockForUpdate()->firstOrFail();
             $variant = $this->resolveVariant($product, $validated['product_variant_id'] ?? null, true);
 
             $state = Purchasable::resolve($product, $variant, $storeId);
             $this->ensurePurchasable($state);
 
+            if ($market !== null) {
+                // The shopper's country store: its own products, or ones a foreign seller ships here.
+                if ($product->market !== $market && ! $product->crossBorderTerms($market)) {
+                    throw ValidationException::withMessages([
+                        'product_id' => ["{$product->name} doesn't ship to ".(Country::find($market)['name'] ?? $market).'.'],
+                    ]);
+                }
+            } elseif ($cart->items()->whereHas('product', fn ($q) => $q->where('market', '!=', $product->market))->exists()) {
+                // A cart is one market (country + currency) at a time.
+                throw ValidationException::withMessages([
+                    'product_id' => ['Your cart has items from another country\'s store — check out or clear it first.'],
+                ]);
+            }
+
+            $personalization = Personalization::forCartLine($product, $validated['personalization'] ?? null);
+            $key = Personalization::key($personalization);
             $existing = $cart->items()
                 ->where('product_id', $product->id)
                 ->where('product_variant_id', $variant?->id)
+                ->where('personalization_key', $key)
                 ->lockForUpdate()
                 ->first();
             $quantity = ($existing?->quantity ?? 0) + $validated['quantity'];
@@ -67,8 +94,8 @@ class CartController extends Controller
             $this->ensureStock($state, $quantity);
 
             $cart->items()->updateOrCreate(
-                ['product_id' => $product->id, 'product_variant_id' => $variant?->id],
-                ['quantity' => $quantity, 'unit_price_cents' => $state['price_cents']],
+                ['product_id' => $product->id, 'product_variant_id' => $variant?->id, 'personalization_key' => $key],
+                ['quantity' => $quantity, 'unit_price_cents' => $state['price_cents'], 'personalization' => $personalization],
             );
         });
 

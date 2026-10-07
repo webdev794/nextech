@@ -14,6 +14,7 @@ class PageTest extends TestCase
 
     public function test_public_index_lists_only_published_pages(): void
     {
+        Page::query()->delete(); // the built-in seller policy pages
         Page::create(['slug' => 'privacy', 'title' => 'Privacy', 'content' => '# hi', 'footer_group' => 'legal', 'sort_order' => 1]);
         Page::create(['slug' => 'draft', 'title' => 'Draft', 'content' => 'wip', 'is_published' => false]);
 
@@ -56,6 +57,7 @@ class PageTest extends TestCase
     {
         $admin = User::factory()->create();
         $admin->forceFill(['is_admin' => true])->save();
+        Page::query()->delete(); // the built-in seller policy pages
         $page = Page::create(['slug' => 'faqs', 'title' => 'FAQs', 'content' => 'old']);
         Sanctum::actingAs($admin);
 

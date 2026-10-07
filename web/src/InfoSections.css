@@ -1,0 +1,29 @@
+.ins{display:flex;flex-direction:column;gap:16px;margin-top:28px}
+.ins-card{padding:18px 20px;border-radius:14px;border:1px solid transparent}
+.ins-card h2{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:19px}
+.ins-text{margin:0;font-size:14px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
+.ins-qa{display:flex;flex-direction:column;gap:10px;margin:0}
+.ins-qa > div{padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.75)}
+.ins-qa dt{font-weight:600;font-size:14px;line-height:1.5;color:#1f2a24;overflow-wrap:anywhere}
+.ins-qa dd{margin:2px 0 0;font-size:14px;line-height:1.5;color:#3b4a40;overflow-wrap:anywhere}
+.ins-qa dt::before{content:"Q. ";color:#6b46c1}
+.ins-qa dd::before{content:"A. ";color:#2f8f4e;font-weight:600}
+.ins-card.ins-faq{background:linear-gradient(135deg,#f4f0ff,#faf8ff);border-color:#e4dcff}
+.ins-card.ins-specs{background:linear-gradient(135deg,#eef6ff,#f8fbff);border-color:#d6e6fb}
+.ins-card.ins-requirements{background:linear-gradient(135deg,#eefaf2,#f8fdf9);border-color:#cfeedb}
+.ins-card.ins-custom{background:linear-gradient(135deg,#fff7ec,#fffbf5);border-color:#f6e1c3}
+.ins-card.ins-requirements .ins-text{font-family:ui-monospace,Consolas,monospace;font-size:14px}
+.ins-edit{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+.ins-edit-card{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid #e3e6e8;border-radius:10px}
+.ins-edit-card.ins-faq{background:#faf8ff}
+.ins-edit-card.ins-specs{background:#f8fbff}
+.ins-edit-card.ins-requirements{background:#f8fdf9}
+.ins-edit-card.ins-custom{background:#fffbf5}
+.ins-edit-head{display:flex;gap:6px}
+.ins-edit-head input{flex:1;padding:7px 10px;border:1px solid #cfd5d9;border-radius:8px;font:inherit;font-weight:600}
+.ins-edit-head button{width:32px;border:1px solid #dfe3e6;border-radius:8px;background:#fff;cursor:pointer}
+.ins-edit-head .ins-del{color:#b4361f}
+.ins-edit-card textarea{width:100%;padding:8px 10px;border:1px solid #cfd5d9;border-radius:8px;font:inherit;font-size:14px}
+.ins-add{display:flex;flex-wrap:wrap;gap:6px}
+.ins-add button{padding:7px 12px;border:1px dashed #9aa5ad;border-radius:999px;background:#fff;font:inherit;font-size:12px;cursor:pointer}
+.ins-add button:hover{border-color:#ff6a00;color:#ff6a00}

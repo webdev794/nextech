@@ -15,6 +15,8 @@ class CartItem extends Model
         'product_id',
         'product_variant_id',
         'quantity',
+        'personalization',
+        'personalization_key',
         'unit_price_cents',
     ];
 
@@ -23,6 +25,7 @@ class CartItem extends Model
         return [
             'quantity' => 'integer',
             'unit_price_cents' => 'integer',
+            'personalization' => 'array',
         ];
     }
 

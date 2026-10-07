@@ -21,7 +21,7 @@ class Purchasable
     public static function resolve(Product $product, ?ProductVariant $variant, ?int $storeId = null): array
     {
         $categoryActive = (bool) $product->category?->is_active;
-        $baseActive = $product->is_active && $categoryActive && ($variant ? $variant->is_active : true);
+        $baseActive = $product->is_active && $categoryActive && ($variant ? $variant->is_active : true) && ! $product->hiddenFromShoppers();
 
         $availability = $product->availabilityAt($storeId, $variant);
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Profanity;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,10 +13,14 @@ class SupportThread extends Model
         'item_missing', 'item_damaged', 'wrong_item', 'not_delivered', 'payment_issue', 'other',
         // Opened by the delivery rider, not chosen by the customer.
         'delivery',
+        // Seller <-> admin channel, not a customer order complaint.
+        'seller_product_issue', 'seller_other',
+        // A rider's own chat with NexTech (StaffChat).
+        'rider_support',
     ];
 
     protected $fillable = [
-        'user_id', 'order_id', 'issue_type', 'status',
+        'user_id', 'order_id', 'seller_shop_id', 'seller_joined_at', 'issue_type', 'status',
         'last_message_at', 'last_staff_message_at', 'resolved_at',
     ];
 
@@ -27,6 +32,7 @@ class SupportThread extends Model
             'last_message_at' => 'datetime',
             'last_staff_message_at' => 'datetime',
             'resolved_at' => 'datetime',
+            'seller_joined_at' => 'datetime',
             'rating' => 'integer',
             'rated_at' => 'datetime',
         ];
@@ -57,6 +63,12 @@ class SupportThread extends Model
         return $this->belongsTo(Order::class);
     }
 
+    /** The seller shop an admin brought into this order chat, if any. */
+    public function sellerShop(): BelongsTo
+    {
+        return $this->belongsTo(Shop::class, 'seller_shop_id');
+    }
+
     public function messages(): HasMany
     {
         return $this->hasMany(SupportMessage::class)->orderBy('id');
@@ -67,13 +79,20 @@ class SupportThread extends Model
      *                          recorded for later admin reference but never shown
      *                          to the customer, and doesn't count as a reply.
      */
-    public function post(?User $sender, string $body, bool $isStaff = false, bool $system = false, bool $internal = false): SupportMessage
+    /**
+     * @param  list<string>  $attachments  photo URLs from POST /support/attachments
+     */
+    public function post(?User $sender, string $body, bool $isStaff = false, bool $system = false, bool $internal = false, bool $fromSeller = false, array $attachments = [], bool $hiddenFromSeller = false): SupportMessage
     {
         $message = $this->messages()->create([
             'user_id' => $system ? null : $sender?->id,
             'is_staff' => $isStaff,
+            'from_seller' => $fromSeller,
             'internal' => $internal,
-            'body' => $body,
+            'hidden_from_seller' => $hiddenFromSeller,
+            // Abusive words are masked for everyone in the chat (system notes are ours).
+            'body' => $system ? $body : Profanity::mask($body),
+            'attachments' => $attachments ?: null,
         ]);
 
         if (! $internal) {

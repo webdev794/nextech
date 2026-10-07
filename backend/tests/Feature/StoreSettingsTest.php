@@ -173,7 +173,7 @@ class StoreSettingsTest extends TestCase
         $this->getJson('/api/config')
             ->assertOk()
             ->assertJsonPath('data.footer.socials.facebook', '')
-            ->assertJsonStructure(['data' => ['footer' => ['copyright', 'note', 'app_store_url', 'play_store_url', 'socials', 'links']]]);
+            ->assertJsonStructure(['data' => ['footer' => ['copyright', 'app_store_url', 'play_store_url', 'socials', 'links']]]);
 
         Sanctum::actingAs($this->admin());
 

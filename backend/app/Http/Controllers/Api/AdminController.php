@@ -4,15 +4,21 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\GiftCard;
+use App\Models\LabelRequest;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
+use App\Models\PayoutRequest;
 use App\Models\Product;
+use App\Models\RiderApplication;
+use App\Models\RiderPayoutRequest;
+use App\Models\Seller;
 use App\Models\RiderReview;
 use App\Models\SiteFeedback;
 use App\Models\SupportThread;
 use App\Models\User;
 use App\Support\CustomerNames;
+use App\Support\Market;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -21,30 +27,36 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class AdminController extends Controller
 {
-    public function metrics(): JsonResponse
+    public function metrics(Request $request): JsonResponse
     {
-        $ordersByStatus = Order::query()
+        // One market (currency) at a time — the admin's currency switch.
+        $market = Market::fromRequest($request);
+        $home = $market;
+        $ordersByStatus = Order::query()->where('market', $market)
             ->select('status', DB::raw('count(*) as total'))
             ->groupBy('status')
             ->pluck('total', 'status');
 
-        $revenue = (int) Order::where('payment_status', 'paid')->sum('total_cents');
-        $paidOrders = (int) Order::where('payment_status', 'paid')->count();
+        // Money figures are home-market (USD) only — other markets' orders are
+        // in their own currency and can't be added in.
+        $revenue = (int) Order::where('market', $home)->where('payment_status', 'paid')->sum('total_cents');
+        $paidOrders = (int) Order::where('market', $market)->where('payment_status', 'paid')->count();
 
         // Total discount handed out: the frozen regular price minus the price
         // actually billed, across every order line that carries a snapshot.
         $discount = (int) OrderItem::query()
             ->whereNotNull('compare_at_price_cents')
+            ->whereHas('order', fn ($q) => $q->where('market', $market))
             ->whereColumn('compare_at_price_cents', '>', 'unit_price_cents')
             ->sum(DB::raw('(compare_at_price_cents - unit_price_cents) * quantity'));
 
         // "Refunded" covers everything actually given back to a customer —
         // a Stripe refund and store credit (gift card) both count.
-        $refunded = (int) Order::sum('refunded_amount_cents') + (int) GiftCard::sum('initial_cents');
+        $refunded = (int) Order::where('market', $home)->sum('refunded_amount_cents') + ($market === Market::home() ? (int) GiftCard::sum('initial_cents') : 0);
 
         // Every order where money was ever collected, refunded or not — the
         // whole pie the Payments-vs-refunds chart splits into kept vs given back.
-        $grossCollected = (int) Order::whereIn('payment_status', ['paid', 'partially_refunded', 'refunded', 'refund_pending'])->sum('total_cents');
+        $grossCollected = (int) Order::where('market', $home)->whereIn('payment_status', ['paid', 'partially_refunded', 'refunded', 'refund_pending'])->sum('total_cents');
 
         return response()->json([
             'data' => [
@@ -52,9 +64,11 @@ class AdminController extends Controller
                 'orders_total' => (int) $ordersByStatus->sum(),
                 'awaiting_fulfilment' => (int) $ordersByStatus->only(['confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery'])->sum(),
                 'revenue_cents' => $revenue,
+                'market' => $market,
+                'currency' => Market::currency($market),
                 'avg_order_cents' => $paidOrders ? intdiv($revenue, $paidOrders) : 0,
                 'discount_cents' => $discount,
-                'cod_orders' => (int) Order::where('payment_method', 'cod')->count(),
+                'cod_orders' => (int) Order::where('market', $market)->where('payment_method', 'cod')->count(),
                 'refunded_cents' => $refunded,
                 'gross_collected_cents' => $grossCollected,
                 'customers' => User::where('is_admin', false)->count(),
@@ -212,8 +226,138 @@ class AdminController extends Controller
 
         $financialActivity = $giftCardsIssued->concat($refundsIssued)->sortByDesc('at')->take($sampleSize)->values();
 
+        $payoutRequests = PayoutRequest::query()
+            ->where('status', 'pending')
+            ->with('shop:id,name,seller_id')
+            ->oldest()
+            ->get()
+            ->map(fn (PayoutRequest $r) => [
+                'id' => $r->id,
+                'seller_id' => $r->shop?->seller_id,
+                'shop_name' => $r->shop?->name,
+                'amount_cents' => $r->amount_cents,
+                'at' => $r->created_at,
+            ]);
+
+        // Sellers waiting on a NexTech label to be uploaded.
+        $labelRequests = LabelRequest::query()
+            ->where('status', 'requested')
+            ->with('shop:id,name')
+            ->oldest()
+            ->get()
+            ->map(fn (LabelRequest $r) => [
+                'id' => $r->id,
+                'order_id' => $r->order_id,
+                'shop_name' => $r->shop?->name,
+                'at' => $r->created_at,
+            ]);
+
+        $riderPayoutRequests = RiderPayoutRequest::query()
+            ->where('status', 'pending')
+            ->with('rider:id,name')
+            ->oldest()
+            ->get()
+            ->map(fn (RiderPayoutRequest $r) => [
+                'id' => $r->id,
+                'rider_id' => $r->user_id,
+                'rider_name' => $r->rider?->name,
+                'amount_cents' => $r->amount_cents,
+                'at' => $r->created_at,
+            ]);
+
+        $riderApplications = RiderApplication::query()
+            ->where('status', 'pending')
+            ->with(['user:id,name', 'store:id,name'])
+            ->oldest()
+            ->get()
+            ->map(fn (RiderApplication $a) => [
+                'id' => $a->id,
+                'name' => $a->user?->name,
+                'store_name' => $a->store?->name,
+                'at' => $a->created_at,
+            ]);
+
+        // New (or resubmitted) seller applications waiting for review.
+        $sellerApplications = Seller::query()
+            ->where('status', 'pending')
+            ->with(['shop:id,seller_id,name', 'user:id,name'])
+            ->orderBy('submitted_at')
+            ->get()
+            ->map(fn (Seller $s) => [
+                'id' => $s->id,
+                'name' => $s->shop?->name ?? $s->company_name ?? $s->user?->name,
+                'at' => $s->submitted_at ?? $s->created_at,
+            ]);
+
+        // New categories sellers asked for on their products, until one by that name exists.
+        $existing = \App\Models\Category::query()->pluck('name')->map(fn ($n) => mb_strtolower(trim($n)))->all();
+        $categorySuggestions = Product::query()
+            ->whereNotNull('suggested_category_name')->where('suggested_category_name', '!=', '')->whereNull('archived_at')
+            ->with('shop:id,name')->latest('updated_at')->get(['id', 'name', 'shop_id', 'suggested_category_name', 'updated_at'])
+            ->reject(fn (Product $p) => in_array(mb_strtolower(trim($p->suggested_category_name)), $existing, true))
+            ->groupBy(fn (Product $p) => mb_strtolower(trim($p->suggested_category_name)))
+            ->map(fn ($group) => [
+                'name' => trim($group->first()->suggested_category_name),
+                'products' => $group->count(),
+                'product_name' => $group->first()->name,
+                'shop_name' => $group->first()->shop?->name,
+                'at' => $group->first()->updated_at,
+            ])->values();
+
+        // Seller Center onboarding tasks waiting for review (tax, compliance, bank).
+        $taskLabels = ['tax' => 'Tax information', 'compliance' => 'Compliance information', 'bank' => 'Bank account'];
+        $sellerTasks = Seller::query()
+            ->where(fn ($q) => $q->where('tax_status', 'pending')->orWhere('compliance_status', 'pending')->orWhere('bank_status', 'processing'))
+            ->with('shop:id,seller_id,name')
+            ->get()
+            ->flatMap(fn (Seller $s) => collect([
+                'tax' => $s->tax_status === 'pending' ? $s->tax_submitted_at : false,
+                'compliance' => $s->compliance_status === 'pending' ? $s->compliance_submitted_at : false,
+                'bank' => $s->bank_status === 'processing' ? $s->bank_submitted_at : false,
+            ])->reject(fn ($at) => $at === false)->map(fn ($at, $task) => [
+                'seller_id' => $s->id,
+                'name' => $s->shop?->name ?? $s->company_name,
+                'task' => $task,
+                'label' => $taskLabels[$task],
+                'at' => $at ?? $s->updated_at,
+            ])->values())
+            ->sortBy('at')->values();
+
+        // Cancelled orders whose money still has to go back to the customer.
+        $refundsDue = Order::query()->refundDue()->with('user:id,name,email')->latest('updated_at')->limit(50)->get()
+            ->map(fn (Order $o) => [
+                'id' => $o->id,
+                'customer' => $o->user?->name ?? $o->user?->email,
+                'amount_cents' => $o->total_cents,
+                'currency' => $o->currency,
+                'cancelled_by' => $o->cancelled_by,
+                'reason' => $o->cancel_reason,
+                'at' => $o->updated_at,
+            ]);
+
+        // Seller cash on delivery: cash sellers kept (last 7 days) and sellers who owe NexTech.
+        $codKept = \App\Models\SellerLedgerEntry::query()->where('type', 'cod_cash_held')->where('created_at', '>=', now()->subDays(7))
+            ->with('shop:id,name,seller_id,market')->latest()->limit(50)->get()
+            ->map(fn ($e) => ['order_id' => $e->order_id, 'seller_id' => $e->shop?->seller_id, 'shop_name' => $e->shop?->name, 'amount_cents' => -(int) $e->amount_cents, 'currency' => Market::currency($e->shop?->market ?? 'US'), 'at' => $e->created_at]);
+        $codShopIds = \App\Models\SellerLedgerEntry::query()->where('type', 'cod_cash_held')->distinct()->pluck('shop_id');
+        $sellersOwing = \App\Models\Shop::whereIn('id', $codShopIds)->get()
+            ->map(fn ($shop) => ['seller_id' => $shop->seller_id, 'shop_name' => $shop->name, 'owed_cents' => \App\Support\SellerCod::owedCents($shop), 'over_limit' => \App\Support\SellerCod::owedCents($shop) > \App\Support\SellerCod::maxOwedCents($shop->market), 'currency' => Market::currency($shop->market)])
+            ->filter(fn ($r) => $r['owed_cents'] > 0)->sortByDesc('owed_cents')->values();
+
         return response()->json(['data' => [
+            'cod_kept' => $codKept,
+            'sellers_owing' => $sellersOwing,
+            'refunds_due' => $refundsDue,
+            'seller_tasks' => $sellerTasks,
+            'products_waiting' => Product::query()->where('status', 'pending')->whereNotNull('shop_id')->count(),
+            'removal_requests' => Product::query()->whereNotNull('deletion_requested_at')->whereNull('archived_at')->count(),
+            'category_suggestions' => $categorySuggestions,
+            'seller_applications' => $sellerApplications,
             'awaiting_packing' => $awaitingPacking,
+            'payout_requests' => $payoutRequests,
+            'label_requests' => $labelRequests,
+            'rider_payout_requests' => $riderPayoutRequests,
+            'rider_applications' => $riderApplications,
             'refused_cod' => $refusedCod,
             'cash_overdue' => $cashOverdue,
             'negative_feedback' => $negativeFeedback,
@@ -273,6 +417,7 @@ class AdminController extends Controller
         $labelFor = fn (Carbon $d): string => $bucket === 'month' ? $d->format('M Y') : $d->format('M j');
 
         $orders = Order::query()
+            ->where('market', Market::fromRequest($request))
             ->whereBetween('created_at', [$from->copy()->utc(), $to->copy()->utc()])
             ->get(['created_at', 'status', 'payment_status', 'payment_method', 'total_cents']);
 
@@ -366,7 +511,7 @@ class AdminController extends Controller
         $curTotals = ['orders' => 0, 'paid_orders' => 0, 'revenue_cents' => 0];
         $prevTotals = $curTotals;
 
-        Order::query()
+        Order::query()->where('market', Market::fromRequest($request))
             ->where('created_at', '>=', $prevStart->copy()->utc())
             ->where('created_at', '<', $now->copy()->utc())
             ->get(['created_at', 'payment_status', 'total_cents'])
@@ -410,7 +555,7 @@ class AdminController extends Controller
         $matrix = array_fill(0, 7, array_fill(0, 24, 0));
         $peak = 0;
 
-        Order::query()
+        Order::query()->where('market', Market::fromRequest($request))
             ->where('created_at', '>=', $since->copy()->utc())
             ->get(['created_at'])
             ->each(function (Order $order) use (&$matrix, &$peak, $tz): void {
@@ -504,11 +649,17 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
+            'search' => ['sometimes', 'string', 'max:100'],
         ]);
 
         $customers = User::query()
             ->where('is_admin', false)
-            ->withCount('orders')
+            ->when($validated['search'] ?? null, fn ($query, $term) => $query->where(fn ($q) => $q
+                ->where('name', 'like', "%{$term}%")
+                ->orWhere('email', 'like', "%{$term}%")
+                ->orWhere('phone', 'like', "%{$term}%")))
+            ->withCount(['orders', 'customerEmails as emails_count'])
+            ->withMax('orders as last_order_at', 'created_at')
             ->withSum(['orders as spent_cents' => fn ($query) => $query->where('payment_status', 'paid')], 'total_cents')
             ->latest()
             ->paginate($validated['per_page'] ?? 10);
@@ -524,6 +675,8 @@ class AdminController extends Controller
                 'phone' => $user->phone,
                 'is_rider' => (bool) $user->is_rider,
                 'orders_count' => $user->orders_count,
+                'emails_count' => (int) ($user->emails_count ?? 0),
+                'last_order_at' => $user->last_order_at,
                 'spent_cents' => (int) ($user->spent_cents ?? 0),
                 'joined_at' => $user->created_at,
             ])->items(),
