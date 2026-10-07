@@ -52,3 +52,46 @@ Admin can show/hide countries and add new ones without a developer. A hidden cou
 - Each country has its own tax law (VAT, GST, sales tax, invoice rules). The template only sets how tax is charged; confirm the rules for each country before going live.
 - Payment provider: check the card processor supports the currency and country.
 - Existing code that special-cases `'US'` or `'IN'` needs reviewing, for example `Market::usesLegacySettings()` and India's GST/TCS withholding.
+
+---
+
+## 2. Sellers' own delivery staff (riders per seller)
+
+### Today
+- Sellers who ship themselves can offer **Own delivery (local)**: buyers within a radius of a ship-from address get the seller's own delivery, free or for a flat fee (Shipping settings; admin can hide it and cap the distance in Settings → Shipping).
+- There's no tracking number. The seller clicks **Out for delivery (own delivery)**, the buyer gets a delivery code, and the seller enters it to mark the order delivered.
+- The rider system (Rider app, shifts, auto-assign, rider pay) only serves NexTech's own stores, managed by admin.
+
+### Goal
+A seller can manage their own delivery people inside NexTech, like admin manages riders: sign-in, shifts, working hours and assigning orders, for faster local deliveries within the seller's radius.
+
+### Plan
+- [ ] **Seller Center → Delivery staff:** the seller adds a delivery person by phone or email, and can pause or remove them.
+- [ ] **Rider app:** the same Rider app; a seller's staff only see that shop's own-delivery orders.
+  - Link: e.g. `users.rider_shop_id`, or a `shop_riders` table.
+  - **DB change:** add the migration, and mirror it in `backend/web_deploy/edp.sql`.
+- [ ] **Shifts:** staff clock in and out (reuse `RiderShift` / `RiderShiftBreak`). The seller sees who is online and their working hours per day and week.
+- [ ] **Assigning:** the seller assigns each own-delivery order, or turns on auto-assign to the nearest online staff member within the shop's radius (reuse the `RiderAssignment` logic, limited to that shop).
+- [ ] **Steps:** picked up → out for delivery → delivered, confirmed with the buyer's delivery code. Buyer, seller and admin (order view and support chat) see each step live.
+- [ ] **Pay:** the seller pays their own staff outside NexTech, so no rider ledger or payouts for them. Optional later: a per-delivery record the seller can export.
+- [ ] **Admin:**
+  - a setting to allow or hide seller delivery staff. It only makes sense when Own delivery is available (dependent-settings rule: hidden → hide its options and don't require them);
+  - a read-only list of each seller's staff and shifts;
+  - the ability to deactivate a staff member.
+- [ ] **Reminders:** the hourly seller reminders also cover orders assigned to staff but not picked up or delivered in time.
+- [ ] **Tests:**
+  - add a staff member who signs in and only sees their shop's orders;
+  - clock in and out;
+  - auto-assign within the radius;
+  - delivered only with the right code;
+  - admin hiding the option blocks it.
+
+### Notes / risks
+- Privacy: staff see the buyer's name, address and phone only for orders assigned to them, and only until they're delivered.
+- One person can't be both a NexTech rider and a seller's staff member at the same time, or keep it to separate accounts.
+
+---
+
+## Customer chat (no change needed — for reference)
+- Sellers can't start chats with buyers. Admin brings a seller into a customer's order chat when needed (**Bring in [shop]** in the support chat). Admin stays in the chat, and the seller sees only a masked name and their own items.
+- Decided: no buyer-side "Ask the seller to join" button. Admin decides when to bring the seller in.
