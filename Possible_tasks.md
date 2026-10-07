@@ -39,6 +39,11 @@ Admin can show/hide countries and add new ones without a developer. A hidden cou
   - default fees, payout limits, commission and rider pay (the existing per-country form);
   - states/regions list (or none) and the postal-code label and format;
   - seller onboarding: the tax ID label and format (regex), whether a tax certificate is required, the bank account fields (labels and formats, e.g. IBAN or sort code), and the business document types;
+  - **VAT countries (UK, EU and similar):** sign-up asks for the seller's **VAT registration number** (like Temu does).
+    - Admin sets per country: the label ("VAT number"), its format (e.g. `GB` + 9 digits, or an EU country prefix + digits) and whether it's required. For example, required for sellers registered in that country, and optional or required for sellers from elsewhere selling into it.
+    - Optional: check EU numbers against the EU VIES service and UK numbers against HMRC.
+    - Shown to admin on the seller's details, and printed on invoices where the law needs it.
+    - **DB change:** store it with the seller's other tax details; add the migration and mirror it in `backend/web_deploy/edp.sql`.
   - couriers and holidays (optional).
 - [ ] **Storage:** move profiles from `config/markets.php` and `config/countries.php` into a database table, for example `markets` (code, name, currency, profile JSON, is_visible, sort order).
   - Keep the config files as the built-in defaults: US and India are seeded from them on migrate.
