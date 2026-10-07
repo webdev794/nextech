@@ -64,7 +64,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Payout fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -1119,14 +1119,16 @@ export default function Seller({ token, onSignOut }) {
                           {req?.status === 'rejected' && <p className="seller-payout-status rejected">Your last payout request wasn&rsquo;t approved{req.admin_note ? `: ${req.admin_note}` : '.'}</p>}
                           {(() => {
                             // Why the button can't be used right now (it's always shown).
-                            const noBank = !me.payout_method || (me.requirements?.bank_verification && me.bank_status !== 'linked')
                             const why = balance <= 0 ? 'Nothing available yet — money is released after delivery and the return window.'
                               : balance < (me.min_payout_cents ?? 0) ? `Your available balance needs to reach ${money(me.min_payout_cents)} first (${money((me.min_payout_cents ?? 0) - balance)} to go).`
-                              : noBank ? (me.bank_status === 'processing' ? 'Your bank account is still being verified (1–2 business days).' : 'Add and verify your bank account below first.')
-                              : null
+                              : me.payout_blocker ?? null
+                            const method = me.payout_method === 'paypal' ? 'paypal' : 'bank'
+                            const f = me.payout_fees?.[method] ?? { fixed_cents: 0, bps: 0 }
+                            const fee = Math.min(requestable, f.fixed_cents + Math.round(requestable * f.bps / 10000))
                             return (
                               <div className="seller-payout-request">
                                 <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={requestPayout}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
+                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} payout fee.</span>}
                                 {why && <span className="seller-earnings-note">{why}</span>}
                                 {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
                               </div>
@@ -1136,6 +1138,7 @@ export default function Seller({ token, onSignOut }) {
                         </>
                       )
                     })()}
+                    <PayoutMethod me={me} headers={authHeaders} money={money} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email }, payout_blocker: d.payout_blocker }))} />
                     <div className="seller-payout-limits">
                       <b>Payout limits</b>
                       <ul>
@@ -1143,6 +1146,7 @@ export default function Seller({ token, onSignOut }) {
                         <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
                         {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
                         <li>One request at a time — you can request again once the last one is paid.</li>
+                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} payout fee: <strong>{[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
                       </ul>
                       {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                     </div>
@@ -1779,5 +1783,34 @@ export default function Seller({ token, onSignOut }) {
         </>}
       </main>
     </div>
+  )
+}
+
+// Finances → how the seller is paid: their verified bank account or PayPal.
+function PayoutMethod({ me, headers, money, onSaved }) {
+  const [method, setMethod] = useState(me.payout_method === 'paypal' ? 'paypal' : 'bank')
+  const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
+  const [msg, setMsg] = useState('')
+  const hasBank = !!me.payout_details?.account_number
+  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — fee ${[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no fee' }
+  async function save(event) {
+    event.preventDefault()
+    setMsg('')
+    try {
+      const response = await fetch(`${API_URL}/seller/payout-method`, { method: 'PATCH', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ method, paypal_email: method === 'paypal' ? email.trim() : null }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save.')
+      onSaved(data.data)
+      setMsg('Saved.')
+    } catch (e) { setMsg(e.message) }
+  }
+  return (
+    <form className="seller-payout-limits" onSubmit={save}>
+      <b>How you&rsquo;re paid</b>
+      <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'bank'} onChange={() => setMethod('bank')} /> Bank account{hasBank ? ` (${me.payout_details.bank_name ?? 'bank'} ••••${String(me.payout_details.account_number).slice(-4)})` : ' — add it under Bank account'}{feeText('bank')}</label>
+      <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'paypal'} onChange={() => setMethod('paypal')} /> PayPal{feeText('paypal')}</label>
+      {method === 'paypal' && <input type="email" required placeholder="PayPal email" value={email} onChange={(e) => setEmail(e.target.value)} />}
+      <div><button type="submit" className="seller-btn ghost" disabled={method === 'bank' && !hasBank}>Save payout method</button> {msg && <span className="seller-earnings-note">{msg}</span>}</div>
+    </form>
   )
 }

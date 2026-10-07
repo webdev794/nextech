@@ -171,14 +171,20 @@ class AdminSellerController extends Controller
 
         // One payout at a time platform-wide, so two admins paying different
         // sellers can't both squeeze under the daily cap at the same moment.
-        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request, $cur): void {
+        $method = $seller->payout_method === 'paypal' ? 'paypal' : 'bank';
+        $fee = \App\Support\SellerPayouts::fee($shop->market, $method, (int) $data['amount_cents']);
+        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request, $cur, $fee, $method): void {
             $remaining = SellerLedger::dailyPayoutRemainingCents($shop->market);
             if ($remaining !== null && $data['amount_cents'] > $remaining) {
                 abort(422, "That would go over today's payout cap across all sellers — ".Money::format($remaining, $cur).' left today.');
             }
 
-            DB::transaction(function () use ($shop, $data, $request): void {
-                $entry = SellerLedger::recordPayout($shop, $data['amount_cents'], $data['note'] ?? null, $request->user());
+            DB::transaction(function () use ($shop, $data, $request, $fee, $method): void {
+                // The payout fee for the seller's method is deducted: they receive the rest.
+                $entry = SellerLedger::recordPayout($shop, $data['amount_cents'] - $fee, trim(($method === 'paypal' ? 'PayPal' : 'Bank transfer').'. '.($data['note'] ?? '')), $request->user());
+                if ($fee > 0) {
+                    \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'payout_fee', 'amount_cents' => -$fee, 'note' => ($method === 'paypal' ? 'PayPal' : 'Bank transfer').' payout fee', 'created_by' => $request->user()->id]);
+                }
 
                 // Paying out settles the seller's open request, if any.
                 $shop->payoutRequests()->where('status', 'pending')->update([
@@ -190,7 +196,8 @@ class AdminSellerController extends Controller
             });
         });
 
-        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.Money::format($data['amount_cents'], $cur).' has been sent to your account'.(! empty($data['note']) ? " ({$data['note']})" : '').'. It shows under Finances in Seller Center.');
+        $sent = Money::format($data['amount_cents'] - $fee, $cur);
+        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : 'bank account').($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' payout fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),

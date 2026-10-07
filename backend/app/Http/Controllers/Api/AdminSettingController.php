@@ -238,6 +238,10 @@ class AdminSettingController extends Controller
                 // Bank-rules note sellers see next to "Request payout", per country (blank = default text).
                 'payout_notes' => ['sometimes', 'array'],
                 'payout_notes.*' => ['nullable', 'string', 'max:1000'],
+                // Payout fees per country and method: { IN: { bank: {fixed_cents, bps}, paypal: {...} } }.
+                'payout_fees' => ['sometimes', 'array'],
+                'payout_fees.*.*.fixed_cents' => ['nullable', 'integer', 'min:0', 'max:100000000'],
+                'payout_fees.*.*.bps' => ['nullable', 'integer', 'min:0', 'max:5000'],
                 // US sales tax: by state/ZIP or one flat rate; per-state edits; ZIP-lookup key (Secure access).
                 'sales_tax_mode' => ['sometimes', Rule::in(['state', 'flat'])],
                 'sales_tax_states' => ['sometimes', 'array'],
@@ -331,6 +335,16 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('commission_rate_bps', $validated)) {
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
+        }
+
+        if (array_key_exists('payout_fees', $validated)) {
+            $fees = (array) Setting::get('payout_fees', []);
+            foreach ($validated['payout_fees'] as $code => $byMethod) {
+                foreach (array_intersect_key((array) $byMethod, array_flip(\App\Support\SellerPayouts::METHODS)) as $method => $f) {
+                    $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0)];
+                }
+            }
+            Setting::put('payout_fees', $fees);
         }
 
         if (array_key_exists('payout_notes', $validated)) {
@@ -518,6 +532,7 @@ class AdminSettingController extends Controller
             'new_seller_days' => SellerLedger::newSellerDays(),
             'sales_tax' => SalesTax::adminPayload(),
             'payout_notes' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => SellerLedger::payoutNote($code)]),
+            'payout_fees' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => \App\Support\SellerPayouts::fees($code)]),
             // Sellers kept on an older commission rate, per market.
             'kept_rate_sellers' => \App\Models\Shop::whereNotNull('commission_rate_bps')->selectRaw('market, count(*) as n')->groupBy('market')->pluck('n', 'market'),
             'min_payout_cents' => SellerLedger::minPayoutCents('US'),

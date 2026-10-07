@@ -331,6 +331,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/onboarding/tax-settings', [SellerOnboardingController::class, 'saveTaxSettings']);
     Route::post('/seller/onboarding/compliance', [SellerOnboardingController::class, 'saveCompliance']);
     Route::post('/seller/onboarding/bank', [SellerOnboardingController::class, 'saveBank']);
+    Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
     Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
 
     // The `seller` middleware only requires having applied at all; the real

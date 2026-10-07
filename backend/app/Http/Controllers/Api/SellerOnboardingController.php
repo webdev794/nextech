@@ -230,6 +230,8 @@ class SellerOnboardingController extends Controller
                 'account_number' => trim($data['account_number']),
                 'bank_country' => $seller->country,
                 'document_path' => $data['document_path'],
+                // Kept if the seller also set up PayPal.
+                'paypal_email' => ((array) $seller->payout_details)['paypal_email'] ?? null,
                 'document_name' => $data['document_name'] ?? null,
                 'document_issued_on' => $data['document_issued_on'],
             ],

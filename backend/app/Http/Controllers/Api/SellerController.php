@@ -9,6 +9,7 @@ use App\Models\Shop;
 use App\Support\Market;
 use App\Support\Money;
 use App\Support\SellerLedger;
+use App\Support\SellerPayouts;
 use App\Support\SellerOnboarding;
 use App\Support\SellerRequirements;
 use App\Support\Sku;
@@ -176,6 +177,9 @@ class SellerController extends Controller
             // Daily cap on all payouts sent (a big balance may be paid over several days) and the bank-rules note.
             $seller->daily_payout_cap_cents = SellerLedger::dailyPayoutCapCents($seller->shop->market);
             $seller->payout_note = SellerLedger::payoutNote($seller->shop->market);
+            // Payout fees per method (fixed + %), and whether this seller can be paid right now.
+            $seller->payout_fees = SellerPayouts::fees($seller->shop->market);
+            $seller->payout_blocker = SellerPayouts::blocker($seller);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }
 
@@ -200,14 +204,32 @@ class SellerController extends Controller
      * current balance capped at the per-transfer maximum (a larger balance is
      * paid over several requests). Admin sees it in the notification bell.
      */
+    /** Choose how to be paid: the verified bank account (from onboarding) or PayPal. */
+    public function payoutMethod(Request $request): JsonResponse
+    {
+        $seller = $request->user()->seller;
+        abort_unless($seller?->status === 'approved', 403, 'Approved seller access required.');
+        $data = $request->validate([
+            'method' => ['required', \Illuminate\Validation\Rule::in(SellerPayouts::METHODS)],
+            'paypal_email' => ['required_if:method,paypal', 'nullable', 'email', 'max:160'],
+        ]);
+        $details = (array) $seller->payout_details;
+        if ($data['method'] === 'bank') {
+            abort_if(empty($details['account_number']), 422, 'Add your bank account first (Seller Center → Bank account).');
+        } else {
+            $details['paypal_email'] = strtolower(trim($data['paypal_email']));
+        }
+        $seller->forceFill(['payout_method' => $data['method'], 'payout_details' => $details])->save();
+
+        return response()->json(['data' => ['payout_method' => $seller->payout_method, 'paypal_email' => $details['paypal_email'] ?? null, 'payout_blocker' => SellerPayouts::blocker($seller->fresh('shop'))]]);
+    }
+
     public function requestPayout(Request $request): JsonResponse
     {
         $seller = $request->user()->seller()->with('shop')->first();
         abort_unless($seller?->status === 'approved' && $seller->shop, 403, 'Approved seller access required.');
         // Bank verification is enforced only when admin turned it on for this seller.
-        abort_unless($seller->payout_method && ($seller->bank_status === 'linked' || ! SellerRequirements::on($seller->shop, 'bank_verification')), 422, $seller->bank_status === 'processing'
-            ? 'Your bank account is still being verified (usually 1–2 business days).'
-            : 'Add and verify your bank account first.');
+        abort_if($why = SellerPayouts::blocker($seller), 422, (string) $why);
 
         $payoutRequest = DB::transaction(function () use ($seller): PayoutRequest {
             // Lock the shop row so a double-click can't open two requests.
