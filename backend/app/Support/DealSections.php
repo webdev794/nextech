@@ -12,9 +12,10 @@ use Illuminate\Support\Facades\Cache;
  *  - Lightning deals: products their seller (or admin) put on a lightning deal
  *    (time window, units, % off), soonest-ending first; topped up with the
  *    best sellers (most bought), up to `lightning_max`.
- *  - Unbeatable deals: the biggest discounts — at least `unbeatable_min_pct`
- *    first, then the next-biggest when there are too few — taken in turn from
- *    every category so each gets its own, up to `unbeatable_max`.
+ *  - Unbeatable deals: every product at least `unbeatable_min_pct` off (up to
+ *    `unbeatable_max`); when fewer than `unbeatable_min` are, it's topped up to
+ *    that minimum with the next-biggest discounts — never more. Taken in turn
+ *    from every category so each gets its own.
  *  - Exclusive offers: the lowest-priced products sold in that country's own
  *    currency — at least `exclusive_min` — shown as "Under $X" / "Under ₹X".
  * Products are shared out evenly (about a third each) so no section is empty,
@@ -25,7 +26,7 @@ class DealSections
 {
     public const DEFAULTS = [
         'lightning_hours' => 12, 'lightning_min_pct' => 20, 'lightning_max' => 20, 'lightning_max_share' => 40,
-        'unbeatable_min_pct' => 30, 'unbeatable_max' => 40,
+        'unbeatable_min_pct' => 30, 'unbeatable_min' => 12, 'unbeatable_max' => 40,
         'exclusive_min' => 12, 'exclusive_max' => 60,
     ];
 
@@ -114,8 +115,8 @@ class DealSections
         $rest = $all->whereNotIn('id', $lightning);
         $strong = $rest->filter(fn (Product $p) => self::discountPct($p) >= $r['unbeatable_min_pct']);
         $unbeatable = self::roundRobin($strong, $r['unbeatable_max']);
-        // Half of what's left (the other half goes to Exclusive offers), so both stay filled.
-        $unbeatableTarget = min($r['unbeatable_max'], max(1, intdiv($rest->count(), 2)));
+        // Too few at the minimum % off: top up only to `unbeatable_min` (never with lots of small discounts).
+        $unbeatableTarget = min($r['unbeatable_max'], $r['unbeatable_min']);
         if ($unbeatable->count() < $unbeatableTarget) {
             $unbeatable = $unbeatable->merge(self::roundRobin($rest->whereNotIn('id', $unbeatable), $unbeatableTarget - $unbeatable->count()));
         }
