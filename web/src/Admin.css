@@ -627,3 +627,14 @@ button.admin-bell-more:hover{text-decoration:underline}
 /* Okra has no italic face and the site turns off faux styles (font-synthesis:none) — allow a slanted style here; help text isn't uppercased like field names. */
 .admin-form .muted,.admin-form .admin-note,.admin-form .return-policy-hint{font-synthesis:style;text-transform:none;letter-spacing:0}
 .pill-refund_due{background:#fbe0dc;color:#a23b28}
+
+/* Countries show / hide switches */
+.admin-toggles{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
+.admin-toggle{display:flex;align-items:center;gap:10px;cursor:pointer;text-transform:none;letter-spacing:0;font-size:14px}
+.admin-toggle input{position:absolute;opacity:0;width:1px;height:1px}
+.admin-toggle-track{position:relative;flex:none;width:40px;height:22px;border-radius:999px;background:#c9cec6;transition:background .15s}
+.admin-toggle-track span{position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.admin-toggle input:checked+.admin-toggle-track{background:#1f7a3d}
+.admin-toggle input:checked+.admin-toggle-track span{transform:translateX(18px)}
+.admin-toggle input:focus-visible+.admin-toggle-track{outline:2px solid #1f7a3d;outline-offset:2px}
+.admin-toggle.locked{cursor:not-allowed;opacity:.75}

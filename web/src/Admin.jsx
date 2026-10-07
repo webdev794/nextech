@@ -4214,17 +4214,25 @@ Reason:`, '')
               <div className="admin-form">
                 <h3>Countries</h3>
                 <p className="muted">Countries enabled here appear as options in seller registration (business type, tax-ID format, and address labels all follow whichever country a seller picks). Enabling just one keeps the platform single-country; enabling several turns on multi-country selection everywhere that depends on it.</p>
-                {(settings.all_countries ?? []).map((country) => {
-                  const activeCodes = (settings.active_countries ?? []).map((c) => c.code)
-                  const checked = activeCodes.includes(country.code)
-                  return <label className="admin-check" key={country.code}>
-                    <input type="checkbox" checked={checked} onChange={(event) => {
-                      const next = event.target.checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
-                      saveSetting({ active_countries: next })
-                    }} />
-                    {country.name} ({country.code})
-                  </label>
-                })}
+                {/* Show / hide each country. Hidden: gone from the storefront country choice and seller sign-up;
+                    shoppers there are sent to the default country. Its sellers keep their accounts, open orders
+                    and payouts, and their products still show in open countries they ship to. */}
+                <div className="admin-toggles">
+                  {(settings.all_countries ?? []).map((country) => {
+                    const activeCodes = (settings.active_countries ?? []).map((c) => c.code)
+                    const shown = activeCodes.includes(country.code)
+                    const isDefault = country.code === (settings.home_market ?? 'US')
+                    return <label className={`admin-toggle${isDefault ? ' locked' : ''}`} key={country.code} title={isDefault ? 'The default country is always shown — pick another default first to hide it' : undefined}>
+                      <input type="checkbox" role="switch" checked={shown || isDefault} disabled={isDefault} onChange={(event) => {
+                        if (!event.target.checked && !window.confirm(`Hide ${country.name}? Shoppers there will see the ${marketOptions.find((m) => m.code === (settings.home_market ?? 'US'))?.name ?? 'default'} store instead, and new sellers can't sign up from ${country.name}. Its existing sellers, orders and payouts keep working.`)) return
+                        const next = event.target.checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
+                        saveSetting({ active_countries: next })
+                      }} />
+                      <span className="admin-toggle-track" aria-hidden><span /></span>
+                      <span>{country.name} ({country.code}) <small className="muted">{isDefault ? 'Shown · default' : shown ? 'Shown' : 'Hidden'}</small></span>
+                    </label>
+                  })}
+                </div>
                 <label style={{ marginTop: 10 }}>Default country (shoppers and this console start here)
                   <select value={settings.home_market ?? 'US'} onChange={(event) => saveSetting({ home_market: event.target.value })}>
                     {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name} ({m.currency.toUpperCase()})</option>)}
