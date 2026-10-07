@@ -2312,8 +2312,8 @@ Reason:`, '')
                     {(productsWaiting > 0 || removalRequests > 0) && (
                       <section>
                         <h5>Seller products</h5>
-                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sprod-${productsWaiting}`) }}>×</button></div>}
-                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sdel-${removalRequests}`) }}>×</button></div>}
+                        {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); if (marketOptions.length > 1) switchAdminMarket('ALL'); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sprod-${productsWaiting}`) }}>×</button></div>}
+                        {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); if (marketOptions.length > 1) switchAdminMarket('ALL'); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sdel-${removalRequests}`) }}>×</button></div>}
                       </section>
                     )}
                     {sellerApplications.length > 0 && (
@@ -3158,7 +3158,7 @@ Reason:`, '')
               <button className="act ghost" type="button" onClick={() => markAllDemo(false)}>Mark all listed as not demo</button>
             </div>
           )}
-          {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products.</p> : (
+          {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products{activeMarket !== 'ALL' ? ` in ${marketOptions.find((m) => m.code === activeMarket)?.name ?? activeMarket}` : ''}.{activeMarket !== 'ALL' && marketOptions.length > 1 && <> <button type="button" className="link" onClick={() => switchAdminMarket('ALL')}>Show all countries</button></>}</p> : (
             <table className="admin-table">
               <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th>Demo</th><th></th></tr></thead>
               <tbody>
