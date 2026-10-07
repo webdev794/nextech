@@ -357,6 +357,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       {step === 0 && (
         <div className="sc-card wz-card">
           <h2 className="sc-h2">Getting started: name &amp; category</h2>
+          {form.id && form.product_type !== 'digital' && <p className="sc-muted">Only changing the stock? Use <b>Update stock</b> in Manage products — it applies right away. (Stock is also on step 03 Variations &amp; SKUs.)</p>}
           {sold && <p className="sc-alert">This product has been sold, so its <b>type, name, category, brand and model number</b> are locked — buyers&rsquo; orders and warranties refer to them. You can still change the price, stock, photos, description and other details. To sell a different product, add a new listing.</p>}
           <p className="sc-muted">Pick the most relevant, accurate category so buyers can find your product. Fields marked <b className="wz-req">*</b> are required — a product can’t go live without a name, category, image and price.</p>
           <div className="wz-type" role="radiogroup" aria-label="Product type">

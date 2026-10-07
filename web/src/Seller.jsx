@@ -816,6 +816,24 @@ export default function Seller({ token, onSignOut }) {
     } catch (error) { setProductMsg(error.message) }
   }
 
+  // Manage products → Update stock (applies right away, no review).
+  const [stockEdit, setStockEdit] = useState(null)
+  async function saveStock(event) {
+    event.preventDefault()
+    const p = stockEdit.product
+    const body = (p.variants ?? []).length
+      ? { variants: p.variants.map((v) => ({ id: v.id, inventory_quantity: Math.max(0, Number(stockEdit.variants[v.id]) || 0) })) }
+      : { inventory_quantity: Math.max(0, Number(stockEdit.qty) || 0) }
+    try {
+      const response = await fetch(`${API_URL}/seller/products/${p.id}/stock`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not update stock.')
+      setProducts((list) => list.map((x) => (x.id === p.id ? { ...x, ...data.data } : x)))
+      setStockEdit(null)
+      setProductMsg(`Stock updated for ${p.name}.`)
+    } catch (e) { setProductMsg(e.message) }
+  }
+
   // Deactivate / relist a product (no review needed).
   async function setProductActive(product, active) {
     if (!active && !window.confirm(`Deactivate ${product.name}? Buyers won't see it until you relist it.`)) return
@@ -1008,6 +1026,18 @@ export default function Seller({ token, onSignOut }) {
                 <div className="sc-tabs">
                   {PRODUCT_TABS.map(([key, label]) => <button type="button" key={key} className={productTab === key ? 'active' : ''} onClick={() => setProductTab(key)}>{label} <small>{tabCount(key)}</small></button>)}
                 </div>
+                {stockEdit && (
+                  <div className="ss-overlay" role="presentation" onClick={() => setStockEdit(null)}>
+                    <form className="ss-modal" role="dialog" aria-modal="true" aria-labelledby="stock-title" onClick={(e) => e.stopPropagation()} onSubmit={saveStock}>
+                      <h2 id="stock-title" className="sc-h2">Update stock — {stockEdit.product.name}</h2>
+                      <p className="sc-muted">Takes effect right away — no review needed.</p>
+                      {(stockEdit.product.variants ?? []).length ? (stockEdit.product.variants ?? []).map((v) => (
+                        <label key={v.id}>{v.label || Object.values(v.options ?? {}).join(' / ') || v.sku} <small className="sc-muted">{v.sku}</small><input type="number" min="0" value={stockEdit.variants[v.id]} onChange={(e) => setStockEdit((x) => ({ ...x, variants: { ...x.variants, [v.id]: e.target.value } }))} /></label>
+                      )) : <label>Quantity in stock<input type="number" min="0" autoFocus value={stockEdit.qty} onChange={(e) => setStockEdit((x) => ({ ...x, qty: e.target.value }))} /></label>}
+                      <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setStockEdit(null)}>Cancel</button><button type="submit" className="sc-primary">Save stock</button></div>
+                    </form>
+                  </div>
+                )}
                 <div className="sc-card sc-table-card">
                   <div className="sc-filter"><input placeholder="Search name or SKU" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} />{productSearch && <button type="button" onClick={() => setProductSearch('')}>Clear</button>}</div>
                   <div className="sc-table-wrap">
@@ -1036,7 +1066,7 @@ export default function Seller({ token, onSignOut }) {
                                 </div>
                               </td>
                               <td><code>{product.sku}</code>{(product.variants ?? []).length > 0 && <small className="sc-muted">{product.variants.map((v) => v.sku).join(', ')}</small>}</td>
-                              <td className={qtyOf(product) <= 0 ? 'sc-low' : ''}>{qtyOf(product)}</td>
+                              <td className={qtyOf(product) <= 0 ? 'sc-low' : ''}>{product.product_type === 'digital' ? '—' : <>{qtyOf(product)}<br /><button type="button" className="sc-link" onClick={() => setStockEdit({ product, qty: String(product.inventory_quantity ?? 0), variants: Object.fromEntries((product.variants ?? []).map((v) => [v.id, String(v.inventory_quantity ?? 0)])) })}>Update stock</button></>}</td>
                               <td>{priceText(product)}{product.compare_at_price_cents > product.price_cents && <s className="sc-muted"> {money(product.compare_at_price_cents)}</s>}{product.low_traffic && <button type="button" className="sc-pill rejected sc-lowtraffic" title="A sales boost offer is waiting — click to view" onClick={() => go('pricing')}>Low traffic</button>}</td>
                               <td className="sc-actions">
                                 <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>

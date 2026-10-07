@@ -171,6 +171,43 @@ class SellerProductController extends Controller
         return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
     }
 
+    /**
+     * Manage products → Update stock: change quantities right away (no review),
+     * for the product or each of its variations.
+     */
+    public function updateStock(Request $request, Product $product): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($product->shop_id === $shop->id, 403);
+        abort_if($product->isDigital(), 422, 'Digital downloads have no stock to count.');
+        $data = $request->validate([
+            'inventory_quantity' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
+            'variants' => ['sometimes', 'array'],
+            'variants.*.id' => ['required', 'integer'],
+            'variants.*.inventory_quantity' => ['required', 'integer', 'min:0', 'max:1000000'],
+        ]);
+        DB::transaction(function () use ($product, $data) {
+            if (array_key_exists('inventory_quantity', $data)) {
+                $product->forceFill(['inventory_quantity' => (int) $data['inventory_quantity']])->save();
+            }
+            foreach ($data['variants'] ?? [] as $v) {
+                $product->variants()->whereKey($v['id'])->update(['inventory_quantity' => (int) $v['inventory_quantity']]);
+            }
+            // An edit waiting for review carries stock too: keep it in step, so
+            // approving it later doesn't put back the old numbers.
+            if ($held = $product->fresh()->pending_changes) {
+                if (array_key_exists('inventory_quantity', $data) && array_key_exists('inventory_quantity', (array) ($held['data'] ?? []))) {
+                    $held['data']['inventory_quantity'] = (int) $data['inventory_quantity'];
+                }
+                $byId = collect($data['variants'] ?? [])->keyBy('id');
+                $held['variants'] = is_array($held['variants'] ?? null) ? array_map(fn ($v) => ! empty($v['id']) && $byId->has($v['id']) ? ['inventory_quantity' => (int) $byId[$v['id']]['inventory_quantity']] + $v : $v, $held['variants']) : ($held['variants'] ?? null);
+                $product->forceFill(['pending_changes' => $held])->save();
+            }
+        });
+
+        return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
+    }
+
     public function update(Request $request, Product $product): JsonResponse
     {
         $shop = $this->shop($request);
