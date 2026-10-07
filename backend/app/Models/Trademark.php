@@ -8,11 +8,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /** A trademark a shop registered (Account health) for NexTech to review; approved ones can go on products. */
 class Trademark extends Model
 {
-    protected $fillable = ['shop_id', 'name', 'registration_number', 'registration_country', 'logo_url', 'certificate_path', 'status', 'note', 'reviewed_at'];
+    protected $fillable = ['shop_id', 'name', 'registration_number', 'registration_country', 'logo_url', 'certificate_path', 'status', 'note', 'reviewed_at', 'change_request', 'change_status', 'change_note'];
 
     protected function casts(): array
     {
-        return ['reviewed_at' => 'datetime'];
+        return ['reviewed_at' => 'datetime', 'change_request' => 'array'];
+    }
+
+    public function products(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Product::class);
     }
 
     public function shop(): BelongsTo

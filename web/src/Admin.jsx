@@ -2178,10 +2178,11 @@ Reason:`, '')
   const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
   // Counts, not items: × hides the line until the number changes.
   const productsWaiting = dismissedNotifs.has(`sprod-${notifications.products_waiting}`) ? 0 : (notifications.products_waiting ?? 0)
+  const trademarkReviews = dismissedNotifs.has(`stm-${notifications.trademark_reviews}`) ? 0 : (notifications.trademark_reviews ?? 0)
   const removalRequests = dismissedNotifs.has(`sdel-${notifications.removal_requests}`) ? 0 : (notifications.removal_requests ?? 0)
   // Seller items live under the top-bar "Sellers" button, not the main bell.
   const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length
-    + sellerLabelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0)
+    + sellerLabelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0) + (trademarkReviews > 0 ? 1 : 0)
   const notificationCount = refundsDue.length
     + riderPayoutRequests.length
     + riderApplications.length
@@ -2309,11 +2310,12 @@ Reason:`, '')
                         )}
                       </section>
                     )}
-                    {(productsWaiting > 0 || removalRequests > 0) && (
+                    {(productsWaiting > 0 || removalRequests > 0 || trademarkReviews > 0) && (
                       <section>
                         <h5>Seller products</h5>
                         {productsWaiting > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); if (marketOptions.length > 1) switchAdminMarket('ALL'); goTab('products'); setProductStatus('pending'); setProductsPage(1); setProductForm(null) }}>📦 {productsWaiting} waiting for review</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sprod-${productsWaiting}`) }}>×</button></div>}
                         {removalRequests > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); if (marketOptions.length > 1) switchAdminMarket('ALL'); goTab('products'); setProductStatus('deletion'); setProductsPage(1); setProductForm(null) }}>🗑️ {removalRequests} removal request{removalRequests === 1 ? '' : 's'}</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`sdel-${removalRequests}`) }}>×</button></div>}
+                        {trademarkReviews > 0 && <div className="admin-bell-row"><button type="button" className="admin-bell-item" onClick={() => { setSellerBellOpen(false); if (marketOptions.length > 1) switchAdminMarket('ALL'); goTab('sellers') }}>™️ {trademarkReviews} trademark{trademarkReviews === 1 ? '' : 's'} / change request{trademarkReviews === 1 ? '' : 's'} to review</button><button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(`stm-${trademarkReviews}`) }}>×</button></div>}
                       </section>
                     )}
                     {sellerApplications.length > 0 && (

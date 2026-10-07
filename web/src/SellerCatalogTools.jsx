@@ -676,9 +676,18 @@ export function AccountHealth({ headers, country }) {
     event.preventDefault()
     setBusy(true)
     try {
-      await send(headers, '/seller/trademarks', 'POST', { name: form.name, registration_number: form.registration_number, registration_country: form.registration_country, certificate_path: form.certificate_path, logo_url: form.logo_url || null })
+      const details = { name: form.name, registration_number: form.registration_number, registration_country: form.registration_country, ...(form.certificate_path ? { certificate_path: form.certificate_path } : {}) }
+      if (form.mode === 'edit') {
+        await send(headers, `/seller/trademarks/${form.id}`, 'PATCH', details)
+        setMsg(`Trademark updated — ${brandName()} will review it again.`)
+      } else if (form.mode === 'change') {
+        await send(headers, `/seller/trademarks/${form.id}/change-request`, 'POST', { ...details, reason: form.reason })
+        setMsg(`Change request sent — ${brandName()} will review it. Your trademark stays as it is until then.`)
+      } else {
+        await send(headers, '/seller/trademarks', 'POST', { ...details, logo_url: form.logo_url || null })
+        setMsg(`Trademark submitted — ${brandName()} will review it.`)
+      }
       setForm(null)
-      setMsg(`Trademark submitted — ${brandName()} will review it.`)
       load()
     } catch (e) { setMsg(e.message) } finally { setBusy(false) }
   }
@@ -700,8 +709,18 @@ export function AccountHealth({ headers, country }) {
                   <td>{t.logo_url ? <img className="ah-logo" src={mediaUrl(t.logo_url)} alt="" /> : <span className="sc-muted">—</span>}</td>
                   <td><b>{t.name}</b></td>
                   <td>{t.registration_number} <small className="sc-muted">{t.registration_country}</small></td>
-                  <td><span className={`sc-pill ${STATUS[t.status]?.[1]}`}>{STATUS[t.status]?.[0]}</span>{t.note && <small className="sc-low">{t.note}</small>}</td>
-                  <td className="sc-actions"><label className="sc-link bu-inline">{t.logo_url ? 'Change logo' : 'Add logo'}<input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f, async (url) => { await send(headers, `/seller/trademarks/${t.id}`, 'PATCH', { logo_url: url }); load() }) }} /></label></td>
+                  <td><span className={`sc-pill ${STATUS[t.status]?.[1]}`}>{STATUS[t.status]?.[0]}</span>{t.note && <small className="sc-low">{t.note}</small>}
+                    {t.change_status === 'pending' && <small className="sc-muted">Change requested — under review</small>}
+                    {t.change_status === 'docs_requested' && <small className="sc-low">{brandName()} needs documents before changing it: {t.change_note}</small>}
+                    {!t.change_status && t.change_note && <small className="sc-low">Change not approved: {t.change_note}</small>}</td>
+                  <td className="sc-actions"><label className="sc-link bu-inline">{t.logo_url ? 'Change logo' : 'Add logo'}<input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f, async (url) => { await send(headers, `/seller/trademarks/${t.id}`, 'PATCH', { logo_url: url }); load() }) }} /></label>
+                    {t.status !== 'approved' && <button type="button" className="sc-link" onClick={() => setForm({ mode: 'edit', id: t.id, name: t.name, registration_number: t.registration_number, registration_country: t.registration_country, certificate_path: '', certificate_name: '' })}>Edit</button>}
+                    {t.status === 'approved' && !t.change_status && (t.covered?.length
+                      ? <small className="sc-muted" title={t.covered.map((c) => `${c.name} — until ${new Date(c.until).toLocaleDateString()}`).join('\n')}>Can&rsquo;t change until {new Date(t.covered[0].until).toLocaleDateString()} — buyers are under returns / warranty</small>
+                      : <button type="button" className="sc-link" onClick={() => setForm({ mode: 'change', id: t.id, name: t.name, registration_number: t.registration_number, registration_country: t.registration_country, certificate_path: '', certificate_name: '', reason: '' })}>Request a change</button>)}
+                    {t.change_status === 'docs_requested' && <button type="button" className="sc-link" onClick={() => setForm({ mode: 'change', id: t.id, name: t.change_request?.name ?? t.name, registration_number: t.change_request?.registration_number ?? t.registration_number, registration_country: t.change_request?.registration_country ?? t.registration_country, certificate_path: '', certificate_name: '', reason: t.change_request?.reason ?? '' })}>Upload &amp; resend</button>}
+                    {t.change_status && <button type="button" className="sc-link" onClick={async () => { try { await send(headers, `/seller/trademarks/${t.id}/change-request`, 'DELETE'); load() } catch (e) { setMsg(e.message) } }}>Cancel request</button>}
+</td>
                 </tr>
               ))}
               {trademarks?.length === 0 && <tr><td colSpan="5" className="sc-empty">No trademarks yet.</td></tr>}
@@ -712,15 +731,17 @@ export function AccountHealth({ headers, country }) {
       {form && (
         <div className="ss-overlay" role="presentation" onClick={() => setForm(null)}>
           <form className="ss-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-            <h2 className="sc-h2">Register a trademark</h2>
+            <h2 className="sc-h2">{form.mode === 'edit' ? 'Edit trademark' : form.mode === 'change' ? 'Request a trademark change' : 'Register a trademark'}</h2>
+            {form.mode === 'change' && <p className="sc-muted">{brandName()} reviews the change; your trademark stays as it is until it&rsquo;s approved. A new name or registration needs the new registration certificate. If the name changes, all products under this trademark show the new name.</p>}
             <label>Trademark (brand name)<input required maxLength="120" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
             <div className="ss-row">
               <label>Registration number<input required maxLength="60" value={form.registration_number} onChange={(e) => setForm({ ...form, registration_number: e.target.value })} /></label>
               <label>Registered in (country code)<input required maxLength="2" value={form.registration_country} onChange={(e) => setForm({ ...form, registration_country: e.target.value.toUpperCase() })} /></label>
             </div>
             <label>Registration certificate (PDF or image)<input type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={async (e) => { const f = e.target.files?.[0]; e.target.value = ''; if (!f) return; try { const path = await uploadDoc(headers, 'trademark_certificate', f); setForm((x) => ({ ...x, certificate_path: path, certificate_name: f.name })) } catch (err) { setMsg(err.message) } }} /><small className="sc-muted">{form.certificate_name ? `Uploaded: ${form.certificate_name}` : 'Must show the trademark, the owner and the registration number.'}</small></label>
-            <label>Logo (optional)<input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f, (url) => setForm((x) => ({ ...x, logo_url: url }))) }} />{form.logo_url && <img className="ah-logo" src={mediaUrl(form.logo_url)} alt="" />}</label>
-            <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setForm(null)}>Cancel</button><button type="submit" className="sc-primary" disabled={busy || !form.certificate_path}>Submit for review</button></div>
+            {form.mode === 'change' && <label>Why does it need to change?<textarea required maxLength="500" rows={3} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} placeholder="e.g. Brand renamed after re-registration" /></label>}
+            {!form.mode && <label>Logo (optional)<input type="file" accept="image/*" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadLogo(f, (url) => setForm((x) => ({ ...x, logo_url: url }))) }} />{form.logo_url && <img className="ah-logo" src={mediaUrl(form.logo_url)} alt="" />}</label>}
+            <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setForm(null)}>Cancel</button><button type="submit" className="sc-primary" disabled={busy || (!form.mode && !form.certificate_path) || (form.mode === 'change' && !form.reason?.trim())}>{form.mode === 'change' ? 'Send change request' : 'Submit for review'}</button></div>
           </form>
         </div>
       )}

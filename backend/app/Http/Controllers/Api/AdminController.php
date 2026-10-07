@@ -350,6 +350,8 @@ class AdminController extends Controller
             'refunds_due' => $refundsDue,
             'seller_tasks' => $sellerTasks,
             'products_waiting' => Product::query()->whereNotNull('shop_id')->where(fn ($q) => $q->where('status', 'pending')->orWhereNotNull('pending_changes'))->count(),
+            // New trademarks and change requests waiting for review (Sellers → Trademarks).
+            'trademark_reviews' => \App\Models\Trademark::query()->where(fn ($q) => $q->where('status', 'pending')->orWhere('change_status', 'pending'))->count(),
             'removal_requests' => Product::query()->whereNotNull('deletion_requested_at')->whereNull('archived_at')->count(),
             'category_suggestions' => $categorySuggestions,
             'seller_applications' => $sellerApplications,

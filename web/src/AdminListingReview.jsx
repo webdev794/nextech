@@ -139,8 +139,10 @@ export function TrademarkReview({ authHeaders, jsonHeaders, viewDocument, fail, 
   useEffect(() => { Promise.resolve().then(load) }, [load])
 
   async function decide(t, decision) {
-    const note = decision === 'reject' ? window.prompt(`Why can’t "${t.name}" be approved? The seller sees this.`, '') : null
-    if (decision === 'reject' && !note) return
+    const ask = { reject: `Why can’t "${t.name}" be approved? The seller sees this.`, reject_change: `Why can’t the change to "${t.name}" be approved? The trademark stays as it is. The seller sees this.`, request_docs: `Which documents must the seller upload before you can approve the change to "${t.name}"? (e.g. the new registration certificate, product compliance documents showing the new brand)` }[decision]
+    const note = ask ? window.prompt(ask, '') : null
+    if (ask && !note) return
+    if (decision === 'approve_change' && !window.confirm(`Approve the change to "${t.name}"? ${t.change_request?.name && t.change_request.name !== t.name ? `All its products will show "${t.change_request.name}".` : ''}`)) return
     try {
       const response = await fetch(`${API_URL}/admin/trademarks/${t.id}/review`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ decision, note }) })
       const data = await readJson(response)
@@ -150,10 +152,10 @@ export function TrademarkReview({ authHeaders, jsonHeaders, viewDocument, fail, 
   }
 
   if (!rows) return null
-  if (!rows.length && status === 'pending') return null
+  if (!rows.length && (status === 'pending' || status === 'changes')) return status === 'changes' ? <div className="admin-form"><h3>Trademark change requests <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="pending">Pending</option><option value="changes">Change requests</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select></h3><p className="muted">No change requests.</p></div> : null
   return (
     <div className="admin-form">
-      <h3>Trademarks {status === 'pending' ? 'to review' : ''} <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="pending">Pending</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select></h3>
+      <h3>Trademarks {status === 'pending' ? 'to review' : ''} <select value={status} onChange={(e) => setStatus(e.target.value)}><option value="pending">Pending</option><option value="changes">Change requests</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="all">All</option></select></h3>
       <table className="admin-table">
         <thead><tr><th>Trademark</th><th>Shop</th><th>Registration</th><th>Status</th><th></th></tr></thead>
         <tbody>{rows.map((t) => (
@@ -161,11 +163,20 @@ export function TrademarkReview({ authHeaders, jsonHeaders, viewDocument, fail, 
             <td>{t.logo_url && <img className="admin-tm-logo" src={mediaUrl(t.logo_url)} alt="" />}{t.name}</td>
             <td>{t.shop?.name}</td>
             <td>{t.registration_number} · {t.registration_country}</td>
-            <td><span className={`pill pill-${t.status === 'approved' ? 'approved' : t.status === 'rejected' ? 'rejected' : 'pending'}`}>{t.status}</span>{t.note && <span className="admin-note">{t.note}</span>}</td>
+            <td><span className={`pill pill-${t.status === 'approved' ? 'approved' : t.status === 'rejected' ? 'rejected' : 'pending'}`}>{t.status}</span>{t.note && <span className="admin-note">{t.note}</span>}
+              {t.change_status && <div className="admin-note"><b>{t.change_status === 'docs_requested' ? 'Change request — waiting for documents' : 'Change requested'}</b>{Object.entries(t.change_request ?? {}).filter(([k]) => ['name', 'registration_number', 'registration_country'].includes(k)).map(([k, v]) => <div key={k}>{k.replace(/_/g, ' ')}: {t[k]} → <b>{v}</b></div>)}{t.change_request?.reason && <div>Reason: “{t.change_request.reason}”</div>}{t.change_note && <div>You asked: {t.change_note}</div>}</div>}
+              {(t.advice ?? []).length > 0 && <ul className="admin-note admin-tm-advice">{t.advice.map((a) => <li key={a}>⚠ {a}</li>)}</ul>}
+            </td>
             <td className="admin-actions">
               {t.certificate_path && <button className="act ghost" type="button" onClick={() => viewDocument(t.certificate_path)}>Certificate</button>}
-              {t.status !== 'approved' && <button className="act" type="button" onClick={() => decide(t, 'approve')}>Approve</button>}
-              {t.status !== 'rejected' && <button className="act danger" type="button" onClick={() => decide(t, 'reject')}>Reject</button>}
+              {t.change_request?.certificate_path && <button className="act ghost" type="button" onClick={() => viewDocument(t.change_request.certificate_path)}>New certificate</button>}
+              {t.change_status === 'pending' && <>
+                <button className="act" type="button" onClick={() => decide(t, 'approve_change')}>Approve change</button>
+                <button className="act ghost" type="button" onClick={() => decide(t, 'request_docs')}>Ask for documents</button>
+                <button className="act danger" type="button" onClick={() => decide(t, 'reject_change')}>Reject change</button>
+              </>}
+              {!t.change_status && t.status !== 'approved' && <button className="act" type="button" onClick={() => decide(t, 'approve')}>Approve</button>}
+              {!t.change_status && t.status !== 'rejected' && <button className="act danger" type="button" onClick={() => decide(t, 'reject')}>Reject</button>}
             </td>
           </tr>
         ))}</tbody>

@@ -379,6 +379,8 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::get('/seller/trademarks', [SellerTrademarkController::class, 'index']);
     Route::post('/seller/trademarks', [SellerTrademarkController::class, 'store']);
     Route::patch('/seller/trademarks/{trademark}', [SellerTrademarkController::class, 'update']);
+    Route::post('/seller/trademarks/{trademark}/change-request', [SellerTrademarkController::class, 'changeRequest']);
+    Route::delete('/seller/trademarks/{trademark}/change-request', [SellerTrademarkController::class, 'cancelChangeRequest']);
     Route::get('/seller/orders', [SellerOrderController::class, 'index']);
     Route::get('/seller/orders/alerts', [SellerOrderController::class, 'alerts']);
     Route::post('/seller/orders/{order}/address-change/{change}', [SellerOrderController::class, 'decideAddressChange']);
