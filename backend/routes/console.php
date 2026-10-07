@@ -47,3 +47,9 @@ Artisan::command('sellers:remind-updates', function () {
     $this->info("Sellers reminded: {$result['reminded']} · overdue sent to admin: {$result['escalated']}");
 })->purpose('Remind sellers about orders waiting on their update; alert admin about overdue ones');
 Schedule::command('sellers:remind-updates')->hourly()->withoutOverlapping();
+
+// Lightning deals set to auto-restart: begin the next round (new % from the range) when one ends or sells out.
+Artisan::command('deals:restart-lightning', function () {
+    $this->info('Restarted: '.App\Support\LightningDeals::restartDue());
+})->purpose('Start the next round of auto-restarting lightning deals');
+Schedule::command('deals:restart-lightning')->everyTenMinutes()->withoutOverlapping();

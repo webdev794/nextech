@@ -414,15 +414,23 @@ class CatalogController extends Controller
      */
     private function present(Product $product, ?int $storeId, ?string $market = null, bool $keepShop = false): Product
     {
+        // A running lightning deal: its price (regular price shown as "was"), countdown and how much is claimed.
+        if (\App\Support\DealSections::lightningLive($product)) {
+            foreach ([$product, ...$product->variants] as $row) {
+                $regular = (int) $row->price_cents;
+                $row->setAttribute('compare_at_price_cents', max($regular, (int) $row->compare_at_price_cents));
+                $row->setAttribute('price_cents', \App\Support\DealSections::lightningPrice($product, $regular));
+            }
+        }
         $this->presentCrossBorder($product, $market);
-        // A running lightning deal: countdown and how much has been claimed.
         if (\App\Support\DealSections::lightningLive($product)) {
             $product->setAttribute('lightning', [
                 'ends_at' => $product->lightning_ends_at->toIso8601String(),
                 'claimed_pct' => (int) min(100, round(\App\Support\DealSections::lightningClaimed($product) * 100 / max(1, (int) $product->lightning_qty))),
+                'pct' => (int) $product->lightning_pct,
             ]);
         }
-        $product->makeHidden(['lightning_starts_at', 'lightning_ends_at', 'lightning_qty', 'lightning_base_sold']);
+        $product->makeHidden(['lightning_starts_at', 'lightning_ends_at', 'lightning_qty', 'lightning_base_sold', 'lightning_pct', 'lightning_pct_min', 'lightning_pct_max', 'lightning_repeat']);
 
         if ($storeId !== null && $product->usesStoreInventory()) {
             $kept = [];

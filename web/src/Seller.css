@@ -556,3 +556,4 @@ s.sc-muted{display:inline}
 .lightning-box{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px dashed #e0b84d;border-radius:10px;background:#fffaf0}
 .lightning-box p{margin:0;font-size:12px;color:#5c6357}.lightning-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
 .lightning-row label{display:flex;flex-direction:column;gap:4px;font-size:12px}.lightning-msg{font-weight:600}
+.lightning-check{display:flex;align-items:center;gap:6px;font-size:12px}

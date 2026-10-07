@@ -826,7 +826,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (161, '2026_10_07_000068_add_affiliate_to_products', 96),
 (162, '2026_10_07_000069_add_condition_to_products', 97),
 (163, '2026_10_07_000070_create_category_interests_table', 98),
-(164, '2026_10_07_000071_add_lightning_deal_to_products', 99);
+(164, '2026_10_07_000071_add_lightning_deal_to_products', 99),
+(165, '2026_10_07_000072_add_lightning_discount_to_products', 100);
 
 -- --------------------------------------------------------
 
@@ -1447,7 +1448,11 @@ CREATE TABLE `products` (
   `lightning_starts_at` timestamp NULL DEFAULT NULL,
   `lightning_ends_at` timestamp NULL DEFAULT NULL,
   `lightning_qty` int(10) UNSIGNED DEFAULT NULL,
-  `lightning_base_sold` int(10) UNSIGNED DEFAULT NULL
+  `lightning_base_sold` int(10) UNSIGNED DEFAULT NULL,
+  `lightning_pct` tinyint(3) UNSIGNED DEFAULT NULL,
+  `lightning_pct_min` tinyint(3) UNSIGNED DEFAULT NULL,
+  `lightning_pct_max` tinyint(3) UNSIGNED DEFAULT NULL,
+  `lightning_repeat` tinyint(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3355,7 +3360,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=165;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=166;
 
 --
 -- AUTO_INCREMENT for table `orders`

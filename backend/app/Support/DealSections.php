@@ -10,20 +10,21 @@ use Illuminate\Support\Facades\Cache;
 /**
  * The three deal sections, filled automatically per country (no manual picks):
  *  - Lightning deals: products their seller (or admin) put on a lightning deal
- *    — a time window and a quantity, discounted at least `lightning_min_pct` —
- *    soonest-ending first; topped up with the best sellers (most bought)
- *    when fewer deals are running, up to `lightning_max`.
- *  - Unbeatable deals: the biggest discounts (at least `unbeatable_min_pct`),
- *    taken in turn from every category so each gets its own, up to `unbeatable_max`.
+ *    (time window, units, % off), soonest-ending first; topped up with the
+ *    best sellers (most bought), up to `lightning_max`.
+ *  - Unbeatable deals: the biggest discounts — at least `unbeatable_min_pct`
+ *    first, then the next-biggest when there are too few — taken in turn from
+ *    every category so each gets its own, up to `unbeatable_max`.
  *  - Exclusive offers: the lowest-priced products sold in that country's own
  *    currency — at least `exclusive_min` — shown as "Under $X" / "Under ₹X".
- * A product appears in only one section. Ads are never included; demo products
+ * Products are shared out evenly (about a third each) so no section is empty,
+ * and a product appears in only one section. Ads are never included; demo products
  * follow the demo show/hide switch like everywhere else.
  */
 class DealSections
 {
     public const DEFAULTS = [
-        'lightning_hours' => 12, 'lightning_min_pct' => 20, 'lightning_max' => 20,
+        'lightning_hours' => 12, 'lightning_min_pct' => 20, 'lightning_max' => 20, 'lightning_max_share' => 40,
         'unbeatable_min_pct' => 30, 'unbeatable_max' => 40,
         'exclusive_min' => 12, 'exclusive_max' => 60,
     ];
@@ -48,9 +49,15 @@ class DealSections
     /** Is this product's lightning deal running now (window open, units left)? */
     public static function lightningLive(Product $p): bool
     {
-        return $p->lightning_starts_at && $p->lightning_ends_at && $p->lightning_qty
+        return $p->lightning_starts_at && $p->lightning_ends_at && $p->lightning_qty && $p->lightning_pct
             && $p->lightning_starts_at->isPast() && $p->lightning_ends_at->isFuture()
             && self::lightningClaimed($p) < (int) $p->lightning_qty;
+    }
+
+    /** A price during a running lightning deal ($cents off by the deal's %), else unchanged. */
+    public static function lightningPrice(Product $p, int $cents): int
+    {
+        return self::lightningLive($p) ? (int) round($cents * (100 - (int) $p->lightning_pct) / 100) : $cents;
     }
 
     public static function lightningClaimed(Product $p): int
@@ -84,40 +91,43 @@ class DealSections
             ->where('is_active', true)->where('status', 'approved')->whereNull('affiliate_url')
             ->shownToShoppers()->availableIn($market)
             ->whereHas('category', fn ($q) => $q->where('is_active', true))
-            ->get(['id', 'market', 'category_id', 'price_cents', 'compare_at_price_cents', 'units_sold', 'lightning_starts_at', 'lightning_ends_at', 'lightning_qty', 'lightning_base_sold']);
+            ->get(['id', 'market', 'category_id', 'price_cents', 'compare_at_price_cents', 'units_sold', 'lightning_starts_at', 'lightning_ends_at', 'lightning_qty', 'lightning_base_sold', 'lightning_pct']);
 
         // A lightning deal that has just begun counts its sales from now.
         $all->filter(fn (Product $p) => $p->lightning_starts_at?->isPast() && $p->lightning_ends_at?->isFuture() && $p->lightning_base_sold === null)
             ->each(fn (Product $p) => $p->forceFill(['lightning_base_sold' => (int) $p->units_sold])->saveQuietly());
 
-        $lightning = $all->filter(fn (Product $p) => self::lightningLive($p) && self::discountPct($p) >= $r['lightning_min_pct'])
+        // Share products out evenly so no section is empty or lopsided: each aims for a third of what's available.
+        $third = max(1, intdiv($all->count(), 3));
+
+        // Time-limited offers come first, soonest-ending first; best sellers (most bought) fill up to the target.
+        $lightning = $all->filter(fn (Product $p) => self::lightningLive($p))
             ->sortBy(fn (Product $p) => $p->lightning_ends_at->timestamp)->pluck('id');
-        if ($lightning->count() < $r['lightning_max']) {
-            // Few deals running: the most bought products fill the section.
-            $lightning = $lightning->merge($all->where('units_sold', '>', 0)->whereNotIn('id', $lightning)->sortByDesc('units_sold')->pluck('id'));
+        $lightningTarget = min($r['lightning_max'], max($lightning->count(), $third));
+        if ($lightning->count() < $lightningTarget) {
+            $lightning = $lightning->merge($all->whereNotIn('id', $lightning)->sortByDesc('units_sold')->pluck('id'));
         }
-        $lightning = $lightning->take($r['lightning_max'])->values();
+        $lightning = $lightning->take($lightningTarget)->values();
 
-        // Biggest discounts, one category at a time so every category gets its own.
-        $byCategory = $all->whereNotIn('id', $lightning)->filter(fn (Product $p) => self::discountPct($p) >= $r['unbeatable_min_pct'])
-            ->sortByDesc(fn (Product $p) => self::discountPct($p))->groupBy('category_id')->map->values();
-        $unbeatable = collect();
-        for ($round = 0; $unbeatable->count() < $r['unbeatable_max'] && $byCategory->contains(fn ($g) => $g->has($round)); $round++) {
-            foreach ($byCategory as $group) {
-                if ($group->has($round) && $unbeatable->count() < $r['unbeatable_max']) {
-                    $unbeatable->push($group[$round]->id);
-                }
-            }
+        // Biggest discounts, one category at a time so every category gets its own. Those at the
+        // minimum % off go first; when there are too few, the next-biggest discounts fill it up.
+        $rest = $all->whereNotIn('id', $lightning);
+        $strong = $rest->filter(fn (Product $p) => self::discountPct($p) >= $r['unbeatable_min_pct']);
+        $unbeatable = self::roundRobin($strong, $r['unbeatable_max']);
+        // Half of what's left (the other half goes to Exclusive offers), so both stay filled.
+        $unbeatableTarget = min($r['unbeatable_max'], max(1, intdiv($rest->count(), 2)));
+        if ($unbeatable->count() < $unbeatableTarget) {
+            $unbeatable = $unbeatable->merge(self::roundRobin($rest->whereNotIn('id', $unbeatable), $unbeatableTarget - $unbeatable->count()));
         }
 
-        // Cheapest products sold in this country's own currency; the cap is the n-th cheapest's price.
+        // Cheapest products sold in this country's own currency, at least `exclusive_min`; the cap is the last one's price.
         $own = $all->where('market', $market)->whereNotIn('id', $lightning->merge($unbeatable))->sortBy('price_cents')->values();
         $under = null;
         $exclusive = collect();
         if ($own->isNotEmpty()) {
-            $nth = $own->get(min($r['exclusive_min'], $own->count()) - 1);
-            $under = self::niceCap((int) $nth->price_cents, $market);
-            $exclusive = $own->filter(fn (Product $p) => (int) $p->price_cents <= $under)->take(max($r['exclusive_max'], $r['exclusive_min']))->pluck('id');
+            $count = min($own->count(), max($r['exclusive_min'], min($third, $r['exclusive_max'])));
+            $under = self::niceCap((int) $own->get($count - 1)->price_cents, $market);
+            $exclusive = $own->filter(fn (Product $p) => (int) $p->price_cents <= $under)->take(max($r['exclusive_max'], $count))->pluck('id');
         }
 
         return [
@@ -127,6 +137,27 @@ class DealSections
             'under_cents' => $under,
             'currency' => Market::currency($market),
         ];
+    }
+
+    /**
+     * Up to $limit products, biggest discount first, taken in turn from each category.
+     *
+     * @param  Collection<int, Product>  $products
+     * @return Collection<int, int>
+     */
+    private static function roundRobin(Collection $products, int $limit): Collection
+    {
+        $byCategory = $products->sortByDesc(fn (Product $p) => self::discountPct($p) * 1000000 + (int) $p->units_sold)->groupBy('category_id')->map->values();
+        $out = collect();
+        for ($round = 0; $out->count() < $limit && $byCategory->contains(fn ($g) => $g->has($round)); $round++) {
+            foreach ($byCategory as $group) {
+                if ($group->has($round) && $out->count() < $limit) {
+                    $out->push($group[$round]->id);
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** Round a price up to a tidy "Under …" figure ($5 / $10 / $25 / $50… ; ₹100 / ₹500 / ₹1,000…). */

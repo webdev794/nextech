@@ -31,9 +31,13 @@ class Purchasable
 
         $availability = $product->availabilityAt($storeId, $variant);
 
+        $regular = (int) ($variant?->price_cents ?? $product->price_cents);
+        // A running lightning deal: its % off the regular price, which shows as the "was" price.
+        $deal = DealSections::lightningPrice($product, $regular);
+
         return [
-            'price_cents' => (int) ($variant?->price_cents ?? $product->price_cents),
-            'compare_at_price_cents' => self::compareAt($variant, $product),
+            'price_cents' => $deal,
+            'compare_at_price_cents' => $deal < $regular ? max($regular, (int) self::compareAt($variant, $product)) : self::compareAt($variant, $product),
             'inventory_quantity' => $availability['quantity'],
             // `active` = buyable at all here; `sold` = the store carries the line
             // (false + per_store means "not sold in this area").

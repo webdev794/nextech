@@ -192,7 +192,7 @@ class AdminProductController extends Controller
         if ($request->isMethod('delete')) {
             \App\Support\LightningDeals::stop($product);
         } else {
-            $data = $request->validate(['starts_at' => ['sometimes', 'nullable', 'date'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000']]);
+            $data = $request->validate(['starts_at' => ['sometimes', 'nullable', 'date'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000'], 'pct_min' => ['required', 'integer', 'min:1', 'max:90'], 'pct_max' => ['sometimes', 'nullable', 'integer', 'min:1', 'max:90'], 'repeat' => ['sometimes', 'boolean']]);
             \App\Support\LightningDeals::start($product, $data);
         }
 
