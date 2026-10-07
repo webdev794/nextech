@@ -1,4 +1,7 @@
 {
+  "env": {
+    "ANTHROPIC_API_KEY": "sk-ant-usr-2vX1eYKSVS9SUFOYfaooeVjeeh2zMApAPu-E6JIAVBNHn_4NnRbT9-LotkXs9_YNmZoQnWsAJbXqKyI-Iw2tFAwJ4jhXgAB"
+  },
   "permissions": {
     "allow": [
       "Bash(node screenshot-home.js)",

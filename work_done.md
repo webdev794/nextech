@@ -6,7 +6,7 @@
 
 **URL:** https://testcaresortwork.co.in/edp/admin
 **Username:** test@example.com
-**Password:** password
+**Password:** password 
 
 ### Admin menus
 
