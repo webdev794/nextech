@@ -258,7 +258,7 @@ const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passp
 const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
-const EMPTY_FOOTER = { copyright: `© {year} ${brandName()}`, app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
+const EMPTY_FOOTER = { copyright: '© {year} {store}', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
 
 const ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
@@ -3860,7 +3860,7 @@ Reason:`, '')
                 <label>App Store URL<input value={footerForm.app_store_url} onChange={(event) => setFooterForm({ ...footerForm, app_store_url: event.target.value })} placeholder="https://apps.apple.com/…" /></label>
                 <label>Google Play URL<input value={footerForm.play_store_url} onChange={(event) => setFooterForm({ ...footerForm, play_store_url: event.target.value })} placeholder="https://play.google.com/…" /></label>
               </div>
-              <p className="muted"><code>{'{year}'}</code> in the copyright line is replaced with the current year.</p>
+              <p className="muted"><code>{'{year}'}</code> becomes the current year and <code>{'{store}'}</code> the store name (Store settings), so renaming the store updates the footer too.</p>
 
               <fieldset className="admin-fieldset">
                 <legend>Colours</legend>

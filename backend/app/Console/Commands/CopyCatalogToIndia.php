@@ -163,7 +163,7 @@ class CopyCatalogToIndia extends Command
                     'hsn_code' => $hsn,
                     'gst_rate_bps' => in_array(substr($hsn, 0, 4), ['9018', '9506'], true) ? 500 : 1800,
                     'country_of_origin' => $p->country_of_origin ?: $this->origin($p->name),
-                    'manufacturer_info' => $p->manufacturer_info ?: 'Imported and marketed by NexTech — replace with the brand’s manufacturer / importer name and address.',
+                    'manufacturer_info' => $p->manufacturer_info ?: 'Imported and marketed by '.\App\Support\Branding::name().' — replace with the brand’s manufacturer / importer name and address.',
                     'units_sold' => 0,
                     'rating_avg' => $p->rating_avg,
                     'rating_count' => $p->rating_count,

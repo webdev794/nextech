@@ -8,8 +8,8 @@
  */
 
 return [
-    // "{year}" is replaced with the current year by the storefront.
-    'copyright' => env('FOOTER_COPYRIGHT', '© {year} NexTech'),
+    // "{year}" and "{store}" are replaced with the current year and the store name by the storefront.
+    'copyright' => env('FOOTER_COPYRIGHT', '© {year} {store}'),
 
     'app_store_url' => env('FOOTER_APP_STORE_URL', ''),
     'play_store_url' => env('FOOTER_PLAY_STORE_URL', ''),

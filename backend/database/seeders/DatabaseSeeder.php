@@ -57,7 +57,7 @@ class DatabaseSeeder extends Seeder
         }
 
         \App\Models\Setting::put('footer', [
-            'copyright' => '© {year} NexTech',
+            'copyright' => '© {year} {store}',
             'app_store_url' => 'https://apps.apple.com/app/nextech-demo',
             'play_store_url' => 'https://play.google.com/store/apps/details?id=com.nextech.demo',
             'socials' => [

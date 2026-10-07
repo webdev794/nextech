@@ -3281,7 +3281,7 @@ export default function Storefront() {
     })()}
     {activeMarket === 'IN' && grievanceOfficer?.name && <p className="site-footer-grievance">Grievance Officer: {grievanceOfficer.name}{grievanceOfficer.designation ? `, ${grievanceOfficer.designation}` : ''}{grievanceOfficer.email ? ` · ${grievanceOfficer.email}` : ''}{grievanceOfficer.phone ? ` · ${grievanceOfficer.phone}` : ''}{grievanceOfficer.address ? ` · ${grievanceOfficer.address}` : ''}</p>}
     <div className="site-footer-bottom">
-      <span className="site-footer-copy">{(footer?.copyright || `© {year} ${brandName()}`).replace('{year}', String(new Date().getFullYear()))}</span>
+      <span className="site-footer-copy">{(footer?.copyright || '© {year} {store}').replaceAll('{year}', String(new Date().getFullYear())).replaceAll('{store}', brandName())}</span>
       {pages.filter((p) => p.show_in_footer && p.footer_group === 'bottom').map((p) => (
         <button key={p.slug} type="button" className="site-footer-legal-link" onClick={() => openPage(p.slug)}>
           {p.slug === 'privacy-choices' && <svg aria-hidden width="16" height="10" viewBox="0 0 32 20"><rect x="1" y="1" width="30" height="18" rx="9" fill="#0a5ad1" /><circle cx="10" cy="10" r="7" fill="#fff" /><path d="M20 6l6 8M26 6l-6 8" stroke="#fff" strokeWidth="2" strokeLinecap="round" /></svg>}

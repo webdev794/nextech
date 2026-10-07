@@ -162,7 +162,7 @@ export function OrderLabelRequests({ order, authHeaders, onChanged }) {
 }
 
 const SIZE_LABELS = { '4x6': '4×6 in (thermal printer)', a6: 'A6', a4: 'A4 sheet' }
-const EMPTY_TEMPLATE = { name: '', size: '4x6', header_text: `${brandName()} Shipping`, logo_url: '', footer_note: '', show_items: true, show_phone: false, is_default: false, is_active: true }
+const EMPTY_TEMPLATE = { name: '', size: '4x6', header_text: '{store} Shipping', logo_url: '', footer_note: '', show_items: true, show_phone: false, is_default: false, is_active: true }
 
 // Settings → Shipping label templates: what seller labels are generated from.
 export function LabelTemplates({ authHeaders, onMessage }) {
@@ -222,7 +222,7 @@ export function LabelTemplates({ authHeaders, onMessage }) {
         <form className="admin-form-grid" onSubmit={save} style={{ marginTop: 12 }}>
           <label>Name<input required maxLength="80" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></label>
           <label>Size<select value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })}>{Object.entries(SIZE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-          <label>Header text (shown when there&rsquo;s no logo)<input maxLength="80" value={form.header_text} onChange={(e) => setForm({ ...form, header_text: e.target.value })} /></label>
+          <label>Header text (shown when there&rsquo;s no logo)<input maxLength="80" value={form.header_text} onChange={(e) => setForm({ ...form, header_text: e.target.value })} placeholder="{store} Shipping" /><small className="muted">{'{store}'} becomes the store name.</small></label>
           <label>Logo URL (blank = store logo; PNG/JPG upload)<input maxLength="500" value={form.logo_url} onChange={(e) => setForm({ ...form, logo_url: e.target.value })} /></label>
           <label>Footer note<input maxLength="300" value={form.footer_note} onChange={(e) => setForm({ ...form, footer_note: e.target.value })} /></label>
           <label className="admin-check"><input type="checkbox" checked={form.show_items} onChange={(e) => setForm({ ...form, show_items: e.target.checked })} /> List package contents</label>

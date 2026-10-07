@@ -46,7 +46,7 @@
 <div class="label">
     <div class="row">
         <table class="head"><tr>
-            <td>@if ($logo)<img src="{{ $logo }}" alt="">@else<span class="brand">{{ $template->header_text ?: $brand }}</span>@endif</td>
+            <td>@if ($logo)<img src="{{ $logo }}" alt="">@else<span class="brand">{{ $template->header_text ? str_replace('{store}', $brand, $template->header_text) : $brand }}</span>@endif</td>
             <td class="ref">Order #{{ $order->id }}<br>{{ now()->format('M j, Y') }}</td>
         </tr></table>
     </div>
