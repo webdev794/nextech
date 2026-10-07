@@ -43,6 +43,10 @@ class Seller extends Model
         'submitted_at',
         'payout_method',
         'payout_details',
+        'address_document_path',
+        'address_verified_at',
+        'address_verified_by',
+        'registered_history',
     ];
 
     protected function casts(): array
@@ -52,6 +56,8 @@ class Seller extends Model
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
             'payout_details' => 'array',
+            'address_verified_at' => 'datetime',
+            'registered_history' => 'array',
             'change_items' => 'array',
             'pickup_same_as_registered' => 'boolean',
             'tax_info' => 'array',

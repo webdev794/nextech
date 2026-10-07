@@ -4724,7 +4724,10 @@ Reason:`, '')
                       <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => messageSeller(d)}>Message seller</button>
                       {(d.status === 'pending' || d.status === 'rejected') && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => requestSellerChanges(d)}>Request changes</button>}
                       {d.status === 'pending' && <>
-                        <button className="act" type="button" disabled={busyId === d.id} onClick={() => sellerAction(d, 'approve')}>Approve</button>
+                        <button className="act" type="button" disabled={busyId === d.id} onClick={() => {
+                          if (d.address_document_path && !d.address_verified_at && !window.confirm('Have you opened the proof of address and checked it matches the registered address?')) return
+                          sellerAction(d, 'approve', { address_checked: true })
+                        }}>Approve</button>
                         <button className="act danger" type="button" disabled={busyId === d.id} onClick={() => rejectSeller(d)}>Reject</button>
                       </>}
                       {d.status === 'approved' && <button className="act danger" type="button" disabled={busyId === d.id} title="Hides the shop and all its products; you can reinstate later" onClick={() => suspendSeller(d)}>Deactivate</button>}
@@ -4803,7 +4806,10 @@ Reason:`, '')
                       <div className="admin-form-actions">
                         <button className="act ghost" type="button" onClick={() => viewKycDocument(d.id_document_path)}>ID document</button>
                         <button className="act ghost" type="button" onClick={() => viewKycDocument(d.business_document_path)}>Business document</button>
+                        {d.address_document_path ? <button className="act ghost" type="button" onClick={() => viewKycDocument(d.address_document_path)}>Proof of address</button> : <span className="muted">No proof of address (applied before it was required)</span>}
                       </div>
+                      {d.address_verified_at && <p className="muted">✓ Registered address checked {new Date(d.address_verified_at).toLocaleDateString()} — locked; it changes only when you request it.</p>}
+                      {(d.registered_history ?? []).length > 0 && <p className="muted">Earlier addresses: {d.registered_history.map((h, i) => <span key={i}>{i > 0 && '; '}{[h.registered_line1, h.registered_line2, h.registered_city, h.registered_state, h.registered_postal_code, h.registered_country].filter(Boolean).join(', ')} (until {new Date(h.replaced_at).toLocaleDateString()})</span>)}</p>}
                     </section>
 
                     {d.shop && (

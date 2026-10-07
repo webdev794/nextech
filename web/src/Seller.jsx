@@ -103,6 +103,8 @@ const EMPTY_FORM = {
   id_document_name: '',
   business_document_path: '',
   business_document_name: '',
+  address_document_path: '',
+  address_document_name: '',
   shop_name: '',
   shop_logo_url: '',
   shop_category_id: '',
@@ -143,6 +145,8 @@ const formFromSeller = (seller) => ({
   id_document_name: seller.id_document_path ? seller.id_document_path.split('/').pop() : '',
   business_document_path: seller.business_document_path ?? '',
   business_document_name: seller.business_document_path ? seller.business_document_path.split('/').pop() : '',
+  address_document_path: seller.address_document_path ?? '',
+  address_document_name: seller.address_document_path ? seller.address_document_path.split('/').pop() : '',
   shop_name: seller.shop?.name ?? '',
   shop_logo_url: seller.shop?.logo_url ?? '',
   shop_category_id: seller.shop?.category_id ?? '',
@@ -451,7 +455,7 @@ export default function Seller({ token, onSignOut }) {
 
   async function uploadKyc(kind, file) {
     if (!file) return
-    setUploading(kind === 'id_document' ? 'id' : 'business')
+    setUploading(kind === 'id_document' ? 'id' : kind === 'address_document' ? 'address' : 'business')
     setStepError('')
     try {
       const body = new FormData()
@@ -461,6 +465,7 @@ export default function Seller({ token, onSignOut }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not upload the document.')
       if (kind === 'id_document') setForm((f) => ({ ...f, id_document_path: data.data.path, id_document_name: file.name }))
+      else if (kind === 'address_document') setForm((f) => ({ ...f, address_document_path: data.data.path, address_document_name: file.name }))
       else setForm((f) => ({ ...f, business_document_path: data.data.path, business_document_name: file.name }))
     } catch (error) {
       setStepError(error.message)
@@ -522,6 +527,7 @@ export default function Seller({ token, onSignOut }) {
     }
     if (n === 4) {
       if (!form.business_document_path) return 'Upload a business document.'
+      if (!form.address_document_path) return 'Upload a proof of your registered address.'
       return ''
     }
     return ''
@@ -567,6 +573,7 @@ export default function Seller({ token, onSignOut }) {
         date_of_birth: form.date_of_birth,
         id_document_path: form.id_document_path,
         business_document_path: form.business_document_path,
+        address_document_path: form.address_document_path,
         shop_name: form.shop_name.trim(),
         shop_logo_url: form.shop_logo_url || null,
         shop_category_id: form.shop_category_id ? Number(form.shop_category_id) : null,
@@ -1848,6 +1855,13 @@ export default function Seller({ token, onSignOut }) {
                   </label>
                   {uploading === 'business' && <p className="seller-uploading">Uploading&hellip;</p>}
                   {form.business_document_name && <p className="seller-uploaded">✓ {form.business_document_name}</p>}
+
+                  <label className={flagClass('address_document')}>Proof of registered address (utility bill, bank statement or lease from the last 3 months, showing the address above){flagNote('address_document')}
+                    <input type="file" accept="image/jpeg,image/png,application/pdf" disabled={uploading === 'address'} onChange={(event) => uploadKyc('address_document', event.target.files?.[0])} />
+                  </label>
+                  {uploading === 'address' && <p className="seller-uploading">Uploading&hellip;</p>}
+                  {form.address_document_name && <p className="seller-uploaded">✓ {form.address_document_name}</p>}
+                  <p className="sc-muted">Your registered address is locked once {brandName()} checks it. To change it later, message us with proof of the new address.</p>
                 </section>
               )}
 

@@ -73,12 +73,18 @@ class AdminSellerController extends Controller
         ]);
     }
 
-    public function approve(Seller $seller): JsonResponse
+    public function approve(Request $request, Seller $seller): JsonResponse
     {
         abort_if($seller->status === 'approved', 422, 'Already approved.');
+        // Proof of address uploaded: admin confirms it matches the registered address.
+        if ($seller->address_document_path && ! $seller->address_verified_at) {
+            abort_unless($request->boolean('address_checked'), 422, 'Open the proof of address and tick that it matches the registered address before approving.');
+        }
 
-        DB::transaction(function () use ($seller): void {
+        DB::transaction(function () use ($seller, $request): void {
             $seller->forceFill([
+                'address_verified_at' => $seller->address_verified_at ?? ($seller->address_document_path ? now() : null),
+                'address_verified_by' => $seller->address_verified_by ?? ($seller->address_document_path ? $request->user()->id : null),
                 'status' => 'approved',
                 'rejection_reason' => null,
                 'reviewed_by' => request()->user()->id,
@@ -291,6 +297,7 @@ class AdminSellerController extends Controller
         'company_name' => 'Company / registered name',
         'tax_id' => 'Tax ID',
         'registered_address' => 'Registered address',
+        'address_document' => 'Proof of address',
         'contact_name' => 'Contact / legal name',
         'id_details' => 'ID type & number',
         'date_of_birth' => 'Date of birth',
@@ -526,6 +533,9 @@ class AdminSellerController extends Controller
                 'registered_state' => $seller->registered_state,
                 'registered_postal_code' => $seller->registered_postal_code,
                 'registered_country' => $seller->registered_country,
+                'address_document_path' => $seller->address_document_path,
+                'address_verified_at' => $seller->address_verified_at,
+                'registered_history' => $seller->registered_history ?? [],
                 'pickup_same_as_registered' => (bool) $seller->pickup_same_as_registered,
                 'pickup_phone' => $seller->pickup_phone,
                 'pickup_line1' => $seller->pickup_line1,

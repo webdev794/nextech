@@ -67,6 +67,8 @@ class SellerController extends Controller
             'date_of_birth' => ['required', 'date'],
             'id_document_path' => ['required', 'string', 'max:255'],
             'business_document_path' => ['required', 'string', 'max:255'],
+            // Proof of the registered address (utility bill, bank statement, lease), checked by admin.
+            'address_document_path' => ['required', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
 
             'shop_name' => ['required', 'string', 'max:160'],
             'shop_logo_url' => ['sometimes', 'nullable', 'string', 'max:500'],
@@ -77,7 +79,19 @@ class SellerController extends Controller
 
         $sameAsRegistered = (bool) ($data['pickup_same_as_registered'] ?? true);
 
-        $seller = DB::transaction(function () use ($user, $data, $sameAsRegistered, $existing): Seller {
+        // Once admin has checked the registered address it's locked: it changes
+        // only when admin asks for it (Request changes → Registered address),
+        // and the earlier address is kept in the seller's history.
+        $addressKeys = ['registered_line1', 'registered_line2', 'registered_city', 'registered_state', 'registered_postal_code', 'registered_country'];
+        $oldAddress = $existing ? $existing->only($addressKeys) : [];
+        $newAddress = array_map(fn ($k) => $k === 'registered_country' ? strtoupper($data[$k]) : ($data[$k] ?? null), array_combine($addressKeys, $addressKeys));
+        $addressChanged = $existing && array_map('strval', $oldAddress) != array_map('strval', $newAddress);
+        if ($addressChanged && $existing->address_verified_at) {
+            $unlocked = collect((array) $existing->change_items)->contains(fn ($c) => ($c['key'] ?? $c) === 'registered_address');
+            abort_unless($unlocked, 422, 'Your registered address is verified and can\'t be changed here. To change it, message '.\App\Support\Branding::name().' with proof of the new address.');
+        }
+
+        $seller = DB::transaction(function () use ($user, $data, $sameAsRegistered, $existing, $addressChanged, $oldAddress): Seller {
             $attributes = [
                 'country' => strtoupper($data['country']),
                 'business_type' => $data['business_type'],
@@ -103,9 +117,18 @@ class SellerController extends Controller
                 'date_of_birth' => $data['date_of_birth'],
                 'id_document_path' => $data['id_document_path'],
                 'business_document_path' => $data['business_document_path'],
+                'address_document_path' => $data['address_document_path'],
                 'status' => 'pending',
                 'submitted_at' => now(),
             ];
+            // A new address or proof is checked again; the old address stays on record.
+            if ($addressChanged || ($existing && $existing->address_document_path !== $data['address_document_path'])) {
+                $attributes['address_verified_at'] = null;
+                $attributes['address_verified_by'] = null;
+            }
+            if ($addressChanged) {
+                $attributes['registered_history'] = array_merge((array) $existing->registered_history, [$oldAddress + ['replaced_at' => now()->toIso8601String(), 'verified_at' => $existing->address_verified_at?->toIso8601String()]]);
+            }
 
             if ($existing) {
                 // Resubmission after 'needs_changes' — back into the review

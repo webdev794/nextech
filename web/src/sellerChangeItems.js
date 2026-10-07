@@ -15,6 +15,7 @@ export const CHANGE_ITEMS = [
   ['shop_description', 'Shop description', 3],
   ['pickup_address', 'Pickup address & phone', 3],
   ['business_document', 'Business document', 4],
+  ['address_document', 'Proof of address', 4],
 ]
 
 export const changeItemLabel = (key) => CHANGE_ITEMS.find(([k]) => k === key)?.[1] ?? key
