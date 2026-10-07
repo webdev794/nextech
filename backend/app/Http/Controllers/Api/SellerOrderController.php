@@ -273,8 +273,26 @@ class SellerOrderController extends Controller
             'to_ship' => $toShip,
             // Orders waiting on the seller's next update (packed / shipped / cash collected ...).
             'needs_update' => SellerProgress::needsUpdate($shop),
+            // Live products buyers can't order right now — nothing left in stock.
+            'out_of_stock' => self::outOfStock($shop),
             'recent' => $recent,
         ]]);
+    }
+
+    /**
+     * Live products with nothing left to sell: a product without variations at 0,
+     * or one whose every active variation is at 0. Unlimited downloads never run out.
+     *
+     * @return list<array{id: int, name: string}>
+     */
+    private static function outOfStock(\App\Models\Shop $shop): array
+    {
+        return \App\Models\Product::query()->where('shop_id', $shop->id)->where('status', 'approved')->where('is_active', true)
+            ->with(['variants' => fn ($q) => $q->where('is_active', true)])->get(['id', 'name', 'inventory_quantity', 'variation_theme', 'product_type'])
+            ->filter(fn ($p) => ! empty($p->variation_theme) && $p->variants->isNotEmpty()
+                ? $p->variants->every(fn ($v) => (int) $v->inventory_quantity <= 0)
+                : (int) $p->inventory_quantity <= 0)
+            ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->values()->all();
     }
 
     public function stats(Request $request): JsonResponse

@@ -93,4 +93,46 @@ class ProductSupportGuardTest extends TestCase
         $this->assertSame('Covers defects.', $snap['warranty_terms']);
         $this->assertSame(15, $snap['return_days']);
     }
+
+    // Admins are emailed when a seller's edit to a live product waits for review (it stays live meanwhile).
+    public function test_admins_are_emailed_about_a_held_edit(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        [$user, $product] = $this->sellerProduct(['country_of_origin' => 'China', 'image_url' => '/api/media/file/products/x.png', 'product_details' => ['model_number' => 'LS-1', 'power_source' => 'No power needed', 'warranty' => 'No warranty']]);
+        $product->images()->create(['url' => '/api/media/file/products/x.png', 'sort_order' => 0]);
+        $admin = User::factory()->create(['is_admin' => true]);
+        Sanctum::actingAs($user);
+
+        $res = $this->patchJson("/api/seller/products/{$product->id}", ['description' => 'Now with a FAQ']);
+        if ($res->status() === 200) {
+            $this->assertSame('approved', $product->fresh()->status);
+            \Illuminate\Support\Facades\Notification::assertSentTo($admin, \App\Notifications\AdminProductsSubmitted::class, fn ($n) => $n->edit === true);
+        } else {
+            $this->fail('Edit refused: '.json_encode($res->json()));
+        }
+    }
+
+    // Only the change waits for approval; the product never goes offline for it.
+    public function test_live_product_edit_stays_live_until_the_change_is_approved(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $complete = ['country_of_origin' => 'China', 'image_url' => '/api/media/file/products/x.png', 'product_details' => ['model_number' => 'LS-1', 'power_source' => 'No power needed', 'warranty' => 'No warranty']];
+        [$user, $product] = $this->sellerProduct($complete);
+        $product->images()->create(['url' => '/api/media/file/products/x.png', 'sort_order' => 0]);
+        Sanctum::actingAs($user);
+
+        // Default: stays live, change held.
+        $this->patchJson("/api/seller/products/{$product->id}", ['description' => 'Better description'])->assertOk();
+        $fresh = $product->fresh();
+        $this->assertTrue($fresh->is_active);
+        $this->assertSame('approved', $fresh->status);
+        $this->assertNotNull($fresh->pending_changes);
+
+        // Approved: the change goes live on the same, still-live product.
+        Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
+        $this->postJson("/api/admin/products/{$product->id}/approve")->assertOk();
+        $fresh = $product->fresh();
+        $this->assertTrue($fresh->is_active);
+        $this->assertSame('Better description', $fresh->description);
+    }
 }

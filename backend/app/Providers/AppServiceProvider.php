@@ -35,7 +35,8 @@ class AppServiceProvider extends ServiceProvider
         }
         // Emails come from the store's name as set in Store settings, not the .env name.
         try {
-            config(['mail.from.name' => \App\Support\Branding::name()]);
+            // …and the name in Laravel's own email header / footer ("© NexTech").
+            config(['mail.from.name' => \App\Support\Branding::name(), 'app.name' => \App\Support\Branding::name()]);
         } catch (\Throwable) {
             // no database yet (fresh install / migrations): keep the .env name
         }

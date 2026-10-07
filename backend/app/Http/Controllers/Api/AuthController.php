@@ -228,7 +228,8 @@ class AuthController extends Controller
     private function tokenResponse(User $user, int $status = 200): JsonResponse
     {
         return response()->json([
-            'user' => $user,
+            // is_seller: shows the Seller Center link in the storefront account menu.
+            'user' => $user->setAttribute('is_seller', $user->seller()->exists()),
             'token' => $user->createToken('customer')->plainTextToken,
         ], $status);
     }

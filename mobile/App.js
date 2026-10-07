@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 
 import { AppProvider, useApp } from './src/state';
+import { useBrandName } from './src/brand';
 import { colors } from './src/theme';
 import AuthScreen from './src/screens/AuthScreen';
 import OtpScreen from './src/screens/OtpScreen';
@@ -41,6 +42,7 @@ const navTheme = {
 };
 
 function Root() {
+  const brand = useBrandName();
   const { booting, user } = useApp();
 
   if (booting) {
@@ -61,7 +63,7 @@ function Root() {
           </>
         ) : user ? (
           <>
-            <Stack.Screen name="Catalog" component={CatalogScreen} options={{ title: 'NexTech' }} />
+            <Stack.Screen name="Catalog" component={CatalogScreen} options={{ title: brand }} />
             <Stack.Screen name="Product" component={ProductScreen} options={{ title: 'Product' }} />
             <Stack.Screen name="Cart" component={CartScreen} options={{ title: 'Your cart' }} />
             <Stack.Screen name="Checkout" component={CheckoutScreen} options={{ title: 'Checkout' }} />

@@ -13,6 +13,8 @@ const FEE_FIELDS = [
   ['small_cart_fee_cents', 'Small-cart fee'],
   ['small_cart_min_cents', '…applied below'],
 ]
+// The delivery fee lives on Shipping → NexTech delivery; the rest of the fees in Settings.
+const DELIVERY_KEYS = ['delivery_fee_cents', 'free_delivery_threshold_cents']
 const PCT_FIELDS = [['commission_rate_bps', 'Commission rate (%)']]
 const PAYOUT_FIELDS = [
   ['min_payout_cents', 'Minimum seller payout'],
@@ -41,7 +43,9 @@ function formFrom(market) {
   return form
 }
 
-export function MarketSettings({ settings, save, onSaved, only }) {
+// part: 'rider' = only Rider pay, 'delivery' = only the delivery fee (both on Shipping → NexTech delivery);
+// default = everything else (Settings).
+export function MarketSettings({ settings, save, onSaved, only, part }) {
   const markets = (settings?.markets ?? []).filter((m) => !only || m.code === only)
   const [forms, setForms] = useState(() => Object.fromEntries(markets.map((m) => [m.code, formFrom(m)])))
   const [officer, setOfficer] = useState(() => ({ name: '', designation: '', email: '', phone: '', address: '', ...(settings?.grievance_officer ?? {}) }))
@@ -70,15 +74,23 @@ export function MarketSettings({ settings, save, onSaved, only }) {
     const set = (key, value) => setForms((current) => ({ ...current, [market.code]: { ...form, [key]: value } }))
     return (
       <form key={market.code} className="admin-form" onSubmit={(event) => saveMarket(event, market)}>
+        {part === 'delivery' && <>
+        <h3>Delivery fee — {market.name} ({market.currency.toUpperCase()} {sym})</h3>
+        <p className="muted">Charged to <b>customers</b> when {brandName()} delivers (own riders or courier).</p>
+        <div className="admin-form-grid">
+          {FEE_FIELDS.filter(([key]) => DELIVERY_KEYS.includes(key)).map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`fees.${key}`]} onChange={(event) => set(`fees.${key}`, event.target.value)} /></label>)}
+        </div>
+        </>}
+        {part === 'rider' ? <h3>Rider pay — {market.name} ({market.currency.toUpperCase()} {sym})</h3> : part === 'delivery' ? null : <>
         <h3>{market.name} — charges &amp; payouts ({market.currency.toUpperCase()} {sym})</h3>
         <p className="muted">
           Shoppers in {market.name} see only {market.name} products, priced in {sym}. Orders are delivered by {brandName()} riders from {market.name} stores within their radius, otherwise by courier or the seller&rsquo;s own shipping.
           {market.code === 'IN' && ' Prices include GST (sellers set HSN code and GST rate per product). TCS 0.5% (GST sec. 52) and TDS 0.1% (sec. 194-O) are withheld from sellers’ sales automatically.'}
         </p>
-        <h4>Delivery &amp; checkout charges</h4>
+        <h4>Checkout charges</h4>
         <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
         <div className="admin-form-grid">
-          {FEE_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`fees.${key}`]} onChange={(event) => set(`fees.${key}`, event.target.value)} /></label>)}
+          {FEE_FIELDS.filter(([key]) => !DELIVERY_KEYS.includes(key)).map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`fees.${key}`]} onChange={(event) => set(`fees.${key}`, event.target.value)} /></label>)}
         </div>
         <h4>Seller commission &amp; payouts</h4>
         <div className="admin-form-grid">
@@ -86,19 +98,21 @@ export function MarketSettings({ settings, save, onSaved, only }) {
           <label className="admin-check"><input type="checkbox" checked={!!form.apply_existing} onChange={(event) => set('apply_existing', event.target.checked)} /> Apply a rate change to existing sellers too{settings?.kept_rate_sellers?.[market.code] ? ` (${settings.kept_rate_sellers[market.code]} on an older rate)` : ''}</label>
           {PAYOUT_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`payouts.${key}`]} onChange={(event) => set(`payouts.${key}`, event.target.value)} /></label>)}
         </div>
-        <h4>Rider pay</h4>
+        </>}
+        {part === 'rider' && <>
         <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
         <div className="admin-form-grid">
           {RIDER_FIELDS.map(([key, label]) => <label key={key}>{label} ({sym})<input type="number" min="0" step="0.01" value={form[`rider.${key}`]} onChange={(event) => set(`rider.${key}`, event.target.value)} /></label>)}
         </div>
-        {market.code === 'IN' && <>
+        </>}
+        {!part && market.code === 'IN' && <>
           <h4>Grievance officer</h4>
           <p className="muted">Shown in the India storefront footer — required by the Consumer Protection (E-Commerce) Rules, 2020. Complaints must be acknowledged within 48 hours and resolved within one month.</p>
           <div className="admin-form-grid">
             {OFFICER_FIELDS.map(([key, label]) => <label key={key}>{label}<input value={officer[key] ?? ''} onChange={(event) => setOfficer({ ...officer, [key]: event.target.value })} /></label>)}
           </div>
         </>}
-        <button className="act" type="submit">Save {market.name} settings</button>
+        <button className="act" type="submit">{part === 'rider' ? 'Save rider pay' : part === 'delivery' ? 'Save delivery fee' : `Save ${market.name} settings`}</button>
       </form>
     )
   })

@@ -690,6 +690,12 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
         </div>
       )}
 
+      {/* Editing a live product: it always stays on sale (buyers mid-delivery still see it); only the change waits for approval. */}
+      {form.status === 'approved' && step === STEPS.length - 1 && (
+        <div className="wz-live-edit">
+          <p className="sc-muted">This product is live and stays on sale as it is now while {brandName()} reviews your changes — they go live once approved.</p>
+        </div>
+      )}
       <div className="wz-foot">
         <button type="button" className="seller-btn ghost" onClick={onCancel}>Cancel</button>
         {(!form.id || form.status === 'draft') && <button type="button" className="seller-btn ghost" disabled={!!busy} onClick={() => save(false)}>Save draft</button>}

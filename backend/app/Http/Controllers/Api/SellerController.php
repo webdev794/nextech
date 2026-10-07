@@ -318,6 +318,12 @@ class SellerController extends Controller
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:categories,id'],
             'description' => ['sometimes', 'nullable', 'string', 'max:2000'],
         ]);
+        // The shop header stays on the platform (no websites, social media, phone or email).
+        foreach (['name', 'description'] as $field) {
+            if ($found = \App\Support\ContactInfo::find($data[$field] ?? null)) {
+                abort(422, 'Remove '.$found.' from your shop '.$field.' — store pages can’t send buyers off '.\App\Support\Branding::name().' (repeated attempts can get your shop suspended).');
+            }
+        }
 
         $shop->update($data);
 

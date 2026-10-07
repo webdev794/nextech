@@ -2,9 +2,11 @@ import React, { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, TextInput, View } from 'react-native';
 import { api } from '../api';
+import { useBrandName } from '../brand';
 import { colors, money, STATUS_LABELS, DELIVERY_STAGES } from '../theme';
 
 function RiderRating({ order, onSaved }) {
+  const brand = useBrandName();
   const existing = order.rider_review;
   const [rating, setRating] = useState(existing?.rating ?? 0);
   const [comment, setComment] = useState(existing?.comment ?? '');
@@ -53,7 +55,7 @@ function RiderRating({ order, onSaved }) {
       {stars}
       <TextInput
         style={styles.ratingInput}
-        placeholder="Private note for the NexTech team (optional)"
+        placeholder={`Private note for the ${brand} team (optional)`}
         placeholderTextColor={colors.muted}
         value={comment}
         onChangeText={setComment}

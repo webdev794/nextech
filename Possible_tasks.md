@@ -53,6 +53,15 @@ Admin can show/hide countries and add new ones without a developer. A hidden cou
 - [ ] **Checks before a new country can be shown:** currency set; tax rule set; at least one way to deliver (NexTech store and riders, or sellers shipping themselves); seller onboarding fields complete.
 - [ ] **Tests:** add a country, show and hide it, a seller registers there, checkout prices and tax in its currency, payouts use its limits, and hiding removes it from the storefront and admin.
 
+### C. More ideas
+- [ ] **Same forms for every country:** the US still uses the original charge forms, other countries a simpler one (`Market::usesLegacySettings()`). Give every country the same fields, e.g. the **distance-based delivery fee** (near store / edge of radius), which only the US has today.
+- [ ] **Payment methods per country:** cash on delivery and card availability per country; local methods where they matter (e.g. UPI in India). Check the card processor supports the currency before a country can be shown.
+- [ ] **Holidays and couriers editable by admin** per country (today they're in `config/markets.php`), so a new courier or a changed holiday doesn't need a developer.
+- [ ] **Legal footer details per country:** generalise India's grievance officer into "required legal info" per country (e.g. EU trader details, UK company number), shown in that country's storefront footer.
+- [ ] **Time zone per country:** for order cut-off times, deal start/end times, holiday dates and reports.
+- [ ] **Language per country:** the storefront shows a language choice; translations for each country's language (start with labels, then pages).
+- [ ] **Selling between countries:** which countries a seller can ship to is set per seller today; let admin choose which country pairs are allowed at all (e.g. India → UAE yes, India → US no).
+
 ### Notes / risks
 - Each country has its own tax law (VAT, GST, sales tax, invoice rules). The template only sets how tax is charged; confirm the rules for each country before going live.
 - Payment provider: check the card processor supports the currency and country.

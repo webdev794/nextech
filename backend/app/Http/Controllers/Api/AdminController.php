@@ -729,4 +729,28 @@ class AdminController extends Controller
 
         return response()->json(['data' => ['id' => $user->id, 'is_rider' => (bool) $user->is_rider]]);
     }
+
+    /**
+     * Admin won't add a category a seller asked for: the request is removed from
+     * the seller's products (they keep the category the seller picked) and the
+     * seller is told. It doesn't come back unless the seller asks again.
+     */
+    public function declineCategorySuggestion(Request $request): JsonResponse
+    {
+        $name = trim((string) $request->validate(['name' => ['required', 'string', 'max:160']])['name']);
+        $products = Product::query()->whereNotNull('suggested_category_name')->with(['shop.seller', 'category:id,name'])->get()
+            ->filter(fn (Product $p) => mb_strtolower(trim((string) $p->suggested_category_name)) === mb_strtolower($name));
+
+        foreach ($products->groupBy('shop_id') as $group) {
+            $seller = $group->first()->shop?->seller;
+            Product::whereIn('id', $group->pluck('id'))->update(['suggested_category_name' => null]);
+            if ($seller) {
+                $list = $group->map(fn (Product $p) => '“'.$p->name.'”'.($p->category ? ' (in '.$p->category->name.')' : ''))->implode(', ');
+                \App\Support\SellerNotify::send($seller, $request->user(), 'Category request: “'.$name.'”',
+                    'Thanks for suggesting the category “'.$name.'”. '.\App\Support\Branding::name().' won’t add it for now — '.$list.' stay'.($group->count() === 1 ? 's' : '').' in the category you chose. Reply here if no category fits.');
+            }
+        }
+
+        return response()->json(['data' => ['declined' => $products->count()]]);
+    }
 }

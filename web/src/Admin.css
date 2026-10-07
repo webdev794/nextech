@@ -652,3 +652,18 @@ button.admin-bell-more:hover{text-decoration:underline}
 .lightning-box p{margin:0;font-size:12px;color:#5c6357}.lightning-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
 .lightning-row label{display:flex;flex-direction:column;gap:4px;font-size:12px}.lightning-msg{font-weight:600}
 .lightning-check{display:flex;align-items:center;gap:6px;font-size:12px}
+/* Admin forms: no stray gap above a section heading, room between a field and a grid below it, and grid inputs lined up even when their labels wrap. */
+.admin-form h4{margin:0 0 14px;font-size:16px;letter-spacing:-.01em}
+.admin-form>label+.admin-form-grid,.admin-form>.admin-form-grid+label{margin-top:16px}
+.admin-form>label+label,.admin-form>label+.admin-check{margin-top:12px}
+.admin-form-grid>label{align-content:end}
+.admin-form-grid+.muted{margin-top:4px}
+.admin-form-grid.wide{grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.admin-setup-go{margin-left:auto;padding:5px 12px;font-size:12px}
+.admin-setup-list li{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-page-placement{display:grid;gap:8px;margin:6px 0 14px;padding:12px 14px;border:1px solid var(--line,#e4e7df);border-radius:9px}
+.admin-page-placement .admin-subhead{margin:0}
+.admin-bell-decline{flex:0 0 auto;margin-left:4px;padding:4px 9px;border:1px solid #e0c4bd;border-radius:7px;background:#fff;color:#a23b28;font:600 12px 'Okra',sans-serif;cursor:pointer}
+.admin-bell-decline:hover{background:#fbeae6}
+.admin-elsewhere{margin:0 0 10px;padding:8px 12px;border-radius:8px;background:#fff8e1;color:#7a5c14;font-size:14px}
+.admin-elsewhere .link{font-weight:700;text-decoration:underline}

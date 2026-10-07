@@ -96,6 +96,11 @@ class AdminProductController extends Controller
                 'affiliate_count' => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))->whereNotNull('affiliate_url')->count(),
                 // For the quick filters: seller products not approved yet, and live ones still missing details.
                 'status_counts' => self::statusCounts($request),
+                // Waiting for review in other countries' stores (hidden by the top-bar country).
+                'waiting_elsewhere' => ($m = Market::adminFilter($request))
+                    ? Product::query()->whereNull('archived_at')->whereNotNull('shop_id')->where(fn ($q) => $q->where('status', 'pending')->orWhereNotNull('pending_changes'))->count()
+                        - Product::query()->whereNull('archived_at')->whereNotNull('shop_id')->inMarket($m)->where(fn ($q) => $q->where('status', 'pending')->orWhereNotNull('pending_changes'))->count()
+                    : 0,
             ],
         ]);
     }

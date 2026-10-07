@@ -49,4 +49,20 @@ class SellerCodTest extends TestCase
         $this->postJson("/api/admin/sellers/{$shop->seller_id}/cod", ['approved' => false])->assertOk();
         $this->assertFalse($shop->fresh()->accepts_cod);
     }
+
+    // Declining a category a seller asked for clears the request for good and tells the seller.
+    public function test_admin_declines_a_category_request(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $shop = $this->shop();
+        $product = \App\Models\Product::factory()->create(['shop_id' => $shop->id, 'suggested_category_name' => 'Games']);
+        Sanctum::actingAs(User::factory()->create(['is_admin' => true]));
+
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.category_suggestions.0.name', 'Games');
+        $this->postJson('/api/admin/category-suggestions/decline', ['name' => 'games'])->assertOk()->assertJsonPath('data.declined', 1);
+
+        $this->assertNull($product->fresh()->suggested_category_name);
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonCount(0, 'data.category_suggestions');
+        \Illuminate\Support\Facades\Notification::assertSentTo($shop->seller->user, \App\Notifications\SellerNotice::class);
+    }
 }

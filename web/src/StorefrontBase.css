@@ -573,8 +573,9 @@ a.psec-feature.is-link img{width:100%;height:150px;object-fit:cover;border-radiu
 .shop-hero-text h1{margin:0 0 4px;font-size:24px;font-weight:600}
 .shop-hero-text p{margin:0;font-size:14px;opacity:.9}
 .shop-hero-desc{margin-top:6px!important;max-width:640px;line-height:1.5}
-.shop-hero-share{padding:10px 16px;border:1px solid rgba(255,255,255,.7);border-radius:999px;background:transparent;color:#fff;font:600 14px 'Okra',sans-serif;cursor:pointer}
-.shop-hero-share:hover{background:rgba(255,255,255,.15)}
+.shop-hero-share{position:relative;display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.14);color:#fff;cursor:pointer;margin-left:auto}
+.shop-hero-share-note{position:absolute;top:calc(100% + 6px);right:0;padding:4px 10px;border-radius:6px;background:#fff;color:#111;font:600 12px 'Okra',sans-serif;white-space:nowrap;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.shop-hero-share:hover{background:rgba(255,255,255,.26)}
 .pdp-sold-by{margin:0;font-size:12px;color:var(--muted)}
 .pdp-sold-by button{padding:0;border:0;background:0;color:inherit;font:600 12px 'Okra',sans-serif;text-decoration:underline;cursor:pointer}
 .brand-placeholder{display:block;width:120px;height:30px}
@@ -590,3 +591,5 @@ a.psec-feature.is-link img{width:100%;height:150px;object-fit:cover;border-radiu
 .pcard-lightning{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:2px 0 4px;font-size:12px;color:#b4470b;font-weight:600}
 .pcard-claimed{flex:1 1 60px;height:6px;border-radius:3px;background:#fde3d2;overflow:hidden}.pcard-claimed i{display:block;height:100%;background:#f06a1d}
 .pcard-lightning small{color:#5c6357;font-weight:500}
+.account-side .account-side-seller{margin-top:8px;border-top:1px solid var(--line);padding-top:12px;font-weight:600}
+.pdp-add.is-oos,.pdp-add.is-oos:disabled{background:#fdecea;border-color:#e8a29a;color:#c62828;opacity:1;cursor:not-allowed}

@@ -168,6 +168,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/metrics/compare', [AdminController::class, 'ordersCompare']);
     Route::get('/metrics/insights', [AdminController::class, 'ordersInsights']);
     Route::get('/notifications', [AdminController::class, 'notifications']);
+    Route::post('/category-suggestions/decline', [AdminController::class, 'declineCategorySuggestion']);
     Route::get('/settings', [AdminSettingController::class, 'index']);
     Route::patch('/settings', [AdminSettingController::class, 'update']);
     Route::post('/settings/sales-tax/fetch', [AdminSettingController::class, 'fetchSalesTaxStates'])->middleware('throttle:6,1');
@@ -462,7 +463,8 @@ Route::post('/payments/stripe/webhook', [PaymentController::class, 'webhook']);
 Route::post('/webhooks/aftership', [TrackingWebhookController::class, 'aftership']);
 
 Route::get('/user', function (Request $request) {
-    return $request->user();
+    // is_seller: shows the Seller Center link in the storefront account menu.
+    return $request->user()->setAttribute('is_seller', $request->user()->seller()->exists());
 })->middleware('auth:sanctum');
 
 Route::post('/auth/logout', [AuthController::class, 'logout'])

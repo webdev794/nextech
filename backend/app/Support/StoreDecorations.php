@@ -44,12 +44,16 @@ class StoreDecorations
         return (float) Setting::get('decoration_spot_check_rate', 0.3);
     }
 
-    /** Recommended image sizes (px) per platform, shown in the editor and checked there. */
+    /**
+     * Image sizes per platform and image type: [width px, height px, largest file KB].
+     * Shown under each image in the editor and checked there; the KB limits keep
+     * store pages fast and stop heavy images filling the server.
+     */
     public static function imageSpecs(): array
     {
         return [
-            'desktop' => ['background' => [1920, 400], 'banner' => [1920, 600], 'tile' => [600, 600], 'category' => [300, 300], 'story' => [800, 600], 'poster' => [1280, 720]],
-            'mobile' => ['background' => [750, 400], 'banner' => [750, 750], 'tile' => [350, 350], 'category' => [200, 200], 'story' => [750, 560], 'poster' => [750, 422]],
+            'desktop' => ['background' => [1920, 400, 400], 'banner' => [1920, 600, 500], 'tile' => [600, 600, 300], 'category' => [300, 300, 150], 'story' => [800, 600, 300], 'poster' => [1280, 720, 300]],
+            'mobile' => ['background' => [750, 400, 300], 'banner' => [750, 750, 400], 'tile' => [350, 350, 200], 'category' => [200, 200, 150], 'story' => [750, 560, 250], 'poster' => [750, 422, 250]],
         ];
     }
 
@@ -204,6 +208,15 @@ class StoreDecorations
                         $problems[] = "$at: add both an image and your story text.";
                     }
                     break;
+            }
+        }
+
+        // Stay on the platform: no websites, social media, phone numbers or emails in the text.
+        foreach ($sections as $i => $s) {
+            foreach (['title', 'text', 'subtitle', 'caption'] as $field) {
+                if ($found = ContactInfo::find($s[$field] ?? null)) {
+                    $problems[] = ($labels[$s['type']] ?? $s['type']).' (section '.($i + 1).'): remove '.$found.' — store pages can’t send buyers off '.Branding::name().' (repeated attempts can get your shop suspended).';
+                }
             }
         }
 

@@ -89,12 +89,53 @@ function toDisplay(s, lookup) {
 // Read an image's size in the browser (null if it doesn't load).
 const imageSize = (src) => new Promise((resolve) => { const img = new Image(); img.onload = () => resolve([img.naturalWidth, img.naturalHeight]); img.onerror = () => resolve(null); img.src = src })
 
+// Most shopkeepers can't crop or compress images, so an upload that's the wrong
+// shape or too heavy is fixed in the browser: centre-cropped to the needed shape,
+// scaled to the needed pixels, and saved as WebP (or JPEG) under the KB limit.
+async function fitImage(file, [width, height, maxKb]) {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise((resolve, reject) => { const i = new Image(); i.onload = () => resolve(i); i.onerror = reject; i.src = url })
+    const target = width / height
+    const source = img.naturalWidth / img.naturalHeight
+    // centre crop to the target shape
+    const sw = source > target ? img.naturalHeight * target : img.naturalWidth
+    const sh = source > target ? img.naturalHeight : img.naturalWidth / target
+    const sx = (img.naturalWidth - sw) / 2
+    const sy = (img.naturalHeight - sh) / 2
+    // never enlarge a small photo (it would only get blurry)
+    const scale = Math.min(1, width / sw)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(sw * scale)
+    canvas.height = Math.round(sh * scale)
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height)
+    const encode = (type, quality) => new Promise((resolve) => canvas.toBlob(resolve, type, quality))
+    const type = (await encode('image/webp', 0.8))?.type === 'image/webp' ? 'image/webp' : 'image/jpeg'
+    let blob = null
+    for (const quality of [0.85, 0.78, 0.7, 0.6, 0.5, 0.4]) {
+      blob = await encode(type, quality)
+      if (blob && blob.size <= maxKb * 1024) break
+    }
+    if (!blob || blob.size > maxKb * 1024) return null
+    const name = file.name.replace(/\.[^.]+$/, '') + (type === 'image/webp' ? '.webp' : '.jpg')
+    return new File([blob], name, { type })
+  } catch {
+    return null
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 // Image: upload a file or paste an https link, with the recommended shape
 // checked (aspect ratio within 3%).
-function ImageField({ headers, label, value, spec, onChange, onError }) {
+function ImageField({ headers, label, value, spec, onChange, onError, onNote = onError }) {
   const [busy, setBusy] = useState(false)
   const [link, setLink] = useState('')
   const wrongShape = (size) => spec && Math.abs(size[0] / size[1] - spec[0] / spec[1]) / (spec[0] / spec[1]) > 0.03
+  const maxKb = spec?.[2] ?? 1024 // largest file for this image type (KB)
   async function applyLink() {
     const url = link.trim()
     if (!/^https:\/\/\S+$/i.test(url)) { onError('Paste a full image link starting with https://'); return }
@@ -106,14 +147,22 @@ function ImageField({ headers, label, value, spec, onChange, onError }) {
     onChange(url)
     setLink('')
   }
-  async function pick(file) {
-    if (!file) return
-    if (file.size > 3 * 1048576) { onError('Images must be 3 MB or smaller.'); return }
-    const url = URL.createObjectURL(file)
+  async function pick(original) {
+    if (!original) return
+    const url = URL.createObjectURL(original)
     const size = await imageSize(url)
     URL.revokeObjectURL(url)
-    if (!size) { onError('Could not read that image.'); return }
-    if (wrongShape(size)) { onError(`${label} should be ${spec[0]}×${spec[1]} px (same shape) — this one is ${size[0]}×${size[1]}.`); return }
+    if (!size) { onError('Could not read that image — use a JPG, PNG or WebP file.'); return }
+    let file = original
+    // Wrong shape or too heavy: fix it here instead of sending the seller off to do it.
+    if (spec && (wrongShape(size) || original.size > maxKb * 1024)) {
+      setBusy(true)
+      const fitted = await fitImage(original, [spec[0], spec[1], maxKb])
+      setBusy(false)
+      if (!fitted) { onError(`${label} couldn’t be made small enough (${maxKb} KB) — try a simpler image, or use one of the free tools below the editor.`); return }
+      file = fitted
+      onNote?.(`${label}: ${wrongShape(size) ? 'cropped to the right shape and ' : ''}compressed for you — ${Math.round(original.size / 1024)} KB → ${Math.round(file.size / 1024)} KB. Check how it looks.`)
+    }
     setBusy(true)
     try {
       const body = new FormData()
@@ -122,7 +171,7 @@ function ImageField({ headers, label, value, spec, onChange, onError }) {
     } catch (e) { onError(e.message) } finally { setBusy(false) }
   }
   return (
-    <label>{label}{spec && <span className="de-spec">{spec[0]}×{spec[1]} px, up to 3 MB</span>}
+    <label>{label}{spec && <span className="de-spec">{spec[0]} × {spec[1]} px · JPG, PNG or WebP · up to {maxKb} KB</span>}
       {value && <img className="de-thumb" src={mediaUrl(value)} alt="" />}
       <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; pick(f) }} />
       <span className="de-link-row">
@@ -253,7 +302,7 @@ function SectionForm({ s, set, headers, lookup, spec, onError }) {
 // ---------------------------------------------------------------------------
 // Editor
 // ---------------------------------------------------------------------------
-function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
+function Editor({ headers, version, lookup, specs, onBack, onSaved, shopSlug, onOpen, designHidden, minProducts }) {
   const [name, setName] = useState(version.name)
   const [page, setPage] = useState(version.page ?? {})
   const [sections, setSections] = useState(version.sections ?? [])
@@ -301,18 +350,53 @@ function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
     }
   }
 
+  async function publish() {
+    if (dirty) { setMsg('Save your changes first — a changed version needs submitting again.'); return }
+    try {
+      const d = await send(headers, `/seller/decorations/${version.id}/publish`, 'POST')
+      onSaved(d.data)
+      setMsg(designHidden ? `Published — it shows on your store page once you have ${minProducts} live products.` : 'Published — it’s now on your store page.')
+    } catch (e) { setMsg(e.message) }
+  }
+
+  // The live version can't be changed: start an editable copy of it.
+  async function copyToEdit() {
+    try {
+      const d = await send(headers, '/seller/decorations', 'POST', { platform: version.platform, copy_from: version.id })
+      onOpen(d.data)
+    } catch (e) { setMsg(e.message) }
+  }
+
+  // Where this version is on the way to the store page.
+  const step = version.is_live ? 'live' : dirty || version.status === 'draft' || version.status === 'rejected' ? 'edit' : version.status === 'in_review' ? 'review' : version.status === 'approved' ? 'publish' : 'edit'
+  const storeLink = shopSlug ? `${import.meta.env.BASE_URL || '/'}#/shop/${shopSlug}` : null
+
   const current = sections.find((s) => s.id === selected)
   return (
     <>
       <div className="de-top">
         <div className="sc-head"><button type="button" className="sc-link" onClick={() => { if (!dirty || window.confirm('Leave without saving your changes?')) onBack() }}>&larr; Versions</button><input value={name} maxLength="80" disabled={readOnly} onChange={(e) => { setName(e.target.value); setDirty(true) }} /><span className="sc-pill hidden">{version.platform === 'mobile' ? 'Mobile' : 'Desktop'}</span></div>
         <div className="ss-actions">
-          {readOnly ? <span className="sc-muted">{version.is_live ? 'Live — make a copy to change it.' : 'In review — wait for the result or make a copy.'}</span> : <>
-            <button type="button" className="seller-btn ghost" disabled={!dirty} onClick={save}>Save</button>
-            <button type="button" className="sc-primary" onClick={submit}>Submit</button>
-          </>}
+          {storeLink && <a className="seller-btn ghost" href={storeLink} target="_blank" rel="noreferrer">View store page ↗</a>}
+          {version.is_live ? <button type="button" className="sc-primary" onClick={copyToEdit}>Make an editable copy</button>
+            : version.status === 'in_review' ? <span className="sc-muted">In review — wait for the result or make a copy.</span>
+            : <>
+              <button type="button" className="seller-btn ghost" disabled={!dirty} onClick={save}>Save</button>
+              {version.status === 'approved' && !dirty
+                ? <button type="button" className="sc-primary" onClick={publish}>Publish</button>
+                : <button type="button" className="sc-primary" onClick={submit}>Submit</button>}
+            </>}
         </div>
       </div>
+      {/* What it takes for changes to reach the store page. */}
+      <ol className="de-steps">
+        {[['edit', 'Edit & save'], ['review', 'Submit — checked'], ['publish', 'Publish'], ['live', 'Live on your store page']].map(([key, label], i, all) => {
+          const at = all.findIndex(([k]) => k === step)
+          return <li key={key} className={i < at ? 'done' : i === at ? 'on' : ''}>{label}</li>
+        })}
+      </ol>
+      {version.is_live && <p className="sc-muted de-steps-note">This version is live and can&rsquo;t be changed. Make an editable copy, change it, submit and publish it — the copy then replaces this one on your store page.</p>}
+      {designHidden && <p className="sc-muted de-steps-note">Shoppers see your default store page until you have {minProducts} live products — a published design appears automatically then.</p>}
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
       <div className="de-body">
         <aside className="de-palette">
@@ -393,6 +477,18 @@ function Editor({ headers, version, lookup, specs, onBack, onSaved }) {
           </div>
         </div>
       )}
+      {/* Free online tools for preparing images (examples — any similar tool works). */}
+      <div className="sc-card de-tools">
+        <h3 className="sc-h2">Free tools to prepare your images <small className="sc-muted">— no sign-up needed</small></h3>
+        <p className="sc-muted">Usually you don&rsquo;t need these: images that are too big or the wrong shape are cropped and compressed for you when you upload. Use a tool only if you want to choose the crop yourself.</p>
+        <ul className="de-tool-list">
+          <li><a href="https://squoosh.app" target="_blank" rel="noreferrer">Squoosh ↗</a> — resize and shrink (compress) an image in your browser; save as WebP or JPG.</li>
+          <li><a href="https://tinypng.com" target="_blank" rel="noreferrer">TinyPNG ↗</a> — shrink PNG, JPG and WebP files in one click.</li>
+          <li><a href="https://www.iloveimg.com/crop-image" target="_blank" rel="noreferrer">iLoveIMG ↗</a> — crop, resize or compress, several images at once.</li>
+          <li><a href="https://www.birme.net" target="_blank" rel="noreferrer">BIRME ↗</a> — crop to an exact size: type the width and height (e.g. 1920 × 600), drop your photo, download.</li>
+        </ul>
+        <p className="sc-muted">Use images you own or have the rights to, with no contact details or other websites on them.</p>
+      </div>
     </>
   )
 }
@@ -430,6 +526,8 @@ export function StoreDecoration({ headers }) {
 
   if (editing) {
     return <Editor key={editing.id} headers={headers} version={editing} lookup={lookup} specs={data.image_specs}
+      shopSlug={data.shop?.slug} designHidden={designHidden} minProducts={data.min_products}
+      onOpen={(v) => { setEditing(v); load() }}
       onBack={() => { setEditing(null); load() }}
       onSaved={(v) => { setEditing(v); setData((d) => ({ ...d, versions: d.versions.map((x) => (x.id === v.id ? v : x)) })) }} />
   }
@@ -441,6 +539,7 @@ export function StoreDecoration({ headers }) {
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
       {designHidden && <div className="sc-alert warn"><span>Shoppers see your default store page until you have {data.min_products} live products — you have {data.live_products}. You can design and publish now; your published design appears automatically once you reach {data.min_products}.</span></div>}
       <p className="sc-muted">Your full product list always shows under your design, so a product section is optional.</p>
+      <p className="sc-alert de-rule"><span><b>Keep buyers on {brandName()}:</b> no websites, social media (Instagram, Facebook, YouTube, WhatsApp…), handles, phone numbers or email addresses in your design or shop description — links can only go to your own products and categories. Designs with them can&rsquo;t be submitted, and trying to get round this rule can lead to your design being removed and your <b>shop being suspended</b>.</span></p>
 
       <div className="sc-tabs">
         {['desktop', 'mobile'].map((p) => <button type="button" key={p} className={platform === p ? 'active' : ''} onClick={() => { setPlatform(p); setSelectedId(null) }}>{p === 'desktop' ? 'Desktop' : 'Mobile'} <small>{data.versions.filter((v) => v.platform === p).length}</small></button>)}
@@ -463,6 +562,7 @@ export function StoreDecoration({ headers }) {
                   <small className="sc-muted">Updated {new Date(v.updated_at).toLocaleString()}</small>
                   <span className="sc-actions" onClick={(e) => e.stopPropagation()}>
                     {!v.is_live && v.status !== 'in_review' && <button type="button" onClick={() => setEditing(v)}>Edit</button>}
+                    {v.is_live && <button type="button" disabled={versions.length >= data.max_versions} title="The live version can't be changed — this makes an editable copy" onClick={async () => { const c = await act('/seller/decorations', 'POST', { platform, copy_from: v.id }); if (c) setEditing(c) }}>Edit a copy</button>}
                     {(v.status === 'draft' || v.status === 'rejected') && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/submit`, 'POST', null, 'Submitted.')}>Submit</button>}
                     {v.status === 'approved' && !v.is_live && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/publish`, 'POST', null, `${designHidden ? `Published “${v.name}” — it shows on your ${platform} store page once you have ${data.min_products} live products.` : `Published — your ${platform} store page now uses “${v.name}”.`}`)}>Publish</button>}
                     {v.is_live && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/unpublish`, 'POST', null, 'Unpublished — shoppers see the default store page.')}>Unpublish</button>}

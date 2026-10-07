@@ -59,6 +59,9 @@ class SellerProductUploadController extends Controller
         ]);
 
         $outcome = ProductUpload::process($shop, $rows, array_map('intval', $categoryIds), ($data['product_type'] ?? 'physical') === 'digital');
+        // One email for the whole upload: the products that went to review.
+        $submitted = collect($outcome['results'])->where('status', 'submitted')->pluck('product_id')->unique()->filter();
+        SellerProductController::tellAdmins($shop, \App\Models\Product::whereIn('id', $submitted)->pluck('name')->all());
         $task->update([
             'status' => $outcome['error_records'] ? 'action_required' : 'completed',
             'error_records' => $outcome['error_records'],

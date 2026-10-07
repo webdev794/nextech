@@ -177,16 +177,16 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'products', 'reviews', 'categories', 'customers', 'emails', 'riders', 'sellers', 'stores', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'categories', 'products', 'stores', 'sellers', 'customers', 'emails', 'reviews', 'riders', 'shipping', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
-  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', branding: 'Store settings', secure: 'Secure access',
+  customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', shipping: 'Shipping', branding: 'Store settings', secure: 'Secure access',
   support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', reviews: '\u{2B50}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', branding: '\u{1F3A8}', secure: '\u{1F510}',
+  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', shipping: '\u{1F69A}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
 // Cross-border currency conversion: the market rate (fetched daily from two
 // sources and cross-checked), an optional fixed rate, and the platform margin
@@ -363,12 +363,14 @@ function riderStatusChip(rider) {
     </>
   )
 }
-const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', menu_placements: ['main_footer'], show_in_footer: true, is_published: true, sort_order: 0 }
+const EMPTY_PAGE = { title: '', slug: '', banner_image: '', content: '', sections: [], footer_group: 'company', menu_placements: [], show_in_footer: true, is_published: true, sort_order: 0 }
 const FOOTER_GROUP_LABELS = { company: 'Company info', legal: 'Customer service', help: 'Help', bottom: 'Lower footer', blog: 'Blog (not shown in footer columns)' }
 const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
 // Where a page is actually linked from on the live site — purely for admin
 // tracking/organization; show_in_footer is still what gates the real render.
-const MENU_PLACEMENT_OPTIONS = ['main_menu', 'main_footer', 'seller_footer', 'blog']
+// Pages menu (left): its own order and names.
+const NAV_PAGE_GROUPS = ['blog', 'main_menu', 'main_footer', 'seller_footer']
+const NAV_PAGE_LABELS = { blog: 'All blogs', main_menu: 'Main help pages', main_footer: 'Main footer pages', seller_footer: 'Seller footer pages' }
 const MENU_PLACEMENT_LABELS = { main_menu: 'Main menu (storefront Help menu)', main_footer: 'Main footer', seller_footer: 'Seller Center footer', blog: 'Blog' }
 const sectionLabel = (type) => (SECTION_TYPES.find(([value]) => value === type) ?? [type, type])[1]
 
@@ -702,6 +704,8 @@ export default function Admin({ token, onClose }) {
   const [digitalFilesOf, setDigitalFilesOf] = useState(null) // Products → Files panel
   // Products / Categories submenus: clicking the open section again folds its submenu.
   const [subnavFolded, setSubnavFolded] = useState(false)
+  // Shipping (left menu): which shipping form is open.
+  const [shipSection, setShipSection] = useState('options')
   // Admin cancelling an order: { order, reason, note } — a reason is required.
   const [cancelling, setCancelling] = useState(null)
   const [shops, setShops] = useState([])
@@ -773,6 +777,18 @@ export default function Admin({ token, onClose }) {
   const secureHeaders = useCallback(() => ({ ...jsonHeaders(), 'X-Secure-Access': secureToken }), [jsonHeaders, secureToken])
 
   const fail = (error) => setMessage(error?.message ?? 'Something went wrong.')
+
+  // A category a seller asked for that won't be added: cleared for good (server-side) and the seller is told.
+  async function declineCategorySuggestion(c) {
+    if (!window.confirm(`Decline the category “${c.name}”? ${c.shop_name ?? 'The seller'} is told, and their product${c.products > 1 ? 's keep their' : ' keeps its'} current category.`)) return
+    try {
+      const response = await fetch(`${API_URL}/admin/category-suggestions/decline`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ name: c.name }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not decline the category.')
+      setNotifications((cur) => ({ ...cur, category_suggestions: (cur.category_suggestions ?? []).filter((x) => x.name !== c.name) }))
+      setMessage(`Declined “${c.name}” — the seller has been told.`)
+    } catch (error) { fail(error) }
+  }
 
   const loadMetrics = useCallback(() => {
     fetch(`${API_URL}/admin/metrics`, { headers: authHeaders() }).then(readJson)
@@ -1004,7 +1020,7 @@ export default function Admin({ token, onClose }) {
     }, 5000)
     return () => clearInterval(timer)
   }, [threadId, authHeaders])
-  useEffect(() => { if (tab === 'settings') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
+  useEffect(() => { if (tab === 'settings' || tab === 'shipping') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
   // The country dropdown in the top bar is built from the settings — load them on open.
   useEffect(() => { if (!settings) loadSettings() }, [settings, loadSettings])
   useEffect(() => { if (tab === 'branding' || tab === 'secure' || tab === 'footer') loadSettings() }, [tab, loadSettings])
@@ -1257,7 +1273,8 @@ export default function Admin({ token, onClose }) {
   async function savePage(event) {
     event.preventDefault()
     setMessage('')
-    const { id, ...rest } = pageForm
+    const { id, no_menu: noMenu, ...rest } = pageForm
+    if (!id && rest.menu_placements.length === 0 && !noMenu) { setMessage('Choose where to add this page (or tick “Not in a menu yet”).'); return }
     const payload = { ...rest, slug: rest.slug.trim(), parent_slug: (rest.parent_slug ?? '').trim() || null, sort_order: Number(rest.sort_order) || 0, acceptance_for: rest.acceptance_for || null }
     try {
       const response = await fetch(`${API_URL}/admin/pages${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', headers: jsonHeaders(), body: JSON.stringify(payload) })
@@ -2459,7 +2476,7 @@ Reason:`, '')
                             <button type="button" className="admin-bell-item" title="Create this category (it leaves this list once it exists), then set it on the seller's product" onClick={() => { setSellerBellOpen(false); goTab('categories'); setCategoryForm({ ...EMPTY_CATEGORY, name: c.name }); scrollFormIntoView('admin-category-form') }}>
                               🗂️ &ldquo;{c.name}&rdquo; — {c.shop_name ?? 'Seller'}, {c.products > 1 ? `${c.products} products` : c.product_name} · {new Date(c.at).toLocaleDateString()}
                             </button>
-                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.cat(c)) }}>×</button>
+                            <button type="button" className="admin-bell-decline" title="Don't add this category — the seller is told and their product keeps its category" onClick={(event) => { event.stopPropagation(); declineCategorySuggestion(c) }}>Decline</button>
                           </div>
                         ))}
                         {categorySuggestions.length > BELL_ITEM_CAP && (
@@ -2709,13 +2726,23 @@ Reason:`, '')
       <div className="admin-body">
         <nav className="admin-sidebar" aria-label="Admin sections">
           {PRIMARY_TABS.map((name) => (<Fragment key={name}>
-            <button type="button" className={tab === name ? 'active' : ''} aria-expanded={['products', 'categories'].includes(name) ? (tab === name && !subnavFolded) : undefined}
-              onClick={() => { if (tab === name && ['products', 'categories'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
+            <button type="button" className={tab === name ? 'active' : ''} aria-expanded={['products', 'categories', 'shipping'].includes(name) ? (tab === name && !subnavFolded) : undefined}
+              onClick={() => { if (tab === name && ['products', 'categories', 'shipping'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
               <span className="nav-ico" aria-hidden>{TAB_ICONS[name]}</span>
               <span className="nav-label">{TAB_LABELS[name]}</span>
               {name === 'reviews' && pendingReviews > 0 && <span className="nav-badge">{pendingReviews}</span>}
-              {['products', 'categories'].includes(name) && <span className="nav-caret" aria-hidden>{tab === name && !subnavFolded ? '▾' : '▸'}</span>}
+              {['products', 'categories', 'shipping'].includes(name) && <span className="nav-caret" aria-hidden>{tab === name && !subnavFolded ? '▾' : '▸'}</span>}
             </button>
+            {name === 'shipping' && tab === 'shipping' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={shipSection === 'options' ? 'active' : ''} onClick={() => setShipSection('options')}>Seller shipping &amp; labels</button>
+                <button type="button" className={shipSection === 'local' ? 'active' : ''} onClick={() => setShipSection('local')}>Sellers’ own delivery (local)</button>
+                <button type="button" className={shipSection === 'abroad' ? 'active' : ''} onClick={() => setShipSection('abroad')}>Selling abroad</button>
+                <button type="button" className={shipSection === 'updates' ? 'active' : ''} onClick={() => setShipSection('updates')}>Order update reminders</button>
+                <button type="button" className={shipSection === 'cod' ? 'active' : ''} onClick={() => setShipSection('cod')}>Seller cash on delivery</button>
+                <button type="button" className={shipSection === 'own' ? 'active' : ''} onClick={() => setShipSection('own')}>{brandName()} delivery</button>
+              </div>
+            )}
             {name === 'categories' && tab === 'categories' && !subnavFolded && (
               <div className="admin-nav-sub">
                 <button type="button" className={!categoryForm ? 'active' : ''} onClick={() => setCategoryForm(null)}>All categories</button>
@@ -2732,7 +2759,7 @@ Reason:`, '')
             )}
           </Fragment>))}
 
-          {(() => { const inGroup = tab === 'pages' || tab === 'footer' || tab === 'formatting'; const open = pagesExpanded; return <>
+          {(() => { const inGroup = tab === 'pages' || tab === 'formatting'; const open = pagesExpanded; return <>
           <button type="button" className={`nav-group-toggle${inGroup ? ' active' : ''}`} aria-expanded={open} onClick={() => setPagesExpanded((v) => !v)}>
             <span className="nav-ico" aria-hidden>{'\u{1F4C4}'}</span>
             <span className="nav-label">Pages</span>
@@ -2740,16 +2767,15 @@ Reason:`, '')
           </button>
           {open && (
             <div className="admin-nav-sub">
-              <button type="button" className={tab === 'footer' ? 'active' : ''} onClick={() => goTab('footer')}>Footer</button>
               <button type="button" className={tab === 'pages' && !pageForm && !pageGroupFilter ? 'active' : ''} onClick={() => { goTab('pages'); setPageForm(null); setPageGroupFilter(null) }}>All pages</button>
 
-              {MENU_PLACEMENT_OPTIONS.map((key) => {
+              {NAV_PAGE_GROUPS.map((key) => {
                 const groupPages = pages.filter((p) => Array.isArray(p.menu_placements) && p.menu_placements.includes(key))
                 const isOpen = !!expandedPageGroups[key]
                 return (
                   <div key={key}>
                     <button type="button" className={`nav-subgroup-toggle${pageGroupFilter === key ? ' active' : ''}`} aria-expanded={isOpen} onClick={() => selectPageGroup(key)}>
-                      {MENU_PLACEMENT_LABELS[key]}<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
+                      {NAV_PAGE_LABELS[key]}<span className="nav-caret" aria-hidden>{isOpen ? '▾' : '▸'}</span>
                     </button>
                     {isOpen && (
                       <div className="admin-nav-sub">
@@ -3058,6 +3084,8 @@ Reason:`, '')
               )
             })}
           </div>
+          {/* Products are sold in their seller's country: say when the top-bar country hides some waiting for review. */}
+          {productsMeta?.waiting_elsewhere > 0 && <p className="admin-elsewhere">{productsMeta.waiting_elsewhere} more {productsMeta.waiting_elsewhere === 1 ? 'product is' : 'products are'} waiting for review in other countries&rsquo; stores. <button type="button" className="link" onClick={() => switchAdminMarket('ALL')}>Show all countries</button></p>}
           <div className="admin-toolbar">
             <input className="admin-search" value={productSearch} placeholder="Search name, SKU or seller" onChange={(event) => { setProductSearch(event.target.value); setProductsPage(1); setProductForm(null) }} />
             <label>Sort
@@ -3746,38 +3774,21 @@ Reason:`, '')
                   ? 'A page’s URL can’t be changed once it’s created. For a different URL, create a new page with it (and delete this one if it’s no longer needed).'
                   : 'Leave blank to make it from the title. Letters, numbers and dashes only — it can’t be changed after the page is created.'}</span>
               </label>
-
-              <div className="admin-fieldset admin-collapsible-box">
-                <div className="admin-collapsible-header">
-                  <span>Page settings</span>
-                  <button type="button" className="admin-collapsible-arrow" aria-expanded={pageSettingsOpen} aria-label={pageSettingsOpen ? 'Collapse page settings' : 'Expand page settings'} onClick={() => setPageSettingsOpen((v) => !v)}>
-                    {pageSettingsOpen ? '▾' : '▸'}
-                  </button>
-                </div>
-                {pageSettingsOpen && (
-                  <div className="admin-collapsible-body">
-                    <div className="admin-form-grid">
-                      <label>Parent page (optional)
-                        <input list="admin-page-slugs" value={pageForm.parent_slug ?? ''} placeholder="e.g. seller-services-agreement" onChange={(event) => setPageForm({ ...pageForm, parent_slug: event.target.value })} />
-                        <datalist id="admin-page-slugs">{pages.filter((p) => p.slug !== pageForm.slug).map((p) => <option key={p.slug} value={p.slug}>{p.title}</option>)}</datalist>
-                      </label>
-                      <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
-                      <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
-                      <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
-                    </div>
-
-                    <div className="admin-subhead" style={{ marginTop: 4 }}>Placement</div>
+              {/* Where the page goes (the Pages menu groups) — asked up front, not hidden in Page settings. */}
+              <div className="admin-page-placement">
+                <div className="admin-subhead">Add this page to<b className="admin-req" title="Required"> *</b></div>
                     <p className="muted">Where this page is tracked as belonging, for the sidebar/list here — tick every menu it's actually linked from on the live site (a page can be in more than one).</p>
                     <div className="admin-check-list">
-                      {MENU_PLACEMENT_OPTIONS.map((opt) => (
+                      {NAV_PAGE_GROUPS.map((opt) => (
                         <label className="admin-check" key={opt}>
                           <input type="checkbox" checked={pageForm.menu_placements.includes(opt)}
                             onChange={(event) => setPageForm((f) => ({
                               ...f,
                               menu_placements: event.target.checked ? [...f.menu_placements, opt] : f.menu_placements.filter((v) => v !== opt),
-                            }))} /> {MENU_PLACEMENT_LABELS[opt]}
+                            }))} /> {NAV_PAGE_LABELS[opt]}
                         </label>
                       ))}
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.menu_placements.length === 0 && !!pageForm.no_menu} onChange={(event) => setPageForm((f) => ({ ...f, no_menu: event.target.checked, menu_placements: event.target.checked ? [] : f.menu_placements }))} /> Not in a menu yet (only under All pages)</label>
                     </div>
                     {pageForm.menu_placements.includes('seller_footer') && (
                       <label>Sellers must read, accept and sign this page
@@ -3798,6 +3809,27 @@ Reason:`, '')
                         </select>
                       </label>
                     )}
+              </div>
+
+              <div className="admin-fieldset admin-collapsible-box">
+                <div className="admin-collapsible-header">
+                  <span>Page settings</span>
+                  <button type="button" className="admin-collapsible-arrow" aria-expanded={pageSettingsOpen} aria-label={pageSettingsOpen ? 'Collapse page settings' : 'Expand page settings'} onClick={() => setPageSettingsOpen((v) => !v)}>
+                    {pageSettingsOpen ? '▾' : '▸'}
+                  </button>
+                </div>
+                {pageSettingsOpen && (
+                  <div className="admin-collapsible-body">
+                    <div className="admin-form-grid">
+                      <label>Parent page (optional)
+                        <input list="admin-page-slugs" value={pageForm.parent_slug ?? ''} placeholder="e.g. seller-services-agreement" onChange={(event) => setPageForm({ ...pageForm, parent_slug: event.target.value })} />
+                        <datalist id="admin-page-slugs">{pages.filter((p) => p.slug !== pageForm.slug).map((p) => <option key={p.slug} value={p.slug}>{p.title}</option>)}</datalist>
+                      </label>
+                      <label>Sort order<input type="number" min="0" max="9999" value={pageForm.sort_order} onChange={(event) => setPageForm({ ...pageForm, sort_order: event.target.value })} /></label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.show_in_footer} onChange={(event) => setPageForm({ ...pageForm, show_in_footer: event.target.checked })} /> Show in footer</label>
+                      <label className="admin-check"><input type="checkbox" checked={pageForm.is_published} onChange={(event) => setPageForm({ ...pageForm, is_published: event.target.checked })} /> Published</label>
+                    </div>
+
                   </div>
                 )}
               </div>
@@ -3995,66 +4027,6 @@ Reason:`, '')
         </section>
       )}
 
-      {tab === 'footer' && (
-        <section className="admin-panel">
-          {!footerForm ? <Loading>Loading…</Loading> : (
-            <form className="admin-form" onSubmit={saveFooter}>
-              <h3>Footer</h3>
-              <p className="muted">The storefront footer. &ldquo;Useful Links&rdquo; also lists your published content pages; the links below are added after them.</p>
-              <div className="admin-form-grid">
-                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder={`© {year} ${brandName()}`} /></label>
-                <label>App Store URL<input value={footerForm.app_store_url} onChange={(event) => setFooterForm({ ...footerForm, app_store_url: event.target.value })} placeholder="https://apps.apple.com/…" /></label>
-                <label>Google Play URL<input value={footerForm.play_store_url} onChange={(event) => setFooterForm({ ...footerForm, play_store_url: event.target.value })} placeholder="https://play.google.com/…" /></label>
-              </div>
-              <p className="muted"><code>{'{year}'}</code> becomes the current year and <code>{'{store}'}</code> the store name (Store settings), so renaming the store updates the footer too.</p>
-
-              <fieldset className="admin-fieldset">
-                <legend>Colours</legend>
-                <div className="admin-form-grid admin-color-grid">
-                  {[
-                    ['bg_color', 'Background', 'The footer’s own background — set a dark colour for a dark footer'],
-                    ['text_color', 'Text', 'Headings, links and copy throughout the footer'],
-                  ].map(([key, label, hint]) => (
-                    <label key={key} className="admin-color">{label}
-                      <span>
-                        <input type="color" value={footerForm[key]} aria-label={`${label} colour`} onChange={(event) => setFooterForm({ ...footerForm, [key]: event.target.value })} />
-                        <input value={footerForm[key]} maxLength="7" spellCheck="false" aria-label={`${label} hex`} onChange={(event) => setFooterForm({ ...footerForm, [key]: event.target.value })} />
-                      </span>
-                      <em className="admin-color-hint">{hint}</em>
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="admin-fieldset">
-                <legend>Social links</legend>
-                <div className="admin-form-grid">
-                  {SOCIAL_PLATFORMS.map(([key, label]) => (
-                    <label key={key}>{label}
-                      <input value={footerForm.socials[key] ?? ''} placeholder="https://… (blank = hidden)"
-                        onChange={(event) => setFooterForm({ ...footerForm, socials: { ...footerForm.socials, [key]: event.target.value } })} />
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="admin-fieldset">
-                <legend>Extra footer links</legend>
-                {footerForm.links.map((link, index) => (
-                  <div className="admin-variant-row" key={index}>
-                    <input placeholder="Label" value={link.label} onChange={(event) => setFooterForm({ ...footerForm, links: footerForm.links.map((l, i) => i === index ? { ...l, label: event.target.value } : l) })} />
-                    <input placeholder="https://…" value={link.url} onChange={(event) => setFooterForm({ ...footerForm, links: footerForm.links.map((l, i) => i === index ? { ...l, url: event.target.value } : l) })} />
-                    <button type="button" className="act danger" onClick={() => setFooterForm({ ...footerForm, links: footerForm.links.filter((_, i) => i !== index) })}>Remove</button>
-                  </div>
-                ))}
-                {footerForm.links.length < 12 && <button type="button" className="act" onClick={() => setFooterForm({ ...footerForm, links: [...footerForm.links, { label: '', url: '' }] })}>Add link</button>}
-              </fieldset>
-
-              <div className="admin-form-actions"><button className="act" type="submit">Save footer</button></div>
-            </form>
-          )}
-        </section>
-      )}
 
       {tab === 'formatting' && (
         <section className="admin-panel">
@@ -4137,6 +4109,68 @@ Reason:`, '')
               </fieldset>
 
               <div className="admin-form-actions"><button className="act" type="submit">Save store settings</button></div>
+            </form>
+          )}
+        </section>
+      )}
+
+      {/* Footer settings live under Store settings (were Pages → Footer). */}
+      {(tab === 'branding' || tab === 'footer') && (
+        <section className="admin-panel">
+          {!footerForm ? <Loading>Loading…</Loading> : (
+            <form className="admin-form" onSubmit={saveFooter}>
+              <h3>Footer</h3>
+              <p className="muted">The storefront footer. &ldquo;Useful Links&rdquo; also lists your published content pages; the links below are added after them.</p>
+              <div className="admin-form-grid">
+                <label>Copyright line<input maxLength="160" value={footerForm.copyright} onChange={(event) => setFooterForm({ ...footerForm, copyright: event.target.value })} placeholder={`© {year} ${brandName()}`} /></label>
+                <label>App Store URL<input value={footerForm.app_store_url} onChange={(event) => setFooterForm({ ...footerForm, app_store_url: event.target.value })} placeholder="https://apps.apple.com/…" /></label>
+                <label>Google Play URL<input value={footerForm.play_store_url} onChange={(event) => setFooterForm({ ...footerForm, play_store_url: event.target.value })} placeholder="https://play.google.com/…" /></label>
+              </div>
+              <p className="muted"><code>{'{year}'}</code> becomes the current year and <code>{'{store}'}</code> the store name (Store settings), so renaming the store updates the footer too.</p>
+
+              <fieldset className="admin-fieldset">
+                <legend>Colours</legend>
+                <div className="admin-form-grid admin-color-grid">
+                  {[
+                    ['bg_color', 'Background', 'The footer’s own background — set a dark colour for a dark footer'],
+                    ['text_color', 'Text', 'Headings, links and copy throughout the footer'],
+                  ].map(([key, label, hint]) => (
+                    <label key={key} className="admin-color">{label}
+                      <span>
+                        <input type="color" value={footerForm[key]} aria-label={`${label} colour`} onChange={(event) => setFooterForm({ ...footerForm, [key]: event.target.value })} />
+                        <input value={footerForm[key]} maxLength="7" spellCheck="false" aria-label={`${label} hex`} onChange={(event) => setFooterForm({ ...footerForm, [key]: event.target.value })} />
+                      </span>
+                      <em className="admin-color-hint">{hint}</em>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="admin-fieldset">
+                <legend>Social links</legend>
+                <div className="admin-form-grid">
+                  {SOCIAL_PLATFORMS.map(([key, label]) => (
+                    <label key={key}>{label}
+                      <input value={footerForm.socials[key] ?? ''} placeholder="https://… (blank = hidden)"
+                        onChange={(event) => setFooterForm({ ...footerForm, socials: { ...footerForm.socials, [key]: event.target.value } })} />
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <fieldset className="admin-fieldset">
+                <legend>Extra footer links</legend>
+                {footerForm.links.map((link, index) => (
+                  <div className="admin-variant-row" key={index}>
+                    <input placeholder="Label" value={link.label} onChange={(event) => setFooterForm({ ...footerForm, links: footerForm.links.map((l, i) => i === index ? { ...l, label: event.target.value } : l) })} />
+                    <input placeholder="https://…" value={link.url} onChange={(event) => setFooterForm({ ...footerForm, links: footerForm.links.map((l, i) => i === index ? { ...l, url: event.target.value } : l) })} />
+                    <button type="button" className="act danger" onClick={() => setFooterForm({ ...footerForm, links: footerForm.links.filter((_, i) => i !== index) })}>Remove</button>
+                  </div>
+                ))}
+                {footerForm.links.length < 12 && <button type="button" className="act" onClick={() => setFooterForm({ ...footerForm, links: [...footerForm.links, { label: '', url: '' }] })}>Add link</button>}
+              </fieldset>
+
+              <div className="admin-form-actions"><button className="act" type="submit">Save footer</button></div>
             </form>
           )}
         </section>
@@ -4286,57 +4320,25 @@ Reason:`, '')
         </section>
       )}
 
-      {tab === 'settings' && (
+      {(tab === 'settings' || tab === 'shipping') && (
         <section className="admin-panel">
           {!settings || !feesForm ? <Loading>Loading settings…</Loading> : (
             <>
+              {tab === 'settings' && <>
               {(settings.setup_checklist ?? []).length > 0 && (() => {
                 const todo = settings.setup_checklist.filter((c) => !c.ok)
                 return (
                   <section className={`admin-group admin-setup${todo.length ? ' todo' : ''}`}>
                     <h3 className="admin-group-title">Setup checklist {todo.length ? <span className="pill pill-pending">{todo.length} to do</span> : <span className="pill pill-approved">All set</span>}</h3>
                     <ul className="admin-setup-list">
-                      {settings.setup_checklist.map((c) => <li key={c.key} className={c.ok ? 'ok' : 'todo'}><span aria-hidden>{c.ok ? '✓' : '!'}</span> <b>{c.label}</b>{!c.ok && <small className="muted"> — {c.hint}</small>}</li>)}
+                      {settings.setup_checklist.map((c) => <li key={c.key} className={c.ok ? 'ok' : 'todo'}><span aria-hidden>{c.ok ? '✓' : '!'}</span> <b>{c.label}</b>{!c.ok && <small className="muted"> — {c.hint}</small>}{c.go && <button type="button" className={c.ok ? 'act ghost admin-setup-go' : 'act admin-setup-go'} onClick={() => { goTab(c.go[0]); if (c.go[1]) setShipSection(c.go[1]) }}>{c.ok ? 'Change' : 'Set up'}</button>}</li>)}
                     </ul>
                   </section>
                 )
               })()}
-              {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
-
               <section className="admin-group">
-                <h3 className="admin-group-title">Shipping</h3>
+                <h3 className="admin-group-title">Selling</h3>
               <HouseShop headers={authHeaders} onMessage={setMessage} />
-              <div className="admin-form">
-                <h4>Seller shipping options</h4>
-                <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
-                  <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
-                    <option value="available" disabled={settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected}>Available — sellers can choose it{settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected ? ' (add a store with riders or connect a courier first)' : ''}</option>
-                    <option value="disabled">Shown but unselectable</option>
-                    <option value="hidden">Hidden</option>
-                  </select>
-                </label>
-                <label>{brandName()} shipping labels (&ldquo;I ship, {brandName()} label&rdquo;)
-                  <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
-                    <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
-                    <option value="auto" disabled={settings.nextech_label_mode !== 'auto' && !settings.courier_connected}>Courier API — paid carrier label bought through the courier connection{!settings.courier_connected ? ' (connect a courier in Secure access first)' : ''}</option>
-                  </select>
-                </label>
-                <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
-                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
-              </div>
-              <div className="admin-form">
-                <h4>Sellers&rsquo; own delivery (local)</h4>
-                <label>&ldquo;Own delivery&rdquo; option for sellers who ship themselves
-                  <select value={settings.seller_local_delivery ?? 'available'} onChange={(event) => saveSetting({ seller_local_delivery: event.target.value })}>
-                    <option value="available">Available — sellers can deliver nearby orders with their own delivery person</option>
-                    <option value="hidden">Hidden</option>
-                  </select>
-                </label>
-                {settings.seller_local_delivery !== 'hidden' && <label>Largest distance a seller can cover (km)
-                  <input type="number" min="1" max="100" step="0.5" defaultValue={settings.seller_local_max_km ?? 25} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 25) })} />
-                </label>}
-                <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
-              </div>
               <div className="admin-form">
                 <h4>Deals — filled automatically</h4>
                 <div className="admin-form-grid">
@@ -4346,44 +4348,11 @@ Reason:`, '')
                 </div>
                 <p className="muted"><b>Lightning deals:</b> sellers (and you, on any product) start one from the product — a start time and units on offer; it shows with a countdown and &ldquo;% claimed&rdquo;. When fewer are running, the most bought products fill the section. <b>Unbeatable deals:</b> about a third of the products (between the at-least and most numbers) with the biggest discounts (&ldquo;compare at&rdquo; vs price), taken in turn from each category. There&rsquo;s no fixed %: the cut-off is the discount of the last product that fits, so it rises and falls with your catalogue{settings.deal_cutoffs ? ` — right now ${Object.entries(settings.deal_cutoffs).map(([c, p]) => `${c}: ${p == null ? 'no discounts yet' : `${p}%+ off`}`).join(', ')}` : ''}. Best sellers fill it only if too few products are discounted at all. <b>Exclusive offers:</b> each country&rsquo;s cheapest products in its own currency, shown as &ldquo;Under $X&rdquo; / &ldquo;Under ₹X&rdquo;. A product is in only one section; ads are never included; demo products follow the demo show/hide switch.</p>
               </div>
-              <div className="admin-form">
-                <h4>Selling abroad</h4>
-                <label className="admin-check"><input type="checkbox" checked={settings.intl_requires_approval !== false} onChange={(event) => saveSetting({ intl_requires_approval: event.target.checked })} /> Sellers must sign export terms before selling abroad</label>
-                <p className="muted">The seller gives their export ID (in India the IEC, with its certificate), accepts the pages you mark &ldquo;before they can sell abroad&rdquo; (Pages → Seller Center footer) and signs a declaration that they ship only legal goods and declare them truthfully. Signing approves it straight away; you can stop any seller in Sellers → View. Sellers already shipping abroad when you switch this on keep doing so.</p>
-              </div>
-              <div className="admin-form">
-                <h4>Chasing sellers for order updates</h4>
-                <div className="admin-form-grid">
-                  {[['pack_hours', 'Remind if a new order isn’t packed after (hours)', 168], ['repeat_hours', 'Repeat the reminder every (hours) until it’s updated', 72], ['escalate_hours', 'Alert me when an order is still not shipped this long after its ship-by date (hours)', 168]].map(([key, label, max]) => (
-                    <label key={key}>{label}
-                      <input type="number" min="1" max={max} step="1" defaultValue={settings.seller_update_rules?.[key] ?? ''} onBlur={(event) => saveSetting({ seller_update_rules: { ...(settings.seller_update_rules ?? {}), [key]: Math.min(max, Math.max(1, Number(event.target.value || 1))) } })} />
-                    </label>
-                  ))}
-                </div>
-                <p className="muted">Sellers get an alert the moment an order arrives. After that, an hourly check emails them about each order waiting on them — not packed, due to ship, no tracking, out for delivery too long, cash not confirmed — at most once per repeat interval, and the same list shows in Seller Center. Orders still unshipped past ship-by are emailed to you once; the order shows how many reminders were sent.</p>
-              </div>
-              <div className="admin-form">
-                <h4>Cash on delivery on sellers&rsquo; own deliveries</h4>
-                <label>Who can offer it
-                  <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
-                    <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
-                    <option value="off">Off for every seller</option>
-                    <option value="all">On for any seller who switches it on</option>
-                  </select>
-                </label>
-                {settings.seller_cod_mode !== 'off' && <div className="admin-form-grid">
-                  {marketOptions.map((m) => (
-                    <label key={m.code}>Pause it when a seller owes {brandName()} more than ({currencySymbol(m.currency)}, {m.name})
-                      <input type="number" min="0" step="1" defaultValue={((settings.seller_cod_max_owed?.[m.code] ?? 0) / 100).toFixed(0)} onBlur={(event) => saveSetting({ seller_cod_max_owed: { [m.code]: Math.max(0, Math.round(Number(event.target.value || 0) * 100)) } })} />
-                    </label>
-                  ))}
-                </div>}
-                <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
-              </div>
 
-              <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />
 
               </section>
+              {settings.fx && <CurrencySettings fx={settings.fx} saveSetting={saveSetting} onSaved={setMessage} />}
+
 
               <div className="admin-form">
                 <h3>Digital downloads</h3>
@@ -4489,29 +4458,140 @@ Reason:`, '')
                 </div>
                 <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per {brandName()}-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
 
-                {/* Rider pay only matters once NexTech has its own stores / riders. */}
-                {(settings.own_stores_count > 0 || settings.riders_count > 0) ? <>
-                <h3>Rider pay</h3>
-                <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
-                <div className="admin-form-grid">
-                  <label>Base pay per delivery ($)<input type="number" min="0" step="0.01" value={feesForm.rider_base_pay} onChange={(event) => setFeesForm({ ...feesForm, rider_base_pay: event.target.value })} /></label>
-                  <label>Per mile ($)<input type="number" min="0" step="0.01" value={feesForm.rider_per_mile} onChange={(event) => setFeesForm({ ...feesForm, rider_per_mile: event.target.value })} /></label>
-                  <label>Minimum rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_min_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_min_payout: event.target.value })} /></label>
-                  <label>Maximum per rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_max_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_max_payout: event.target.value })} /></label>
-                </div>
-                <p className="muted">Each completed delivery credits the rider the base pay plus the per-mile rate for the straight-line distance from the store to the customer. Riders can request a payout once they&rsquo;re owed the minimum — COD cash they still hold is deducted first.</p>
-                </> : <p className="muted">Rider pay settings appear once you add a {brandName()} store and riders.</p>}
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
 
               <section className="admin-group">
-                <h3 className="admin-group-title">Checkout charges &amp; payment</h3>
+                <h3 className="admin-group-title">Checkout charges</h3>
               <form className="admin-form" onSubmit={saveFees}>
-                <h3>Delivery &amp; checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <h3>Checkout charges ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
                 <p className="muted">Charged to <b>customers</b> at checkout and shown on their bill.</p>
 
+
                 <fieldset className="admin-fieldset">
-                  <legend>Delivery fee</legend>
+                  <legend>Other charges</legend>
+                  <div className="admin-form-grid">
+                    <label>Handling fee ($)<input type="number" min="0" step="0.01" value={feesForm.handling_fee} onChange={(event) => setFeesForm({ ...feesForm, handling_fee: event.target.value })} /></label>
+                    <label>Small-cart fee ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_fee} onChange={(event) => setFeesForm({ ...feesForm, small_cart_fee: event.target.value })} /></label>
+                    <label>…applied below ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_min} onChange={(event) => setFeesForm({ ...feesForm, small_cart_min: event.target.value })} /></label>
+                    <label>Default tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
+                  </div>
+                </fieldset>
+
+                <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
+              </form>
+
+              </section>
+              {settings?.sales_tax && <SalesTaxSettings key={settings.sales_tax.mode + JSON.stringify(settings.sales_tax.states.map((x) => x.rate_bps))} settings={settings} save={saveSetting} headers={jsonHeaders} onSettings={setSettings} onMessage={setMessage} onError={fail} />}
+                </>}
+
+
+              </>}
+              {/* Shipping (left menu): one form at a time, picked in its submenu. Same forms and saves as before. */}
+              {tab === 'shipping' && <>
+              {shipSection === 'options' && <>
+              <div className="admin-form">
+                <h4>Seller shipping options</h4>
+                <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
+                  <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
+                    <option value="available" disabled={settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected}>Available — sellers can choose it{settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected ? ' (add a store with riders or connect a courier first)' : ''}</option>
+                    <option value="disabled">Shown but unselectable</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+                <label>{brandName()} shipping labels (&ldquo;I ship, {brandName()} label&rdquo;)
+                  <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
+                    <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
+                    <option value="auto" disabled={settings.nextech_label_mode !== 'auto' && !settings.courier_connected}>Courier API — paid carrier label bought through the courier connection{!settings.courier_connected ? ' (connect a courier in Secure access first)' : ''}</option>
+                  </select>
+                </label>
+                <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
+                <p className="muted">Turn it off to have sellers ship their own orders (own courier or a {brandName()}-bought label), taking pickups off {brandName()}. Sellers already using it keep it for existing products, see a notice to switch, and can&rsquo;t add new products until they set up their own shipping.</p>
+              </div>
+              {/* The built-in label option prints from these templates — so they're here, and only for that option. */}
+              {settings.nextech_label_mode !== 'auto' && <LabelTemplates authHeaders={authHeaders} onMessage={setMessage} />}
+              </>}
+              {shipSection === 'local' && <>
+              <div className="admin-form">
+                <h4>Sellers&rsquo; own delivery (local)</h4>
+                <label>&ldquo;Own delivery&rdquo; option for sellers who ship themselves
+                  <select value={settings.seller_local_delivery ?? 'available'} onChange={(event) => saveSetting({ seller_local_delivery: event.target.value })}>
+                    <option value="available">Available — sellers can deliver nearby orders with their own delivery person</option>
+                    <option value="hidden">Hidden</option>
+                  </select>
+                </label>
+                {settings.seller_local_delivery !== 'hidden' && <label>Largest distance a seller can cover (km)
+                  <input type="number" min="1" max="100" step="0.5" defaultValue={settings.seller_local_max_km ?? 25} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 25) })} />
+                </label>}
+                <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
+              </div>
+              </>}
+              {shipSection === 'abroad' && <>
+              <div className="admin-form">
+                <h4>Selling abroad</h4>
+                <label className="admin-check"><input type="checkbox" checked={settings.intl_requires_approval !== false} onChange={(event) => saveSetting({ intl_requires_approval: event.target.checked })} /> Sellers must sign export terms before selling abroad</label>
+                <p className="muted">The seller gives their export ID (in India the IEC, with its certificate), accepts the pages you mark &ldquo;before they can sell abroad&rdquo; (Pages → Seller Center footer) and signs a declaration that they ship only legal goods and declare them truthfully. Signing approves it straight away; you can stop any seller in Sellers → View. Sellers already shipping abroad when you switch this on keep doing so.</p>
+              </div>
+              </>}
+              {shipSection === 'updates' && <>
+              <div className="admin-form">
+                <h4>Chasing sellers for order updates</h4>
+                <div className="admin-form-grid">
+                  {[['pack_hours', 'Remind if a new order isn’t packed after (hours)', 168], ['repeat_hours', 'Repeat the reminder every (hours) until it’s updated', 72], ['escalate_hours', 'Alert me when an order is still not shipped this long after its ship-by date (hours)', 168]].map(([key, label, max]) => (
+                    <label key={key}>{label}
+                      <input type="number" min="1" max={max} step="1" defaultValue={settings.seller_update_rules?.[key] ?? ''} onBlur={(event) => saveSetting({ seller_update_rules: { ...(settings.seller_update_rules ?? {}), [key]: Math.min(max, Math.max(1, Number(event.target.value || 1))) } })} />
+                    </label>
+                  ))}
+                </div>
+                <p className="muted">Sellers get an alert the moment an order arrives. After that, an hourly check emails them about each order waiting on them — not packed, due to ship, no tracking, out for delivery too long, cash not confirmed — at most once per repeat interval, and the same list shows in Seller Center. Orders still unshipped past ship-by are emailed to you once; the order shows how many reminders were sent.</p>
+              </div>
+              </>}
+              {shipSection === 'cod' && <>
+              <div className="admin-form">
+                <h4>Cash on delivery on sellers&rsquo; own deliveries</h4>
+                <label>Who can offer it
+                  <select value={settings.seller_cod_mode ?? 'approved'} onChange={(event) => saveSetting({ seller_cod_mode: event.target.value })}>
+                    <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
+                    <option value="off">Off for every seller</option>
+                    <option value="all">On for any seller who switches it on</option>
+                  </select>
+                </label>
+                {settings.seller_cod_mode !== 'off' && <div className="admin-form-grid wide">
+                  {marketOptions.map((m) => (
+                    <label key={m.code}>Pause it when a seller owes {brandName()} more than ({currencySymbol(m.currency)}, {m.name})
+                      <input type="number" min="0" step="1" defaultValue={((settings.seller_cod_max_owed?.[m.code] ?? 0) / 100).toFixed(0)} onBlur={(event) => saveSetting({ seller_cod_max_owed: { [m.code]: Math.max(0, Math.round(Number(event.target.value || 0) * 100)) } })} />
+                    </label>
+                  ))}
+                </div>}
+                <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
+              </div>
+              </>}
+              {shipSection === 'own' && <>
+              <section className="admin-group">
+                <h3 className="admin-group-title">{brandName()} delivery — own stores &amp; riders</h3>
+                <div className="admin-form">
+                  {(settings.own_stores_count ?? 0) > 0 ? <>
+                    <label>How {brandName()}&rsquo;s own stock is delivered
+                      <select value={settings.nextech_own_delivery ?? 'on'} onChange={(event) => saveSetting({ nextech_own_delivery: event.target.value })}>
+                        <option value="on" disabled={settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0)}>Own riders within each store&rsquo;s delivery radius, courier beyond it{settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0) ? ' (add riders first)' : ''}</option>
+                        <option value="off">Courier for every order, even nearby</option>
+                      </select>
+                    </label>
+                    <p className="muted">Each store&rsquo;s radius is set under Stores. Outside every radius, orders go by courier (the courier connection, or one you book by hand and enter on the order).</p>
+                    {settings.nextech_own_delivery !== 'off' && <><label className="admin-check">
+                      <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
+                      Auto-assign riders to orders
+                    </label>
+                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p></>}
+                  </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). It&rsquo;s only for delivering {brandName()}&rsquo;s own stock — sellers ship their own orders.</p>}
+                </div>
+              {/* Delivery fee customers pay when NexTech delivers (moved from Settings → charges; same save). */}
+              {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
+                ? <MarketSettings key={`delivery-${chargesMarket}`} settings={settings} only={chargesMarket} part="delivery" save={saveSetting} onSaved={setMessage} />
+                : <form className="admin-form" onSubmit={saveFees}>
+                <h3>Delivery fee ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <p className="muted">Charged to <b>customers</b> when {brandName()} delivers (own riders or courier) and shown on their bill.</p>
+                <fieldset className="admin-fieldset">
                   <label className="admin-radio-row">Charge model
                     <span>
                       <label><input type="radio" name="delivery_mode" checked={feesForm.delivery_mode === 'fixed'} onChange={() => setFeesForm({ ...feesForm, delivery_mode: 'fixed' })} /> Fixed</label>
@@ -4535,65 +4615,39 @@ Reason:`, '')
                     <label>Free delivery above ($)<input type="number" min="0" step="0.01" value={feesForm.free_delivery_threshold} onChange={(event) => setFeesForm({ ...feesForm, free_delivery_threshold: event.target.value })} /></label>
                   </div>
                 </fieldset>
-
-                <fieldset className="admin-fieldset">
-                  <legend>Other charges</legend>
-                  <div className="admin-form-grid">
-                    <label>Handling fee ($)<input type="number" min="0" step="0.01" value={feesForm.handling_fee} onChange={(event) => setFeesForm({ ...feesForm, handling_fee: event.target.value })} /></label>
-                    <label>Small-cart fee ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_fee} onChange={(event) => setFeesForm({ ...feesForm, small_cart_fee: event.target.value })} /></label>
-                    <label>…applied below ($)<input type="number" min="0" step="0.01" value={feesForm.small_cart_min} onChange={(event) => setFeesForm({ ...feesForm, small_cart_min: event.target.value })} /></label>
-                    <label>Default tax rate (%)<input type="number" min="0" step="0.01" value={feesForm.tax_rate_pct} onChange={(event) => setFeesForm({ ...feesForm, tax_rate_pct: event.target.value })} /></label>
-                  </div>
-                </fieldset>
-
-                <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
-              </form>
-
+                <div className="admin-form-actions"><button className="act" type="submit">Save delivery fee</button></div>
+              </form>}
+              {/* Cash on delivery on NexTech's own deliveries — riders or the courier collect it (sellers' own: Seller cash on delivery). */}
               <div className="admin-form">
-                <h4>Cash on delivery</h4>
+                <h4>Cash on delivery — {brandName()}&rsquo;s deliveries</h4>
                 <label className="admin-check">
                   <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
                   Accept cash on delivery
                 </label>
                 <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
               </div>
-              </section>
-              {settings?.sales_tax && <SalesTaxSettings key={settings.sales_tax.mode + JSON.stringify(settings.sales_tax.states.map((x) => x.rate_bps))} settings={settings} save={saveSetting} headers={jsonHeaders} onSettings={setSettings} onMessage={setMessage} onError={fail} />}
-                </>}
-              {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket) && (
-                <section className="admin-group">
-                  <h3 className="admin-group-title">Payment</h3>
-              <div className="admin-form">
-                <h4>Cash on delivery</h4>
-                <label className="admin-check">
-                  <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
-                  Accept cash on delivery
-                </label>
-                <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
-              </div>
-                </section>
-              )}
-
-              <section className="admin-group">
-                <h3 className="admin-group-title">{brandName()} delivery — own stores &amp; riders</h3>
-                <div className="admin-form">
-                  {(settings.own_stores_count ?? 0) > 0 ? <>
-                    <label>How {brandName()}&rsquo;s own stock is delivered
-                      <select value={settings.nextech_own_delivery ?? 'on'} onChange={(event) => saveSetting({ nextech_own_delivery: event.target.value })}>
-                        <option value="on" disabled={settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0)}>Own riders within each store&rsquo;s delivery radius, courier beyond it{settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0) ? ' (add riders first)' : ''}</option>
-                        <option value="off">Courier for every order, even nearby</option>
-                      </select>
-                    </label>
-                    <p className="muted">Each store&rsquo;s radius is set under Stores. Outside every radius, orders go by courier (the courier connection, or one you book by hand and enter on the order).</p>
-                    {settings.nextech_own_delivery !== 'off' && <><label className="admin-check">
-                      <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
-                      Auto-assign riders to orders
-                    </label>
-                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p></>}
-                  </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). It&rsquo;s only for delivering {brandName()}&rsquo;s own stock — sellers ship their own orders.</p>}
+              {/* Rider pay belongs with own stores & riders (moved from Settings → charges; same save). */}
+              {settings.nextech_own_delivery === 'off'
+                ? <p className="muted">Rider pay is hidden while every order goes by courier — choose own riders above to set it.</p>
+                : (settings.own_stores_count > 0 || settings.riders_count > 0)
+                ? (chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
+                  ? <MarketSettings key={`rider-${chargesMarket}`} settings={settings} only={chargesMarket} part="rider" save={saveSetting} onSaved={setMessage} />
+                  : <form className="admin-form" onSubmit={saveFees}>
+                <h3>Rider pay ({(settings.home_currency ?? 'usd').toUpperCase()} {currencySymbol(settings.home_currency)})</h3>
+                <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
+                <div className="admin-form-grid">
+                  <label>Base pay per delivery ($)<input type="number" min="0" step="0.01" value={feesForm.rider_base_pay} onChange={(event) => setFeesForm({ ...feesForm, rider_base_pay: event.target.value })} /></label>
+                  <label>Per mile ($)<input type="number" min="0" step="0.01" value={feesForm.rider_per_mile} onChange={(event) => setFeesForm({ ...feesForm, rider_per_mile: event.target.value })} /></label>
+                  <label>Minimum rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_min_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_min_payout: event.target.value })} /></label>
+                  <label>Maximum per rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_max_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_max_payout: event.target.value })} /></label>
                 </div>
+                <p className="muted">Each completed delivery credits the rider the base pay plus the per-mile rate for the straight-line distance from the store to the customer. Riders can request a payout once they&rsquo;re owed the minimum — COD cash they still hold is deducted first.</p>
+                <div className="admin-form-actions"><button className="act" type="submit">Save rider pay</button></div>
+              </form>)
+                : <p className="muted">Rider pay settings appear once you add a {brandName()} store and riders.</p>}
               </section>
-
+              </>}
+              </>}
             </>
           )}
         </section>

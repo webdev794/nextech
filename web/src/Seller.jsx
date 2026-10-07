@@ -956,7 +956,7 @@ export default function Seller({ token, onSignOut }) {
 
     const NAV = [
       { key: 'home', label: 'Homepage', icon: '⌂' },
-      { key: 'products', label: 'Products', icon: '▣', children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Bulk import products'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
+      { key: 'products', label: 'Products', icon: '▣', badge: (orderAlerts?.out_of_stock ?? []).length, children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Bulk import products'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
       { key: 'performance', label: 'Performance', icon: '♡', children: [['account-health', 'Account health']] },
       { key: 'orders', label: 'Orders', icon: '☰', badge: orderAlerts?.to_ship ?? 0, children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
@@ -1010,6 +1010,12 @@ export default function Seller({ token, onSignOut }) {
           </nav>
 
           <main className="sc-main">
+            {(orderAlerts?.out_of_stock ?? []).length > 0 && section !== 'products' && (
+              <div className="sc-new-order sc-out-of-stock" role="status">
+                <span>📦 <b>{orderAlerts.out_of_stock.length === 1 ? `“${orderAlerts.out_of_stock[0].name}” is out of stock` : `${orderAlerts.out_of_stock.length} products are out of stock`}</b> — buyers can&rsquo;t order {orderAlerts.out_of_stock.length === 1 ? 'it' : 'them'} until you add stock.</span>
+                <button type="button" className="sc-primary" onClick={() => go('products')}>Update stock</button>
+              </div>
+            )}
             {(orderAlerts?.needs_update ?? []).length > 0 && section !== 'ship-orders' && (
               <div className="sc-new-order sc-needs-update" role="status">
                 <span>⏰ <b>{orderAlerts.needs_update.length === 1 ? `Order #${orderAlerts.needs_update[0].order_id} needs your update` : `${orderAlerts.needs_update.length} orders need your update`}</b> — {orderAlerts.needs_update[0].reason}</span>

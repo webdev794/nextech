@@ -1234,8 +1234,13 @@ export default function Storefront() {
     window.scrollTo({ top: 0 })
   }
 
+  // Share a shop: the phone's share sheet where there is one, otherwise copy the link.
   function copyShopLink() {
     const url = `${window.location.origin}${window.location.pathname}#/shop/${shopSlug}`
+    if (navigator.share && window.matchMedia?.('(pointer: coarse)').matches) {
+      navigator.share({ title: shopInfo?.name ?? 'Shop', url }).catch(() => {})
+      return
+    }
     navigator.clipboard?.writeText(url).then(() => { setShopLinkCopied(true); setTimeout(() => setShopLinkCopied(false), 2000) }).catch(() => {})
   }
 
@@ -2625,6 +2630,7 @@ export default function Storefront() {
                   {ACCOUNT_SECTIONS.filter(([key]) => key !== 'region' && key !== 'cards').map(([key, label, icon]) => (
                     <button key={key} type="button" role="menuitem" className="menu-icon-item" onClick={menuAction('account', () => openAccount(key))}><MenuIcon name={icon} />{label}</button>
                   ))}
+                  {currentUser?.is_seller && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}seller` }}><MenuIcon name="store" />Seller Center</button>}
                   {currentUser?.is_admin && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}admin` }}><MenuIcon name="gear" />Admin console</button>}
                   {currentUser?.is_rider && <button type="button" role="menuitem" className="menu-icon-item" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}rider` }}><MenuIcon name="truck" />Deliveries</button>}
                   {currentUser && <>
@@ -2699,10 +2705,13 @@ export default function Storefront() {
           : dealsPage === 'shop' ? (shopInfo && shopInfo !== 'loading' && !shopInfo.missing ? shopInfo.name : 'Shop')
           : dealsCategory || 'Category'
         return <article className={`deals-page deals-page-${dealsPage}`}>
+          {/* A shop page opens straight on the shop's header — no back link or breadcrumb (like Temu). */}
+          {dealsPage !== 'shop' && <>
           <button type="button" className="page-back" onClick={closeDeals}>&larr; Back to shopping</button>
           <nav className="deals-breadcrumb" aria-label="Breadcrumb">
             <a href={import.meta.env.BASE_URL || '/'}>Home</a> <span aria-hidden>&rsaquo;</span> <span>{dealsLabel}</span>
           </nav>
+          </>}
           {dealsPage === 'shop' ? (
             shopInfo === 'loading' || !shopInfo ? <div className="empty-state">Loading…</div>
               : shopInfo.missing ? <div className="empty-state">This shop isn&rsquo;t open right now.</div>
@@ -2715,7 +2724,10 @@ export default function Storefront() {
                       {shopInfo.description && <p className="shop-hero-desc">{shopInfo.description}</p>}
                       {shopInfo.market && shopInfo.market !== activeMarket && <p className="shop-hero-market">This shop sells in {marketName(shopInfo.market)}. <button type="button" onClick={() => switchMarket(shopInfo.market)}>Shop in {marketName(shopInfo.market)}</button></p>}
                     </div>
-                    <button type="button" className="shop-hero-share" onClick={copyShopLink}>{shopLinkCopied ? 'Link copied' : 'Share shop'}</button>
+                    <button type="button" className="shop-hero-share" aria-label="Share this shop" title="Share this shop" onClick={copyShopLink}>
+                      <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.6" y1="13.5" x2="15.4" y2="17.5" /><line x1="15.4" y1="6.5" x2="8.6" y2="10.5" /></svg>
+                      {shopLinkCopied && <span className="shop-hero-share-note" role="status">Link copied</span>}
+                    </button>
                   </div>
                 </header>
           ) : <div className="deals-page-titlebar"><h1>{dealsLabel}</h1></div>}
@@ -2859,7 +2871,7 @@ export default function Storefront() {
                 {product.affiliate_url ? (
                   <a className="add-btn pm-add pdp-add pcard-ad-link" href={`${API_URL}/products/${product.id}/go`} target="_blank" rel="sponsored noopener noreferrer">VIEW ON {(product.affiliate_merchant || 'partner site').toUpperCase()} ↗</a>
                 ) : product.personalization?.enabled ? (
-                  <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0 || !personalizationReady(product.personalization, pzDraft[product.id])} onClick={() => { add(product, variant, pzDraft[product.id]); setPzDraft((d) => ({ ...d, [product.id]: {} })); setCartOpen(true) }}>{stock === 0 ? 'OUT OF STOCK' : personalizationReady(product.personalization, pzDraft[product.id]) ? 'ADD TO CART' : 'UPLOAD YOUR PHOTO FIRST'}</button>
+                  <button className={stock === 0 ? 'add-btn pm-add pdp-add is-oos' : 'add-btn pm-add pdp-add'} type="button" disabled={stock === 0 || !personalizationReady(product.personalization, pzDraft[product.id])} onClick={() => { add(product, variant, pzDraft[product.id]); setPzDraft((d) => ({ ...d, [product.id]: {} })); setCartOpen(true) }}>{stock === 0 ? 'OUT OF STOCK' : personalizationReady(product.personalization, pzDraft[product.id]) ? 'ADD TO CART' : 'UPLOAD YOUR PHOTO FIRST'}</button>
                 ) : qty === 0
                   ? <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0} onClick={() => add(product, variant)}>{stock === 0 ? 'OUT OF STOCK' : 'ADD TO CART'}</button>
                   : <span className="stepper pm-add pdp-add"><button type="button" aria-label="Remove one" onClick={() => updateQuantity(key, -1)}>&minus;</button><b>{qty}</b><button type="button" aria-label="Add one" disabled={stock != null && qty >= stock} onClick={() => updateQuantity(key, 1)}>+</button></span>}
@@ -3015,6 +3027,8 @@ export default function Storefront() {
               ))}
             </div>
           ))}
+          {/* Sellers: back to their dashboard (only shown to accounts with a seller application / shop). */}
+          {currentUser?.is_seller && <div className="account-side-group"><button type="button" className="account-side-seller" onClick={() => { window.location.href = `${import.meta.env.BASE_URL}seller` }}><MenuIcon name="store" size={18} />Seller Center</button></div>}
         </nav>
         <div className="account-main">
         {accountTab !== 'orders' && <h2 id="account-title">{ACCOUNT_SECTIONS.find(([key]) => key === accountTab)?.[1] ?? 'Your account'}</h2>}

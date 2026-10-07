@@ -127,6 +127,9 @@ class SellerProductController extends Controller
         });
 
         $this->notifyCategorySuggestion($product, null);
+        if ($product->status === 'pending') {
+            self::tellAdmins($shop, [$product->name]);
+        }
 
         return response()->json(['data' => $this->present($product->load(self::RELATIONS), $shop)], 201);
     }
@@ -261,6 +264,7 @@ class SellerProductController extends Controller
         if ($product->status === 'approved' && $submit && ! $completingFollowups && ! $shop->is_house) {
             DB::transaction(fn () => ProductPendingChanges::hold($product, $data, $variants, $images));
             $this->notifyCategorySuggestion($product->fresh(), $previousSuggestion);
+            self::tellAdmins($shop, [$product->name], edit: true);
 
             return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
         }
@@ -276,8 +280,24 @@ class SellerProductController extends Controller
             }
         });
         $this->notifyCategorySuggestion($product->fresh(), $previousSuggestion);
+        if (($data['status'] ?? null) === 'pending') {
+            self::tellAdmins($shop, [$product->name]);
+        }
 
         return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
+    }
+
+    /** Email the admins that products (or an edit) are waiting for their review. */
+    public static function tellAdmins(Shop $shop, array $names, bool $edit = false): void
+    {
+        if (! $names) {
+            return;
+        }
+        try {
+            Notification::send(User::where('is_admin', true)->get(), new \App\Notifications\AdminProductsSubmitted($shop, array_values($names), $edit));
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**

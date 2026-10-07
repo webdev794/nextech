@@ -40,7 +40,7 @@ class MediaController extends Controller
         $validated = $request->validate([
             'file' => array_merge(
                 ['required', 'file'],
-                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', $folder === 'personalization' ? 'max:15360' : 'max:4096']
+                $folder === 'products' ? self::PRODUCT_IMAGE_RULES : ['mimes:jpg,jpeg,png,webp,gif', match ($folder) { 'personalization' => 'max:15360', 'shops' => 'max:1024', default => 'max:4096' }]
             ),
             'folder' => ['sometimes', 'string', 'in:products,categories,stores,banners,shops,branding,pages,support,reviews,personalization'],
         ]);

@@ -726,16 +726,18 @@ class AdminSettingController extends Controller
         $markets = Market::codes();
 
         $items = [
-            ['key' => 'store_name', 'label' => 'Store name', 'ok' => trim((string) (Branding::current()['store_name'] ?? '')) !== '', 'hint' => 'Store settings → name (shown on every page, email and bill).'],
-            ['key' => 'payments', 'label' => 'A way for buyers to pay', 'ok' => $cardsReady || (bool) Setting::get('cod_enabled', false), 'hint' => 'Add Stripe keys (Secure access → Payments) or turn on cash on delivery.'],
-            ['key' => 'business_details', 'label' => 'Business details on bills', 'ok' => collect($markets)->every(fn ($c) => trim((string) (($details[$c] ?? [])['legal_name'] ?? '')) !== '' && trim((string) (($details[$c] ?? [])['address'] ?? '')) !== ''), 'hint' => 'Settings → Business details: legal name and address for each country (printed on bills).'],
-            ['key' => 'delivery', 'label' => 'A way to deliver orders', 'ok' => $pickup !== 'available' || $stores > 0 || $courierConnected, 'hint' => '“'.Branding::name().' collects & delivers” is on but there’s no store with riders and no courier — add a store and riders, connect a courier, or switch it off so sellers ship themselves.'],
+            // 'go' = where to fix it: [admin tab, Shipping submenu section].
+            ['key' => 'store_name', 'label' => 'Store name', 'ok' => trim((string) (Branding::current()['store_name'] ?? '')) !== '', 'hint' => 'Store settings → name (shown on every page, email and bill).', 'go' => ['branding']],
+            ['key' => 'payments', 'label' => 'A way for buyers to pay', 'ok' => $cardsReady || (bool) Setting::get('cod_enabled', false), 'hint' => 'Add Stripe keys (Secure access → Payments) or turn on cash on delivery (Shipping → '.Branding::name().' delivery).', 'go' => ['secure']],
+            ['key' => 'business_details', 'label' => 'Business details on bills', 'ok' => collect($markets)->every(fn ($c) => trim((string) (($details[$c] ?? [])['legal_name'] ?? '')) !== '' && trim((string) (($details[$c] ?? [])['address'] ?? '')) !== ''), 'hint' => 'Settings → Business & tax details: legal name and address for each country (printed on bills).', 'go' => ['settings']],
+            ['key' => 'delivery', 'label' => 'A way to deliver orders', 'ok' => $pickup !== 'available' || $stores > 0 || $courierConnected, 'hint' => '“'.Branding::name().' collects & delivers” is on but there’s no store with riders and no courier — add a store and riders, connect a courier, or switch it off in Shipping → Seller shipping & labels so sellers ship themselves.', 'go' => ['shipping', 'options']],
         ];
-        if ($stores > 0) {
-            $items[] = ['key' => 'riders', 'label' => 'Riders for your stores', 'ok' => $riders > 0, 'hint' => 'Riders → add riders and link them to your stores.'];
+        // Riders only matter when own stock goes out with own riders (not "courier for every order").
+        if ($stores > 0 && Setting::get('nextech_own_delivery', 'on') !== 'off') {
+            $items[] = ['key' => 'riders', 'label' => 'Riders for your stores', 'ok' => $riders > 0, 'hint' => 'Riders → add riders and link them to your stores (or choose “courier for every order” in Shipping → '.Branding::name().' delivery).', 'go' => ['riders']];
         }
         if (SellerFulfillment::labelMode() === 'auto') {
-            $items[] = ['key' => 'courier', 'label' => 'Courier connected for labels', 'ok' => $courierConnected, 'hint' => 'Secure access → Courier, or switch labels to Built-in.'];
+            $items[] = ['key' => 'courier', 'label' => 'Courier connected for labels', 'ok' => $courierConnected, 'hint' => 'Secure access → Courier, or switch labels to Built-in in Shipping → Seller shipping & labels.', 'go' => ['secure']];
         }
 
         return $items;
