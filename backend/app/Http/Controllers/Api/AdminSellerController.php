@@ -197,6 +197,10 @@ class AdminSellerController extends Controller
         });
 
         $sent = Money::format($data['amount_cents'] - $fee, $cur);
+        $got = \App\Support\SellerPayouts::received($shop->market, $method, (int) $data['amount_cents']);
+        if ($got['currency'] !== $cur) {
+            $sent .= ' (about '.Money::format($got['cents'], $got['currency']).' in '.strtoupper($got['currency']).' at today’s rate)';
+        }
         SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : 'bank account').($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' withdrawal fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
 
         return response()->json([

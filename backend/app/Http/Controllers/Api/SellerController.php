@@ -179,6 +179,8 @@ class SellerController extends Controller
             $seller->payout_note = SellerLedger::payoutNote($seller->shop->market);
             // Payout fees per method (fixed + %), and whether this seller can be paid right now.
             $seller->payout_fees = SellerPayouts::fees($seller->shop->market);
+            // Rate from the shop's currency to each method's payout currency (e.g. INR → USD for PayPal).
+            $seller->payout_rates = collect($seller->payout_fees)->map(fn ($f) => $f['currency'] === Market::currency($seller->shop->market) ? 1 : \App\Support\Fx::mid($f['currency']) / \App\Support\Fx::mid(Market::currency($seller->shop->market)));
             $seller->payout_blocker = SellerPayouts::blocker($seller);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }

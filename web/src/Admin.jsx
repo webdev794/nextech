@@ -4249,14 +4249,15 @@ Reason:`, '')
                   <form className="admin-form" key={`payout-fees-${workMarket}`} onSubmit={async (event) => {
                     event.preventDefault()
                     const fd = new FormData(event.currentTarget)
-                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100) }]))
+                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency }]))
                     if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Withdrawal fees saved.')
                   }}>
                     <h3>Withdrawal fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
-                    <p className="muted">Taken from each payout you send a seller, by how they&rsquo;re paid — a fixed amount, a percentage, or both (0 = free). Sellers see it before they request a payout, and it shows in their ledger as &ldquo;Withdrawal fee&rdquo;.</p>
+                    <p className="muted">Taken from each payout you send a seller, by how they&rsquo;re paid — a fixed amount, a percentage, or both (0 = free). Set the currency each method pays in (e.g. PayPal pays Indian sellers in USD); its fixed fee is in that currency, converted at the day&rsquo;s rate. Sellers see it before they request a payout, and it shows in their ledger as &ldquo;Withdrawal fee&rdquo;.</p>
                     <div className="admin-form-grid">
                       {['bank', 'paypal'].map((m) => <Fragment key={m}>
-                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed ({currencySymbol(activeCurrency)})<input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
+                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — pays sellers in<select name={`${m}_currency`} defaultValue={fees[m].currency ?? activeCurrency}>{[...new Set([activeCurrency, 'usd'])].map((c) => <option key={c} value={c}>{c.toUpperCase()} {currencySymbol(c)}</option>)}</select></label>
+                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed fee <small className="muted">in the currency it pays in</small><input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — percentage (%)<input name={`${m}_pct`} type="number" min="0" max="50" step="0.01" defaultValue={(fees[m].bps / 100).toFixed(2)} /></label>
                       </Fragment>)}
                     </div>

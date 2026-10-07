@@ -13,7 +13,7 @@ import { changeItemLabel, changeItemStep } from './sellerChangeItems'
 import { StoreDecoration } from './SellerDecoration'
 import { ProductWizard } from './SellerProductWizard'
 import { AccountHealth, BulkUpload, PricingHealth, ProductCompliance, SalesBoostPopup } from './SellerCatalogTools'
-import { currencySymbol, setStoreCurrency, storeMoney } from './money'
+import { currencySymbol, formatMoney, setStoreCurrency, storeMoney } from './money'
 import { SellerChatDock } from './SurfaceChats'
 import './Seller.css'
 
@@ -1128,11 +1128,11 @@ export default function Seller({ token, onSignOut }) {
                               : me.payout_blocker ?? null
                             const method = me.payout_method === 'paypal' ? 'paypal' : 'bank'
                             const f = me.payout_fees?.[method] ?? { fixed_cents: 0, bps: 0 }
-                            const fee = Math.min(requestable, f.fixed_cents + Math.round(requestable * f.bps / 10000))
+                            const fee = Math.min(requestable, (f.local_fixed_cents ?? f.fixed_cents) + Math.round(requestable * f.bps / 10000))
                             return (
                               <div className="seller-payout-request">
                                 <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={() => setPayoutConfirm({ amount: (requestable / 100).toFixed(2), max: requestable, min: me.min_payout_cents ?? 0, method, fees: me.payout_fees ?? {} })}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
-                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} withdrawal fee.</span>}
+                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)}{f.currency && f.currency !== me.currency ? ` (≈ ${formatMoney(Math.round((requestable - fee) * (me.payout_rates?.[method] ?? 1)), f.currency)})` : ''} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} withdrawal fee.</span>}
                                 {why && <span className="seller-earnings-note">{why}</span>}
                                 {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
                               </div>
@@ -1146,7 +1146,9 @@ export default function Seller({ token, onSignOut }) {
                       const c = payoutConfirm
                       const amount = Math.round(Number(c.amount || 0) * 100)
                       const f = c.fees[c.method] ?? { fixed_cents: 0, bps: 0 }
-                      const fee = Math.min(amount, f.fixed_cents + Math.round(amount * f.bps / 10000))
+                      const fee = Math.min(amount, (f.local_fixed_cents ?? f.fixed_cents) + Math.round(amount * f.bps / 10000))
+                      const rate = me.payout_rates?.[c.method] ?? 1
+                      const paidIn = f.currency && f.currency !== (me.currency ?? f.currency) ? f.currency : null
                       const bad = amount < c.min ? `The minimum payout is ${money(c.min)}.` : amount > c.max ? `You can request up to ${money(c.max)} right now.` : null
                       const dest = c.method === 'paypal' ? `PayPal — ${me.payout_details?.paypal_email ?? ''}` : `Bank account${me.payout_details?.account_number ? ` ••••${String(me.payout_details.account_number).slice(-4)}` : ''}`
                       return (
@@ -1158,7 +1160,7 @@ export default function Seller({ token, onSignOut }) {
                               <div><dt>Paid to</dt><dd>{dest}</dd></div>
                               <div><dt>Payout amount</dt><dd>{money(amount)}</dd></div>
                               <div><dt>{c.method === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee</dt><dd>{fee > 0 ? `− ${money(fee)}` : 'Free'}</dd></div>
-                              <div className="total"><dt>You&rsquo;ll receive</dt><dd>{money(amount - fee)}</dd></div>
+                              <div className="total"><dt>You&rsquo;ll receive</dt><dd>{money(amount - fee)}{paidIn && <small className="sc-muted"> ≈ {formatMoney(Math.round((amount - fee) * rate), paidIn)} — paid in {paidIn.toUpperCase()} at the rate on the day it&rsquo;s sent</small>}</dd></div>
                             </dl>
                             {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                             {(bad || payoutReqMsg) && <p className="seller-inline-error">{bad || payoutReqMsg}</p>}
@@ -1167,7 +1169,7 @@ export default function Seller({ token, onSignOut }) {
                         </div>
                       )
                     })()}
-                    <PayoutMethod me={me} headers={authHeaders} money={money} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email }, payout_blocker: d.payout_blocker }))} />
+                    <PayoutMethod me={me} headers={authHeaders} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email }, payout_blocker: d.payout_blocker }))} />
                     <div className="seller-payout-limits">
                       <b>Payout limits</b>
                       <ul>
@@ -1175,7 +1177,7 @@ export default function Seller({ token, onSignOut }) {
                         <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
                         {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
                         <li>One request at a time — you can request again once the last one is paid.</li>
-                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
+                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
                       </ul>
                       {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                     </div>
@@ -1816,12 +1818,12 @@ export default function Seller({ token, onSignOut }) {
 }
 
 // Finances → how the seller is paid: their verified bank account or PayPal.
-function PayoutMethod({ me, headers, money, onSaved }) {
+function PayoutMethod({ me, headers, onSaved }) {
   const [method, setMethod] = useState(me.payout_method === 'paypal' ? 'paypal' : 'bank')
   const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
   const [msg, setMsg] = useState('')
   const hasBank = !!me.payout_details?.account_number
-  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee' }
+  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee' }
   async function save(event) {
     event.preventDefault()
     setMsg('')
