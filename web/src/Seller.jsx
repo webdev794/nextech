@@ -64,7 +64,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Payout fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -1132,7 +1132,7 @@ export default function Seller({ token, onSignOut }) {
                             return (
                               <div className="seller-payout-request">
                                 <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={() => setPayoutConfirm({ amount: (requestable / 100).toFixed(2), max: requestable, min: me.min_payout_cents ?? 0, method, fees: me.payout_fees ?? {} })}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
-                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} payout fee.</span>}
+                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} withdrawal fee.</span>}
                                 {why && <span className="seller-earnings-note">{why}</span>}
                                 {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
                               </div>
@@ -1157,7 +1157,7 @@ export default function Seller({ token, onSignOut }) {
                             <dl className="seller-payout-summary">
                               <div><dt>Paid to</dt><dd>{dest}</dd></div>
                               <div><dt>Payout amount</dt><dd>{money(amount)}</dd></div>
-                              <div><dt>{c.method === 'paypal' ? 'PayPal' : 'Bank transfer'} payout fee</dt><dd>{fee > 0 ? `− ${money(fee)}` : 'Free'}</dd></div>
+                              <div><dt>{c.method === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee</dt><dd>{fee > 0 ? `− ${money(fee)}` : 'Free'}</dd></div>
                               <div className="total"><dt>You&rsquo;ll receive</dt><dd>{money(amount - fee)}</dd></div>
                             </dl>
                             {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
@@ -1175,7 +1175,7 @@ export default function Seller({ token, onSignOut }) {
                         <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
                         {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
                         <li>One request at a time — you can request again once the last one is paid.</li>
-                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} payout fee: <strong>{[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
+                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
                       </ul>
                       {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                     </div>
@@ -1821,7 +1821,7 @@ function PayoutMethod({ me, headers, money, onSaved }) {
   const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
   const [msg, setMsg] = useState('')
   const hasBank = !!me.payout_details?.account_number
-  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — fee ${[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no fee' }
+  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && money(f.fixed_cents), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee' }
   async function save(event) {
     event.preventDefault()
     setMsg('')

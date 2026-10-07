@@ -255,7 +255,7 @@ const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes reque
 const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved', 'deletion']
 const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing', deletion: 'Removal requested' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', payout_fee: 'Payout fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} {store}', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -4250,17 +4250,17 @@ Reason:`, '')
                     event.preventDefault()
                     const fd = new FormData(event.currentTarget)
                     const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100) }]))
-                    if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Payout fees saved.')
+                    if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Withdrawal fees saved.')
                   }}>
-                    <h3>Payout fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
-                    <p className="muted">Taken from each payout you send a seller, by how they&rsquo;re paid — a fixed amount, a percentage, or both (0 = free). Sellers see it before they request a payout, and it shows in their ledger as &ldquo;Payout fee&rdquo;.</p>
+                    <h3>Withdrawal fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
+                    <p className="muted">Taken from each payout you send a seller, by how they&rsquo;re paid — a fixed amount, a percentage, or both (0 = free). Sellers see it before they request a payout, and it shows in their ledger as &ldquo;Withdrawal fee&rdquo;.</p>
                     <div className="admin-form-grid">
                       {['bank', 'paypal'].map((m) => <Fragment key={m}>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed ({currencySymbol(activeCurrency)})<input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — percentage (%)<input name={`${m}_pct`} type="number" min="0" max="50" step="0.01" defaultValue={(fees[m].bps / 100).toFixed(2)} /></label>
                       </Fragment>)}
                     </div>
-                    <div className="admin-form-actions"><button className="act" type="submit">Save payout fees</button></div>
+                    <div className="admin-form-actions"><button className="act" type="submit">Save withdrawal fees</button></div>
                   </form>
                 )
               })()}
@@ -4663,7 +4663,7 @@ Reason:`, '')
                         <p className="muted">{d.payout_method
                           ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.paypal_email ?? d.payout_details?.email}</>)
                           : 'No payout method on file yet.'}
-                          {d.payout_method ? ` · The payout fee for this method is deducted automatically (Settings → Payout fees)` : ''}{d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
+                          {d.payout_method ? ` · The withdrawal fee for this method is deducted automatically (Settings → Withdrawal fees)` : ''}{d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
                         {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => (p.order_missing ? `${money(p.amount_cents, d.currency)} sale credit with no order on record (held — check the ledger)` : `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`)).join(' · ')}</p>}
                         {d.status === 'approved' && (
                           <div className="admin-form-actions">

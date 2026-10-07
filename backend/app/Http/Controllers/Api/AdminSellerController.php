@@ -183,7 +183,7 @@ class AdminSellerController extends Controller
                 // The payout fee for the seller's method is deducted: they receive the rest.
                 $entry = SellerLedger::recordPayout($shop, $data['amount_cents'] - $fee, trim(($method === 'paypal' ? 'PayPal' : 'Bank transfer').'. '.($data['note'] ?? '')), $request->user());
                 if ($fee > 0) {
-                    \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'payout_fee', 'amount_cents' => -$fee, 'note' => ($method === 'paypal' ? 'PayPal' : 'Bank transfer').' payout fee', 'created_by' => $request->user()->id]);
+                    \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'payout_fee', 'amount_cents' => -$fee, 'note' => ($method === 'paypal' ? 'PayPal' : 'Bank transfer').' withdrawal fee', 'created_by' => $request->user()->id]);
                 }
 
                 // Paying out settles the seller's open request, if any.
@@ -197,7 +197,7 @@ class AdminSellerController extends Controller
         });
 
         $sent = Money::format($data['amount_cents'] - $fee, $cur);
-        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : 'bank account').($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' payout fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
+        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : 'bank account').($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' withdrawal fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
