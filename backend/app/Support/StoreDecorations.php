@@ -207,6 +207,22 @@ class StoreDecorations
             }
         }
 
+        // Images: uploaded here, or a secure (https) link.
+        foreach ($sections as $i => $s) {
+            $urls = array_merge(array_column($s['slides'] ?? [], 'image_url'), array_column($s['tiles'] ?? [], 'image_url'), array_column($s['items'] ?? [], 'image_url'), [$s['image_url'] ?? '', $s['poster_url'] ?? '']);
+            foreach (array_filter($urls) as $url) {
+                if (! str_starts_with($url, '/api/media/file/') && ! preg_match('#^https://\S+$#i', $url)) {
+                    $problems[] = ($labels[$s['type']] ?? $s['type']).' (section '.($i + 1).'): image links must start with https://';
+                }
+            }
+        }
+        foreach (['background_image_url'] as $key) {
+            $url = (string) (((array) $decoration->page)[$key] ?? '');
+            if ($url !== '' && ! str_starts_with($url, '/api/media/file/') && ! preg_match('#^https://\S+$#i', $url)) {
+                $problems[] = 'Page background: image links must start with https://';
+            }
+        }
+
         return array_values(array_unique($problems));
     }
 

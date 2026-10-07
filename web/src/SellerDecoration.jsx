@@ -86,17 +86,34 @@ function toDisplay(s, lookup) {
   }
 }
 
-// Image upload with the recommended size checked (aspect ratio within 3%).
+// Read an image's size in the browser (null if it doesn't load).
+const imageSize = (src) => new Promise((resolve) => { const img = new Image(); img.onload = () => resolve([img.naturalWidth, img.naturalHeight]); img.onerror = () => resolve(null); img.src = src })
+
+// Image: upload a file or paste an https link, with the recommended shape
+// checked (aspect ratio within 3%).
 function ImageField({ headers, label, value, spec, onChange, onError }) {
   const [busy, setBusy] = useState(false)
+  const [link, setLink] = useState('')
+  const wrongShape = (size) => spec && Math.abs(size[0] / size[1] - spec[0] / spec[1]) / (spec[0] / spec[1]) > 0.03
+  async function applyLink() {
+    const url = link.trim()
+    if (!/^https:\/\/\S+$/i.test(url)) { onError('Paste a full image link starting with https://'); return }
+    setBusy(true)
+    const size = await imageSize(url)
+    setBusy(false)
+    if (!size) { onError('That link didn’t load as an image — check it opens an image (jpg, png or webp) in your browser.'); return }
+    if (wrongShape(size)) { onError(`${label} should be ${spec[0]}×${spec[1]} px (same shape) — that image is ${size[0]}×${size[1]}.`); return }
+    onChange(url)
+    setLink('')
+  }
   async function pick(file) {
     if (!file) return
     if (file.size > 3 * 1048576) { onError('Images must be 3 MB or smaller.'); return }
     const url = URL.createObjectURL(file)
-    const size = await new Promise((resolve) => { const img = new Image(); img.onload = () => resolve([img.width, img.height]); img.onerror = () => resolve(null); img.src = url })
+    const size = await imageSize(url)
     URL.revokeObjectURL(url)
     if (!size) { onError('Could not read that image.'); return }
-    if (spec && Math.abs(size[0] / size[1] - spec[0] / spec[1]) / (spec[0] / spec[1]) > 0.03) { onError(`${label} should be ${spec[0]}×${spec[1]} px (same shape) — this one is ${size[0]}×${size[1]}.`); return }
+    if (wrongShape(size)) { onError(`${label} should be ${spec[0]}×${spec[1]} px (same shape) — this one is ${size[0]}×${size[1]}.`); return }
     setBusy(true)
     try {
       const body = new FormData()
@@ -108,7 +125,11 @@ function ImageField({ headers, label, value, spec, onChange, onError }) {
     <label>{label}{spec && <span className="de-spec">{spec[0]}×{spec[1]} px, up to 3 MB</span>}
       {value && <img className="de-thumb" src={mediaUrl(value)} alt="" />}
       <input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; pick(f) }} />
-      {busy && <span className="de-spec">Uploading…</span>}
+      <span className="de-link-row">
+        <input type="url" placeholder="…or paste an image link (https://…)" value={link} disabled={busy} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyLink() } }} />
+        <button type="button" className="seller-btn ghost" disabled={busy || !link.trim()} onClick={applyLink}>Use link</button>
+      </span>
+      {busy && <span className="de-spec">{link ? 'Checking link…' : 'Uploading…'}</span>}
       {value && <button type="button" className="sc-link" onClick={() => onChange('')}>Remove image</button>}
     </label>
   )

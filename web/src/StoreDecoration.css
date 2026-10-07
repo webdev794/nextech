@@ -84,6 +84,8 @@
 .de-picker{max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:4px}
 .de-picker label{flex-direction:row;align-items:center;gap:6px;font-size:12px;color:#1f2328}
 .de-spec{font-size:12px;color:#8a9199}
+.de-link-row{display:flex;gap:6px;align-items:center;margin-top:6px}
+.de-link-row input{flex:1;min-width:0}
 .de-list{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:12px;align-items:start}
 .de-version{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border:1px solid #eef0f2;border-radius:10px;background:#fff;cursor:pointer}
 .de-version.on{border-color:#fb7701}
