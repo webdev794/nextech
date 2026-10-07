@@ -558,6 +558,9 @@ export default function Storefront() {
   const [banners, setBanners] = useState([])
   const [homeTiles, setHomeTiles] = useState([])
   const [lightningDeals, setLightningDeals] = useState([])
+  // Lightning deal countdowns tick once a minute.
+  const [nowTick, setNowTick] = useState(() => Date.now())
+  useEffect(() => { const t = setInterval(() => setNowTick(Date.now()), 60000); return () => clearInterval(t) }, [])
   const [unbeatableDeals, setUnbeatableDeals] = useState([])
   const [dealsPage, setDealsPageState] = useState(null)
   const [dealsCategory, setDealsCategory] = useState(null)
@@ -934,17 +937,20 @@ export default function Storefront() {
     if (dealsPage !== 'lightning') { setDealsExclusive([]); return }
     const sep = catalogQuery ? '&' : '?'
     fetch(`${API_URL}/deals${catalogQuery}${sep}deal_type=${dealsPage}&exclusive=1&limit=18`, { headers: { Accept: 'application/json' } })
-      .then(responseJson).then((data) => setDealsExclusive(data.data ?? [])).catch(() => setDealsExclusive([]))
+      .then(responseJson).then((data) => { setDealsExclusive(data.data ?? []); setDealsExclusiveUnder(data.under_cents ?? null) }).catch(() => setDealsExclusive([]))
   }, [dealsPage, catalogQuery])
 
   // "All under $X" cap for the Exclusive Offer strip — the highest price among
   // the cheapest 10 (or fewer, if the bucket is smaller) exclusive-offer items
   // currently loaded, Temu-style. Always derived live, never hidden for count.
+  // "All under $X": the server's tidy cap for this country (₹ / $), else the cheapest-ten fallback.
+  const [dealsExclusiveUnder, setDealsExclusiveUnder] = useState(null)
   const dealsExclusiveCapCents = useMemo(() => {
+    if (dealsExclusiveUnder) return dealsExclusiveUnder
     if (dealsExclusive.length === 0) return null
     const cheapestTen = [...dealsExclusive].sort((a, b) => a.price_cents - b.price_cents).slice(0, 10)
     return Math.max(...cheapestTen.map((p) => p.price_cents))
-  }, [dealsExclusive])
+  }, [dealsExclusive, dealsExclusiveUnder])
 
   const dealsCategorySlug = useMemo(
     () => categories.find((c) => c.name === dealsCategory)?.slug ?? null,
@@ -2437,6 +2443,7 @@ export default function Storefront() {
       <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}{product.ships_from && <span className="pcard-intl"> · ✈ from {product.ships_from_name}</span>}{product.product_type === 'digital' && <span className="pcard-intl"> · ⬇ Digital</span>}</p>
       <h3>{variantTitle(product.name, variant?.label)}</h3>
       {product.condition === 'refurbished' && <span className="pcard-refurb" title="Second-hand / refurbished item">Refurbished</span>}
+      {product.lightning && (() => { const left = Math.max(0, new Date(product.lightning.ends_at).getTime() - nowTick); const h = Math.floor(left / 3600000); const m = Math.floor((left % 3600000) / 60000); return <div className="pcard-lightning" title="Lightning deal"><span>⚡ Ends in {h}h {m}m</span><span className="pcard-claimed"><i style={{ width: `${product.lightning.claimed_pct}%` }} /></span><small>{product.lightning.claimed_pct}% claimed</small></div> })()}
       {hasVariants && <select className="pcard-variant" aria-label={`${product.name} option`} value={String(chosen?.id ?? '')} onChange={(event) => setPickedVariant((current) => ({ ...current, [product.id]: event.target.value }))}>{options.map((o) => <option key={o.id === '' ? 'base' : o.id} value={String(o.id)}>{o.label} — {price(o.price_cents)}</option>)}</select>}
       <div className="pcard-foot"><span className="pcard-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><span className="pcard-compare-at">Compare at: <s>{price(compareAt)}</s> <i className="pcard-info" title={`The higher of the manufacturer's list price or a recent selling price on ${brandName()}.`}>?</i></span></> : <strong>{price(unitPrice)}</strong>}</span>{ad
         ? <a className="add-btn pcard-ad-link" href={`${API_URL}/products/${product.id}/go`} target="_blank" rel="sponsored noopener noreferrer" title={`View on ${product.affiliate_merchant || 'the partner site'} (opens in a new tab)`}>View ↗</a>

@@ -825,7 +825,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (160, '2026_10_07_000067_add_seller_application_draft_to_users', 95),
 (161, '2026_10_07_000068_add_affiliate_to_products', 96),
 (162, '2026_10_07_000069_add_condition_to_products', 97),
-(163, '2026_10_07_000070_create_category_interests_table', 98);
+(163, '2026_10_07_000070_create_category_interests_table', 98),
+(164, '2026_10_07_000071_add_lightning_deal_to_products', 99);
 
 -- --------------------------------------------------------
 
@@ -1442,7 +1443,11 @@ CREATE TABLE `products` (
   `affiliate_url` varchar(1000) DEFAULT NULL,
   `affiliate_merchant` varchar(80) DEFAULT NULL,
   `affiliate_clicks` int(10) UNSIGNED NOT NULL DEFAULT 0,
-  `condition` varchar(16) DEFAULT NULL
+  `condition` varchar(16) DEFAULT NULL,
+  `lightning_starts_at` timestamp NULL DEFAULT NULL,
+  `lightning_ends_at` timestamp NULL DEFAULT NULL,
+  `lightning_qty` int(10) UNSIGNED DEFAULT NULL,
+  `lightning_base_sold` int(10) UNSIGNED DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3350,7 +3355,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=164;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=165;
 
 --
 -- AUTO_INCREMENT for table `orders`

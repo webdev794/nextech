@@ -134,6 +134,15 @@ class CatalogController extends Controller
         $storeId = $this->servingStoreId($request);
         $shopId = isset($validated['shop']) ? (self::publicShop($validated['shop'])?->id ?? 0) : null;
         $market = Market::fromRequest($request);
+        $recommended = ($validated['recommended'] ?? false) && ! isset($validated['category']) && ! isset($validated['search']) && $shopId === null;
+        $recent = array_values(array_filter(array_map('intval', explode(',', (string) ($validated['recent'] ?? '')))));
+        $ranked = $recommended ? \App\Support\CategoryInterests::ranked(auth('sanctum')->user(), array_slice($recent, 0, 20)) : [];
+        // Deal sections are filled automatically (DealSections), in their own order.
+        $dealIds = null;
+        if (isset($validated['deal_type']) || ($validated['exclusive'] ?? false)) {
+            $sections = \App\Support\DealSections::forMarket($market);
+            $dealIds = ($validated['exclusive'] ?? false) ? $sections['exclusive'] : $sections[$validated['deal_type']];
+        }
 
         $base = Product::query()
             ->where('is_active', true)
@@ -159,8 +168,9 @@ class CatalogController extends Controller
                 });
             })
             ->when($shopId !== null, fn ($query) => $query->where('shop_id', $shopId))
-            ->when(isset($validated['deal_type']), fn ($query) => $query->where('deal_type', $validated['deal_type']))
-            ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
+            ->when($dealIds !== null, fn ($query) => $query->whereIn('products.id', $dealIds ?: [0]))
+            // Ads (affiliate products) only on the home page's Recommended list, mixed in below.
+            ->whereNull('products.affiliate_url')
             ->when(($validated['sort'] ?? null) === 'top_rated', fn ($query) => $query->where('rating_avg', '>=', 4.5));
 
         // Categories with matching products (and their parents), before the category filter.
@@ -185,10 +195,10 @@ class CatalogController extends Controller
                 'category_id',
                 Category::withDescendantIds((int) Category::where('slug', $validated['category'])->value('id'))
             ))
+            // A deal section keeps its own order (soonest-ending, biggest discount, cheapest…).
+            ->when($dealIds, fn ($query) => $query->orderByRaw('CASE products.id '.collect($dealIds)->map(fn ($id, $i) => 'WHEN '.(int) $id.' THEN '.$i)->implode(' ').' END'))
             // Recommended: products from the shopper's recently viewed categories first, newest look first.
-            ->when(($validated['recommended'] ?? false) && ! isset($validated['category']) && ! isset($validated['search']), function ($query) use ($request, $validated) {
-                $recent = array_values(array_filter(array_map('intval', explode(',', (string) ($validated['recent'] ?? '')))));
-                $ranked = \App\Support\CategoryInterests::ranked(auth('sanctum')->user(), array_slice($recent, 0, 20));
+            ->when($recommended, function ($query) use ($ranked) {
                 if ($ranked) {
                     $cases = collect($ranked)->map(fn ($id, $i) => 'WHEN '.(int) $id.' THEN '.$i)->implode(' ');
                     $query->orderByRaw("CASE products.category_id {$cases} ELSE ".count($ranked).' END');
@@ -208,7 +218,28 @@ class CatalogController extends Controller
             ->paginate($validated['per_page'] ?? 20)
             ->through(fn (Product $product) => $this->present($product, $storeId, $market));
 
-        return response()->json($categorySlugs === null ? $products : $products->toArray() + ['category_slugs' => $categorySlugs]);
+        // Home Recommended: a few ads mixed in at random places, matching the shopper's categories first.
+        if ($recommended && ! Product::affiliatesHidden()) {
+            $items = collect($products->items());
+            $ads = Product::query()->whereNotNull('affiliate_url')->where('is_active', true)->where('status', 'approved')
+                ->shownToShoppers()->availableIn($market)->whereHas('category', fn ($q) => $q->where('is_active', true))
+                ->with(['category', 'variants' => fn ($q) => $q->where('is_active', true), 'storeInventory', 'images'])
+                ->inRandomOrder()->limit(30)->get()
+                ->sortBy(fn (Product $p) => ($i = array_search((int) $p->category_id, $ranked, true)) === false ? 99 : $i)
+                ->take(max(1, intdiv($items->count(), 8)))->values();
+            foreach ($ads as $ad) {
+                $items->splice(random_int(min(2, $items->count()), $items->count()), 0, [$this->present($ad, $storeId, $market)]);
+            }
+            $products->setCollection($items->values());
+        }
+
+        $payload = $categorySlugs === null ? $products->toArray() : $products->toArray() + ['category_slugs' => $categorySlugs];
+        if ($validated['exclusive'] ?? false) {
+            // "Under $X" for the Exclusive offers section, in this country's currency.
+            $payload['under_cents'] = \App\Support\DealSections::forMarket($market)['under_cents'];
+        }
+
+        return response()->json($payload);
     }
 
     /**
@@ -250,6 +281,7 @@ class CatalogController extends Controller
 
         $storeId = $this->servingStoreId($request);
         $market = Market::fromRequest($request);
+        $sections = \App\Support\DealSections::forMarket($market);
 
         $products = Product::query()
             ->with([
@@ -261,10 +293,10 @@ class CatalogController extends Controller
             ])
             ->where('is_active', true)
             ->where('status', 'approved')
-            ->where('deal_type', $validated['deal_type'])
+            // Filled automatically (DealSections): lightning / unbeatable / exclusive.
+            ->whereIn('products.id', (($validated['exclusive'] ?? false) ? $sections['exclusive'] : $sections[$validated['deal_type']]) ?: [0])
             ->shownToShoppers()
             ->availableIn($market)
-            ->when($validated['exclusive'] ?? false, fn ($query) => $query->where('is_exclusive_offer', true))
             ->visibleAtStore($storeId)
             ->whereHas('category', fn ($query) => $query->where('is_active', true))
             ->inRandomOrder()
@@ -272,7 +304,7 @@ class CatalogController extends Controller
             ->get()
             ->map(fn (Product $product) => $this->present($product, $storeId, $market));
 
-        return response()->json(['data' => $products]);
+        return response()->json(['data' => $products, 'under_cents' => ($validated['exclusive'] ?? false) ? $sections['under_cents'] : null]);
     }
 
     /**
@@ -383,6 +415,14 @@ class CatalogController extends Controller
     private function present(Product $product, ?int $storeId, ?string $market = null, bool $keepShop = false): Product
     {
         $this->presentCrossBorder($product, $market);
+        // A running lightning deal: countdown and how much has been claimed.
+        if (\App\Support\DealSections::lightningLive($product)) {
+            $product->setAttribute('lightning', [
+                'ends_at' => $product->lightning_ends_at->toIso8601String(),
+                'claimed_pct' => (int) min(100, round(\App\Support\DealSections::lightningClaimed($product) * 100 / max(1, (int) $product->lightning_qty))),
+            ]);
+        }
+        $product->makeHidden(['lightning_starts_at', 'lightning_ends_at', 'lightning_qty', 'lightning_base_sold']);
 
         if ($storeId !== null && $product->usesStoreInventory()) {
             $kept = [];

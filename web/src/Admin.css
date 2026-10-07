@@ -648,3 +648,6 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-setup-list li span{display:inline-flex;width:20px;height:20px;align-items:center;justify-content:center;border-radius:50%;font-size:12px;font-weight:700;color:#fff;background:#1f7a3d}
 .admin-setup-list li.todo span{background:#d97706}
 .admin-plain-list{margin:0 0 8px;padding-left:18px}.admin-plain-list li{margin:4px 0}
+.lightning-box{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px dashed #e0b84d;border-radius:10px;background:#fffaf0}
+.lightning-box p{margin:0;font-size:12px;color:#5c6357}.lightning-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px}
+.lightning-row label{display:flex;flex-direction:column;gap:4px;font-size:12px}.lightning-msg{font-weight:600}

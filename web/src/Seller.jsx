@@ -7,6 +7,7 @@ import { renderMarkdown } from './markdown'
 import { PageSection } from './PageSections'
 import { PolicyAccept, PolicyGate } from './PolicyGate'
 import { requestPolicies } from './policyGateEvents'
+import LightningDeal from './LightningDeal'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
@@ -867,6 +868,13 @@ export default function Seller({ token, onSignOut }) {
 
   // Manage products → Update stock (applies right away, no review).
   const [stockEdit, setStockEdit] = useState(null)
+  // Lightning deal window for one product; the deal rules come from the catalog config.
+  const [lightningFor, setLightningFor] = useState(null)
+  const [dealRules, setDealRules] = useState(null)
+  useEffect(() => {
+    if (me?.status !== 'approved' || dealRules) return
+    fetch(`${API_URL}/seller/catalog-config`, { headers: authHeaders() }).then(readJson).then((d) => setDealRules(d?.data?.deal_rules ?? null)).catch(() => {})
+  }, [me?.status, dealRules, authHeaders])
   async function saveStock(event) {
     event.preventDefault()
     const p = stockEdit.product
@@ -1078,6 +1086,16 @@ export default function Seller({ token, onSignOut }) {
                 <div className="sc-tabs">
                   {PRODUCT_TABS.map(([key, label]) => <button type="button" key={key} className={productTab === key ? 'active' : ''} onClick={() => setProductTab(key)}>{label} <small>{tabCount(key)}</small></button>)}
                 </div>
+                {lightningFor && (
+                  <div className="ss-overlay" role="presentation" onClick={() => setLightningFor(null)}>
+                    <div className="ss-modal" role="dialog" aria-modal="true" aria-label="Lightning deal" onClick={(e) => e.stopPropagation()}>
+                      <h2 className="sc-h2">{lightningFor.name}</h2>
+                      <LightningDeal product={lightningFor} path={`/seller/products/${lightningFor.id}/lightning`} headers={authHeaders} rules={dealRules} onSaved={(p) => { setProducts((list) => list.map((x) => (x.id === p.id ? p : x))); setLightningFor(p) }} />
+                      <p className="sc-muted">How products get into deals, automatically: <b>Unbeatable deals</b> show the biggest discounts — at least {dealRules?.unbeatable_min_pct ?? 30}% off (&ldquo;compare at&rdquo; vs price), shared out across categories. <b>Exclusive offers</b> show the lowest-priced products in your country (&ldquo;Under $X&rdquo;). <b>Lightning deals</b> show products on a lightning deal, then best sellers. They also appear on your category&rsquo;s page.</p>
+                      <div className="ss-actions"><button type="button" className="seller-btn ghost" onClick={() => setLightningFor(null)}>Close</button></div>
+                    </div>
+                  </div>
+                )}
                 {stockEdit && (
                   <div className="ss-overlay" role="presentation" onClick={() => setStockEdit(null)}>
                     <form className="ss-modal" role="dialog" aria-modal="true" aria-labelledby="stock-title" onClick={(e) => e.stopPropagation()} onSubmit={saveStock}>
@@ -1122,6 +1140,7 @@ export default function Seller({ token, onSignOut }) {
                               <td>{priceText(product)}{product.compare_at_price_cents > product.price_cents && <s className="sc-muted"> {money(product.compare_at_price_cents)}</s>}{product.low_traffic && <button type="button" className="sc-pill rejected sc-lowtraffic" title="A sales boost offer is waiting — click to view" onClick={() => go('pricing')}>Low traffic</button>}</td>
                               <td className="sc-actions">
                                 <button type="button" onClick={() => editProduct(product)}>{product.status === 'rejected' ? 'Fix & resubmit' : product.status === 'draft' ? 'Finish & submit' : 'Edit'}</button>
+                                {st === 'approved' && <button type="button" onClick={() => setLightningFor(product)}>{product.lightning_ends_at && new Date(product.lightning_ends_at) > new Date() ? '⚡ Deal running' : '⚡ Lightning deal'}</button>}
                                 {st === 'approved' && shopUrl && <a href={`${import.meta.env.BASE_URL || '/'}#/product/${product.slug}`} target="_blank" rel="noreferrer">View</a>}
                                 {['approved', 'pending', 'rejected'].includes(st) && (product.support_until
                                   ? <span className="sc-muted" title="Buyers can still check its details and get returns / warranty support. Set stock to 0 to stop sales — it shows as Out of stock.">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>

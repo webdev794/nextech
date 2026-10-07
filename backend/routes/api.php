@@ -267,6 +267,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/products/demo', [AdminProductController::class, 'bulkDemo']);
     Route::post('/products/demo-visibility', [AdminProductController::class, 'demoVisibility']);
     Route::post('/products/affiliate-visibility', [AdminProductController::class, 'affiliateVisibility']);
+    Route::match(['post', 'delete'], '/products/{product}/lightning', [AdminProductController::class, 'lightning']);
     Route::patch('/products/{product}/demo', [AdminProductController::class, 'setDemo']);
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);
@@ -372,6 +373,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     // Temu-style listing: categories / details / compliance config, drafts, compliance, bulk upload.
     Route::get('/seller/catalog-config', [SellerProductController::class, 'catalogConfig']);
     Route::patch('/seller/products/{product}/compliance', [SellerProductController::class, 'updateCompliance']);
+    Route::match(['post', 'delete'], '/seller/products/{product}/lightning', [SellerProductController::class, 'lightning']);
     Route::post('/seller/products/drafts-from-images', [SellerProductController::class, 'draftsFromImages']);
     Route::get('/seller/product-uploads', [SellerProductUploadController::class, 'index']);
     Route::post('/seller/product-uploads', [SellerProductUploadController::class, 'store']);

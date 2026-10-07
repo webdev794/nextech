@@ -12,6 +12,7 @@ import { AdminReviews } from './AdminReviews'
 import { LabelRequestsPanel, LabelTemplates, OrderLabelRequests } from './AdminLabels'
 import { BusinessDetails, MarketSettings } from './AdminMarkets'
 import { CHANGE_ITEMS } from './sellerChangeItems'
+import LightningDeal from './LightningDeal'
 import { ReturnPolicyFields } from './returnPolicy'
 import { AdminDigitalFiles } from './AdminDigitalFiles'
 import { KeptRates } from './AdminKeptRates'
@@ -268,7 +269,7 @@ const ISSUE_LABELS = {
 }
 const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
-const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false, condition: '', kind: 'live', affiliate_url: '', affiliate_merchant: '' }
+const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], condition: '', kind: 'live', affiliate_url: '', affiliate_merchant: '' }
 
 // Build the per-store stock grid ({ [storeId]: { is_stocked, base, variants: { [variantIndex]: qty } } })
 // from a product's store_inventory rows.
@@ -849,7 +850,7 @@ export default function Admin({ token, onClose }) {
   // Open a product in the edit form; `patch` overrides fields (e.g. kind: 'ad').
   function openProductEdit(product, patch = {}) {
     if (!stores.length) loadStores()
-    setProductForm({ ...{ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, condition: product.condition ?? '', kind: product.affiliate_url ? 'ad' : product.is_demo ? 'demo' : 'live', affiliate_url: product.affiliate_url ?? '', affiliate_merchant: product.affiliate_merchant ?? '', suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }, ...patch })
+    setProductForm({ ...{ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), lightning_starts_at: product.lightning_starts_at, lightning_ends_at: product.lightning_ends_at, lightning_qty: product.lightning_qty, price_cents: product.price_cents, compare_at_price_cents: product.compare_at_price_cents, condition: product.condition ?? '', kind: product.affiliate_url ? 'ad' : product.is_demo ? 'demo' : 'live', affiliate_url: product.affiliate_url ?? '', affiliate_merchant: product.affiliate_merchant ?? '', suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }, ...patch })
     scrollFormIntoView('admin-product-form')
   }
 
@@ -3138,16 +3139,10 @@ Reason:`, '')
                   ? <label>Inventory<input type="text" value="Per store — see below" disabled title="This product tracks stock per store; the counts are in the Store stock section." /></label>
                   : <label>Inventory<input type="number" min="0" value={productForm.inventory_quantity} onChange={(event) => setProductForm({ ...productForm, inventory_quantity: event.target.value })} /></label>}
                 <label className={productForm.is_active ? 'admin-check admin-check-live on' : 'admin-check admin-check-live'}><input type="checkbox" checked={productForm.is_active} onChange={(event) => setProductForm({ ...productForm, is_active: event.target.checked })} /> Active (visible in store)</label>
-                <label>Deal type
-                  <select value={productForm.deal_type ?? ''} onChange={(event) => setProductForm({ ...productForm, deal_type: event.target.value })}>
-                    <option value="">— none —</option>
-                    <option value="lightning">Lightning deals</option>
-                    <option value="unbeatable">Unbeatable deals</option>
-                  </select>
-                </label>
-                <label className="admin-check"><input type="checkbox" checked={!!productForm.is_exclusive_offer} onChange={(event) => setProductForm({ ...productForm, is_exclusive_offer: event.target.checked })} /> Exclusive Offer</label>
                 <label className="admin-check"><input type="checkbox" checked={productForm.condition === 'refurbished'} onChange={(event) => setProductForm({ ...productForm, condition: event.target.checked ? 'refurbished' : '' })} /> Refurbished / second-hand (shows a &ldquo;Refurbished&rdquo; tag)</label>
               </div>
+              {productForm.id && productForm.kind !== 'ad' && <LightningDeal product={productForm} path={`/admin/products/${productForm.id}/lightning`} headers={authHeaders} rules={settings?.deal_rules} onSaved={(p) => { setProductForm((f) => ({ ...f, lightning_starts_at: p.lightning_starts_at, lightning_ends_at: p.lightning_ends_at, lightning_qty: p.lightning_qty })); loadProducts() }} />}
+              <p className="muted">Deals fill themselves: <b>Unbeatable deals</b> = the biggest discounts (at least {settings?.deal_rules?.unbeatable_min_pct ?? 30}% off, spread across categories); <b>Exclusive offers</b> = the lowest-priced products in each country (&ldquo;Under $X&rdquo; / &ldquo;Under ₹X&rdquo;); <b>Lightning deals</b> = products put on a lightning deal, topped up with best sellers. Set the rules in Settings → Deals. They also show on category pages, filtered to that category.</p>
               {!productForm.shop_id && <div className="admin-form-grid">
                 <label>Product kind
                   <select value={productForm.kind ?? 'live'} onChange={(event) => setProductForm({ ...productForm, kind: event.target.value })}>
@@ -4341,6 +4336,15 @@ Reason:`, '')
                   <input type="number" min="1" max="100" step="0.5" defaultValue={settings.seller_local_max_km ?? 25} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 25) })} />
                 </label>}
                 <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
+              </div>
+              <div className="admin-form">
+                <h4>Deals — filled automatically</h4>
+                <div className="admin-form-grid">
+                  {[['lightning_hours', 'Lightning deal length (hours)'], ['lightning_min_pct', 'Lightning deal: minimum % off'], ['lightning_max', 'Lightning deals shown (topped up with best sellers)'], ['unbeatable_min_pct', 'Unbeatable deals: minimum % off'], ['unbeatable_max', 'Unbeatable deals shown'], ['exclusive_min', 'Exclusive offers: at least this many cheapest products'], ['exclusive_max', 'Exclusive offers shown at most']].map(([key, label]) => (
+                    <label key={key}>{label}<input type="number" min="1" max="500" defaultValue={settings.deal_rules?.[key] ?? ''} onBlur={(event) => saveSetting({ deal_rules: { [key]: Math.max(1, Number(event.target.value || 1)) } })} /></label>
+                  ))}
+                </div>
+                <p className="muted"><b>Lightning deals:</b> sellers (and you, on any product) start one from the product — a start time and units on offer; it shows with a countdown and &ldquo;% claimed&rdquo;. When fewer are running, the most bought products fill the section. <b>Unbeatable deals:</b> the biggest discounts (&ldquo;compare at&rdquo; vs price), taken in turn from each category so every category gets its own. <b>Exclusive offers:</b> each country&rsquo;s cheapest products in its own currency, shown as &ldquo;Under $X&rdquo; / &ldquo;Under ₹X&rdquo;. A product is in only one section; ads are never included; demo products follow the demo show/hide switch.</p>
               </div>
               <div className="admin-form">
                 <h4>Selling abroad</h4>

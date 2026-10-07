@@ -230,6 +230,9 @@ class AdminSettingController extends Controller
                 'nextech_own_delivery' => ['sometimes', Rule::in(['on', 'off'])],
                 // Sellers need admin approval (export ID, document, signed declaration) to ship abroad.
                 'intl_requires_approval' => ['sometimes', 'boolean'],
+                // Deal sections, filled automatically (App\Support\DealSections).
+                'deal_rules' => ['sometimes', 'array'],
+                'deal_rules.*' => ['integer', 'min:1', 'max:500'],
                 'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:100'],
                 'seller_update_rules' => ['sometimes', 'array'],
                 'seller_update_rules.pack_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
@@ -356,6 +359,10 @@ class AdminSettingController extends Controller
         if (($validated['nextech_own_delivery'] ?? null) === 'on' && Setting::get('nextech_own_delivery', 'on') === 'off'
             && ! (\App\Models\Store::query()->where('is_active', true)->exists() && \App\Models\User::query()->where('is_rider', true)->exists())) {
             abort(422, 'Add an active store and at least one rider first (Stores, Riders).');
+        }
+        if (array_key_exists('deal_rules', $validated)) {
+            Setting::put('deal_rules', array_intersect_key(array_map('intval', $validated['deal_rules']), \App\Support\DealSections::DEFAULTS) + \App\Support\DealSections::settings());
+            \App\Support\DealSections::forget();
         }
         if (array_key_exists('intl_requires_approval', $validated)) {
             // Turning it on: sellers already shipping abroad keep doing so (marked approved).
@@ -583,6 +590,7 @@ class AdminSettingController extends Controller
             'seller_local_delivery' => SellerShipping::localDeliveryOffered() ? 'available' : 'hidden',
             'nextech_own_delivery' => Setting::get('nextech_own_delivery', 'on') === 'off' ? 'off' : 'on',
             'intl_requires_approval' => \App\Support\SellerIntl::requiresApproval(),
+            'deal_rules' => \App\Support\DealSections::settings(),
             'seller_local_max_km' => SellerShipping::localMaxKm(),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
             // Couriers per country, for entering a hand-booked courier on NexTech orders.

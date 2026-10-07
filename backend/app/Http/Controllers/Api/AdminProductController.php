@@ -186,6 +186,19 @@ class AdminProductController extends Controller
         return response()->json(['data' => ['demos_hidden' => Product::demosHidden()]]);
     }
 
+    /** Put a product (NexTech's or a seller's) on a lightning deal, or end it. */
+    public function lightning(Request $request, Product $product): JsonResponse
+    {
+        if ($request->isMethod('delete')) {
+            \App\Support\LightningDeals::stop($product);
+        } else {
+            $data = $request->validate(['starts_at' => ['sometimes', 'nullable', 'date'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000']]);
+            \App\Support\LightningDeals::start($product, $data);
+        }
+
+        return response()->json(['data' => $product->fresh()->load('category:id,name', 'shop:id,name', 'variants', 'storeInventory', 'images')]);
+    }
+
     /** Show or hide every affiliate product on the storefront at once. */
     public function affiliateVisibility(Request $request): JsonResponse
     {

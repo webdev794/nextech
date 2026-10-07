@@ -71,6 +71,8 @@ class SellerProductController extends Controller
             // Countries this shop ships to (Shipping settings → International shipping), with its fee there.
             'intl_shipping' => collect((array) $shop->intl_shipping)->map(fn ($t, $code) => ['code' => $code, 'name' => \App\Support\Country::find($code)['name'] ?? $code, 'fee_cents' => (int) ($t['fee_cents'] ?? 0), 'currency' => Market::currency($shop->market)])->values(),
             'fulfillment_mode' => $shop->fulfillment_mode,
+            // How products get into Lightning / Unbeatable / Exclusive (filled automatically).
+            'deal_rules' => \App\Support\DealSections::settings(),
             'market' => $shop->market,
             'requirements' => SellerRequirements::all($shop),
             // For "You receive" under the price: this shop's commission today, and the
@@ -427,6 +429,21 @@ class SellerProductController extends Controller
         abort_unless($shop, 404, 'No shop found for this seller.');
 
         return $shop;
+    }
+
+    /** Put a live product on a lightning deal (time window + quantity), or end it. */
+    public function lightning(Request $request, Product $product): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($product->shop_id === $shop->id, 403);
+        if ($request->isMethod('delete')) {
+            \App\Support\LightningDeals::stop($product);
+        } else {
+            $data = $request->validate(['starts_at' => ['sometimes', 'nullable', 'date'], 'quantity' => ['required', 'integer', 'min:1', 'max:100000']]);
+            \App\Support\LightningDeals::start($product, $data);
+        }
+
+        return response()->json(['data' => $this->present($product->fresh()->load(self::RELATIONS), $shop)]);
     }
 
     private function validated(Request $request, Shop $shop, ?Product $product, bool $submit): array
