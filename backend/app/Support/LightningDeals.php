@@ -37,6 +37,18 @@ class LightningDeals
             abort_if($onDeal >= $cap, 422, "You can have up to {$rules['lightning_max_share']}% of your products on lightning deals at once ({$cap} now) — end one first, or add more products.");
         }
 
+        // Keep the section varied: a fair share per category, and a limit for the whole store.
+        if (! ($product->lightning_ends_at?->isFuture())) {
+            $running = Product::query()->where('lightning_ends_at', '>', now())->whereNotNull('lightning_pct')
+                ->when($product->market, fn ($q) => $q->where('market', $product->market));
+            $categories = max(1, Product::query()->where('status', 'approved')->where('is_active', true)
+                ->when($product->market, fn ($q) => $q->where('market', $product->market))->distinct()->count('category_id'));
+            $perCategory = max(2, (int) ceil($rules['lightning_max'] / $categories));
+            $name = $product->category?->name ?? 'this category';
+            abort_if((clone $running)->count() >= $rules['lightning_max'] * 2, 422, 'Lightning deals are full right now — try again when some end. Meanwhile, list products in other categories to reach more buyers.');
+            abort_if((clone $running)->where('category_id', $product->category_id)->count() >= $perCategory, 422, "Lightning deals in {$name} are full right now ({$perCategory} running). Try again when one ends — or add products in other categories, where there's room.");
+        }
+
         $product->forceFill([
             'lightning_pct_min' => $min,
             'lightning_pct_max' => $max,
