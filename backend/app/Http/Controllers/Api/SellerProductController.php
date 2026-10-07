@@ -72,7 +72,7 @@ class SellerProductController extends Controller
             'intl_shipping' => collect((array) $shop->intl_shipping)->map(fn ($t, $code) => ['code' => $code, 'name' => \App\Support\Country::find($code)['name'] ?? $code, 'fee_cents' => (int) ($t['fee_cents'] ?? 0), 'currency' => Market::currency($shop->market)])->values(),
             'fulfillment_mode' => $shop->fulfillment_mode,
             // How products get into Lightning / Unbeatable / Exclusive (filled automatically).
-            'deal_rules' => \App\Support\DealSections::settings(),
+            'deal_rules' => \App\Support\DealSections::settings() + ['unbeatable_from_pct' => \App\Support\DealSections::forMarket($shop->market)['unbeatable_from_pct']],
             'market' => $shop->market,
             'requirements' => SellerRequirements::all($shop),
             // For "You receive" under the price: this shop's commission today, and the

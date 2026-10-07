@@ -591,6 +591,8 @@ class AdminSettingController extends Controller
             'nextech_own_delivery' => Setting::get('nextech_own_delivery', 'on') === 'off' ? 'off' : 'on',
             'intl_requires_approval' => \App\Support\SellerIntl::requiresApproval(),
             'deal_rules' => \App\Support\DealSections::settings(),
+            // What Unbeatable deals start from right now in each country (worked out from the catalogue).
+            'deal_cutoffs' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => \App\Support\DealSections::forMarket($code)['unbeatable_from_pct']]),
             'seller_local_max_km' => SellerShipping::localMaxKm(),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
             // Couriers per country, for entering a hand-booked courier on NexTech orders.

@@ -12,10 +12,11 @@ use Illuminate\Support\Facades\Cache;
  *  - Lightning deals: products their seller (or admin) put on a lightning deal
  *    (time window, units, % off), soonest-ending first; topped up with the
  *    best sellers (most bought), up to `lightning_max`.
- *  - Unbeatable deals: every product at least `unbeatable_min_pct` off (up to
- *    `unbeatable_max`); when fewer than `unbeatable_min` are, it's topped up to
- *    that minimum with the next-biggest discounts — never more. Taken in turn
- *    from every category so each gets its own.
+ *  - Unbeatable deals: a fair share (about a third, between `unbeatable_min`
+ *    and `unbeatable_max`) of the biggest discounts; the cut-off % is worked
+ *    out from the catalogue (the N-th biggest discount), not fixed. Taken in
+ *    turn from every category; best sellers top it up only if too few
+ *    products are discounted at all.
  *  - Exclusive offers: the lowest-priced products sold in that country's own
  *    currency — at least `exclusive_min` — shown as "Under $X" / "Under ₹X".
  * Products are shared out evenly (about a third each) so no section is empty,
@@ -26,7 +27,7 @@ class DealSections
 {
     public const DEFAULTS = [
         'lightning_hours' => 12, 'lightning_min_pct' => 20, 'lightning_max' => 20, 'lightning_max_share' => 40,
-        'unbeatable_min_pct' => 30, 'unbeatable_min' => 12, 'unbeatable_max' => 40,
+        'unbeatable_min' => 12, 'unbeatable_max' => 40,
         'exclusive_min' => 12, 'exclusive_max' => 60,
     ];
 
@@ -69,7 +70,7 @@ class DealSections
     /**
      * The ids in each section for a country, in display order (cached briefly).
      *
-     * @return array{lightning: list<int>, unbeatable: list<int>, exclusive: list<int>, under_cents: ?int, currency: string}
+     * @return array{lightning: list<int>, unbeatable: list<int>, exclusive: list<int>, under_cents: ?int, unbeatable_from_pct: ?int, currency: string}
      */
     public static function forMarket(string $market): array
     {
@@ -110,15 +111,17 @@ class DealSections
         }
         $lightning = $lightning->take($lightningTarget)->values();
 
-        // Biggest discounts, one category at a time so every category gets its own. Those at the
-        // minimum % off go first; when there are too few, the next-biggest discounts fill it up.
+        // Unbeatable: a fair share (about a third, between `unbeatable_min` and `unbeatable_max`) of the
+        // biggest discounts. The cut-off isn't fixed: it's the discount of the N-th biggest discount here,
+        // so it follows the catalogue. Spread across categories; topped up with best sellers if too few
+        // products are discounted at all, so it's never empty.
         $rest = $all->whereNotIn('id', $lightning);
-        $strong = $rest->filter(fn (Product $p) => self::discountPct($p) >= $r['unbeatable_min_pct']);
-        $unbeatable = self::roundRobin($strong, $r['unbeatable_max']);
-        // Too few at the minimum % off: top up only to `unbeatable_min` (never with lots of small discounts).
-        $unbeatableTarget = min($r['unbeatable_max'], $r['unbeatable_min']);
+        $unbeatableTarget = min($r['unbeatable_max'], max($r['unbeatable_min'], $third), $rest->count());
+        $discounted = $rest->filter(fn (Product $p) => self::discountPct($p) > 0)->sortByDesc(fn (Product $p) => self::discountPct($p))->values();
+        $cutoff = $discounted->isEmpty() ? null : self::discountPct($discounted->get(min($unbeatableTarget, $discounted->count()) - 1));
+        $unbeatable = $cutoff === null ? collect() : self::roundRobin($discounted->filter(fn (Product $p) => self::discountPct($p) >= $cutoff), $unbeatableTarget);
         if ($unbeatable->count() < $unbeatableTarget) {
-            $unbeatable = $unbeatable->merge(self::roundRobin($rest->whereNotIn('id', $unbeatable), $unbeatableTarget - $unbeatable->count()));
+            $unbeatable = $unbeatable->merge($rest->whereNotIn('id', $unbeatable)->sortByDesc('units_sold')->take($unbeatableTarget - $unbeatable->count())->pluck('id'));
         }
 
         // Cheapest products sold in this country's own currency, at least `exclusive_min`; the cap is the last one's price.
@@ -136,6 +139,8 @@ class DealSections
             'unbeatable' => $unbeatable->all(),
             'exclusive' => $exclusive->values()->all(),
             'under_cents' => $under,
+            // The discount Unbeatable deals start from right now (worked out from the catalogue).
+            'unbeatable_from_pct' => $cutoff,
             'currency' => Market::currency($market),
         ];
     }
