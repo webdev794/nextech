@@ -139,11 +139,96 @@ class AdminSellerController extends Controller
     }
 
     /**
+     * Secure access → Payouts: every seller with money to pay out (or a payout
+     * request), how they want to be paid, and what they'd receive — fee taken
+     * off — so admin can pay them from one table.
+     */
+    public function payoutQueue(Request $request): JsonResponse
+    {
+        \App\Support\SecureAccess::assert($request);
+        $market = Market::adminFilter($request);
+        $sellers = Seller::query()->where('status', 'approved')->whereHas('shop', fn ($q) => $market ? $q->where('market', $market) : $q)
+            ->with(['shop', 'user:id,name,email'])->get();
+
+        $rows = $sellers->map(function (Seller $seller) {
+            $shop = $seller->shop;
+            $split = SellerLedger::breakdown($shop);
+            $request = $shop->payoutRequests()->where('status', 'pending')->first();
+            if ($split['available_cents'] <= 0 && ! $request) {
+                return null;
+            }
+            $cur = Market::currency($shop->market);
+            $method = \App\Support\SellerPayouts::method($seller);
+            $max = SellerLedger::maxPayoutCents($shop->market);
+            $min = \App\Support\SellerPayouts::minFor($shop->market, $seller->payout_method);
+            // What to pay now: what they asked for, else all that's available (up to the per-payout maximum).
+            $amount = min($split['available_cents'], $request?->amount_cents ?? $split['available_cents'], $max > 0 ? $max : PHP_INT_MAX);
+            $fee = \App\Support\SellerPayouts::fee($shop->market, $method, max(0, $amount));
+            $payCurrency = \App\Support\SellerPayouts::currencyFor($seller, $method, $shop->market);
+            $details = (array) $seller->payout_details;
+            $blocker = $seller->payout_method ? \App\Support\SellerPayouts::blocker($seller) : 'No payout method set up yet.';
+
+            return [
+                'seller_id' => $seller->id,
+                'shop' => $shop->name,
+                'owner' => $seller->user?->name,
+                'market' => $shop->market,
+                'currency' => $cur,
+                'method' => $seller->payout_method ? $method : null,
+                'method_label' => $seller->payout_method ? \App\Support\SellerPayouts::label($method) : null,
+                'method_detail' => match (true) {
+                    ! $seller->payout_method => null,
+                    $method === 'paypal' => $details['paypal_email'] ?? null,
+                    $method === 'stripe' => $seller->stripe_account_id,
+                    default => trim(($details['bank_name'] ?? 'Bank').' ••••'.substr((string) ($details['account_number'] ?? ''), -4)),
+                },
+                'available_cents' => $split['available_cents'],
+                'pending_cents' => $split['pending_cents'],
+                'request' => $request ? ['amount_cents' => $request->amount_cents, 'created_at' => $request->created_at] : null,
+                'min_cents' => $min,
+                'max_cents' => $max,
+                'amount_cents' => max(0, $amount),
+                'fee_cents' => $fee,
+                'net_cents' => max(0, $amount) - $fee,
+                'receive' => \App\Support\SellerPayouts::received($shop->market, $method, max(0, $amount), $payCurrency),
+                // ready | below_min | blocked (and why)
+                'status' => $blocker ? 'blocked' : ($split['available_cents'] < $min || $amount <= 0 ? 'below_min' : 'ready'),
+                'blocker' => $blocker,
+            ];
+        })->filter()->sortBy([fn ($a, $b) => ($b['request'] ? 1 : 0) <=> ($a['request'] ? 1 : 0), fn ($a, $b) => $b['amount_cents'] <=> $a['amount_cents']])->values();
+
+        $markets = $rows->pluck('market')->unique()->values();
+
+        return response()->json(['data' => $rows, 'meta' => [
+            'daily_remaining' => $markets->mapWithKeys(fn ($m) => [$m => SellerLedger::dailyPayoutRemainingCents($m)]),
+            'stripe_balance' => self::stripeBalance(),
+        ]]);
+    }
+
+    /** The store's Stripe balance available to send (by currency), or null without Stripe. */
+    private static function stripeBalance(): ?array
+    {
+        if (! config('services.stripe.secret')) {
+            return null;
+        }
+        try {
+            return collect((new \Stripe\StripeClient((string) config('services.stripe.secret')))->balance->retrieve()->available)
+                ->mapWithKeys(fn ($b) => [$b->currency => $b->amount])->all();
+        } catch (\Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
+    /**
      * Record a manual payout (bank transfer etc, settled outside the app) as a
      * payout_debit ledger entry against the seller's shop.
      */
     public function payout(Request $request, Seller $seller): JsonResponse
     {
+        // Paying sellers sits behind Secure access (Secure access → Payouts).
+        \App\Support\SecureAccess::assert($request);
         $shop = $seller->shop;
         abort_unless($shop, 404, 'This seller has no shop.');
 
@@ -177,19 +262,35 @@ class AdminSellerController extends Controller
 
         // One payout at a time platform-wide, so two admins paying different
         // sellers can't both squeeze under the daily cap at the same moment.
-        $method = $seller->payout_method === 'paypal' ? 'paypal' : 'bank';
+        $method = \App\Support\SellerPayouts::method($seller);
+        $label = \App\Support\SellerPayouts::label($method);
+        if ($method === 'stripe' && ($why = \App\Support\SellerPayouts::blocker($seller))) {
+            abort(422, 'Can’t pay by Stripe yet: '.$why);
+        }
         $fee = \App\Support\SellerPayouts::fee($shop->market, $method, (int) $data['amount_cents']);
-        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $data, $request, $cur, $fee, $method): void {
+        Cache::lock('seller-payouts', 10)->block(5, function () use ($shop, $seller, $data, $request, $cur, $fee, $method, $label): void {
             $remaining = SellerLedger::dailyPayoutRemainingCents($shop->market);
             if ($remaining !== null && $data['amount_cents'] > $remaining) {
                 abort(422, "That would go over today's payout cap across all sellers — ".Money::format($remaining, $cur).' left today.');
             }
 
-            DB::transaction(function () use ($shop, $data, $request, $fee, $method): void {
+            // Stripe: the money actually moves now, from the store's Stripe balance to the seller's account.
+            $reference = null;
+            if ($method === 'stripe' && $data['amount_cents'] - $fee > 0) {
+                try {
+                    $reference = \App\Support\StripeConnect::transfer($seller, $data['amount_cents'] - $fee, $cur, 'Payout to '.$shop->name,
+                        'seller-payout-'.$shop->id.'-'.\App\Models\SellerLedgerEntry::where('shop_id', $shop->id)->count().'-'.$data['amount_cents']);
+                } catch (\Stripe\Exception\ApiErrorException $e) {
+                    report($e);
+                    abort(422, 'Stripe didn’t send the payout: '.$e->getMessage());
+                }
+            }
+
+            DB::transaction(function () use ($shop, $data, $request, $fee, $label, $reference): void {
                 // The payout fee for the seller's method is deducted: they receive the rest.
-                $entry = SellerLedger::recordPayout($shop, $data['amount_cents'] - $fee, trim(($method === 'paypal' ? 'PayPal' : 'Bank transfer').'. '.($data['note'] ?? '')), $request->user());
+                $entry = SellerLedger::recordPayout($shop, $data['amount_cents'] - $fee, trim($label.($reference ? ' '.$reference : '').'. '.($data['note'] ?? '')), $request->user());
                 if ($fee > 0) {
-                    \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'payout_fee', 'amount_cents' => -$fee, 'note' => ($method === 'paypal' ? 'PayPal' : 'Bank transfer').' withdrawal fee', 'created_by' => $request->user()->id]);
+                    \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'payout_fee', 'amount_cents' => -$fee, 'note' => $label.' withdrawal fee', 'created_by' => $request->user()->id]);
                 }
 
                 // Paying out settles the seller's open request, if any.
@@ -207,7 +308,7 @@ class AdminSellerController extends Controller
         if ($got['currency'] !== $cur) {
             $sent .= ' (about '.Money::format($got['cents'], $got['currency']).' in '.strtoupper($got['currency']).' at today’s rate)';
         }
-        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : 'bank account').($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' withdrawal fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
+        SellerNotify::send($seller, $request->user(), 'Payout sent', 'A payout of '.$sent.' has been sent to your '.($method === 'paypal' ? 'PayPal account' : ($method === 'stripe' ? 'Stripe account (Stripe moves it to your bank on its usual schedule)' : 'bank account')).($fee > 0 ? ' ('.Money::format($data['amount_cents'], $cur).' less a '.Money::format($fee, $cur).' withdrawal fee)' : '').(! empty($data['note']) ? " — {$data['note']}" : '').'. It shows under Finances in Seller Center.');
 
         return response()->json([
             'data' => $this->row($seller->fresh()->load(['user:id,name,email', 'shop', 'reviewer:id,name']), detailed: true),
@@ -217,6 +318,7 @@ class AdminSellerController extends Controller
     /** Decline a seller's open payout request (e.g. refunds still pending), with a reason they'll see. */
     public function rejectPayoutRequest(Request $request, Seller $seller): JsonResponse
     {
+        \App\Support\SecureAccess::assert($request);
         $data = $request->validate(['note' => ['required', 'string', 'max:500']]);
 
         $payoutRequest = $seller->shop?->payoutRequests()->where('status', 'pending')->first();
@@ -553,6 +655,8 @@ class AdminSellerController extends Controller
                 'reviewer' => $seller->reviewer ? ['id' => $seller->reviewer->id, 'name' => $seller->reviewer->name] : null,
                 'payout_method' => $seller->payout_method,
                 'payout_details' => $seller->payout_details,
+                'stripe_account_id' => $seller->stripe_account_id,
+                'stripe_ready' => (bool) $seller->stripe_ready,
                 'tax_info' => $seller->tax_info,
                 'tax_note' => $seller->tax_note,
                 'tax_submitted_at' => $seller->tax_submitted_at,

@@ -17,21 +17,33 @@ class ProductCatalog
     /** @return list<array<string, mixed>> */
     public static function attributesFor(?Category $category, bool $digital = false): array
     {
-        // A digital download has its own field set (type, platforms, version…), whatever its category.
+        // The list admin set for the category (Categories → Product details), or its nearest parent's.
+        $owner = $category ? CategoryDetails::owner($category) : null;
+        $own = $owner ? self::normalize((array) $owner->detail_fields) : null;
+
+        // A digital download has its own field set (type, platforms, version…) unless its category has one.
         if ($digital || $category?->kind === 'digital') {
-            return (array) config('product_catalog.digital_attributes', []);
+            return ($category?->kind === 'digital' ? $own : null) ?? (array) config('product_catalog.digital_attributes', []);
         }
-        // A subcategory without its own field list uses its nearest parent's.
-        $extra = [];
-        foreach ($category ? array_reverse($category->lineage()) : [] as $c) {
-            if ($extra = (array) config('product_catalog.category_attributes.'.$c->slug, [])) {
-                break;
+        // Not set by admin yet: the built-in list for the category (or a parent).
+        if ($own === null) {
+            $own = [];
+            foreach ($category ? array_reverse($category->lineage()) : [] as $c) {
+                if ($own = (array) config('product_catalog.category_attributes.'.$c->slug, [])) {
+                    break;
+                }
             }
         }
-        $extraKeys = array_column($extra, 'key');
+        $extraKeys = array_column($own, 'key');
 
         // A category's own definition of a field replaces the common one.
-        return [...$extra, ...array_values(array_filter((array) config('product_catalog.common_attributes'), fn ($f) => ! in_array($f['key'], $extraKeys, true)))];
+        return [...$own, ...array_values(array_filter(self::normalize(CategoryDetails::common()), fn ($f) => ! in_array($f['key'], $extraKeys, true)))];
+    }
+
+    /** A yes/no checkbox is checked like a Yes/No dropdown. */
+    private static function normalize(array $fields): array
+    {
+        return array_map(fn ($f) => ($f['type'] ?? '') === 'checkbox' ? $f + ['options' => ['Yes', 'No']] : $f, array_values($fields));
     }
 
     public static function isApparel(?Category $category): bool
@@ -209,7 +221,7 @@ class ProductCatalog
             $empty = $value === null || $value === '' || $value === [];
             if ($strict && ($field['required'] ?? false) && self::applies($field, $attributes) && $empty) {
                 $errors['product_details.'.$field['key']] = $field['label'].' is required.';
-            } elseif (! $empty && in_array($field['type'], ['select', 'multiselect'], true)) {
+            } elseif (! $empty && in_array($field['type'], ['select', 'multiselect', 'checkbox'], true)) {
                 $bad = array_diff(array_map('strval', (array) $value), array_map('strval', $field['options']));
                 if ($bad) {
                     $errors['product_details.'.$field['key']] = $field['label'].': "'.reset($bad).'" isn’t one of the options.';

@@ -463,6 +463,8 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                     <span className="wz-label">{f.label}{f.unit ? ` (${f.unit})` : ''}{f.required && on && config.requirements?.listing_details && <b className="wz-req"> *</b>}</span>
                     {f.type === 'select' ? (
                       <select value={value ?? ''} onChange={(e) => setDetail(f.key, e.target.value)}><option value="">Select…</option>{f.options.map((o) => <option key={o} value={o}>{o}</option>)}</select>
+                    ) : f.type === 'checkbox' ? (
+                      <label className="sc-check"><input type="checkbox" checked={value === 'Yes'} onChange={(e) => setDetail(f.key, e.target.checked ? 'Yes' : 'No')} /> Yes</label>
                     ) : f.type === 'multiselect' ? (
                       <div className="wz-multi">{f.options.map((o) => <label key={o} className="sc-check"><input type="checkbox" checked={[].concat(value ?? []).includes(o)} onChange={(e) => setDetail(f.key, e.target.checked ? [...[].concat(value ?? []), o] : [].concat(value ?? []).filter((x) => x !== o))} />{o}</label>)}</div>
                     ) : (

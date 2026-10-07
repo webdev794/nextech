@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { brandName } from './useBranding'
 
 // Seller Center onboarding tasks (modelled on Temu's): 1 tax information,
@@ -101,6 +101,41 @@ function PaypalSetup({ headers, payout, onSaved, onError }) {
   )
 }
 
+// Task 3 when paid by Stripe: the seller sets up a Stripe account on Stripe's own
+// pages (identity and bank) and comes back here; payouts then arrive automatically.
+function StripeSetup({ headers, payout, onError, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const f = payout.fees?.stripe
+  const state = payout.stripe ?? 'none'
+  async function start() {
+    setBusy(true)
+    try {
+      // Come back to this page (without any old ?stripe= marker).
+      const back = `${window.location.origin}${window.location.pathname}${window.location.hash || '#/seller'}`
+      const d = await send(headers, '/seller/onboarding/stripe', 'POST', { return_url: back })
+      window.location.assign(d.data.url)
+    } catch (e) { onError(e.message); setBusy(false) }
+  }
+  async function check() {
+    setBusy(true)
+    try { await send(headers, '/seller/onboarding/stripe/refresh', 'POST', {}); await onChanged() } catch (e) { onError(e.message) } finally { setBusy(false) }
+  }
+  return (
+    <div className="sc-card ob-form">
+      <h2 className="sc-h2">Get paid by Stripe</h2>
+      <p className="sc-muted">Stripe sends your payouts straight to your bank. You set up your Stripe account on Stripe&rsquo;s own secure pages (your identity and bank details) — {brandName()} never sees your bank details.</p>
+      {f && <p className="sc-muted">Withdrawal fee per payout: {f.fixed_cents > 0 || f.bps > 0 ? [f.fixed_cents > 0 && `${(f.fixed_cents / 100).toFixed(2)} ${f.currency.toUpperCase()}`, f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ') : 'none'} — taken from each payout, you receive the rest. Paid in {String(f.currency).toUpperCase()}.</p>}
+      {state === 'ready' && <div className="sc-alert ok"><span>Your Stripe account is ready — payouts are sent to it.</span></div>}
+      {state === 'pending' && <div className="sc-alert warn"><span>Stripe still needs a few details before it can pay you.</span></div>}
+      <div className="ss-actions">
+        {state !== 'ready' && <button type="button" className="sc-primary" disabled={busy} onClick={start}>{busy ? 'Opening Stripe…' : state === 'pending' ? 'Continue Stripe setup' : 'Set up with Stripe'}</button>}
+        {state !== 'none' && <button type="button" className="sc-link" disabled={busy} onClick={check}>Check status</button>}
+        {state === 'ready' && <button type="button" className="sc-link" disabled={busy} onClick={start}>Update details on Stripe</button>}
+      </div>
+    </div>
+  )
+}
+
 function Uploader({ headers, kind, label, value, onChange, required, onError }) {
   const [busy, setBusy] = useState(false)
   return (
@@ -131,7 +166,7 @@ export function OnboardingTasks({ headers, go, hasProducts, onAddProduct }) {
   const rows = [
     ['tax', 'Task 1', 'Add tax information', 'Your tax registration number and default item tax code.', tasks.tax],
     ['compliance', 'Task 2', 'Add additional compliance information', 'To comply with local laws and regulations, provide business role information.', tasks.compliance],
-    ['bank', 'Task 3', 'Set up how you get paid', bankLocked ? 'Available after you add additional compliance information.' : 'Add your bank account or PayPal (as offered in your country) to request payment.', tasks.bank],
+    ['bank', 'Task 3', 'Set up how you get paid', bankLocked ? 'Available after you add additional compliance information.' : 'Add your bank account, PayPal or Stripe (as offered in your country) to request payment.', tasks.bank],
     ['shipping', 'Task 4', 'Set up shipping templates', 'Set up your shipping methods so your products can be shipped.', tasks.shipping],
   ]
   const left = rows.filter((r) => !complete(r[4])).length
@@ -495,20 +530,44 @@ export function BankAccount({ headers, onSupport, go, onChanged }) {
   const [form, setForm] = useState(null)
   const [confirming, setConfirming] = useState(false)
   const [choice, setChoice] = useState(null)
+  // Back from Stripe's pages (?stripe=return): check the account once, then tidy the address.
+  const [stripeBack] = useState(() => new URLSearchParams(window.location.search).get('stripe'))
+  const stripeChecked = useRef(false)
+  useEffect(() => {
+    if (!stripeBack || stripeChecked.current) return
+    stripeChecked.current = true
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`)
+    if (stripeBack !== 'return') return
+    send(headers, '/seller/onboarding/stripe/refresh', 'POST', {})
+      .then(async (d) => { await reload(); setMsg(d.data?.payout?.stripe === 'ready' ? 'Stripe is set up — your payouts will be sent there.' : 'Stripe still needs a few details — press Continue Stripe setup.'); onChanged?.() })
+      .catch((e) => setMsg(e.message))
+  }, [stripeBack, headers, reload, setMsg, onChanged])
   if (!data) return <div className="sc-card"><p className="sc-muted">{msg || 'Loading…'}</p></div>
 
   // Only the payout methods admin offers in this seller's country.
   const offered = data.payout?.offered ?? ['bank']
-  const method = choice ?? (offered.includes(data.payout?.method) ? data.payout.method : offered[0])
+  const method = choice ?? (stripeBack && offered.includes('stripe') ? 'stripe' : offered.includes(data.payout?.method) ? data.payout.method : offered[0])
   const chooser = offered.length > 1 && (
     <div className="sc-card">
       <h2 className="sc-h2">How do you want to be paid?</h2>
       <div className="wz-radio">
-        <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'bank'} onChange={() => setChoice('bank')} /> Bank account</label>
-        <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'paypal'} onChange={() => setChoice('paypal')} /> PayPal</label>
+        {offered.includes('bank') && <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'bank'} onChange={() => setChoice('bank')} /> Bank account</label>}
+        {offered.includes('paypal') && <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'paypal'} onChange={() => setChoice('paypal')} /> PayPal</label>}
+        {offered.includes('stripe') && <label className="sc-check"><input type="radio" name="ob_payout" checked={method === 'stripe'} onChange={() => setChoice('stripe')} /> Stripe <small className="sc-muted">— paid straight to your bank by Stripe</small></label>}
       </div>
     </div>
   )
+  if (method === 'stripe') {
+    return (
+      <>
+        <h1 className="sc-title">Payout method</h1>
+        {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
+        {offered.length === 1 && <p className="sc-muted">{brandName()} pays sellers in your country by Stripe.</p>}
+        {chooser}
+        <StripeSetup headers={headers} payout={data.payout} onError={setMsg} onChanged={async () => { await reload(); onChanged?.() }} />
+      </>
+    )
+  }
   if (method === 'paypal') {
     return (
       <>

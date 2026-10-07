@@ -6,13 +6,28 @@ use App\Models\Seller;
 use App\Models\Setting;
 
 /**
- * How a seller is paid: to their verified bank account or to PayPal, and the
+ * How a seller is paid: to their verified bank account, to PayPal, or by Stripe
+ * (a transfer to their Stripe account — see StripeConnect), and the
  * payout fee the platform deducts for each method (per country, in that
  * country's currency: a fixed amount plus a percentage, admin-set).
  */
 class SellerPayouts
 {
-    public const METHODS = ['bank', 'paypal'];
+    public const METHODS = ['bank', 'paypal', 'stripe'];
+
+    public const LABELS = ['bank' => 'Bank transfer', 'paypal' => 'PayPal', 'stripe' => 'Stripe'];
+
+    /** What a payout method is called ("Bank transfer", "PayPal", "Stripe"). */
+    public static function label(?string $method): string
+    {
+        return self::LABELS[$method] ?? self::LABELS['bank'];
+    }
+
+    /** The method a seller is paid by (bank unless they chose another). */
+    public static function method(Seller $seller): string
+    {
+        return in_array($seller->payout_method, self::METHODS, true) ? $seller->payout_method : 'bank';
+    }
 
     /**
      * Withdrawal fees per method for a country. Each method also has the
@@ -28,16 +43,20 @@ class SellerPayouts
         $local = Market::currency($market);
         $saved = (array) (((array) Setting::get('payout_fees', []))[$market] ?? []);
 
-        return collect(self::METHODS)->mapWithKeys(function ($m) use ($saved, $local) {
-            $currency = strtolower((string) ($saved[$m]['currency'] ?? $local)) ?: $local;
+        return collect(self::METHODS)->mapWithKeys(function ($m) use ($saved, $local, $market) {
+            // Stripe pays in the store's own Stripe currency — the country's — and only where Stripe allows it.
+            $unavailable = $m === 'stripe' ? StripeConnect::unavailable($market) : null;
+            $currency = $m === 'stripe' ? $local : (strtolower((string) ($saved[$m]['currency'] ?? $local)) ?: $local);
             $fixed = max(0, (int) ($saved[$m]['fixed_cents'] ?? 0));
 
             // Currencies a seller may choose to be paid in by this method (admin-set; default: the fee currency).
-            $allowed = array_values(array_intersect(array_map('strtolower', (array) ($saved[$m]['currencies'] ?? [])), self::currencyOptions($local))) ?: [$currency];
+            $allowed = $m === 'stripe' ? [$local] : (array_values(array_intersect(array_map('strtolower', (array) ($saved[$m]['currencies'] ?? [])), self::currencyOptions($local))) ?: [$currency]);
 
             return [$m => [
-                // Offered to sellers in this country (admin switch; on unless turned off).
-                'enabled' => (bool) ($saved[$m]['enabled'] ?? true),
+                // Offered to sellers in this country (admin switch; bank and PayPal on unless turned off, Stripe off until turned on).
+                'enabled' => ! $unavailable && (bool) ($saved[$m]['enabled'] ?? ($m !== 'stripe')),
+                // Why it can't be switched on here (Stripe only), shown greyed out in admin.
+                'unavailable' => $unavailable,
                 'fixed_cents' => $fixed,
                 // Smallest payout by this method, in the country's currency (0 = the country's minimum).
                 'min_cents' => max(0, (int) ($saved[$m]['min_cents'] ?? 0)),
@@ -112,7 +131,10 @@ class SellerPayouts
     {
         $fees = self::fees($seller->shop?->market);
         if ($seller->payout_method && ! ($fees[$seller->payout_method]['enabled'] ?? true)) {
-            return ($seller->payout_method === 'paypal' ? 'PayPal' : 'Bank transfer').' payouts aren’t offered in your country right now — choose another way to be paid.';
+            return self::label($seller->payout_method).' payouts aren’t offered in your country right now — choose another way to be paid.';
+        }
+        if ($seller->payout_method === 'stripe') {
+            return $seller->stripe_ready ? null : 'Finish setting up your Stripe account first (Seller Center → Payout method).';
         }
         if ($seller->payout_method === 'paypal') {
             return empty(((array) $seller->payout_details)['paypal_email']) ? 'Add your PayPal email first.' : null;

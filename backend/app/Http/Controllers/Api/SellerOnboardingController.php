@@ -194,6 +194,48 @@ class SellerOnboardingController extends Controller
     }
 
     /** Bank account + a recent bank document; NexTech verifies it before payouts. */
+    /**
+     * Stripe payouts: a link to Stripe's own onboarding pages (identity and bank),
+     * which send the seller back to Seller Center when they're done.
+     */
+    public function stripeLink(Request $request): JsonResponse
+    {
+        $seller = $this->seller($request);
+        $market = $seller->shop?->market ?? \App\Support\Market::forCountry($seller->country);
+        abort_unless(\App\Support\SellerPayouts::fees($market)['stripe']['enabled'], 422, 'Stripe payouts aren’t offered in your country.');
+        $data = $request->validate(['return_url' => ['required', 'url', 'max:500']]);
+        // Back only to this site (the page that asked), never somewhere else.
+        $host = parse_url($data['return_url'], PHP_URL_HOST);
+        $allowed = array_filter([parse_url((string) config('app.url'), PHP_URL_HOST), parse_url((string) $request->headers->get('origin'), PHP_URL_HOST)]);
+        abort_unless($host && in_array($host, $allowed, true), 422, 'Invalid return address.');
+        try {
+            $url = \App\Support\StripeConnect::onboardingLink($seller, $data['return_url']);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            report($e);
+            abort(422, 'Stripe couldn’t start the setup: '.$e->getMessage());
+        }
+
+        return response()->json(['data' => ['url' => $url]]);
+    }
+
+    /** Back from Stripe: check the account, and pay this seller by Stripe once it can receive transfers. */
+    public function stripeRefresh(Request $request): JsonResponse
+    {
+        $seller = $this->seller($request);
+        abort_unless($seller->stripe_account_id, 422, 'Start the Stripe setup first.');
+        try {
+            $ready = \App\Support\StripeConnect::refresh($seller);
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            report($e);
+            abort(422, 'Couldn’t reach Stripe: '.$e->getMessage());
+        }
+        if ($ready && $seller->payout_method !== 'stripe') {
+            $seller->forceFill(['payout_method' => 'stripe'])->save();
+        }
+
+        return response()->json(['data' => $this->payload($seller->fresh())]);
+    }
+
     public function saveBank(Request $request): JsonResponse
     {
         $seller = $this->seller($request);
@@ -300,7 +342,9 @@ class SellerOnboardingController extends Controller
                     'fees' => $fees,
                     'method' => $seller->payout_method,
                     'paypal_email' => ((array) $seller->payout_details)['paypal_email'] ?? null,
-                    'currency' => \App\Support\SellerPayouts::currencyFor($seller, $seller->payout_method === 'paypal' ? 'paypal' : 'bank', $market),
+                    // Stripe: none (not started) | pending (Stripe still needs details) | ready.
+                    'stripe' => $seller->stripe_ready ? 'ready' : ($seller->stripe_account_id ? 'pending' : 'none'),
+                    'currency' => \App\Support\SellerPayouts::currencyFor($seller, \App\Support\SellerPayouts::method($seller), $market),
                     'local_currency' => \App\Support\Market::currency($market),
                 ];
             })(),

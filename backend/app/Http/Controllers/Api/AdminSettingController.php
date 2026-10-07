@@ -31,7 +31,6 @@ class AdminSettingController extends Controller
     private const SECURE_OTP_PURPOSE = 'admin_secure_access';
 
     /** Header the client sends the unlock token back in. */
-    private const UNLOCK_HEADER = 'X-Secure-Access';
 
     public function __construct(private readonly OtpService $otp)
     {
@@ -148,7 +147,8 @@ class AdminSettingController extends Controller
         }
 
         $token = Str::random(48);
-        Cache::put($this->grantKey($user->id), hash('sha256', $token), now()->addMinutes($this->ttlMinutes()));
+        // Unlocked for this login: signing in again (a new login token) asks again.
+        \App\Support\SecureAccess::grant($request, $token, $this->ttlMinutes());
 
         return response()->json(['data' => [
             'token' => $token,
@@ -157,6 +157,22 @@ class AdminSettingController extends Controller
             'payments' => $this->payload()['payments'],
             'courier' => $this->payload()['courier'],
         ]]);
+    }
+
+    /** Lock Secure access again (the admin left it, or was idle). */
+    public function secureAccessLock(Request $request): JsonResponse
+    {
+        \App\Support\SecureAccess::revoke($request);
+
+        return response()->json(['data' => ['locked' => true]]);
+    }
+
+    /** Still unlocked in this login (e.g. after reloading the page)? Returns the same details as unlocking. */
+    public function secureAccessState(Request $request): JsonResponse
+    {
+        $this->assertUnlocked($request);
+
+        return response()->json(['data' => ['account' => $this->accountPayload($request->user())]]);
     }
 
     /**
@@ -398,11 +414,20 @@ class AdminSettingController extends Controller
             Setting::put('commission_rate_bps', (int) $validated['commission_rate_bps']);
         }
 
+        // Payout settings sit behind Secure access.
+        if (array_key_exists('payout_fees', $validated) || array_key_exists('payout_notes', $validated)) {
+            $this->assertUnlocked($request);
+        }
         if (array_key_exists('payout_fees', $validated)) {
             $fees = (array) Setting::get('payout_fees', []);
             foreach ($validated['payout_fees'] as $code => $byMethod) {
                 $byMethod = array_intersect_key((array) $byMethod, array_flip(\App\Support\SellerPayouts::METHODS));
                 abort_if($byMethod && ! collect($byMethod)->contains(fn ($f) => (bool) ($f['enabled'] ?? true)), 422, 'Keep at least one payout method on for '.strtoupper($code).'.');
+                // Switching Stripe on needs Stripe to work there (keys set, the Stripe account's own country).
+                $wasOn = \App\Support\SellerPayouts::fees($code)['stripe']['enabled'];
+                if (! empty($byMethod['stripe']['enabled']) && ! $wasOn && ($why = \App\Support\StripeConnect::unavailable($code))) {
+                    abort(422, $why);
+                }
                 foreach ($byMethod as $method => $f) {
                     $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'min_cents' => (int) ($f['min_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0), 'currency' => strtolower((string) ($f['currency'] ?? Market::currency($code))), 'currencies' => array_values(array_map('strtolower', (array) ($f['currencies'] ?? []))), 'enabled' => (bool) ($f['enabled'] ?? true)];
                 }
@@ -743,21 +768,9 @@ class AdminSettingController extends Controller
         return $items;
     }
 
-    private function grantKey(int $userId): string
+    public function assertUnlocked(Request $request): void
     {
-        return "secure_access_grant:{$userId}";
-    }
-
-    private function assertUnlocked(Request $request): void
-    {
-        $token = (string) $request->header(self::UNLOCK_HEADER, '');
-        $stored = Cache::get($this->grantKey($request->user()->id));
-
-        abort_if(
-            $stored === null || $token === '' || ! hash_equals($stored, hash('sha256', $token)),
-            403,
-            'Unlock the Secure access section first.'
-        );
+        \App\Support\SecureAccess::assert($request);
     }
 
     private function maskEmail(string $email): string

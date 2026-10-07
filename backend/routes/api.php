@@ -213,6 +213,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/suspend', [AdminSellerController::class, 'suspend']);
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
     Route::delete('/sellers/{seller}', [AdminSellerController::class, 'remove']);
+    Route::get('/secure-access/payouts', [AdminSellerController::class, 'payoutQueue']);
+    Route::get('/secure-access/state', [AdminSettingController::class, 'secureAccessState']);
+    Route::post('/secure-access/lock', [AdminSettingController::class, 'secureAccessLock']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
     Route::post('/sellers/{seller}/payout-request/reject', [AdminSellerController::class, 'rejectPayoutRequest']);
     Route::post('/sellers/{seller}/message', [AdminSellerController::class, 'message']);
@@ -309,6 +312,10 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/categories', [AdminCategoryController::class, 'index']);
     Route::post('/categories', [AdminCategoryController::class, 'store']);
     Route::patch('/categories/{category}', [AdminCategoryController::class, 'update']);
+    Route::get('/categories/common-details', [AdminCategoryController::class, 'commonDetails']);
+    Route::put('/categories/common-details', [AdminCategoryController::class, 'saveCommonDetails']);
+    Route::get('/categories/{category}/details', [AdminCategoryController::class, 'details']);
+    Route::put('/categories/{category}/details', [AdminCategoryController::class, 'saveDetails']);
     Route::delete('/categories/{category}', [AdminCategoryController::class, 'destroy']);
 });
 
@@ -346,6 +353,8 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/onboarding/tax-settings', [SellerOnboardingController::class, 'saveTaxSettings']);
     Route::post('/seller/onboarding/compliance', [SellerOnboardingController::class, 'saveCompliance']);
     Route::post('/seller/onboarding/bank', [SellerOnboardingController::class, 'saveBank']);
+    Route::post('/seller/onboarding/stripe', [SellerOnboardingController::class, 'stripeLink']);
+    Route::post('/seller/onboarding/stripe/refresh', [SellerOnboardingController::class, 'stripeRefresh']);
     Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
     Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
 

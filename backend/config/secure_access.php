@@ -11,6 +11,6 @@ return [
      */
     'method' => env('SECURE_ACCESS_METHOD', 'password'),
 
-    /** Minutes a successful unlock stays valid. */
+    /** Minutes a successful unlock stays valid at most (the console also locks on leaving the section or a minute idle). */
     'ttl_minutes' => (int) env('SECURE_ACCESS_TTL_MINUTES', 15),
 ];

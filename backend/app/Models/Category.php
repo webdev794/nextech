@@ -35,6 +35,7 @@ class Category extends Model
             'is_active' => 'boolean',
             'sort_order' => 'integer',
             'show_on_home' => 'boolean',
+            'detail_fields' => 'array',
         ];
     }
 

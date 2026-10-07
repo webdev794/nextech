@@ -56,6 +56,7 @@ class Seller extends Model
             'reviewed_at' => 'datetime',
             'submitted_at' => 'datetime',
             'payout_details' => 'array',
+            'stripe_ready' => 'boolean',
             'address_verified_at' => 'datetime',
             'registered_history' => 'array',
             'change_items' => 'array',

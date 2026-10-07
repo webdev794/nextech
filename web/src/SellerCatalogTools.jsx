@@ -70,7 +70,7 @@ function digitalColumns(config) {
   ;(config.digital_attributes ?? []).forEach((a) => cols.push({
     section: 'Product Detail', key: `detail_${a.key}`, label: `${a.label}${a.unit ? ` (${a.unit})` : ''}`, required: !!a.required && !a.when, options: a.options,
     help: `${a.type === 'multiselect' ? 'One or more of (separate with ;): ' : a.options ? 'One of: ' : ''}${(a.options ?? []).join(', ')}${a.placeholder ? a.placeholder : ''}`,
-    list: a.type === 'select' ? `attr_${a.key}` : null,
+    list: ['select', 'checkbox'].includes(a.type) ? `attr_${a.key}` : null,
   }))
   cols.push(
     { section: 'Price & download', key: 'base_price', label: 'Price', required: true, help: 'In your market’s currency.' },
@@ -109,7 +109,7 @@ function templateColumns(cats, config) {
   seen.forEach((a) => cols.push({
     section: 'Product Detail', key: `detail_${a.key}`, label: `${a.label}${a.unit ? ` (${a.unit})` : ''}`, attribute: a,
     help: `${a.type === 'multiselect' ? 'One or more of (separate with ;): ' : a.options ? 'One of: ' : ''}${(a.options ?? []).join(', ')}${a.when ? ` — only when ${Object.entries(a.when).map(([k, v]) => `${k} is ${v.join(' / ')}`).join(', ')}` : ''}`,
-    list: a.type === 'select' ? `attr_${a.key}` : null,
+    list: ['select', 'checkbox'].includes(a.type) ? `attr_${a.key}` : null,
   }))
   cols.push(
     { section: 'Sale Property (at least one, at most two)', key: 'variation_theme', label: 'Variation theme', help: `What the SKUs differ by: one type, or two joined with × (e.g. Color × Size). Types: ${config.variation_types.join(', ')}.`, list: 'themes' },

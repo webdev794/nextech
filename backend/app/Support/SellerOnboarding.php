@@ -75,7 +75,8 @@ class SellerOnboarding
             'tax' => $seller->tax_status ?? (($seller->tax_info['tax_number'] ?? null) ? 'step2' : 'todo'),
             'compliance' => $seller->compliance_status ?? 'todo',
             // Paid by PayPal instead (where admin offers it): done once the email is set.
-            'bank' => $seller->payout_method === 'paypal' && ! empty(((array) $seller->payout_details)['paypal_email']) ? 'linked' : ($seller->bank_status ?? 'todo'),
+            // Or by Stripe: done once their Stripe account can receive transfers.
+            'bank' => ($seller->payout_method === 'paypal' && ! empty(((array) $seller->payout_details)['paypal_email'])) || ($seller->payout_method === 'stripe' && $seller->stripe_ready) ? 'linked' : ($seller->bank_status ?? 'todo'),
             'shipping' => $seller->shop && SellerShipping::setupComplete($seller->shop) ? 'done' : 'todo',
         ];
     }

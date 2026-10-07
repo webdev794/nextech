@@ -194,13 +194,14 @@ export default function Seller({ token, onSignOut }) {
   const [supportMsg, setSupportMsg] = useState('')
   const [newThreadForm, setNewThreadForm] = useState(null)
   // Seller Center console (approved sellers): which page of the left menu is open.
-  const [section, setSection] = useState('home')
+  // Back from Stripe's setup pages: open the payout method page.
+  const [section, setSection] = useState(() => (new URLSearchParams(window.location.search).has('stripe') ? 'bank' : 'home'))
   const [productTab, setProductTab] = useState('all')
   const [productSearch, setProductSearch] = useState('')
   const [openGroups, setOpenGroups] = useState({ products: true, orders: true, account: false })
   // Customer <-> seller chats (buyer messages, or an order chat NexTech brought the seller into).
   const [messagesTab, setMessagesTab] = useState('nextech') // support first: it's where a seller starts a new message
-  const [sellerPages, setSellerPages] = useState([]) // policy pages placed in the seller footer
+  const [sellerPages, setSellerPages] = useState([]) // policy pages shown under My account → Policies & rules
   const [shipTemplates, setShipTemplates] = useState([])
   const [customerChats, setCustomerChats] = useState([])
   const [customerChat, setCustomerChat] = useState(null)
@@ -962,7 +963,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Bank account'], ['shipping', 'Shipping settings'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Payout method'], ['shipping', 'Shipping settings'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -1225,7 +1226,7 @@ export default function Seller({ token, onSignOut }) {
                         ))}
                       </ul>
                     )}
-                    <p className="seller-earnings-note">Payouts are sent by {brandName()} to your payout method; this reflects what you&rsquo;re owed. Payouts are batched — the amount available to pay out (past the return window) needs to reach {money(me.min_payout_cents ?? 0)}{me.payout_method ? ` for ${me.payout_method === 'paypal' ? 'PayPal' : 'bank transfer'}` : ''} before one can be sent.{(me.available_cents ?? 0) > 0 && (me.available_cents ?? 0) < (me.min_payout_cents ?? 0) ? ` You're ${money((me.min_payout_cents ?? 0) - me.available_cents)} away.` : ''}</p>
+                    <p className="seller-earnings-note">Payouts are sent by {brandName()} to your payout method; this reflects what you&rsquo;re owed. Payouts are batched — the amount available to pay out (past the return window) needs to reach {money(me.min_payout_cents ?? 0)}{me.payout_method ? ` for ${({ paypal: 'PayPal', stripe: 'Stripe' })[me.payout_method] ?? 'bank transfer'}` : ''} before one can be sent.{(me.available_cents ?? 0) > 0 && (me.available_cents ?? 0) < (me.min_payout_cents ?? 0) ? ` You're ${money((me.min_payout_cents ?? 0) - me.available_cents)} away.` : ''}</p>
                     {(() => {
                       const req = me.last_payout_request
                       const balance = Math.max(0, me.available_cents ?? 0)
@@ -1242,7 +1243,7 @@ export default function Seller({ token, onSignOut }) {
                             const why = balance <= 0 ? 'Nothing available yet — money is released after delivery and the return window.'
                               : balance < (me.min_payout_cents ?? 0) ? `Your available balance needs to reach ${money(me.min_payout_cents)} first (${money((me.min_payout_cents ?? 0) - balance)} to go).`
                               : me.payout_blocker ?? null
-                            const method = me.payout_method === 'paypal' ? 'paypal' : 'bank'
+                            const method = ['paypal', 'stripe'].includes(me.payout_method) ? me.payout_method : 'bank'
                             const f = me.payout_fees?.[method] ?? { fixed_cents: 0, bps: 0 }
                             const fee = Math.min(requestable, (f.local_fixed_cents ?? f.fixed_cents) + Math.round(requestable * f.bps / 10000))
                             return (
@@ -1286,7 +1287,7 @@ export default function Seller({ token, onSignOut }) {
                         </div>
                       )
                     })()}
-                    <PayoutMethod me={me} headers={authHeaders} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_currency: d.payout_currency, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email, payout_currency: d.payout_currency }, payout_blocker: d.payout_blocker }))} />
+                    <PayoutMethod me={me} headers={authHeaders} onSetupStripe={() => go('bank')} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_currency: d.payout_currency, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email, payout_currency: d.payout_currency }, payout_blocker: d.payout_blocker }))} />
                     <div className="seller-payout-limits">
                       <b>Payout limits</b>
                       <ul>
@@ -1294,7 +1295,7 @@ export default function Seller({ token, onSignOut }) {
                         <li>Most per payout: <strong>{(me.max_payout_cents ?? 0) > 0 ? money(me.max_payout_cents) : 'no limit'}</strong>{(me.max_payout_cents ?? 0) > 0 && ' — a bigger balance is paid over several requests'}</li>
                         {(me.daily_payout_cap_cents ?? 0) > 0 && <li>{brandName()} sends up to <strong>{money(me.daily_payout_cap_cents)}</strong> in payouts per day in total, so a payout may wait for the next day&rsquo;s limit.</li>}
                         <li>One request at a time — you can request again once the last one is paid.</li>
-                        {['bank', 'paypal'].map((m) => { const f = me.payout_fees?.[m]; return f && f.enabled !== false && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
+                        {['bank', 'paypal', 'stripe'].map((m) => { const f = me.payout_fees?.[m]; return f && f.enabled !== false && (f.fixed_cents > 0 || f.bps > 0) && <li key={m}>{({ paypal: 'PayPal', stripe: 'Stripe' })[m] ?? 'Bank transfer'} withdrawal fee: <strong>{[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${(f.bps / 100).toFixed(2).replace(/\.?0+$/, '')}%`].filter(Boolean).join(' + ')}</strong> per payout</li> })}
                       </ul>
                       {me.payout_note && <p className="seller-earnings-note">{me.payout_note}</p>}
                     </div>
@@ -1943,11 +1944,11 @@ export default function Seller({ token, onSignOut }) {
   )
 }
 
-// Finances → how the seller is paid: their verified bank account or PayPal,
+// Finances → how the seller is paid: their verified bank account, PayPal or Stripe,
 // and the currency they want it in (from those admin allows for the method).
-function PayoutMethod({ me, headers, onSaved }) {
+function PayoutMethod({ me, headers, onSaved, onSetupStripe }) {
   // Only the methods admin offers in this seller's country.
-  const offered = ['bank', 'paypal'].filter((m) => me.payout_fees?.[m]?.enabled !== false)
+  const offered = ['bank', 'paypal', 'stripe'].filter((m) => me.payout_fees?.[m] && me.payout_fees[m].enabled !== false)
   const [method, setMethod] = useState(offered.includes(me.payout_method) ? me.payout_method : offered[0] ?? 'bank')
   const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
   const [currency, setCurrency] = useState(me.payout_currency ?? me.currency ?? 'usd')
@@ -1972,10 +1973,12 @@ function PayoutMethod({ me, headers, onSaved }) {
   return (
     <form className="seller-payout-limits" onSubmit={save}>
       <b>How you&rsquo;re paid</b>
-      {offered.length === 1 && <small className="sc-muted">{offered[0] === 'paypal' ? 'PayPal' : 'Bank transfer'} is the payout method in your country.</small>}
+      {offered.length === 1 && <small className="sc-muted">{({ paypal: 'PayPal', stripe: 'Stripe' })[offered[0]] ?? 'Bank transfer'} is the payout method in your country.</small>}
       {offered.includes('bank') && <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'bank'} onChange={() => setMethod('bank')} /> Bank account{hasBank ? ` (${me.payout_details.bank_name ?? 'bank'} ••••${String(me.payout_details.account_number).slice(-4)})` : ' — add it under Bank account'}{feeText('bank')}</label>}
       {offered.includes('paypal') && <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'paypal'} onChange={() => setMethod('paypal')} /> PayPal{feeText('paypal')}</label>}
+      {offered.includes('stripe') && <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'stripe'} onChange={() => setMethod('stripe')} /> Stripe{me.stripe_ready ? '' : ' — set it up first'}{feeText('stripe')}</label>}
       {method === 'paypal' && <input type="email" required placeholder="PayPal email" value={email} onChange={(e) => setEmail(e.target.value)} />}
+      {method === 'stripe' && !me.stripe_ready && <small className="sc-muted">Stripe pays you straight to your bank once you&rsquo;ve set up a Stripe account. <button type="button" className="sc-link" onClick={onSetupStripe}>Set up Stripe</button></small>}
       <label>Pay me in
         <select value={chosen} onChange={(e) => { setCurrency(e.target.value); setConfirmed(false) }} disabled={allowed.length < 2}>
           {allowed.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
@@ -1983,7 +1986,7 @@ function PayoutMethod({ me, headers, onSaved }) {
       </label>
       {foreign && <label className="sc-check"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> My {method === 'paypal' ? 'PayPal account' : 'bank account'} can receive {chosen.toUpperCase()}. (If it can&rsquo;t, the payment may be returned or converted by your bank with extra fees.)</label>}
       {foreign && <small className="sc-muted">Your balance stays in {String(me.currency ?? '').toUpperCase()}; each payout is converted to {chosen.toUpperCase()} at the rate on the day it&rsquo;s sent.</small>}
-      <div><button type="submit" className="seller-btn ghost" disabled={(method === 'bank' && !hasBank) || (foreign && !confirmed)}>Save payout method</button> {msg && <span className="seller-earnings-note">{msg}</span>}</div>
+      <div><button type="submit" className="seller-btn ghost" disabled={(method === 'bank' && !hasBank) || (method === 'stripe' && !me.stripe_ready) || (foreign && !confirmed)}>Save payout method</button> {msg && <span className="seller-earnings-note">{msg}</span>}</div>
     </form>
   )
 }

@@ -95,4 +95,105 @@ class AdminCategoryController extends Controller
 
         return $slug;
     }
+
+    /**
+     * Categories → edit → Product details: the details sellers fill in for this
+     * category, whether it has its own list or uses a parent's (or the built-in
+     * one), and which details and choices products use (locked).
+     */
+    public function details(Category $category): JsonResponse
+    {
+        return response()->json(['data' => $this->detailsPayload($category)]);
+    }
+
+    /** Save this category's own list, or `fields: null` to use its parent's again (only when no product needs it). */
+    public function saveDetails(Request $request, Category $category): JsonResponse
+    {
+        $data = $request->validate([
+            'fields' => ['present', 'nullable', 'array', 'max:60'],
+            'fields.*.key' => ['nullable', 'string', 'max:60'],
+            'fields.*.label' => ['nullable', 'string', 'max:80'],
+            'fields.*.type' => ['required', 'string', Rule::in(\App\Support\CategoryDetails::TYPES)],
+            'fields.*.options' => ['nullable', 'array', 'max:100'],
+            'fields.*.options.*' => ['nullable', 'string', 'max:80'],
+            'fields.*.required' => ['nullable', 'boolean'],
+            'fields.*.unit' => ['nullable', 'string', 'max:20'],
+            'fields.*.placeholder' => ['nullable', 'string', 'max:300'],
+        ]);
+        $own = is_array($category->detail_fields);
+        $usage = \App\Support\CategoryDetails::usage($category);
+        if ($data['fields'] === null) {
+            abort_if($own && $usage, 422, 'Products use this category’s details — remove the values from those products first, or keep the list.');
+            $category->forceFill(['detail_fields' => null])->save();
+        } else {
+            $current = $this->ownStart($category);
+            // Products using the list this replaces keep their values: the same locks apply.
+            $category->forceFill(['detail_fields' => \App\Support\CategoryDetails::clean($data['fields'], $current, $usage)])->save();
+        }
+
+        return response()->json(['data' => $this->detailsPayload($category->fresh())]);
+    }
+
+    /** Categories → Common product details: asked of every physical product, in every category. */
+    public function commonDetails(): JsonResponse
+    {
+        return response()->json(['data' => $this->commonPayload()]);
+    }
+
+    public function saveCommonDetails(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'fields' => ['required', 'array', 'max:60'],
+            'fields.*.key' => ['nullable', 'string', 'max:60'],
+            'fields.*.label' => ['nullable', 'string', 'max:80'],
+            'fields.*.type' => ['required', 'string', Rule::in(\App\Support\CategoryDetails::TYPES)],
+            'fields.*.options' => ['nullable', 'array', 'max:100'],
+            'fields.*.options.*' => ['nullable', 'string', 'max:80'],
+            'fields.*.required' => ['nullable', 'boolean'],
+            'fields.*.unit' => ['nullable', 'string', 'max:20'],
+            'fields.*.placeholder' => ['nullable', 'string', 'max:300'],
+        ]);
+        $clean = \App\Support\CategoryDetails::clean($data['fields'], \App\Support\CategoryDetails::common(), \App\Support\CategoryDetails::commonUsage());
+        \App\Models\Setting::put('common_detail_fields', $clean);
+
+        return response()->json(['data' => $this->commonPayload()]);
+    }
+
+    private function commonPayload(): array
+    {
+        return ['own' => true, 'common_list' => true, 'fields' => \App\Support\CategoryDetails::common(), 'usage' => \App\Support\CategoryDetails::commonUsage(), 'common' => [], 'core' => \App\Support\CategoryDetails::CORE];
+    }
+
+    /** What a category starts from when it gets its own list: the list it uses now (minus the common details). */
+    private function ownStart(Category $category): array
+    {
+        $common = array_column(\App\Support\CategoryDetails::common(), 'key');
+
+        if (is_array($category->detail_fields)) {
+            return array_values($category->detail_fields);
+        }
+
+        return array_values(array_filter(\App\Support\ProductCatalog::attributesFor($category), fn ($f) => ! in_array($f['key'], $common, true)));
+    }
+
+    private function detailsPayload(Category $category): array
+    {
+        $owner = \App\Support\CategoryDetails::owner($category);
+        $own = $owner?->id === $category->id;
+        $commonKeys = array_column(\App\Support\CategoryDetails::common(), 'key');
+        $list = $own ? array_values((array) $category->detail_fields) : $this->ownStart($category);
+
+        return [
+            'own' => $own,
+            // Where the list comes from when it isn't this category's own.
+            'inherited_from' => $own ? null : ($owner ? $owner->path() : 'Built-in list'),
+            'fields' => $list,
+            'usage' => \App\Support\CategoryDetails::usage($category),
+            // Asked of every physical product, after the category's own (a detail with the same name replaces it).
+            'common' => $category->kind === 'digital' ? [] : array_values(array_filter(\App\Support\CategoryDetails::common(), fn ($f) => ! in_array($f['key'], array_column($list, 'key'), true))),
+            'common_keys' => $commonKeys,
+            'core' => \App\Support\CategoryDetails::CORE,
+            'kind' => $category->kind,
+        ];
+    }
 }

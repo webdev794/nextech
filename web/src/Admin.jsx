@@ -16,6 +16,8 @@ import LightningDeal from './LightningDeal'
 import { ReturnPolicyFields } from './returnPolicy'
 import { AdminDigitalFiles } from './AdminDigitalFiles'
 import { KeptRates } from './AdminKeptRates'
+import { SellerPayouts, WithdrawalFees } from './AdminPayouts'
+import { CategoryDetailsEditor } from './AdminCategoryDetails'
 import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
@@ -370,8 +372,14 @@ const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
 // tracking/organization; show_in_footer is still what gates the real render.
 // Pages menu (left): its own order and names.
 const NAV_PAGE_GROUPS = ['blog', 'main_menu', 'main_footer', 'seller_footer']
-const NAV_PAGE_LABELS = { blog: 'All blogs', main_menu: 'Main help pages', main_footer: 'Main footer pages', seller_footer: 'Seller footer pages' }
-const MENU_PLACEMENT_LABELS = { main_menu: 'Main menu (storefront Help menu)', main_footer: 'Main footer', seller_footer: 'Seller Center footer', blog: 'Blog' }
+
+// Secure access stays unlocked only while you're in it: leaving it, or a minute
+// without activity, locks it again (also on the server).
+const SECURE_KEY = 'nextech_admin_secure'
+const storedSecure = (login) => { try { const s = JSON.parse(localStorage.getItem(SECURE_KEY) ?? 'null'); return s && s.login === String(login).slice(-16) ? s.token : '' } catch { return '' } }
+const SECURE_SECTIONS = [['fees', 'Withdrawal fees'], ['payouts', 'Payouts'], ['access', 'Keys & account']]
+const NAV_PAGE_LABELS = { blog: 'All blogs', main_menu: 'Main help pages', main_footer: 'Main footer pages', seller_footer: 'Seller policies & rules' }
+const MENU_PLACEMENT_LABELS = { main_menu: 'Main menu (storefront Help menu)', main_footer: 'Main footer', seller_footer: 'Seller Center → My account → Policies & rules', blog: 'Blog' }
 const sectionLabel = (type) => (SECTION_TYPES.find(([value]) => value === type) ?? [type, type])[1]
 
 // Reference rows for the "Formatting guide" tab. Each `code` is fed through the
@@ -645,6 +653,8 @@ export default function Admin({ token, onClose }) {
   const [customersMeta, setCustomersMeta] = useState(null)
   // Small lists paged client-side.
   const [categoriesPage, setCategoriesPage] = useState(1)
+  // Categories list: subcategories stay folded under their parent until its ▸ is clicked.
+  const [openCategories, setOpenCategories] = useState(() => new Set())
   const [ridersPage, setRidersPage] = useState(1)
   const [storesPage, setStoresPage] = useState(1)
   const [sellersPage, setSellersPage] = useState(1)
@@ -724,9 +734,11 @@ export default function Admin({ token, onClose }) {
   const [pendingReviews, setPendingReviews] = useState(0)
   const [openOrders, setOpenOrders] = useState(0)
   const [accountForm, setAccountForm] = useState({ name: '', email: '', phone: '' })
-  const [secureGate, setSecureGate] = useState('locked') // locked | code | unlocked
+  const [secureGate, setSecureGate] = useState(() => (storedSecure(token) ? 'unlocked' : 'locked')) // locked | code | unlocked
+  const [secureSection, setSecureSection] = useState('fees')
+  const [commonDetailsOpen, setCommonDetailsOpen] = useState(false)
   const [secureSecret, setSecureSecret] = useState('') // password or OTP code
-  const [secureToken, setSecureToken] = useState('')
+  const [secureToken, setSecureToken] = useState(() => storedSecure(token))
   const [secureMsg, setSecureMsg] = useState('')
   const [imgBusy, setImgBusy] = useState(false)
   const [threads, setThreads] = useState([])
@@ -1363,6 +1375,15 @@ export default function Admin({ token, onClose }) {
   }
 
   const secureMethod = settings?.secure_access?.method ?? 'password'
+  const restoredSecure = useRef(storedSecure(token))
+  useEffect(() => {
+    if (!restoredSecure.current) return
+    fetch(`${API_URL}/admin/secure-access/state`, { headers: { ...authHeaders(), 'X-Secure-Access': restoredSecure.current } })
+      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('locked'))))
+      .then((data) => { const a = data.data?.account; if (a) setAccountForm({ name: a.name ?? '', email: a.email ?? '', phone: a.phone ?? '' }) })
+      .catch(() => { try { localStorage.removeItem(SECURE_KEY) } catch { /* ignore */ } setSecureToken(''); setSecureGate('locked') })
+    restoredSecure.current = ''
+  }, [authHeaders])
 
   async function challengeSecure() {
     setSecureMsg('Sending a code to your admin email…')
@@ -1374,6 +1395,26 @@ export default function Admin({ token, onClose }) {
     } catch (error) { setSecureMsg(error.message) }
   }
 
+  // Lock again (the button, or the server said the unlock ended).
+  function relockSecure() {
+    try { localStorage.removeItem(SECURE_KEY) } catch { /* ignore */ }
+    if (secureToken) fetch(`${API_URL}/admin/secure-access/lock`, { method: 'POST', headers: { ...authHeaders(), 'X-Secure-Access': secureToken } }).catch(() => {})
+    setSecureToken(''); setSecureSecret('')
+    setSecureGate('code')
+  }
+
+  // A minute with no mouse, keyboard or scrolling in Secure access locks it.
+  const relockRef = useRef(relockSecure)
+  useEffect(() => { relockRef.current = relockSecure })
+  useEffect(() => {
+    if (tab !== 'secure' || !secureToken) return undefined
+    let timer = setTimeout(() => relockRef.current(), 60000)
+    const active = () => { clearTimeout(timer); timer = setTimeout(() => relockRef.current(), 60000) }
+    const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart']
+    events.forEach((e) => window.addEventListener(e, active, { passive: true }))
+    return () => { clearTimeout(timer); events.forEach((e) => window.removeEventListener(e, active)) }
+  }, [tab, secureToken])
+
   async function unlockSecure() {
     setSecureMsg('')
     const body = secureMethod === 'otp' ? { code: secureSecret.trim() } : { password: secureSecret }
@@ -1382,6 +1423,7 @@ export default function Admin({ token, onClose }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? 'That did not work.')
       setSecureToken(data.data.token)
+      try { localStorage.setItem(SECURE_KEY, JSON.stringify({ login: String(token).slice(-16), token: data.data.token })) } catch { /* private mode */ }
       setSecureSecret('')
       setSecureGate('unlocked')
       if (data.data.account) setAccountForm({ name: data.data.account.name ?? '', email: data.data.account.email ?? '', phone: data.data.account.phone ?? '' })
@@ -1400,7 +1442,7 @@ export default function Admin({ token, onClose }) {
       setPaymentsForm({ stripe_key: saved.payments?.stripe_key ?? '', stripe_secret: '', stripe_webhook_secret: '' })
       setMessage('Payment settings saved — they take effect immediately.')
     } else {
-      setSecureGate('locked'); setSecureToken('')
+      relockSecure()
     }
   }
 
@@ -1440,7 +1482,7 @@ export default function Admin({ token, onClose }) {
       })
       setMessage('Courier settings saved — they take effect immediately.')
     } else {
-      setSecureGate('locked'); setSecureToken('')
+      relockSecure()
     }
   }
 
@@ -2089,24 +2131,6 @@ Reason:`, '')
     if (reason) sellerAction(seller, 'suspend', { reason })
   }
 
-  function recordSellerPayout(seller) {
-    const balance = Math.max(0, seller.available_cents ?? seller.balance_cents ?? 0)
-    const max = seller.max_payout_cents ?? 0
-    const suggested = seller.pending_payout_request?.amount_cents ?? (max > 0 ? Math.min(balance, max) : balance)
-    const limits = [max > 0 ? `max ${money(max, seller.currency)} per payout` : null, seller.daily_payout_remaining_cents != null ? `${money(seller.daily_payout_remaining_cents, seller.currency)} left today` : null].filter(Boolean).join(', ')
-    const amountStr = window.prompt(`Payout amount for ${seller.shop?.name ?? 'this seller'} (${currencySymbol(seller.currency)}) — available ${money(balance, seller.currency)}${limits ? ` (${limits})` : ''}:`, (suggested / 100).toFixed(2))
-    if (!amountStr) return
-    const amount_cents = toCents(amountStr)
-    if (!amount_cents || amount_cents <= 0) { setMessage('Enter a valid payout amount.'); return }
-    const note = window.prompt('Note (optional):', '') ?? ''
-    sellerAction(seller, 'payout', { amount_cents, note: note.trim() || undefined })
-  }
-
-  function rejectPayoutRequest(seller) {
-    const note = window.prompt('Reason for declining this payout request (the seller sees it):', '')
-    if (note?.trim()) sellerAction(seller, 'payout-request/reject', { note: note.trim() })
-  }
-
   // Opens (or brings up) the chat window with this seller, bottom right.
   function messageSeller(seller) {
     openSellerChat(seller)
@@ -2349,13 +2373,17 @@ Reason:`, '')
     return next
   })
 
+  const categoryById = new Map(categories.map((c) => [c.id, c]))
+  const shownCategories = categories.filter((c) => {
+    for (let p = c.parent_id, guard = 0; p && guard < 10; p = categoryById.get(p)?.parent_id, guard++) if (!openCategories.has(p)) return false
+    return true
+  })
+
   const goTab = (name) => {
-    // Leaving Secure access re-locks it; entering it starts the challenge fresh.
-    if (tab === 'secure' && name !== 'secure') {
-      setSecureGate('locked'); setSecureSecret(''); setSecureToken(''); setSecureMsg('')
-    }
-    if (name === 'secure' && tab !== 'secure') {
-      setSecureGate('code'); setSecureSecret(''); setSecureToken(''); setSecureMsg('')
+    // Leaving Secure access locks it; entering it while locked starts the challenge.
+    if (tab === 'secure' && name !== 'secure') relockSecure()
+    if (name === 'secure' && tab !== 'secure' && !secureToken) {
+      setSecureGate('code'); setSecureSecret(''); setSecureMsg('')
       if ((settings?.secure_access?.method ?? 'password') === 'otp') challengeSecure()
     }
     setTab(name)
@@ -2489,14 +2517,14 @@ Reason:`, '')
                         <h5>Seller payout requests</h5>
                         {payoutRequests.slice(0, BELL_ITEM_CAP).map((r) => (
                           <div className="admin-bell-row" key={`payout-${r.id}`}>
-                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); goTab('sellers'); if (r.seller_id) openSellerDetail(r.seller_id) }}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); setSecureSection('payouts'); goTab('secure') }}>
                               💸 {r.shop_name ?? 'Seller'} — {money(r.amount_cents)} · {new Date(r.at).toLocaleDateString()}
                             </button>
                             <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.pay(r)) }}>×</button>
                           </div>
                         ))}
                         {payoutRequests.length > BELL_ITEM_CAP && (
-                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); goTab('sellers') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Sellers</button>
+                          <button type="button" className="admin-bell-more" onClick={() => { setSellerBellOpen(false); setSecureSection('payouts'); goTab('secure') }}>+{payoutRequests.length - BELL_ITEM_CAP} more — see Payouts</button>
                         )}
                       </section>
                     )}
@@ -2743,9 +2771,15 @@ Reason:`, '')
                 <button type="button" className={shipSection === 'own' ? 'active' : ''} onClick={() => setShipSection('own')}>{brandName()} delivery</button>
               </div>
             )}
+            {name === 'secure' && tab === 'secure' && secureGate === 'unlocked' && (
+              <div className="admin-nav-sub">
+                {SECURE_SECTIONS.map(([key, label]) => <button key={key} type="button" className={secureSection === key ? 'active' : ''} onClick={() => setSecureSection(key)}>{label}</button>)}
+              </div>
+            )}
             {name === 'categories' && tab === 'categories' && !subnavFolded && (
               <div className="admin-nav-sub">
-                <button type="button" className={!categoryForm ? 'active' : ''} onClick={() => setCategoryForm(null)}>All categories</button>
+                <button type="button" className={!categoryForm && !commonDetailsOpen ? 'active' : ''} onClick={() => { setCategoryForm(null); setCommonDetailsOpen(false) }}>All categories</button>
+                <button type="button" className={!categoryForm && commonDetailsOpen ? 'active' : ''} onClick={() => { setCategoryForm(null); setCommonDetailsOpen(true); scrollAdminTop() }}>Common product details</button>
                 <button type="button" className={categoryForm && !categoryForm.id ? 'active nav-sub-add' : 'nav-sub-add'} onClick={() => { setCategoryForm({ ...EMPTY_CATEGORY }); scrollAdminTop() }}>+ Add new category</button>
                 {categoryForm?.id && <button type="button" className="active">Editing #{categoryForm.id}</button>}
               </div>
@@ -3384,7 +3418,7 @@ Reason:`, '')
           </div>
           </>}
 
-          {categoryForm && (
+          {categoryForm && (<>
             <form id="admin-category-form" className="admin-form" onSubmit={saveCategory}>
               <button type="button" className="act ghost admin-back" onClick={() => setCategoryForm(null)}>&larr; All categories</button>
               <h3>{categoryForm.id ? `Edit category #${categoryForm.id}` : 'New category'}</h3>
@@ -3423,17 +3457,23 @@ Reason:`, '')
                 <button className="act ghost" type="button" onClick={() => setCategoryForm(null)}>Cancel</button>
               </div>
             </form>
-          )}
+            {categoryForm.id
+              ? <CategoryDetailsEditor key={categoryForm.id} categoryId={categoryForm.id} headers={jsonHeaders} onMessage={setMessage} onError={fail} />
+              : <p className="muted">Save the category first, then set the product details sellers fill in for it.</p>}
+          </>)}
 
-          {!categoryForm && <>
+          {!categoryForm && commonDetailsOpen && <CategoryDetailsEditor headers={jsonHeaders} onMessage={setMessage} onError={fail} />}
+          {!categoryForm && !commonDetailsOpen && <>
           {listBusy.categories && categories.length === 0 ? <Loading>Loading categories…</Loading> : categories.length === 0 ? <p className="admin-empty">No categories.</p> : (
             <table className="admin-table">
               <thead><tr><th>Image</th><th>Name</th><th>Type</th><th>Slug</th><th>Products</th><th>Sort</th><th>Active</th><th>Homepage</th><th></th></tr></thead>
               <tbody>
-                {pageSlice(categories, categoriesPage).map((category) => (
+                {pageSlice(shownCategories, categoriesPage).map((category) => (
                   <tr key={category.id}>
                     <td>{category.image_url ? <img className="admin-banner-thumb" src={mediaUrl(category.image_url)} alt="" /> : <span className="muted">—</span>}</td>
-                    <td style={{ paddingLeft: 16 + (category.depth ?? 0) * 22 }}>{(category.depth ?? 0) > 0 && <span className="muted">&#8627; </span>}{category.name}{category.children_count > 0 && <span className="admin-note">{category.children_count} subcategor{category.children_count === 1 ? 'y' : 'ies'}</span>}</td>
+                    <td style={{ paddingLeft: 16 + (category.depth ?? 0) * 22 }}>{category.children_count > 0
+                      ? <button type="button" className="cat-fold" aria-expanded={openCategories.has(category.id)} title={openCategories.has(category.id) ? 'Hide subcategories' : 'Show subcategories'} onClick={() => setOpenCategories((cur) => { const next = new Set(cur); if (next.has(category.id)) next.delete(category.id); else next.add(category.id); return next })}>{openCategories.has(category.id) ? '▾' : '▸'}</button>
+                      : (category.depth ?? 0) > 0 && <span className="muted cat-fold-spacer">&#8627;</span>}{category.name}{category.children_count > 0 && <span className="admin-note">{category.children_count} subcategor{category.children_count === 1 ? 'y' : 'ies'}</span>}</td>
                     <td>{category.kind === 'digital' ? 'Digital' : 'Physical'}</td>
                     <td>{category.slug}</td>
                     <td>{category.products_count ?? 0}</td>
@@ -3450,7 +3490,7 @@ Reason:`, '')
               </tbody>
             </table>
           )}
-          <Pager page={categoriesPage} pageCount={Math.max(1, Math.ceil(categories.length / pageSize))} total={categories.length} onPage={setCategoriesPage} pageSize={pageSize} onPageSize={setPageSize} />
+          <Pager page={categoriesPage} pageCount={Math.max(1, Math.ceil(shownCategories.length / pageSize))} total={shownCategories.length} onPage={setCategoriesPage} pageSize={pageSize} onPageSize={setPageSize} />
           </>}
         </section>
       )}
@@ -4203,8 +4243,23 @@ Reason:`, '')
             </div>
           ) : (
             <>
-              <p className="muted">Unlocked for ~15 minutes — re-locks when you leave this section.</p>
+              <p className="muted">Unlocked — locks when you open another menu or after a minute without activity. <button type="button" className="link" onClick={relockSecure}>Lock now</button></p>
 
+              {secureSection === 'payouts' && <SellerPayouts key={adminMarket} headers={secureHeaders} onMessage={setMessage} onError={(error) => { if (/Unlock the Secure access/.test(error.message)) relockSecure(); fail(error) }} onOpenSeller={(id) => { goTab('sellers'); openSellerDetail(id) }} />}
+
+              {secureSection === 'fees' && settings?.payout_fees && <>
+                <WithdrawalFees key={`fees-${workMarket}`} settings={settings} market={workMarket} marketName={marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} currency={activeCurrency} save={(patch) => saveSetting(patch, { 'X-Secure-Access': secureToken })} onMessage={setMessage} />
+                {settings.payout_notes && (
+                  <form className="admin-form" key={`payout-note-${workMarket}`} onSubmit={async (event) => { event.preventDefault(); const text = new FormData(event.currentTarget).get('note'); if (await saveSetting({ payout_notes: { [workMarket]: text } }, { 'X-Secure-Access': secureToken })) setMessage('Payout note saved.') }}>
+                    <h3>Payout note for sellers — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket}</h3>
+                    <p className="muted">Shown to sellers next to &ldquo;Request payout&rdquo;, with their minimum, maximum per payout and daily limit. Explain how you pay and the banks&rsquo; own limits (e.g. a maximum per transfer). Clear it to go back to the default text. Switch country in the top bar to edit another one.</p>
+                    <textarea name="note" rows={3} maxLength={1000} defaultValue={settings.payout_notes[workMarket] ?? ''} />
+                    <div className="admin-form-actions"><button className="act" type="submit">Save payout note</button></div>
+                  </form>
+                )}
+              </>}
+
+              {secureSection === 'access' && <>
               <form className="admin-form" onSubmit={saveAccount}>
                 <h3>Admin account</h3>
                 <div className="admin-form-grid">
@@ -4315,6 +4370,7 @@ Reason:`, '')
                   <div className="admin-form-actions"><button className="act" type="submit">Save courier settings</button></div>
                 </form>
               )}
+              </>}
             </>
           )}
         </section>
@@ -4404,39 +4460,7 @@ Reason:`, '')
 
               <BusinessDetails settings={settings} save={saveSetting} onSaved={setMessage} />
 
-              {settings.payout_fees && (() => {
-                const fees = settings.payout_fees[workMarket] ?? { bank: { fixed_cents: 0, bps: 0 }, paypal: { fixed_cents: 0, bps: 0 } }
-                return (
-                  <form className="admin-form" key={`payout-fees-${workMarket}`} onSubmit={async (event) => {
-                    event.preventDefault()
-                    const fd = new FormData(event.currentTarget)
-                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), min_cents: Math.round(Number(fd.get(`${m}_min`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency, currencies: fd.getAll(`${m}_currencies`), enabled: fd.get(`${m}_enabled`) === 'on' }]))
-                    if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Withdrawal fees saved.')
-                  }}>
-                    <h3>Withdrawal fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
-                    <p className="muted">Taken from each payout you send a seller, by how they&rsquo;re paid — a fixed amount, a percentage, or both (0 = free). Set the currency each method pays in (e.g. PayPal pays Indian sellers in USD); its fixed fee is in that currency, converted at the day&rsquo;s rate. Sellers see it before they request a payout, and it shows in their ledger as &ldquo;Withdrawal fee&rdquo;.</p>
-                    <div className="admin-form-grid">
-                      {['bank', 'paypal'].map((m) => <Fragment key={m}>
-                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — pays sellers in<select name={`${m}_currency`} defaultValue={fees[m].currency ?? activeCurrency}>{[...new Set([activeCurrency, 'usd'])].map((c) => <option key={c} value={c}>{c.toUpperCase()} {currencySymbol(c)}</option>)}</select></label>
-                        <label className="admin-check wz-wide"><input type="checkbox" name={`${m}_enabled`} defaultChecked={fees[m].enabled !== false} /> <b>Offer {m === 'paypal' ? 'PayPal' : 'bank transfer'} payouts to sellers in {marketOptions.find((x) => x.code === workMarket)?.name ?? workMarket}</b></label>
-                        <div className="wz-wide"><span className="muted">{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — sellers can choose to be paid in:</span> {(settings.payout_currency_options?.[workMarket] ?? [activeCurrency]).map((c) => <label key={c} className="admin-check" style={{ display: 'inline-flex', marginRight: 12 }}><input type="checkbox" name={`${m}_currencies`} value={c} defaultChecked={(fees[m].currencies ?? [fees[m].currency]).includes(c)} /> {c.toUpperCase()}</label>)}</div>
-                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed fee <small className="muted">in the currency it pays in</small><input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
-                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — percentage (%)<input name={`${m}_pct`} type="number" min="0" max="50" step="0.01" defaultValue={(fees[m].bps / 100).toFixed(2)} /></label>
-                        <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — minimum payout ({currencySymbol(activeCurrency)}) <small className="muted">0 = the country&rsquo;s minimum; the higher one applies</small><input name={`${m}_min`} type="number" min="0" step="0.01" defaultValue={((fees[m].min_cents ?? 0) / 100).toFixed(2)} /></label>
-                      </Fragment>)}
-                    </div>
-                    <div className="admin-form-actions"><button className="act" type="submit">Save withdrawal fees</button></div>
-                  </form>
-                )
-              })()}
-              {settings.payout_notes && (
-                <form className="admin-form" key={`payout-note-${workMarket}`} onSubmit={async (event) => { event.preventDefault(); const text = new FormData(event.currentTarget).get('note'); if (await saveSetting({ payout_notes: { [workMarket]: text } })) setMessage('Payout note saved.') }}>
-                  <h3>Payout note for sellers — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket}</h3>
-                  <p className="muted">Shown to sellers next to &ldquo;Request payout&rdquo;, with their minimum, maximum per payout and daily limit. Explain how you pay and the banks&rsquo; own limits (e.g. a maximum per transfer). Clear it to go back to the default text. Switch country in the top bar to edit another one.</p>
-                  <textarea name="note" rows={3} maxLength={1000} defaultValue={settings.payout_notes[workMarket] ?? ''} />
-                  <div className="admin-form-actions"><button className="act" type="submit">Save payout note</button></div>
-                </form>
-              )}
+              <p className="muted">Withdrawal fees and paying sellers are under <button type="button" className="link" onClick={() => { setSecureSection('fees'); goTab('secure') }}>Secure access</button>.</p>
 
               <p className="muted admin-currency-note">Showing charges &amp; payouts for <b>{marketOptions.find((m) => m.code === workMarket)?.name} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</b> — switch currency in the top bar.</p>
               {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
@@ -4530,7 +4554,7 @@ Reason:`, '')
               <div className="admin-form">
                 <h4>Selling abroad</h4>
                 <label className="admin-check"><input type="checkbox" checked={settings.intl_requires_approval !== false} onChange={(event) => saveSetting({ intl_requires_approval: event.target.checked })} /> Sellers must sign export terms before selling abroad</label>
-                <p className="muted">The seller gives their export ID (in India the IEC, with its certificate), accepts the pages you mark &ldquo;before they can sell abroad&rdquo; (Pages → Seller Center footer) and signs a declaration that they ship only legal goods and declare them truthfully. Signing approves it straight away; you can stop any seller in Sellers → View. Sellers already shipping abroad when you switch this on keep doing so.</p>
+                <p className="muted">The seller gives their export ID (in India the IEC, with its certificate), accepts the pages you mark &ldquo;before they can sell abroad&rdquo; (Pages → Seller policies &amp; rules) and signs a declaration that they ship only legal goods and declare them truthfully. Signing approves it straight away; you can stop any seller in Sellers → View. Sellers already shipping abroad when you switch this on keep doing so.</p>
               </div>
               </>}
               {shipSection === 'updates' && <>
@@ -4992,17 +5016,16 @@ Reason:`, '')
                     {d.shop && (
                       <section className="seller-card wide">
                         <h4>Payouts</h4>
-                        {d.pending_payout_request && <p className="admin-payout-request">💸 Seller requested <strong>{money(d.pending_payout_request.amount_cents, d.currency)}</strong> on {new Date(d.pending_payout_request.created_at).toLocaleDateString()}. Send it, then record it below.</p>}
+                        {d.pending_payout_request && <p className="admin-payout-request">💸 Seller requested <strong>{money(d.pending_payout_request.amount_cents, d.currency)}</strong> on {new Date(d.pending_payout_request.created_at).toLocaleDateString()}. Pay or decline it in Secure access → Payouts.</p>}
                         <p className="muted">{d.payout_method
-                          ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.paypal_email ?? d.payout_details?.email}</>)
+                          ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : d.payout_method === 'stripe' ? <>Stripe — {d.stripe_account_id ?? 'not set up'}{d.stripe_ready ? '' : ' (setup not finished)'}</> : <>PayPal — {d.payout_details?.paypal_email ?? d.payout_details?.email}</>)
                           : 'No payout method on file yet.'}
                           {d.payout_details?.payout_currency && <> · wants payment in <b>{d.payout_details.payout_currency.toUpperCase()}</b>{d.payout_details.currency_confirmed_at ? ` (seller confirmed their account accepts it on ${new Date(d.payout_details.currency_confirmed_at).toLocaleDateString()})` : ''}</>}
-                          {d.payout_method ? ` · The withdrawal fee for this method is deducted automatically (Settings → Withdrawal fees)` : ''}{d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
+                          {d.payout_method ? ` · The withdrawal fee for this method is deducted automatically (Secure access → Withdrawal fees)` : ''}{d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
                         {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => (p.order_missing ? `${money(p.amount_cents, d.currency)} sale credit with no order on record (held — check the ledger)` : `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`)).join(' · ')}</p>}
                         {d.status === 'approved' && (
                           <div className="admin-form-actions">
-                            {(d.available_cents ?? 0) >= (d.min_payout_cents ?? 0) && (d.available_cents ?? 0) > 0 && <button className="act" type="button" disabled={busyId === d.id} onClick={() => recordSellerPayout(d)}>Record payout</button>}
-                            {d.pending_payout_request && <button className="act ghost" type="button" disabled={busyId === d.id} onClick={() => rejectPayoutRequest(d)}>Decline request</button>}
+                            {((d.available_cents ?? 0) > 0 || d.pending_payout_request) && <button className="act" type="button" onClick={() => { setSecureSection('payouts'); goTab('secure') }}>Pay in Secure access → Payouts</button>}
                             {(d.available_cents ?? 0) < (d.min_payout_cents ?? 0) && <span className="muted">Available balance is below the {money(d.min_payout_cents ?? 0, d.currency)} minimum — earnings still inside their return window can&rsquo;t be paid out yet.</span>}
                           </div>
                         )}

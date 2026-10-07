@@ -209,7 +209,7 @@ class SellerController extends Controller
             $seller->payout_fees = SellerPayouts::fees($seller->shop->market);
             // Rate from the shop's currency to each method's payout currency (e.g. INR → USD for PayPal).
             $seller->payout_rates = SellerPayouts::rates($seller->shop->market);
-            $seller->payout_currency = SellerPayouts::currencyFor($seller, $seller->payout_method === 'paypal' ? 'paypal' : 'bank');
+            $seller->payout_currency = SellerPayouts::currencyFor($seller, SellerPayouts::method($seller));
             $seller->payout_blocker = SellerPayouts::blocker($seller);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }
@@ -235,7 +235,7 @@ class SellerController extends Controller
      * current balance capped at the per-transfer maximum (a larger balance is
      * paid over several requests). Admin sees it in the notification bell.
      */
-    /** Choose how to be paid: the verified bank account (from onboarding) or PayPal. */
+    /** Choose how to be paid: the verified bank account (from onboarding), PayPal, or Stripe once it's set up. */
     public function payoutMethod(Request $request): JsonResponse
     {
         $seller = $request->user()->seller;
@@ -254,12 +254,14 @@ class SellerController extends Controller
             $allowed = SellerPayouts::fees($seller->shop?->market)[$data['method']]['currencies'];
             abort_unless(in_array(strtolower($data['currency']), $allowed, true), 422, 'That currency isn’t available for this payout method.');
             $foreign = strtolower($data['currency']) !== Market::currency($seller->shop?->market);
-            abort_if($foreign && empty($data['currency_confirmed']), 422, 'Confirm that your '.($data['method'] === 'paypal' ? 'PayPal account' : 'bank account').' can receive '.strtoupper($data['currency']).'.');
+            abort_if($foreign && empty($data['currency_confirmed']), 422, 'Confirm that your '.($data['method'] === 'paypal' ? 'PayPal account' : ($data['method'] === 'stripe' ? 'Stripe account' : 'bank account')).' can receive '.strtoupper($data['currency']).'.');
             $details['payout_currency'] = strtolower($data['currency']);
             $details['currency_confirmed_at'] = $foreign ? now()->toIso8601String() : null;
         }
         if ($data['method'] === 'bank') {
             abort_if(empty($details['account_number']), 422, 'Add your bank account first (Seller Center → Bank account).');
+        } elseif ($data['method'] === 'stripe') {
+            abort_unless($seller->stripe_ready, 422, 'Set up your Stripe account first — it opens Stripe’s own secure pages.');
         } else {
             $details['paypal_email'] = strtolower(trim($data['paypal_email']));
         }
