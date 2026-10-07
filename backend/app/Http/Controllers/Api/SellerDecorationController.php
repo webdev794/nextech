@@ -30,6 +30,8 @@ class SellerDecorationController extends Controller
             'shop' => $shop->only(['name', 'slug', 'logo_url', 'banner_url']),
             'live_products' => $products->count(),
             'min_products' => StoreDecorations::minProducts(),
+            // Whether the minimum applies to this store (else a published design shows right away).
+            'min_applies' => \App\Support\SellerRequirements::on($shop, 'store_min_products'),
             'max_versions' => StoreDecorations::MAX_VERSIONS,
             'image_specs' => StoreDecorations::imageSpecs(),
             'products' => $products->map->only(['id', 'name', 'slug', 'image_url', 'price_cents', 'compare_at_price_cents', 'category_id'])->values(),

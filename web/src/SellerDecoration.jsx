@@ -394,6 +394,8 @@ export function StoreDecoration({ headers }) {
   const lookup = { products: data.products, categories: data.categories }
   const versions = data.versions.filter((v) => v.platform === platform)
   const selected = versions.find((v) => v.id === selectedId) ?? versions[0]
+  // The store-minimum rule: a published design only shows once the store has enough live products.
+  const designHidden = data.min_applies !== false && data.live_products < data.min_products
 
   async function act(path, method = 'POST', body, okMsg) {
     setMsg('')
@@ -413,10 +415,11 @@ export function StoreDecoration({ headers }) {
 
   return (
     <>
-      <h1 className="sc-title">Store decoration</h1>
+      <div className="sc-head"><h1 className="sc-title">Store decoration</h1>{data.shop?.slug && <a className="sc-link" href={`${import.meta.env.BASE_URL || '/'}#/shop/${data.shop.slug}`} target="_blank" rel="noreferrer">View store page ↗</a>}</div>
       <p className="sc-muted">Design how your store page looks, separately for desktop and mobile. Banners, product displays and videos help shoppers stay longer and buy more. Only one version per platform can be live at a time.</p>
       {msg && <div className="sc-alert warn"><span>{msg}</span><button type="button" onClick={() => setMsg('')}>OK</button></div>}
-      {data.live_products < data.min_products && <div className="sc-alert warn"><span>Shoppers see your default store page until you have {data.min_products} live products — you have {data.live_products}. You can still design and publish now.</span></div>}
+      {designHidden && <div className="sc-alert warn"><span>Shoppers see your default store page until you have {data.min_products} live products — you have {data.live_products}. You can design and publish now; your published design appears automatically once you reach {data.min_products}.</span></div>}
+      <p className="sc-muted">Your full product list always shows under your design, so a product section is optional.</p>
 
       <div className="sc-tabs">
         {['desktop', 'mobile'].map((p) => <button type="button" key={p} className={platform === p ? 'active' : ''} onClick={() => { setPlatform(p); setSelectedId(null) }}>{p === 'desktop' ? 'Desktop' : 'Mobile'} <small>{data.versions.filter((v) => v.platform === p).length}</small></button>)}
@@ -440,7 +443,7 @@ export function StoreDecoration({ headers }) {
                   <span className="sc-actions" onClick={(e) => e.stopPropagation()}>
                     {!v.is_live && v.status !== 'in_review' && <button type="button" onClick={() => setEditing(v)}>Edit</button>}
                     {(v.status === 'draft' || v.status === 'rejected') && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/submit`, 'POST', null, 'Submitted.')}>Submit</button>}
-                    {v.status === 'approved' && !v.is_live && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/publish`, 'POST', null, `Published — your ${platform} store page now uses “${v.name}”.`)}>Publish</button>}
+                    {v.status === 'approved' && !v.is_live && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/publish`, 'POST', null, `${designHidden ? `Published “${v.name}” — it shows on your ${platform} store page once you have ${data.min_products} live products.` : `Published — your ${platform} store page now uses “${v.name}”.`}`)}>Publish</button>}
                     {v.is_live && <button type="button" onClick={() => act(`/seller/decorations/${v.id}/unpublish`, 'POST', null, 'Unpublished — shoppers see the default store page.')}>Unpublish</button>}
                     <button type="button" disabled={versions.length >= data.max_versions} onClick={() => act('/seller/decorations', 'POST', { platform, copy_from: v.id }, 'Copied.')}>Copy</button>
                     {!v.is_live && <button type="button" className="danger" onClick={() => { if (window.confirm(`Delete “${v.name}”?`)) act(`/seller/decorations/${v.id}`, 'DELETE') }}>Delete</button>}
