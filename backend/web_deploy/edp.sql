@@ -805,7 +805,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (157, '2026_10_07_000064_add_tracking_url_to_shipments', 92),
 (158, '2026_10_07_000065_add_intl_approval_and_policy_acceptances', 93),
 (159, '2026_10_07_000066_add_address_proof_to_sellers', 94),
-(160, '2026_10_07_000067_add_seller_application_draft_to_users', 95);
+(160, '2026_10_07_000067_add_seller_application_draft_to_users', 95),
+(161, '2026_10_07_000068_add_affiliate_to_products', 96);
 
 -- --------------------------------------------------------
 
@@ -1418,7 +1419,10 @@ CREATE TABLE `products` (
   `pending_changes` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`pending_changes`)),
   `pending_submitted_at` timestamp NULL DEFAULT NULL,
   `ships_abroad` tinyint(1) NOT NULL DEFAULT 1,
-  `intl_extra_fee_cents` int(10) UNSIGNED DEFAULT NULL
+  `intl_extra_fee_cents` int(10) UNSIGNED DEFAULT NULL,
+  `affiliate_url` varchar(1000) DEFAULT NULL,
+  `affiliate_merchant` varchar(80) DEFAULT NULL,
+  `affiliate_clicks` int(10) UNSIGNED NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3312,7 +3316,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=161;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=162;
 
 --
 -- AUTO_INCREMENT for table `orders`

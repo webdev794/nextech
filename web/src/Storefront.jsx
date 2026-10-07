@@ -2395,18 +2395,22 @@ export default function Storefront() {
 
   function productCard(product) {
     const { hasVariants, options, chosen, variant, unitPrice, compareAt, onSale, pctOff, stock, key, qty, img } = variantView(product)
-    return <article className={stock === 0 ? 'pcard sold-out' : 'pcard'} key={product.id}>
+    // Ad (affiliate product): marked "Ad"; bought on the partner's site, opened in a new tab.
+    const ad = !!product.affiliate_url
+    return <article className={ad ? 'pcard pcard-ad' : stock === 0 ? 'pcard sold-out' : 'pcard'} key={product.id}>
       <button className="pcard-img" type="button" aria-label={`View details for ${product.name}`} onClick={() => openProduct(product)}
         onMouseEnter={(event) => { const v = event.currentTarget.querySelector('.pcard-video'); if (v) { v.currentTime = 0; v.play().catch(() => {}); v.classList.add('is-playing') } }}
         onMouseLeave={(event) => { const v = event.currentTarget.querySelector('.pcard-video'); if (v) { v.pause(); v.classList.remove('is-playing') } }}
-      >{stock === 0 && <span className="pcard-oos">Out of stock</span>}{onSale && stock !== 0 && <span className="pcard-off">{pctOff}% off</span>}{imgPlaceholder()}{img && <img src={mediaUrl(img)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}{product.video_url && <>
+      >{ad && <span className="pcard-adtag" title={`Ad — sold by ${product.affiliate_merchant || 'a partner'}`}>Ad</span>}{!ad && stock === 0 && <span className="pcard-oos">Out of stock</span>}{onSale && (ad || stock !== 0) && <span className="pcard-off">{pctOff}% off</span>}{imgPlaceholder()}{img && <img src={mediaUrl(img)} alt="" loading="lazy" onError={(event) => { event.currentTarget.style.display = 'none' }} />}{product.video_url && <>
           <video className="pcard-video" src={mediaUrl(product.video_url)} muted loop playsInline preload="none" />
           <span className="pcard-play-badge" aria-hidden><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M8 5v14l11-7z" /></svg></span>
         </>}{product.description && <span className="pcard-desc-tip">{product.description}</span>}</button>
       <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}{product.ships_from && <span className="pcard-intl"> · ✈ from {product.ships_from_name}</span>}{product.product_type === 'digital' && <span className="pcard-intl"> · ⬇ Digital</span>}</p>
       <h3>{variantTitle(product.name, variant?.label)}</h3>
       {hasVariants && <select className="pcard-variant" aria-label={`${product.name} option`} value={String(chosen?.id ?? '')} onChange={(event) => setPickedVariant((current) => ({ ...current, [product.id]: event.target.value }))}>{options.map((o) => <option key={o.id === '' ? 'base' : o.id} value={String(o.id)}>{o.label} — {price(o.price_cents)}</option>)}</select>}
-      <div className="pcard-foot"><span className="pcard-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><span className="pcard-compare-at">Compare at: <s>{price(compareAt)}</s> <i className="pcard-info" title={`The higher of the manufacturer's list price or a recent selling price on ${brandName()}.`}>?</i></span></> : <strong>{price(unitPrice)}</strong>}</span>{qty === 0
+      <div className="pcard-foot"><span className="pcard-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><span className="pcard-compare-at">Compare at: <s>{price(compareAt)}</s> <i className="pcard-info" title={`The higher of the manufacturer's list price or a recent selling price on ${brandName()}.`}>?</i></span></> : <strong>{price(unitPrice)}</strong>}</span>{ad
+        ? <a className="add-btn pcard-ad-link" href={`${API_URL}/products/${product.id}/go`} target="_blank" rel="sponsored noopener noreferrer" title={`View on ${product.affiliate_merchant || 'the partner site'} (opens in a new tab)`}>View ↗</a>
+        : qty === 0
         ? <button className="add-btn" type="button" disabled={stock === 0} onClick={() => add(product, variant)}>{stock === 0 ? 'OUT' : <svg aria-hidden viewBox="0 0 1024 1024" className="add-btn-icon"><path d="M409.7 752.4c31.8 0 57.6 25.8 57.5 57.6 0 31.8-25.8 57.6-57.5 57.6-31.8 0-57.6-25.8-57.6-57.6 0-31.8 25.8-57.6 57.6-57.6z m327.5 0c31.8 0 57.6 25.8 57.6 57.6 0 31.8-25.8 57.6-57.6 57.6-31.8 0-57.6-25.8-57.5-57.6 0-31.8 25.8-57.6 57.5-57.6z m-541-563.2c21.6 0 40.7 4.8 60.2 16.6 20.9 12.6 37 31.5 47.1 55.9l3.6 9.7 1.5 6.2 18.5 113.1 31.4 199.2c2.9 17.9 17.5 31.7 35.1 33.7l4.9 0.3 347.2 0c18.3 0 34.2-12.3 39.1-30.1l1.1-5.2 48.6-260.5c4.5-24.3 27.9-40.4 52.3-35.8 22.3 4.2 37.9 24.3 36.5 47.1l-0.7 5.1-48.4 259.5c-9.7 60.2-59.9 105.6-120.8 109.2l-7.7 0.3-347.2 0c-63.8 0-118.1-46.2-128.5-109.4l-36.3-230.3-12.4-76.3-1-2.5c-2.1-4.9-4.7-8.4-7.5-10.6l-2.7-1.9c-3.3-2-6.8-3.1-10.1-3.5l-3.8-0.2-85.3 0c-24.7 0-44.8-20.1-44.8-44.8 0-22.7 16.9-41.7 39.6-44.5l5.2-0.3 85.3 0z m382.2-1.2c22.7 0 41.7 16.9 44.5 39.6l0.3 5.2 0 66.1 66.2 0c23.1 0 42.1 17.5 44.5 39.9l0.3 4.9c0 22.7-16.9 41.7-39.6 44.5l-5.2 0.3-66.2 0 0 66.1c0 23.1-17.5 42.1-39.9 44.6l-4.9 0.2c-22.7 0-41.7-16.9-44.4-39.5l-0.4-5.3 0-66.1-66.1 0c-23.1 0-42.1-17.5-44.5-39.9l-0.3-4.9c0-22.7 16.9-41.7 39.6-44.5l5.2-0.3 66.1 0 0-66.1c0-23.1 17.5-42.1 40-44.6l4.8-0.2z" /></svg>}</button>
         : <span className="stepper"><button type="button" aria-label="Remove one" onClick={() => updateQuantity(key, -1)}>&minus;</button><b>{qty}</b><button type="button" aria-label="Add one" disabled={stock != null && qty >= stock} onClick={() => updateQuantity(key, 1)}>+</button></span>}</div>
       {(product.units_sold > 0 || product.rating_count > 0) && <p className="pcard-rating">
@@ -2773,7 +2777,7 @@ export default function Storefront() {
                   {(product.specifications ?? []).map((spec) => <div key={spec.label}><dt>{spec.label}</dt><dd>{spec.value}</dd></div>)}
                   {product.country_of_origin && <div><dt>Country of origin</dt><dd>{product.country_of_origin}</dd></div>}
                   {product.manufacturer_info && <div><dt>Manufacturer / importer</dt><dd>{product.manufacturer_info}</dd></div>}
-                  <div><dt>Availability</dt><dd>{stock === 0 ? <b className="pdp-oos">Out of stock</b> : 'In stock'}</dd></div>
+                  <div><dt>Availability</dt><dd>{product.affiliate_url ? `On ${product.affiliate_merchant || 'the partner site'}` : stock === 0 ? <b className="pdp-oos">Out of stock</b> : 'In stock'}</dd></div>
                 </dl>
                 {product.product_type !== 'digital' && <ReturnPolicyView id="pdp-returns" days={product.return_days ?? fees.return_window_days} policy={product.return_policy} warranty={product.product_details?.warranty} warrantyTerms={product.product_details?.warranty_terms} />}
                 <ProductDocuments documents={product.guides} />
@@ -2793,6 +2797,7 @@ export default function Storefront() {
                 <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}</p>
                 {(() => {
                   const days = product.return_days ?? fees.return_window_days
+                  if (product.affiliate_url) return <p className="pdp-sold-by"><span className="pcard-adtag pdp-adtag">Ad</span> Sold by {product.affiliate_merchant || 'a partner'} — buy it on their site</p>
                   return days != null && <p className="pdp-sold-by">{Number(days) === 0 ? 'Non-returnable item' : `Returns accepted within ${days} days of delivery`}</p>
                 })()}
                 {product.shop?.slug && product.shop.is_active && <p className="pdp-sold-by">Sold by <button type="button" onClick={() => openShop(product.shop.slug)}>{product.shop.name}</button></p>}
@@ -2813,7 +2818,9 @@ export default function Storefront() {
                 {(product.bullet_points ?? []).length > 0 && <ul className="pdp-bullets">{product.bullet_points.map((b) => <li key={b}>{b}</li>)}</ul>}
                 <p className="pm-desc">{product.description || 'No description available yet.'}</p>
                 {product.personalization?.enabled && <PersonalizationPicker settings={product.personalization} value={pzDraft[product.id] ?? {}} onChange={(v) => setPzDraft((d) => ({ ...d, [product.id]: v }))} signedIn={!!currentUser} onSignIn={() => { setAuthMode('login'); setAuthMessage('Sign in to upload your photo — then add it to your cart.') }} />}
-                {product.personalization?.enabled ? (
+                {product.affiliate_url ? (
+                  <a className="add-btn pm-add pdp-add pcard-ad-link" href={`${API_URL}/products/${product.id}/go`} target="_blank" rel="sponsored noopener noreferrer">VIEW ON {(product.affiliate_merchant || 'partner site').toUpperCase()} ↗</a>
+                ) : product.personalization?.enabled ? (
                   <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0 || !personalizationReady(product.personalization, pzDraft[product.id])} onClick={() => { add(product, variant, pzDraft[product.id]); setPzDraft((d) => ({ ...d, [product.id]: {} })); setCartOpen(true) }}>{stock === 0 ? 'OUT OF STOCK' : personalizationReady(product.personalization, pzDraft[product.id]) ? 'ADD TO CART' : 'UPLOAD YOUR PHOTO FIRST'}</button>
                 ) : qty === 0
                   ? <button className="add-btn pm-add pdp-add" type="button" disabled={stock === 0} onClick={() => add(product, variant)}>{stock === 0 ? 'OUT OF STOCK' : 'ADD TO CART'}</button>

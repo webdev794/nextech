@@ -34,6 +34,7 @@ class AdminProductController extends Controller
             'sort' => ['sometimes', Rule::in(['newest', 'oldest', 'name', 'stock_low', 'stock_high'])],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:1000'],
             'demo' => ['sometimes', Rule::in(['only', 'none'])],
+            'affiliate' => ['sometimes', Rule::in(['only', 'none'])],
         ]);
 
         $storeId = $validated['store_id'] ?? null;
@@ -59,6 +60,7 @@ class AdminProductController extends Controller
             ->when($validated['search'] ?? null, fn ($query, $search) => self::search($query, $search))
             ->when($validated['category_id'] ?? null, fn ($query, $id) => $query->where('products.category_id', $id))
             ->when($validated['demo'] ?? null, fn ($query, $demo) => $query->where('products.is_demo', $demo === 'only'))
+            ->when($validated['affiliate'] ?? null, fn ($query, $aff) => $aff === 'only' ? $query->whereNotNull('products.affiliate_url') : $query->whereNull('products.affiliate_url'))
             ->tap(fn ($query) => self::byStatus($query, $validated['status'] ?? null))
             ->when($sort === 'newest', fn ($query) => $query->orderByDesc('products.created_at')->orderByDesc('products.id'))
             ->when($sort === 'oldest', fn ($query) => $query->orderBy('products.created_at')->orderBy('products.id'))
@@ -90,6 +92,8 @@ class AdminProductController extends Controller
                 // Demo products: how many (in this market view) and whether they're hidden from the store.
                 'demo_count' => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))->where('is_demo', true)->count(),
                 'demos_hidden' => Product::demosHidden(),
+                'affiliates_hidden' => Product::affiliatesHidden(),
+                'affiliate_count' => Product::query()->when(Market::adminFilter($request), fn ($q, $m) => $q->inMarket($m))->whereNotNull('affiliate_url')->count(),
                 // For the quick filters: seller products not approved yet, and live ones still missing details.
                 'status_counts' => self::statusCounts($request),
             ],
@@ -144,6 +148,7 @@ class AdminProductController extends Controller
     public function setDemo(Request $request, Product $product): JsonResponse
     {
         $data = $request->validate(['is_demo' => ['required', 'boolean']]);
+        abort_if($data['is_demo'] && $product->affiliate_url, 422, 'This product is an ad — a product is either live, demo or an ad.');
         $product->forceFill(['is_demo' => $data['is_demo']])->save();
 
         return response()->json(['data' => ['id' => $product->id, 'is_demo' => $product->is_demo]]);
@@ -165,6 +170,8 @@ class AdminProductController extends Controller
             ->when($data['category_id'] ?? null, fn ($q, $id) => $q->where('category_id', $id))
             ->tap(fn ($q) => self::byStatus($q, $data['status'] ?? null))
             ->when($data['nextech_only'] ?? false, fn ($q) => $q->whereNull('shop_id'))
+            // Ads stay ads: a product is either live, demo or an ad.
+            ->when($data['is_demo'], fn ($q) => $q->whereNull('affiliate_url'))
             ->update(['is_demo' => $data['is_demo']]);
 
         return response()->json(['data' => ['updated' => $count]]);
@@ -179,6 +186,15 @@ class AdminProductController extends Controller
         return response()->json(['data' => ['demos_hidden' => Product::demosHidden()]]);
     }
 
+    /** Show or hide every affiliate product on the storefront at once. */
+    public function affiliateVisibility(Request $request): JsonResponse
+    {
+        $data = $request->validate(['hidden' => ['required', 'boolean']]);
+        Setting::put('hide_affiliate_products', $data['hidden']);
+
+        return response()->json(['data' => ['affiliates_hidden' => Product::affiliatesHidden()]]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
@@ -188,6 +204,10 @@ class AdminProductController extends Controller
         if ($data['market'] === null) {
             unset($data['market']);
         }
+        if (! empty($data['affiliate_url'])) {
+            $data['is_demo'] = false; // an ad is never a demo product
+        }
+        abort_if(! empty($data['affiliate_url']) && ! empty($data['shop_id']), 422, 'Affiliate products are '.\App\Support\Branding::name().'’s own — leave the shop empty.');
         $variants = $this->pullVariants($data);
         $storeStock = $this->pullStoreStock($data);
         $images = $this->pullImages($data);
@@ -222,6 +242,10 @@ class AdminProductController extends Controller
         if (array_key_exists('image_url', $data) && array_key_exists('images', $data)) {
             abort_if(empty($data['image_url']) && empty(array_filter((array) $data['images'])), 422, 'Add a product image — a product can’t go live without one.');
         }
+        if (array_key_exists('affiliate_url', $data) ? ! empty($data['affiliate_url']) : (bool) $product->affiliate_url) {
+            $data['is_demo'] = false; // an ad is never a demo product
+        }
+        abort_if(($data['affiliate_url'] ?? $product->affiliate_url) && ($data['shop_id'] ?? $product->shop_id), 422, 'Affiliate products are '.\App\Support\Branding::name().'’s own — a seller product can’t link to a partner.');
         // A seller product's country is always its shop's.
         if (($data['shop_id'] ?? $product->shop_id) !== null) {
             unset($data['market']);
@@ -394,6 +418,10 @@ class AdminProductController extends Controller
             'is_active' => ['sometimes', 'boolean'],
             'deal_type' => ['sometimes', 'nullable', Rule::in(['lightning', 'unbeatable'])],
             'is_exclusive_offer' => ['sometimes', 'boolean'],
+            // Product kind: live, demo, or ad — an ad links to a partner's page instead of being sold here (admin only).
+            'is_demo' => ['sometimes', 'boolean'],
+            'affiliate_url' => ['sometimes', 'nullable', 'url:http,https', 'max:1000'],
+            'affiliate_merchant' => ['sometimes', 'nullable', 'string', 'max:80'],
 
             // Per-store stock. A full replacement of this product's rows: one
             // entry per (store, option). `variant_index` null = the base product.

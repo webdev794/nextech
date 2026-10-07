@@ -268,7 +268,7 @@ const ISSUE_LABELS = {
 }
 const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
-const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false }
+const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], deal_type: '', is_exclusive_offer: false, kind: 'live', affiliate_url: '', affiliate_merchant: '' }
 
 // Build the per-store stock grid ({ [storeId]: { is_stocked, base, variants: { [variantIndex]: qty } } })
 // from a product's store_inventory rows.
@@ -809,7 +809,8 @@ export default function Admin({ token, onClose }) {
     if (productStore) qs.set('store_id', productStore)
     if (productCategory) qs.set('category_id', productCategory)
     if (productStatus !== 'all') qs.set('status', productStatus)
-    if (productDemo !== 'all') qs.set('demo', productDemo)
+    if (productDemo === 'ad') qs.set('affiliate', 'only')
+    else if (productDemo !== 'all') qs.set('demo', productDemo)
     track('products', fetch(`${API_URL}/admin/products?${qs}`, { headers: authHeaders() }).then(readJson)
       .then((data) => { setProducts(data.data ?? []); setProductsMeta(data.meta ?? null) }).catch(() => setMessage('Could not load products.')))
   }, [authHeaders, productSearch, productSort, productStore, productCategory, productStatus, productDemo, productsPage, pageSize, track])
@@ -841,6 +842,37 @@ export default function Admin({ token, onClose }) {
       const response = await fetch(`${API_URL}/admin/products/demo-visibility`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ hidden }) })
       if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not change demo products.')
       setMessage(hidden ? 'Demo products are now hidden from the store.' : 'Demo products are shown on the store again.')
+      loadProducts()
+    } catch (error) { fail(error) }
+  }
+
+  // Open a product in the edit form; `patch` overrides fields (e.g. kind: 'ad').
+  function openProductEdit(product, patch = {}) {
+    if (!stores.length) loadStores()
+    setProductForm({ ...{ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, kind: product.affiliate_url ? 'ad' : product.is_demo ? 'demo' : 'live', affiliate_url: product.affiliate_url ?? '', affiliate_merchant: product.affiliate_merchant ?? '', suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }, ...patch })
+    scrollFormIntoView('admin-product-form')
+  }
+
+  // The row's Live / Demo / Ad choice. Ad needs a partner link, so it opens the form.
+  async function setProductKind(product, kind) {
+    if (kind === 'ad') { openProductEdit(product, { kind: 'ad', affiliate_url: product.affiliate_url || '' }); setMessage('Add the partner (affiliate) link, then save to make it an ad.'); return }
+    if (product.affiliate_url) {
+      try {
+        const response = await fetch(`${API_URL}/admin/products/${product.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ affiliate_url: null, affiliate_merchant: null, is_demo: kind === 'demo' }) })
+        if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not change the product.')
+        setMessage(`${product.name} is now ${kind === 'demo' ? 'a demo product' : 'a live product'}.`)
+        loadProducts()
+      } catch (error) { fail(error) }
+      return
+    }
+    setProductDemoFlag(product, kind === 'demo')
+  }
+
+  async function setAffiliatesHidden(hidden) {
+    try {
+      const response = await fetch(`${API_URL}/admin/products/affiliate-visibility`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ hidden }) })
+      if (!response.ok) throw new Error((await readJson(response)).message ?? 'Could not change affiliate products.')
+      setMessage(hidden ? 'Affiliate products are now hidden from the store.' : 'Affiliate products are shown on the store again.')
       loadProducts()
     } catch (error) { fail(error) }
   }
@@ -1797,7 +1829,7 @@ export default function Admin({ token, onClose }) {
     const { id, price, compare_at: compareAt, variants, per_store_stock: perStore, store_stock: storeStockMap, ...rest } = productForm
     rest.sku = rest.sku?.trim() || null
     if (!rest.image_url?.trim() && !(rest.images ?? []).filter(Boolean).length) { setMessage('Add a product image — a product can’t go live without one.'); return }
-    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || workMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null }
+    const payload = { ...rest, market: rest.shop_id ? undefined : (rest.market || workMarket), category_id: Number(rest.category_id), shop_id: rest.shop_id ? Number(rest.shop_id) : null, inventory_quantity: Number(rest.inventory_quantity), price_cents: Math.round(Number(price) * 100), compare_at_price_cents: String(compareAt).trim() ? Math.round(Number(compareAt) * 100) : null, return_days: String(rest.return_days ?? '').trim() === '' ? null : Number(rest.return_days), image_url: rest.image_url?.trim() || null, images: (rest.images ?? []).filter(Boolean), video_url: rest.video_url?.trim() || null, is_demo: rest.kind === 'demo', affiliate_url: rest.kind === 'ad' ? (rest.affiliate_url?.trim() || null) : null, affiliate_merchant: rest.kind === 'ad' ? (rest.affiliate_merchant?.trim() || null) : null, kind: undefined }
 
     // Per-store stock: a full grid of (store, option) rows. Off = single stock,
     // sent as [] so the backend drops any rows. `rows` below (sent as
@@ -3063,8 +3095,10 @@ Reason:`, '')
                 <option value="all">All products</option>
                 <option value="only">Demo only</option>
                 <option value="none">Not demo</option>
+                <option value="ad">Ads only</option>
               </select>
             </label>
+
             <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ ...EMPTY_PRODUCT, category_id: categories[0]?.id ?? '' }); scrollFormIntoView('admin-product-form') }}>New product</button>
           </div>
           </>}
@@ -3113,6 +3147,20 @@ Reason:`, '')
                 </label>
                 <label className="admin-check"><input type="checkbox" checked={!!productForm.is_exclusive_offer} onChange={(event) => setProductForm({ ...productForm, is_exclusive_offer: event.target.checked })} /> Exclusive Offer</label>
               </div>
+              {!productForm.shop_id && <div className="admin-form-grid">
+                <label>Product kind
+                  <select value={productForm.kind ?? 'live'} onChange={(event) => setProductForm({ ...productForm, kind: event.target.value })}>
+                    <option value="live">Live product — sold here</option>
+                    <option value="demo">Demo product — sample listing (show / hide all demos at once)</option>
+                    <option value="ad">Ad — partner product with your affiliate link</option>
+                  </select>
+                </label>
+                {productForm.kind === 'ad' && <>
+                  <label>Partner (affiliate) link<input required type="url" maxLength="1000" placeholder="https://…" value={productForm.affiliate_url} onChange={(event) => setProductForm({ ...productForm, affiliate_url: event.target.value })} /></label>
+                  <label>Partner / shop name <small className="muted">e.g. Amazon</small><input maxLength="80" value={productForm.affiliate_merchant} onChange={(event) => setProductForm({ ...productForm, affiliate_merchant: event.target.value })} /></label>
+                  <p className="muted wz-wide">Shown with the other products in its category, marked &ldquo;Ad&rdquo; with a light border, with its image, name, price and description like any product. It can&rsquo;t be added to the cart: the &ldquo;View on partner&rdquo; button opens the partner link in a new tab (your store stays open). Clicks are counted in the product list. Show or hide all ads at once above the list.</p>
+                </>}
+              </div>}
               </section>
               <section className="admin-form-section"><h4>Images</h4>
               <label>Image<b className="admin-req" title="Required"> *</b> <span className="muted">(a product can&rsquo;t go live without a name, category, image and price)</span>
@@ -3244,15 +3292,21 @@ Reason:`, '')
               <button className="act ghost" type="button" onClick={() => markAllDemo(false)}>Mark all listed as not demo</button>
             </div>
           )}
+          {productsMeta && (productsMeta.affiliate_count > 0 || productsMeta.affiliates_hidden) && (
+            <div className={`admin-demo-bar${productsMeta.affiliates_hidden ? ' hidden' : ''}`}>
+              <span><b>Affiliate products:</b> {productsMeta.affiliate_count} · {productsMeta.affiliates_hidden ? 'hidden from the store' : 'shown on the store, marked “Ad”'}</span>
+              <button className="act" type="button" onClick={() => setAffiliatesHidden(!productsMeta.affiliates_hidden)}>{productsMeta.affiliates_hidden ? 'Show affiliate products' : 'Hide affiliate products'}</button>
+            </div>
+          )}
           {listBusy.products && products.length === 0 ? <Loading>Loading products…</Loading> : products.length === 0 ? <p className="admin-empty">No products{activeMarket !== 'ALL' ? ` in ${marketOptions.find((m) => m.code === activeMarket)?.name ?? activeMarket}` : ''}.{activeMarket !== 'ALL' && marketOptions.length > 1 && <> <button type="button" className="link" onClick={() => switchAdminMarket('ALL')}>Show all countries</button></>}</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th>Demo</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>SKU</th><th>Category</th><th>Shop</th><th>Status</th><th>Price</th><th>Stock</th><th>Variants</th><th>Active</th><th>Demo / Ad</th><th></th></tr></thead>
               <tbody>
                 {products.map((product) => {
                   const packs = (product.variants ?? []).filter((v) => v.is_active).length
                   return (
                   <tr key={product.id}>
-                    <td>{product.name}{countryBadge(product.market)}{product.product_type === 'digital' && <span className="pill pill-digital" title="Digital download">⬇ Digital</span>}{(product.followup_items ?? []).length > 0 && <span className="admin-note" title={product.followup_items.join(' ')}>⚠ seller to add {product.followup_items.length} detail{product.followup_items.length === 1 ? '' : 's'}</span>}{product.shop_id && ['pending', 'draft'].includes(product.status) && (product.followups?.later ?? []).length > 0 && <span className="admin-note" title={product.followups.later.join(' ')}>⚠ {product.followups.later.length} detail{product.followups.later.length === 1 ? '' : 's'} missing</span>}</td>
+                    <td>{product.name}{countryBadge(product.market)}{product.product_type === 'digital' && <span className="pill pill-digital" title="Digital download">⬇ Digital</span>}{product.affiliate_url && <span className="pill pill-pending" title={`Affiliate — ${product.affiliate_url}`}>↗ Affiliate · {product.affiliate_clicks ?? 0} click{product.affiliate_clicks === 1 ? '' : 's'}</span>}{(product.followup_items ?? []).length > 0 && <span className="admin-note" title={product.followup_items.join(' ')}>⚠ seller to add {product.followup_items.length} detail{product.followup_items.length === 1 ? '' : 's'}</span>}{product.shop_id && ['pending', 'draft'].includes(product.status) && (product.followups?.later ?? []).length > 0 && <span className="admin-note" title={product.followups.later.join(' ')}>⚠ {product.followups.later.length} detail{product.followups.later.length === 1 ? '' : 's'} missing</span>}</td>
                     <td>{product.sku}</td>
                     <td>{product.category?.name ?? '—'}</td>
                     <td>{product.shop?.name ?? <span className="muted">{brandName()}</span>}</td>
@@ -3262,13 +3316,14 @@ Reason:`, '')
                     <td>{packs || '—'}</td>
                     <td>{product.is_active ? 'Yes' : 'No'}{product.deletion_requested_at && <span className="pill pill-rejected" title={product.deletion_reason ? `Seller: ${product.deletion_reason}` : 'The seller no longer has this product'}>Removal requested</span>}{product.support_until && <span className="admin-note">Buyers covered until {new Date(product.support_until).toLocaleDateString()}</span>}</td>
                     <td>
-                      <select className={`admin-demo-select${product.is_demo ? ' on' : ''}`} value={product.is_demo ? 'demo' : 'real'} aria-label="Demo product" onChange={(event) => setProductDemoFlag(product, event.target.value === 'demo')}>
+                      <select className={`admin-demo-select${product.is_demo || product.affiliate_url ? ' on' : ''}`} value={product.affiliate_url ? 'ad' : product.is_demo ? 'demo' : 'real'} aria-label="Live, demo or ad" onChange={(event) => setProductKind(product, event.target.value)}>
                         <option value="real">Not demo</option>
                         <option value="demo">Demo</option>
+                        {!product.shop_id && <option value="ad">Ad</option>}
                       </select>
                     </td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { if (!stores.length) loadStores(); setProductForm({ id: product.id, category_id: product.category_id, shop_id: product.shop_id ?? '', market: product.market ?? '', name: product.name, sku: product.sku, price: (product.price_cents / 100).toFixed(2), compare_at: dollarsOrBlank(product.compare_at_price_cents), return_days: product.return_days ?? '', return_policy: product.return_policy ?? null, inventory_quantity: product.inventory_quantity, description: product.description ?? '', image_url: product.image_url ?? '', video_url: product.video_url ?? '', is_active: product.is_active, per_store_stock: (product.store_inventory ?? []).length > 0, store_stock: storeStockFrom(product), variants: variantRowsFrom(product), deal_type: product.deal_type ?? '', is_exclusive_offer: !!product.is_exclusive_offer, suggested_category_name: product.suggested_category_name ?? '', images: (product.images ?? []).map((i) => i.url) }); scrollFormIntoView('admin-product-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => openProductEdit(product)}>Edit</button>
                       {product.product_type === 'digital' && <button className="act ghost" type="button" onClick={() => setDigitalFilesOf(product)}>Files</button>}
                       {product.shop_id && <button className="act ghost" type="button" onClick={() => setListingReview(product)}>Review listing</button>}
                       {product.shop_id && ['pending', 'draft'].includes(product.status) && <>

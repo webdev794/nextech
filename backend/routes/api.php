@@ -99,6 +99,8 @@ Route::get('/reviewers/{user}/reviews', [ReviewController::class, 'forReviewer']
 Route::post('/shipping/quote', [ShippingQuoteController::class, 'quote']);
 
 Route::get('/pages', [PageController::class, 'index']);
+// Affiliate product click: counted, then redirected to the partner.
+Route::get('/products/{product}/go', [CatalogController::class, 'affiliateGo'])->whereNumber('product')->middleware('throttle:60,1');
 Route::get('/pages/{slug}', [PageController::class, 'show']);
 
 Route::post('/site-feedback', [SiteFeedbackController::class, 'store'])->middleware('throttle:6,1');
@@ -263,6 +265,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     // Demo products: mark them, and show / hide them all on the store.
     Route::post('/products/demo', [AdminProductController::class, 'bulkDemo']);
     Route::post('/products/demo-visibility', [AdminProductController::class, 'demoVisibility']);
+    Route::post('/products/affiliate-visibility', [AdminProductController::class, 'affiliateVisibility']);
     Route::patch('/products/{product}/demo', [AdminProductController::class, 'setDemo']);
     Route::post('/products', [AdminProductController::class, 'store']);
     Route::patch('/products/{product}', [AdminProductController::class, 'update']);

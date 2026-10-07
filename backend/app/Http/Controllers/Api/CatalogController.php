@@ -429,4 +429,13 @@ class CatalogController extends Controller
 
         return $product;
     }
+
+    /** Affiliate product: count the click, then on to the partner's page (the storefront opens it in a new tab). */
+    public function affiliateGo(Product $product): \Illuminate\Http\RedirectResponse
+    {
+        abort_unless($product->affiliate_url && $product->is_active, 404);
+        $product->increment('affiliate_clicks');
+
+        return redirect()->away($product->affiliate_url);
+    }
 }

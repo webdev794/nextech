@@ -47,6 +47,8 @@ class Product extends Model
         'deal_type',
         'is_exclusive_offer',
         'is_demo',
+        'affiliate_url',
+        'affiliate_merchant',
         'rating_avg',
         'rating_count',
         'units_sold',
@@ -72,6 +74,7 @@ class Product extends Model
             'is_active' => 'boolean',
             'is_exclusive_offer' => 'boolean',
             'is_demo' => 'boolean',
+            'affiliate_clicks' => 'integer',
             'rating_avg' => 'float',
             'rating_count' => 'integer',
             'units_sold' => 'integer',
@@ -120,14 +123,24 @@ class Product extends Model
         return (bool) Setting::get('hide_demo_products', false);
     }
 
+    /** Admin has hidden all affiliate products from the store (Products → "Affiliate products"). */
+    public static function affiliatesHidden(): bool
+    {
+        return (bool) Setting::get('hide_affiliate_products', false);
+    }
+
     /**
-     * Not shown or sold to shoppers: a demo product while demos are hidden, or
+     * Not shown or sold to shoppers: a demo product while demos are hidden, an
+     * affiliate product while those are hidden, or
      * a seller's product while their shop isn't live (seller suspended or
      * removed, shop switched off).
      */
     public function hiddenFromShoppers(): bool
     {
         if ($this->is_demo && self::demosHidden()) {
+            return true;
+        }
+        if ($this->affiliate_url && self::affiliatesHidden()) {
             return true;
         }
         if ($this->shop_id === null) {
@@ -143,6 +156,7 @@ class Product extends Model
     {
         return $query
             ->when(self::demosHidden(), fn ($q) => $q->where($q->qualifyColumn('is_demo'), false))
+            ->when(self::affiliatesHidden(), fn ($q) => $q->whereNull($q->qualifyColumn('affiliate_url')))
             ->where(fn ($q) => $q->whereNull($q->qualifyColumn('shop_id'))
                 ->orWhereHas('shop', fn ($shop) => $shop->where('is_active', true)->whereHas('seller', fn ($seller) => $seller->where('status', 'approved'))));
     }

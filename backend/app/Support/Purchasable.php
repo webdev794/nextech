@@ -21,7 +21,8 @@ class Purchasable
     public static function resolve(Product $product, ?ProductVariant $variant, ?int $storeId = null): array
     {
         $categoryActive = (bool) $product->category?->is_active;
-        $baseActive = $product->is_active && $categoryActive && ($variant ? $variant->is_active : true) && ! $product->hiddenFromShoppers();
+        // Affiliate products are bought on the partner's site, never here.
+        $baseActive = $product->is_active && $categoryActive && ($variant ? $variant->is_active : true) && ! $product->hiddenFromShoppers() && ! $product->affiliate_url;
         // A seller product with variations (size, colour…) is bought as one of
         // them — never as the bare product, whose own stock count isn't used.
         if (! $variant && $product->shop_id && ! empty($product->variation_theme) && $product->variants()->where('is_active', true)->exists()) {
