@@ -76,6 +76,8 @@ class DigitalProducts
             'download_limit' => max(0, (int) ($s['download_limit'] ?? self::DEFAULT_DOWNLOAD_LIMIT)), // 0 = unlimited
             'instructions' => trim((string) ($s['instructions'] ?? '')) ?: null,
             'license_keys' => (bool) ($s['license_keys'] ?? false),
+            // A limited number of copies (e.g. a limited edition): stock is the copies left.
+            'limit_copies' => (bool) ($s['limit_copies'] ?? false),
         ];
     }
 
@@ -87,6 +89,7 @@ class DigitalProducts
             'digital_settings.download_limit' => ['sometimes', 'integer', 'min:0', 'max:100'],
             'digital_settings.instructions' => ['sometimes', 'nullable', 'string', 'max:2000'],
             'digital_settings.license_keys' => ['sometimes', 'boolean'],
+            'digital_settings.limit_copies' => ['sometimes', 'boolean'],
         ];
     }
 
@@ -99,7 +102,15 @@ class DigitalProducts
         if (! $product->isDigital()) {
             return;
         }
-        $stock = self::settings($product)['license_keys']
+        $settings = self::settings($product);
+        if ($settings['limit_copies'] && ! $settings['license_keys']) {
+            // Copies left, as the seller set it (sales count it down).
+            $current = (int) $product->inventory_quantity;
+            $product->forceFill(['inventory_quantity' => $current >= self::UNLIMITED ? 0 : max(0, $current)])->saveQuietly();
+
+            return;
+        }
+        $stock = $settings['license_keys']
             ? $product->licenseKeys()->whereNull('order_item_id')->count()
             : self::UNLIMITED;
         $product->forceFill(['inventory_quantity' => $stock])->saveQuietly();

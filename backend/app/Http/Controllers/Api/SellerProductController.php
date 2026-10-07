@@ -179,7 +179,8 @@ class SellerProductController extends Controller
     {
         $shop = $this->shop($request);
         abort_unless($product->shop_id === $shop->id, 403);
-        abort_if($product->isDigital(), 422, 'Digital downloads have no stock to count.');
+        abort_if($product->isDigital() && ! \App\Support\DigitalProducts::settings($product)['limit_copies'], 422, 'This download sells unlimited copies — turn on "Limit how many copies can be sold" to set a quantity.');
+        abort_if($product->isDigital() && \App\Support\DigitalProducts::settings($product)['license_keys'], 422, 'Stock is the number of unused license keys — add keys to sell more.');
         $data = $request->validate([
             'inventory_quantity' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
             'variants' => ['sometimes', 'array'],

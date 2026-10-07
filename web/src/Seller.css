@@ -545,3 +545,4 @@ s.sc-muted{display:inline}
 .ledger-tag{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
 .ledger-tag.positive{background:#e4f3e4;color:#2f7d43}.ledger-tag.negative{background:#f6e3e0;color:#a23b28}
 .ledger-tag.held{background:#fff8e1;color:#8a5a00}.ledger-tag.settled{background:#eef0ec;color:#6b7368}.ledger-tag.paid{background:#d6eadb;color:#14532d}
+.wz-stock-note{display:flex;flex-direction:column;gap:8px;margin:12px 0;padding:12px 14px;border:1px solid #f6d6b0;border-radius:10px;background:#fff8ef;font-size:14px}

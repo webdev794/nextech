@@ -81,7 +81,7 @@ function formFrom(product, config) {
     id: p.id ?? null,
     status: p.status ?? null,
     product_type: p.product_type ?? 'physical',
-    digital_settings: { download_limit: 5, instructions: '', license_keys: false, ...(p.digital_settings ?? {}) },
+    digital_settings: { download_limit: 5, instructions: '', license_keys: false, limit_copies: false, ...(p.digital_settings ?? {}) },
     name: p.name ?? '',
     category_id: p.category_id ? String(p.category_id) : '',
     suggested_category_name: p.suggested_category_name ?? '',
@@ -269,7 +269,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
     return {
       submit,
       product_type: form.product_type,
-      digital_settings: digital ? { download_limit: Number(form.digital_settings.download_limit) || 0, instructions: form.digital_settings.instructions?.trim() || null, license_keys: !!form.digital_settings.license_keys } : null,
+      digital_settings: digital ? { download_limit: Number(form.digital_settings.download_limit) || 0, instructions: form.digital_settings.instructions?.trim() || null, license_keys: !!form.digital_settings.license_keys, limit_copies: !form.digital_settings.license_keys && !!form.digital_settings.limit_copies } : null,
       name: form.name.trim(),
       category_id: form.category_id ? Number(form.category_id) : null,
       suggested_category_name: form.suggested_category_name.trim() || null,
@@ -474,7 +474,16 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           <p className="sc-muted">Variations are versions of the same product (e.g. black or blue, 128 GB or 256 GB). Each SKU — the smallest selling unit — gets its own stock, price and image.</p>
           {form.product_type === 'digital' ? (
             <>
-              <p className="sc-muted">Digital downloads have one price and no stock to count — every buyer gets a copy (or one per license key if you sell keys).</p>
+              <div className="wz-stock-note">
+                <b>Quantity:</b>{' '}
+                {form.digital_settings.license_keys
+                  ? <>one copy per license key — your stock is the number of unused keys you add in step 04 Fulfillment.</>
+                  : form.digital_settings.limit_copies
+                    ? <>limited copies — set how many are left below.</>
+                    : <>unlimited — every buyer gets a copy, so there&rsquo;s no stock to count.</>}
+                {!form.digital_settings.license_keys && <label className="sc-check"><input type="checkbox" checked={!!form.digital_settings.limit_copies} onChange={(e) => set({ digital_settings: { ...form.digital_settings, limit_copies: e.target.checked }, ...(e.target.checked && Number(form.stock) >= 999999 ? { stock: '' } : {}) })} /> Limit how many copies can be sold (e.g. a limited edition)</label>}
+                {!form.digital_settings.license_keys && form.digital_settings.limit_copies && <label><b>Copies left to sell</b><input type="number" min="0" value={Number(form.stock) >= 999999 ? '' : form.stock} onChange={(e) => set({ stock: e.target.value })} /></label>}
+              </div>
               <div className="wz-grid">
                 <label>{inclusive ? `Price (${sym}, incl. GST)` : `Price (${sym})`}<b className="wz-req" title="Required"> *</b><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set({ price: e.target.value })} />{err('price_cents')}</label>
                 <label>{inclusive ? `MRP (${sym})` : `Regular price (${sym}, optional)`}<input type="number" min="0" step="0.01" value={form.compare_at} onChange={(e) => set({ compare_at: e.target.value })} /></label>
@@ -486,7 +495,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             <div className="wz-grid">
               <label>{inclusive ? `Base price (${sym}, incl. GST)` : `Base price (${sym})`}<b className="wz-req" title="Required"> *</b><input type="number" min="0" step="0.01" value={form.price} onChange={(e) => set({ price: e.target.value })} />{err('price_cents')}</label>
               <label>{inclusive ? `MRP (${sym})` : `Regular price (${sym}, optional)`}<input type="number" min="0" step="0.01" value={form.compare_at} onChange={(e) => set({ compare_at: e.target.value })} /></label>
-              <label>Quantity in stock<input type="number" min="0" value={form.stock} onChange={(e) => set({ stock: e.target.value })} /></label>
+              <label><b>Quantity in stock</b><input type="number" min="0" value={form.stock} onChange={(e) => set({ stock: e.target.value })} /></label>
             </div>
           ) : (
             <>
@@ -521,7 +530,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
               {liveVariants.length > 0 && (
                 <div className="sc-table-wrap">
                   <table className="sc-table wz-skus">
-                    <thead><tr><th>SKU</th><th>Image</th><th>Stock</th><th>Base price ({sym})</th><th>{inclusive ? 'MRP' : 'Regular'} ({sym})</th><th>Weight (g)</th><th>L × W × H (mm)</th><th>Your SKU code</th></tr></thead>
+                    <thead><tr><th>SKU</th><th>Image</th><th><b>Stock (quantity)</b></th><th>Base price ({sym})</th><th>{inclusive ? 'MRP' : 'Regular'} ({sym})</th><th>Weight (g)</th><th>L × W × H (mm)</th><th>Your SKU code</th></tr></thead>
                     <tbody>
                       {liveVariants.map((v, i) => {
                         const setV = (patch) => setForm((f) => ({ ...f, variants: f.variants.map((x, j) => (j === i ? { ...x, ...patch } : x)) }))
