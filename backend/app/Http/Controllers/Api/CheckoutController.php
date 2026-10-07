@@ -484,12 +484,14 @@ class CheckoutController extends Controller
         // Deliverable when the point sits inside *any* active store's radius —
         // the nearest such store serves the order (and its per-product
         // availability applies). Stores can be in different cities.
-        $serving = Geo::servingStore($stores, (float) $lat, (float) $lng);
+        // Admin can turn own-rider delivery off: then even nearby orders go by courier.
+        $courierOnly = \App\Models\Setting::get('nextech_own_delivery', 'on') === 'off';
+        $serving = $courierOnly ? null : Geo::servingStore($stores, (float) $lat, (float) $lng);
 
         // Outside every store's radius: hand off to the online courier instead
         // of hard-rejecting, when it can reach the address (the mock provider
         // always can — a real integration is where "not serviceable" bites).
-        if ($serving === null && Courier::isServiceable($address)) {
+        if ($serving === null && ($courierOnly || Courier::isServiceable($address))) {
             $basis = Geo::nearestStore($stores, (float) $lat, (float) $lng);
 
             return [

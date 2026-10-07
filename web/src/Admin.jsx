@@ -4491,11 +4491,18 @@ Reason:`, '')
                 <h3 className="admin-group-title">{brandName()} delivery — own stores &amp; riders</h3>
                 <div className="admin-form">
                   {(settings.own_stores_count ?? 0) > 0 ? <>
-                    <label className="admin-check">
+                    <label>How {brandName()}&rsquo;s own stock is delivered
+                      <select value={settings.nextech_own_delivery ?? 'on'} onChange={(event) => saveSetting({ nextech_own_delivery: event.target.value })}>
+                        <option value="on" disabled={settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0)}>Own riders within each store&rsquo;s delivery radius, courier beyond it{settings.nextech_own_delivery === 'off' && !(settings.riders_count > 0) ? ' (add riders first)' : ''}</option>
+                        <option value="off">Courier for every order, even nearby</option>
+                      </select>
+                    </label>
+                    <p className="muted">Each store&rsquo;s radius is set under Stores. Outside every radius, orders go by courier (the courier connection, or one you book by hand and enter on the order).</p>
+                    {settings.nextech_own_delivery !== 'off' && <><label className="admin-check">
                       <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
                       Auto-assign riders to orders
                     </label>
-                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p>
+                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p></>}
                   </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). It&rsquo;s only for delivering {brandName()}&rsquo;s own stock — sellers ship their own orders.</p>}
                 </div>
               </section>

@@ -226,6 +226,8 @@ class AdminSettingController extends Controller
                 'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
                 // Sellers' own local delivery, and how hard sellers are chased for order updates.
                 'seller_local_delivery' => ['sometimes', Rule::in(['available', 'hidden'])],
+                // NexTech stock: own riders within each store's radius (courier beyond), or courier for everything.
+                'nextech_own_delivery' => ['sometimes', Rule::in(['on', 'off'])],
                 'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:100'],
                 'seller_update_rules' => ['sometimes', 'array'],
                 'seller_update_rules.pack_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
@@ -348,6 +350,13 @@ class AdminSettingController extends Controller
 
         if (array_key_exists('nextech_pickup', $validated)) {
             Setting::put('nextech_pickup', $validated['nextech_pickup']);
+        }
+        if (($validated['nextech_own_delivery'] ?? null) === 'on' && Setting::get('nextech_own_delivery', 'on') === 'off'
+            && ! (\App\Models\Store::query()->where('is_active', true)->exists() && \App\Models\User::query()->where('is_rider', true)->exists())) {
+            abort(422, 'Add an active store and at least one rider first (Stores, Riders).');
+        }
+        if (array_key_exists('nextech_own_delivery', $validated)) {
+            Setting::put('nextech_own_delivery', $validated['nextech_own_delivery']);
         }
         if (array_key_exists('seller_local_delivery', $validated)) {
             Setting::put('seller_local_delivery', $validated['seller_local_delivery']);
@@ -561,6 +570,7 @@ class AdminSettingController extends Controller
             'riders_count' => \App\Models\User::query()->where('is_rider', true)->count(),
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'seller_local_delivery' => SellerShipping::localDeliveryOffered() ? 'available' : 'hidden',
+            'nextech_own_delivery' => Setting::get('nextech_own_delivery', 'on') === 'off' ? 'off' : 'on',
             'seller_local_max_km' => SellerShipping::localMaxKm(),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
             // Couriers per country, for entering a hand-booked courier on NexTech orders.
