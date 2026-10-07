@@ -39,12 +39,25 @@ class SellerPayouts
                 // Offered to sellers in this country (admin switch; on unless turned off).
                 'enabled' => (bool) ($saved[$m]['enabled'] ?? true),
                 'fixed_cents' => $fixed,
+                // Smallest payout by this method, in the country's currency (0 = the country's minimum).
+                'min_cents' => max(0, (int) ($saved[$m]['min_cents'] ?? 0)),
                 'bps' => max(0, min(5000, (int) ($saved[$m]['bps'] ?? 0))),
                 'currency' => $currency,
                 'currencies' => $allowed,
                 'local_fixed_cents' => $currency === $local ? $fixed : self::convert($fixed, $currency, $local),
             ]];
         })->all();
+    }
+
+    /**
+     * The minimum payout for a seller: the country's minimum, or the method's
+     * own minimum when higher (e.g. PayPal or a bank needs a larger amount).
+     */
+    public static function minFor(?string $market, ?string $method): int
+    {
+        $country = SellerLedger::minPayoutCents($market);
+
+        return max($country, $method ? (int) (self::fees($market)[$method]['min_cents'] ?? 0) : 0);
     }
 
     /** The fee taken from a payout of $amountCents (country currency) by $method — never more than the payout. */

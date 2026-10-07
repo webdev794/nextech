@@ -995,7 +995,7 @@ export default function Seller({ token, onSignOut }) {
                     <button type="button" className="sc-action" onClick={() => { go('products'); setProductTab('pending') }}><span>Pending review</span><strong>{pendingCount}</strong></button>
                     <button type="button" className={orderSummary?.active ? 'sc-action hot' : 'sc-action'} onClick={() => go('orders')}><span>Orders in progress</span><strong>{orderSummary?.active ?? 0}</strong></button>
                     <button type="button" className={unreadThreads ? 'sc-action hot' : 'sc-action'} onClick={() => go('messages')}><span>Unread messages</span><strong>{unreadThreads}</strong></button>
-                    <button type="button" className={payoutReady ? 'sc-action hot' : 'sc-action'} onClick={() => go('finances')}><span>Available to pay out</span><strong>{money(balance)}</strong></button>
+                    <button type="button" className={payoutReady ? 'sc-action hot' : 'sc-action'} onClick={() => go('finances')}><span>Available to pay out</span><strong>{money(balance >= (me.min_payout_cents ?? 0) ? balance : 0)}</strong>{balance > 0 && balance < (me.min_payout_cents ?? 0) && <small className="sc-muted">{money(balance)} cleared · minimum {money(me.min_payout_cents)}</small>}</button>
                   </div>
                 </div>
                 {shopUrl && (
@@ -1132,7 +1132,8 @@ export default function Seller({ token, onSignOut }) {
                   <div className="seller-earnings">
 
                     <div className="seller-stat-tiles">
-                      <div className="tile-available"><span>Available to pay out</span><strong>{money(Math.max(0, me.available_cents ?? 0))}</strong></div>
+                      {/* Payable only once the cleared amount reaches the minimum payout. */}
+                      <div className="tile-available"><span>Available to pay out</span><strong>{money(Math.max(0, me.available_cents ?? 0) >= (me.min_payout_cents ?? 0) ? Math.max(0, me.available_cents ?? 0) : 0)}</strong>{(me.available_cents ?? 0) > 0 && (me.available_cents ?? 0) < (me.min_payout_cents ?? 0) && <small>{money(me.available_cents)} cleared — payable once it reaches {money(me.min_payout_cents)}</small>}</div>
                       <div className="tile-held"><span title="Held until delivery plus the return window — for orders shipped abroad, until the product’s warranty ends if that’s later">Held for returns / warranty</span><strong>{money(me.pending_cents ?? 0)}</strong></div>
                       <div><span>Total balance</span><strong>{money(me.balance_cents ?? 0)}</strong></div>
                     </div>
@@ -1147,7 +1148,7 @@ export default function Seller({ token, onSignOut }) {
                         ))}
                       </ul>
                     )}
-                    <p className="seller-earnings-note">Payouts are sent by {brandName()} to your verified bank account; this reflects what you&rsquo;re owed. Payouts are batched — your balance needs to reach {money(me.min_payout_cents ?? 0)} before one can be sent.{(me.balance_cents ?? 0) < (me.min_payout_cents ?? 0) && me.balance_cents > 0 ? ` You're ${money((me.min_payout_cents ?? 0) - me.balance_cents)} away.` : ''}</p>
+                    <p className="seller-earnings-note">Payouts are sent by {brandName()} to your payout method; this reflects what you&rsquo;re owed. Payouts are batched — the amount available to pay out (past the return window) needs to reach {money(me.min_payout_cents ?? 0)}{me.payout_method ? ` for ${me.payout_method === 'paypal' ? 'PayPal' : 'bank transfer'}` : ''} before one can be sent.{(me.available_cents ?? 0) > 0 && (me.available_cents ?? 0) < (me.min_payout_cents ?? 0) ? ` You're ${money((me.min_payout_cents ?? 0) - me.available_cents)} away.` : ''}</p>
                     {(() => {
                       const req = me.last_payout_request
                       const balance = Math.max(0, me.available_cents ?? 0)
@@ -1870,7 +1871,7 @@ function PayoutMethod({ me, headers, onSaved }) {
   const allowed = me.payout_fees?.[method]?.currencies ?? [me.currency ?? 'usd']
   const chosen = allowed.includes(currency) ? currency : allowed[0]
   const foreign = chosen !== (me.currency ?? chosen)
-  const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee' }
+  const feeText = (m) => { const f = me.payout_fees?.[m]; return (f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee') + (f?.min_cents > 0 ? ` · minimum payout ${formatMoney(f.min_cents, me.currency)}` : '') }
   async function save(event) {
     event.preventDefault()
     setMsg('')

@@ -249,6 +249,7 @@ class AdminSettingController extends Controller
                 'payout_fees' => ['sometimes', 'array'],
                 'payout_fees.*.*.fixed_cents' => ['nullable', 'integer', 'min:0', 'max:100000000'],
                 'payout_fees.*.*.bps' => ['nullable', 'integer', 'min:0', 'max:5000'],
+                'payout_fees.*.*.min_cents' => ['nullable', 'integer', 'min:0', 'max:100000000'],
                 'payout_fees.*.*.currency' => ['nullable', 'string', 'size:3'],
                 'payout_fees.*.*.currencies' => ['nullable', 'array'],
                 'payout_fees.*.*.enabled' => ['nullable', 'boolean'],
@@ -376,7 +377,7 @@ class AdminSettingController extends Controller
                 $byMethod = array_intersect_key((array) $byMethod, array_flip(\App\Support\SellerPayouts::METHODS));
                 abort_if($byMethod && ! collect($byMethod)->contains(fn ($f) => (bool) ($f['enabled'] ?? true)), 422, 'Keep at least one payout method on for '.strtoupper($code).'.');
                 foreach ($byMethod as $method => $f) {
-                    $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0), 'currency' => strtolower((string) ($f['currency'] ?? Market::currency($code))), 'currencies' => array_values(array_map('strtolower', (array) ($f['currencies'] ?? []))), 'enabled' => (bool) ($f['enabled'] ?? true)];
+                    $fees[strtoupper($code)][$method] = ['fixed_cents' => (int) ($f['fixed_cents'] ?? 0), 'min_cents' => (int) ($f['min_cents'] ?? 0), 'bps' => (int) ($f['bps'] ?? 0), 'currency' => strtolower((string) ($f['currency'] ?? Market::currency($code))), 'currencies' => array_values(array_map('strtolower', (array) ($f['currencies'] ?? []))), 'enabled' => (bool) ($f['enabled'] ?? true)];
                 }
             }
             Setting::put('payout_fees', $fees);

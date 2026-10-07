@@ -172,7 +172,7 @@ class SellerController extends Controller
             // fully paid out (balance back to 0) still needs their method on
             // file, so this checks ledger history, not the current balance.
             $seller->has_sales = $seller->shop->ledgerEntries()->exists();
-            $seller->min_payout_cents = SellerLedger::minPayoutCents($seller->shop->market);
+            $seller->min_payout_cents = SellerPayouts::minFor($seller->shop->market, $seller->payout_method);
             $seller->max_payout_cents = SellerLedger::maxPayoutCents($seller->shop->market);
             // Daily cap on all payouts sent (a big balance may be paid over several days) and the bank-rules note.
             $seller->daily_payout_cap_cents = SellerLedger::dailyPayoutCapCents($seller->shop->market);
@@ -257,7 +257,7 @@ class SellerController extends Controller
             $shop = Shop::whereKey($seller->shop->id)->lockForUpdate()->first();
             abort_if($shop->payoutRequests()->where('status', 'pending')->exists(), 422, 'You already have a payout request waiting.');
 
-            $min = SellerLedger::minPayoutCents($shop->market);
+            $min = SellerPayouts::minFor($shop->market, $seller->payout_method);
             abort_if(SellerLedger::availableCents($shop) < $min, 422, 'Your available balance (past the return window) needs to reach '.Money::format($min, Market::currency($shop->market)).' first.');
 
             $requestable = SellerLedger::requestableCents($shop);

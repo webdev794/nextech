@@ -155,7 +155,7 @@ class AdminSellerController extends Controller
             ], 422);
         }
 
-        $minPayout = SellerLedger::minPayoutCents($shop->market);
+        $minPayout = \App\Support\SellerPayouts::minFor($shop->market, $seller->payout_method);
         if ($balance < $minPayout) {
             return response()->json([
                 'message' => 'Balance must reach '.Money::format($minPayout, $cur).' before a payout can be recorded (currently '.Money::format($balance, $cur).').',
@@ -546,7 +546,7 @@ class AdminSellerController extends Controller
             $row['ledger_entries'] = $shop
                 ? $shop->ledgerEntries()->latest()->limit(20)->get(['id', 'shop_id', 'order_id', 'type', 'amount_cents', 'commission_cents', 'note', 'created_at'])
                 : [];
-            $row['min_payout_cents'] = SellerLedger::minPayoutCents($shop?->market);
+            $row['min_payout_cents'] = \App\Support\SellerPayouts::minFor($shop?->market, $seller->payout_method);
             $row['max_payout_cents'] = SellerLedger::maxPayoutCents($shop?->market);
             $row['daily_payout_remaining_cents'] = SellerLedger::dailyPayoutRemainingCents($shop?->market);
             $row['currency'] = Market::currency($shop?->market);
