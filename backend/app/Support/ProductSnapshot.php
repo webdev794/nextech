@@ -13,7 +13,7 @@ use App\Models\ProductVariant;
 class ProductSnapshot
 {
     /** Listing fields fixed once the product has sold. */
-    public const LOCKED = ['name', 'category_id', 'product_type', 'trademark_id'];
+    public const LOCKED = ['name', 'category_id', 'product_type', 'trademark_id', 'condition'];
 
     /** Product details fixed once sold (the model number identifies the product). */
     public const LOCKED_DETAILS = ['model_number'];
@@ -30,6 +30,8 @@ class ProductSnapshot
             'category' => $product->category?->path(),
             'seller' => $product->shop?->name,
             'description' => $product->description,
+            // Sold as refurbished / second-hand (null = new).
+            'condition' => $product->condition,
             'bullet_points' => $product->bullet_points,
             'product_details' => $details ?: null,
             'warranty' => $details['warranty'] ?? null,
@@ -63,7 +65,7 @@ class ProductSnapshot
         if ($changed->isEmpty()) {
             return null;
         }
-        $labels = ['name' => 'name', 'category_id' => 'category', 'product_type' => 'product type', 'trademark_id' => 'brand', 'model_number' => 'model number'];
+        $labels = ['condition' => 'new / refurbished condition', 'name' => 'name', 'category_id' => 'category', 'product_type' => 'product type', 'trademark_id' => 'brand', 'model_number' => 'model number'];
 
         return 'This product has been sold, so its '.$changed->map(fn ($k) => $labels[$k] ?? $k)->unique()->implode(', ').' can’t change — buyers’ orders and warranties refer to it. To sell a different product, add it as a new listing.';
     }

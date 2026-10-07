@@ -2407,6 +2407,7 @@ export default function Storefront() {
         </>}{product.description && <span className="pcard-desc-tip">{product.description}</span>}</button>
       <p className="pcard-cat">{product.category?.name ?? 'Uncategorized'}{product.ships_from && <span className="pcard-intl"> · ✈ from {product.ships_from_name}</span>}{product.product_type === 'digital' && <span className="pcard-intl"> · ⬇ Digital</span>}</p>
       <h3>{variantTitle(product.name, variant?.label)}</h3>
+      {product.condition === 'refurbished' && <span className="pcard-refurb" title="Second-hand / refurbished item">Refurbished</span>}
       {hasVariants && <select className="pcard-variant" aria-label={`${product.name} option`} value={String(chosen?.id ?? '')} onChange={(event) => setPickedVariant((current) => ({ ...current, [product.id]: event.target.value }))}>{options.map((o) => <option key={o.id === '' ? 'base' : o.id} value={String(o.id)}>{o.label} — {price(o.price_cents)}</option>)}</select>}
       <div className="pcard-foot"><span className="pcard-price">{onSale ? <><strong className="on-sale">{price(unitPrice)}</strong><span className="pcard-compare-at">Compare at: <s>{price(compareAt)}</s> <i className="pcard-info" title={`The higher of the manufacturer's list price or a recent selling price on ${brandName()}.`}>?</i></span></> : <strong>{price(unitPrice)}</strong>}</span>{ad
         ? <a className="add-btn pcard-ad-link" href={`${API_URL}/products/${product.id}/go`} target="_blank" rel="sponsored noopener noreferrer" title={`View on ${product.affiliate_merchant || 'the partner site'} (opens in a new tab)`}>View ↗</a>
@@ -2802,6 +2803,7 @@ export default function Storefront() {
                 })()}
                 {product.shop?.slug && product.shop.is_active && <p className="pdp-sold-by">Sold by <button type="button" onClick={() => openShop(product.shop.slug)}>{product.shop.name}</button></p>}
                 <h1 id="pdp-title">{variantTitle(product.name, variant?.label)}</h1>
+                {product.condition === 'refurbished' && <p className="pdp-refurb"><span className="pcard-refurb">Refurbished</span> Second-hand item, checked and restored — see the description for its condition.</p>}
                 {(product.units_sold > 0 || product.rating_count > 0) && <p className="pcard-rating pdp-rating">
                   {product.units_sold > 0 && <span className="pcard-sold">{product.units_sold} sold</span>}
                   {product.units_sold > 0 && product.rating_count > 0 && <span className="pcard-rating-sep">|</span>}

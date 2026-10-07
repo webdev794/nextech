@@ -49,6 +49,7 @@ class Product extends Model
         'is_demo',
         'affiliate_url',
         'affiliate_merchant',
+        'condition',
         'rating_avg',
         'rating_count',
         'units_sold',

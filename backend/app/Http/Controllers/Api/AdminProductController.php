@@ -420,6 +420,7 @@ class AdminProductController extends Controller
             'is_exclusive_offer' => ['sometimes', 'boolean'],
             // Product kind: live, demo, or ad — an ad links to a partner's page instead of being sold here (admin only).
             'is_demo' => ['sometimes', 'boolean'],
+            'condition' => ['sometimes', 'nullable', Rule::in(['refurbished'])], // "Refurbished" tag; blank = new
             'affiliate_url' => ['sometimes', 'nullable', 'url:http,https', 'max:1000'],
             'affiliate_merchant' => ['sometimes', 'nullable', 'string', 'max:80'],
 

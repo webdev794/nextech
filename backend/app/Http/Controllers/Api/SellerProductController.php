@@ -453,6 +453,8 @@ class SellerProductController extends Controller
             // Which of the shop's shipping templates this ships under (null = the default).
             'shipping_template_id' => ['sometimes', 'nullable', 'integer', Rule::exists('shipping_templates', 'id')->where('shop_id', $shop->id)],
             'handling_days' => ['sometimes', 'nullable', 'integer', Rule::in((array) config('product_catalog.handling_days'))],
+            // Optional: a second-hand / refurbished item, tagged "Refurbished" for shoppers (blank = new).
+            'condition' => ['sometimes', 'nullable', Rule::in(['refurbished'])],
             'inventory_quantity' => ['sometimes', 'integer', 'min:0'],
             'image_url' => ['sometimes', 'nullable', 'string', 'max:500'],
             'video_url' => ['sometimes', 'nullable', 'string', 'max:500'],

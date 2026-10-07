@@ -584,3 +584,6 @@ a.psec-feature.is-link img{width:100%;height:150px;object-fit:cover;border-radiu
 .pcard-adtag{position:absolute;top:8px;left:8px;z-index:2;padding:2px 7px;border:1px solid #c9ced3;border-radius:6px;background:rgba(255,255,255,.92);color:#5c6357;font-size:12px;font-weight:600;letter-spacing:.3px}
 .pdp-adtag{position:static;display:inline-block;margin-right:6px}
 .pcard-ad-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px;white-space:nowrap}
+.pcard-refurb{display:inline-block;align-self:flex-start;margin:2px 0 4px;padding:1px 7px;border:1px solid #9fc5a8;border-radius:6px;background:#eef7f0;color:#1e6b34;font-size:12px;font-weight:600}
+.pdp-refurb{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px;color:#5c6357}
+.pdp-refurb .pcard-refurb{margin:0}

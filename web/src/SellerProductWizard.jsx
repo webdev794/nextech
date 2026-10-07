@@ -115,6 +115,7 @@ function formFrom(product, config) {
     return_days: p.return_days ?? '',
     return_policy: p.return_policy ?? null,
     country_of_origin: p.country_of_origin ?? '',
+    condition: p.condition ?? '',
     hsn_code: p.hsn_code ?? '',
     gst_rate_bps: p.gst_rate_bps ?? '',
     manufacturer_info: p.manufacturer_info ?? '',
@@ -299,6 +300,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
       return_days: String(form.return_days).trim() === '' ? null : Number(form.return_days),
       return_policy: form.return_policy,
       country_of_origin: form.country_of_origin || null,
+      condition: form.condition || null,
       compliance: { documents: form.documents },
       personalization: form.personalization.enabled ? { enabled: true, required: !!form.personalization.required, max_photos: Number(form.personalization.max_photos) || 1, instructions: form.personalization.instructions?.trim() || null, note_label: form.personalization.note_label?.trim() || null } : null,
       ...(inclusive ? { hsn_code: form.hsn_code || null, gst_rate_bps: form.gst_rate_bps === '' ? null : Number(form.gst_rate_bps), manufacturer_info: form.manufacturer_info || null } : {}),
@@ -376,6 +378,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
             ))}
           </div>
           <label>Product name<b className="wz-req" title="Required"> *</b><input value={form.name} disabled={sold} maxLength="160" placeholder="e.g. Wireless earbuds with charging case" onChange={(e) => set({ name: e.target.value })} />{err('name')}</label>
+          {form.product_type !== 'digital' && <label className="sc-check"><input type="checkbox" disabled={sold} checked={form.condition === 'refurbished'} onChange={(e) => set({ condition: e.target.checked ? 'refurbished' : '' })} /> Refurbished / second-hand — shown to buyers as a <b>Refurbished</b> tag (optional)</label>}
           {recommended.length > 0 && <div className="wz-chips"><span className="sc-muted">Recommended categories:</span>{recommended.map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
           {config.recent_category_ids?.some((id) => typeCats.some((c) => c.id === id)) && <div className="wz-chips"><span className="sc-muted">Previously used:</span>{config.recent_category_ids.map((id) => typeCats.find((c) => c.id === id)).filter(Boolean).map((c) => <button type="button" key={c.id} className={String(c.id) === form.category_id ? 'on' : ''} onClick={() => set({ category_id: String(c.id) })}>{c.name}</button>)}</div>}
           <span className="wz-label">Category<b className="wz-req" title="Required"> *</b></span>

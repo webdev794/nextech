@@ -806,7 +806,8 @@ INSERT INTO `migrations` (`id`, `migration`, `batch`) VALUES
 (158, '2026_10_07_000065_add_intl_approval_and_policy_acceptances', 93),
 (159, '2026_10_07_000066_add_address_proof_to_sellers', 94),
 (160, '2026_10_07_000067_add_seller_application_draft_to_users', 95),
-(161, '2026_10_07_000068_add_affiliate_to_products', 96);
+(161, '2026_10_07_000068_add_affiliate_to_products', 96),
+(162, '2026_10_07_000069_add_condition_to_products', 97);
 
 -- --------------------------------------------------------
 
@@ -1422,7 +1423,8 @@ CREATE TABLE `products` (
   `intl_extra_fee_cents` int(10) UNSIGNED DEFAULT NULL,
   `affiliate_url` varchar(1000) DEFAULT NULL,
   `affiliate_merchant` varchar(80) DEFAULT NULL,
-  `affiliate_clicks` int(10) UNSIGNED NOT NULL DEFAULT 0
+  `affiliate_clicks` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `condition` varchar(16) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
@@ -3316,7 +3318,7 @@ ALTER TABLE `label_templates`
 -- AUTO_INCREMENT for table `migrations`
 --
 ALTER TABLE `migrations`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=162;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=163;
 
 --
 -- AUTO_INCREMENT for table `orders`
