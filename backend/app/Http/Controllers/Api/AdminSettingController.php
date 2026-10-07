@@ -315,6 +315,19 @@ class AdminSettingController extends Controller
             Setting::put('cod_enabled', (bool) $validated['cod_enabled']);
         }
 
+        // Options that need something else set up first (a hidden / unused option needs nothing).
+        $courierConnected = (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current());
+        $ownStores = \App\Models\Store::query()->exists();
+        if (($validated['nextech_label_mode'] ?? null) === 'auto' && SellerFulfillment::labelMode() !== 'auto' && ! $courierConnected) {
+            abort(422, 'Courier API labels need a real courier connected first (Secure access → Courier).');
+        }
+        if (($validated['nextech_pickup'] ?? null) === 'available' && SellerShipping::nextechPickup() !== 'available' && ! $ownStores && ! $courierConnected) {
+            abort(422, 'To collect and deliver for sellers, first add a '.Branding::name().' store with riders (Stores, Riders) or connect a courier (Secure access → Courier).');
+        }
+        if (($validated['delivery_mode'] ?? null) === 'distance' && CheckoutFees::current()['delivery_mode'] !== 'distance' && ! $ownStores) {
+            abort(422, 'Distance-based delivery fees are measured from your stores — add a store first, or use a fixed fee.');
+        }
+
         if (array_key_exists('nextech_label_mode', $validated)) {
             Setting::put('nextech_label_mode', $validated['nextech_label_mode']);
         }
@@ -527,6 +540,7 @@ class AdminSettingController extends Controller
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
             // NexTech's own delivery network (rider auto-assign applies only to these).
             'own_stores_count' => \App\Models\Store::query()->count(),
+            'courier_connected' => (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current()),
             'riders_count' => \App\Models\User::query()->where('is_rider', true)->count(),
             'nextech_pickup' => SellerShipping::nextechPickup(),
             'nextech_label_mode' => SellerFulfillment::labelMode(),

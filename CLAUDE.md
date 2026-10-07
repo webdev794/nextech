@@ -48,6 +48,7 @@ Test accounts and more detail live in `README.md`.
 - **Fonts:** the web app uses **Okra** (the typeface blinkit.com uses), self-hosted in `web/src/assets/fonts/` and declared in `web/src/index.css`. Type scale: 14px base / 12px secondary (nothing smaller), default weight 500, section headings 24px/600. Storefront UI patterns (deals strips, category carousel, product cards, product detail page) follow Temu as the visual reference, not Blinkit — check recent Temu screenshots the user shares before assuming Blinkit conventions.
 - **CSS lives in per-surface files** (`StorefrontBase.css`, `Storefront.css`, `Admin.css`, `Rider.css`, `Checkout.css`) — mostly single-line minified-style rules. Match the surrounding format when editing.
 - Deploy tooling for cPanel is in `scripts/`.
+- **Dependent settings:** when an option is off or hidden, hide the settings that only matter for it and don't require them; when it's on, its linked settings are required — grey out (with the reason) choices that can't work yet, and enforce the same rule on the server, checked only when switching the option on.
 - Commit / push only when asked. This repo's `origin` is `webdev794/nextech`, tracking `main`.
 
 ## Notes

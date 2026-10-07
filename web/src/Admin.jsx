@@ -4154,7 +4154,7 @@ Reason:`, '')
                 <h4>Seller shipping options</h4>
                 <label>&ldquo;{brandName()} collects &amp; delivers&rdquo; option for sellers
                   <select value={settings.nextech_pickup ?? 'available'} onChange={(event) => saveSetting({ nextech_pickup: event.target.value })}>
-                    <option value="available">Available — sellers can choose it</option>
+                    <option value="available" disabled={settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected}>Available — sellers can choose it{settings.nextech_pickup !== 'available' && !(settings.own_stores_count > 0) && !settings.courier_connected ? ' (add a store with riders or connect a courier first)' : ''}</option>
                     <option value="disabled">Shown but unselectable</option>
                     <option value="hidden">Hidden</option>
                   </select>
@@ -4162,7 +4162,7 @@ Reason:`, '')
                 <label>{brandName()} shipping labels (&ldquo;I ship, {brandName()} label&rdquo;)
                   <select value={settings.nextech_label_mode ?? 'manual'} onChange={(event) => saveSetting({ nextech_label_mode: event.target.value })}>
                     <option value="manual">Built-in — label PDF generated instantly from your templates (you can replace any)</option>
-                    <option value="auto">Courier API — paid carrier label bought through the courier connection</option>
+                    <option value="auto" disabled={settings.nextech_label_mode !== 'auto' && !settings.courier_connected}>Courier API — paid carrier label bought through the courier connection{!settings.courier_connected ? ' (connect a courier in Secure access first)' : ''}</option>
                   </select>
                 </label>
                 <p className="muted">Built-in: the seller gets a printable address label straight away (templates below). Courier API needs a real courier account connected in Secure access.</p>
@@ -4177,13 +4177,13 @@ Reason:`, '')
                     <option value="all">On for any seller who switches it on</option>
                   </select>
                 </label>
-                <div className="admin-form-grid">
+                {settings.seller_cod_mode !== 'off' && <div className="admin-form-grid">
                   {marketOptions.map((m) => (
                     <label key={m.code}>Pause it when a seller owes {brandName()} more than ({currencySymbol(m.currency)}, {m.name})
                       <input type="number" min="0" step="1" defaultValue={((settings.seller_cod_max_owed?.[m.code] ?? 0) / 100).toFixed(0)} onBlur={(event) => saveSetting({ seller_cod_max_owed: { [m.code]: Math.max(0, Math.round(Number(event.target.value || 0) * 100)) } })} />
                     </label>
                   ))}
-                </div>
+                </div>}
                 <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
               </div>
 
@@ -4294,6 +4294,8 @@ Reason:`, '')
                 </div>
                 <p className="muted">A seller's balance must reach the minimum before a payout can be recorded — batches small amounts into one transfer instead of paying out per order (the norm across marketplaces). The maximum caps a single transfer (banks limit these too) — a bigger balance is paid over several. The daily cap limits the total paid to all sellers in one day, to stay inside your own account's transfer limit; 0 = no cap. Label postage is deducted per {brandName()}-bought label while the built-in test courier is used — a connected real courier charges its own rate.</p>
 
+                {/* Rider pay only matters once NexTech has its own stores / riders. */}
+                {(settings.own_stores_count > 0 || settings.riders_count > 0) ? <>
                 <h3>Rider pay</h3>
                 <p className="muted">Paid by {brandName()} <b>to its riders</b> for each delivery — customers never see this. A free delivery to the customer is still paid to the rider.</p>
                 <div className="admin-form-grid">
@@ -4303,6 +4305,7 @@ Reason:`, '')
                   <label>Maximum per rider payout ($)<input type="number" min="0" step="0.01" value={feesForm.rider_max_payout} onChange={(event) => setFeesForm({ ...feesForm, rider_max_payout: event.target.value })} /></label>
                 </div>
                 <p className="muted">Each completed delivery credits the rider the base pay plus the per-mile rate for the straight-line distance from the store to the customer. Riders can request a payout once they&rsquo;re owed the minimum — COD cash they still hold is deducted first.</p>
+                </> : <p className="muted">Rider pay settings appear once you add a {brandName()} store and riders.</p>}
                 <div className="admin-form-actions"><button className="act" type="submit">Save charges</button></div>
               </form>
 
@@ -4317,7 +4320,7 @@ Reason:`, '')
                   <label className="admin-radio-row">Charge model
                     <span>
                       <label><input type="radio" name="delivery_mode" checked={feesForm.delivery_mode === 'fixed'} onChange={() => setFeesForm({ ...feesForm, delivery_mode: 'fixed' })} /> Fixed</label>
-                      <label><input type="radio" name="delivery_mode" checked={feesForm.delivery_mode === 'distance'} onChange={() => setFeesForm({ ...feesForm, delivery_mode: 'distance' })} /> By distance</label>
+                      <label title={!(settings.own_stores_count > 0) ? 'Distance is measured from your stores — add a store first' : undefined}><input type="radio" name="delivery_mode" disabled={feesForm.delivery_mode !== 'distance' && !(settings.own_stores_count > 0)} checked={feesForm.delivery_mode === 'distance'} onChange={() => setFeesForm({ ...feesForm, delivery_mode: 'distance' })} /> By distance{!(settings.own_stores_count > 0) ? ' (needs a store)' : ''}</label>
                     </span>
                   </label>
                   {feesForm.delivery_mode === 'fixed' ? (
