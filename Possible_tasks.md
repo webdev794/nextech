@@ -157,6 +157,57 @@ A plain-language guide for sellers, covering everything they can do on the platf
 
 ---
 
+## 4. Flowcharts for every setting, per role (do last, with task 3)
+
+### Goal
+Visual flowcharts of every decision ("if this setting is on / off, then…") so each role understands what each setting does and what it unlocks. Separate charts per role and per area; wide where needed, with standard symbols.
+
+### Format
+- [ ] Mermaid flowcharts (render on GitHub and in the app), extending the existing `flowcharts.md`. Export each one to SVG/PDF for printing.
+- [ ] Standard symbols:
+  - oval = start / end;
+  - rectangle = action / step;
+  - diamond = decision (setting or condition);
+  - parallelogram = input (form / upload);
+  - document shape = PDF / email produced;
+  - cylinder = saved data;
+  - dashed lines for automatic / scheduled steps (reminders, auto-assign).
+- [ ] One chart per area, each with a legend, the role in the title, and the date it was checked against the app.
+
+### Where
+- [ ] `Documents/Flowcharts/Seller/…` and `Documents/Flowcharts/Admin/…` (plus Rider and Buyer).
+- [ ] **Seller:** shown in Seller Center → My account → Seller guide (with task 3), signed-in only.
+- [ ] **Admin:** shown in the admin console (e.g. Settings → Help → Flowcharts), admin only.
+
+### Charts (one each)
+- **Seller:**
+  - joining (application, documents, proof of address, Request changes, approval, address lock);
+  - policies to sign (selling / abroad, the signing window, re-accepting);
+  - setup tasks and payout method;
+  - adding a product (type, variations, digital, refurbished, drafts, review, held edits);
+  - shipping settings (fulfillment mode → templates / labels / NexTech pickup; COD; own delivery; selling abroad);
+  - order handling (packed → shipped → in transit → out for delivery → delivered / cash collected; own delivery code; reminders and escalation);
+  - returns and address changes;
+  - money (holds, minimum / maximum, withdrawal fees, payout request).
+- **Admin:**
+  - setup checklist;
+  - each Settings group with its dependent settings (shipping, checkout charges and payment, NexTech delivery, sellers' own delivery, selling abroad, reminders, payouts, countries, currency);
+  - seller review (application, onboarding tasks, international stop / allow);
+  - product review (pending, held edits, follow-ups, deletion requests, demo / ad / live, show / hide);
+  - orders (riders vs courier vs hand-booked courier, seller packages, address changes, refunds, cancellations);
+  - reviews moderation;
+  - support chat (bringing in a seller);
+  - house shop;
+  - affiliate ads.
+- **Rider:** shifts, offers, delivery code, cash, payouts.
+- **Buyer:** browse / Recommended, cart and checkout (delivery method, fees, tax, COD rules), tracking, returns, reviews, chat.
+
+### Notes
+- Build them from the code (each `if` in controllers / `Support` classes), not from memory; list the setting key next to each diamond.
+- Keep them up to date: update the chart whenever a setting changes (could be checked in review).
+
+---
+
 ## Customer chat (no change needed — for reference)
 - Sellers can't start chats with buyers. Admin brings a seller into a customer's order chat when needed (**Bring in [shop]** in the support chat). Admin stays in the chat, and the seller sees only a masked name and their own items.
 - Decided: no buyer-side "Ask the seller to join" button. Admin decides when to bring the seller in.
