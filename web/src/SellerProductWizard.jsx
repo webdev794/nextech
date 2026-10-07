@@ -73,7 +73,7 @@ function formFrom(product, config) {
   const p = product ?? {}
   const theme = p.variation_theme ?? []
   const variants = (p.variants ?? []).map((v) => ({
-    id: v.id, options: v.options ?? (theme[0] ? { [theme[0]]: v.label } : {}), label: v.label, price: units(v.price_cents), compare_at: units(v.compare_at_price_cents),
+    id: v.id, sku: v.sku, options: v.options ?? (theme[0] ? { [theme[0]]: v.label } : {}), label: v.label, price: units(v.price_cents), compare_at: units(v.compare_at_price_cents),
     stock: v.inventory_quantity ?? 0, image_url: v.image_url ?? '', seller_code: v.seller_code ?? '', weight: v.weight_grams ?? '', length: v.length_mm ?? '', width: v.width_mm ?? '', height: v.height_mm ?? '', is_active: v.is_active !== false,
   }))
   const values = Object.fromEntries(theme.map((t) => [t, [...new Set(variants.map((v) => v.options?.[t]).filter(Boolean))]]))
@@ -434,7 +434,7 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
           <p className="sc-muted">Select a trademark if the product is made by a specific brand — it improves the price assessment and search matching. No trademark yet? <button type="button" className="sc-link" onClick={() => go('account-health')}>Register one under Account health</button> and wait for {brandName()} to review it.</p>
           <InfoSectionsEditor value={form.info_sections} onChange={(v) => set({ info_sections: v })} />
           <ProductDocumentsEditor value={form.guides} onChange={(v) => set({ guides: v })} onUpload={(file) => uploadFile(headers, '/seller/product-document', file)} />
-          <label>Your product code (Contribution Goods, optional)<input value={form.seller_code} maxLength="60" onChange={(e) => set({ seller_code: e.target.value })} /></label>
+          <label>Your own product code <small className="sc-muted">optional — for your own records; the SKU is created automatically</small><input value={form.seller_code} maxLength="60" onChange={(e) => set({ seller_code: e.target.value })} /></label>
         </div>
       )}
 
@@ -527,23 +527,24 @@ export function ProductWizard({ headers, product, onSaved, onCancel, go, inclusi
                 </div>
               ))}
               {liveVariants.length > config.max_skus && <p className="ob-missing">A product can have at most {config.max_skus} SKUs.</p>}
+              {liveVariants.length > 0 && <p className="sc-muted">Set the <b>quantity in stock</b> and price for each variation below. SKU codes are created automatically when you save; &ldquo;Your own code&rdquo; is only for your records.</p>}
               {liveVariants.length > 0 && (
                 <div className="sc-table-wrap">
                   <table className="sc-table wz-skus">
-                    <thead><tr><th>SKU</th><th>Image</th><th><b>Stock (quantity)</b></th><th>Base price ({sym})</th><th>{inclusive ? 'MRP' : 'Regular'} ({sym})</th><th>Weight (g)</th><th>L × W × H (mm)</th><th>Your SKU code</th></tr></thead>
+                    <thead><tr><th>Variation</th><th>Image</th><th className="wz-qty-head">Quantity in stock</th><th>Base price ({sym})</th><th>{inclusive ? 'MRP' : 'Regular'} ({sym})</th><th>Weight (g)</th><th>L × W × H (mm)</th><th title="Optional — a code you use in your own records. The SKU itself is created automatically.">Your own code <small className="sc-muted">(optional)</small></th></tr></thead>
                     <tbody>
                       {liveVariants.map((v, i) => {
                         const setV = (patch) => setForm((f) => ({ ...f, variants: f.variants.map((x, j) => (j === i ? { ...x, ...patch } : x)) }))
                         return (
                           <tr key={comboKey(v.options, theme) || i}>
-                            <td><b>{theme.map((t) => v.options?.[t]).join(' / ')}</b>{err(`variants.${i}.options`)}</td>
+                            <td><b>{theme.map((t) => v.options?.[t]).join(' / ')}</b>{v.sku && <small className="sc-muted"> SKU {v.sku}</small>}{err(`variants.${i}.options`)}</td>
                             <td>{v.image_url ? <span className="wz-sku-img"><img src={mediaUrl(v.image_url)} alt="" /><button type="button" onClick={() => setV({ image_url: '' })}>&times;</button></span> : <label className="seller-gallery-add small">+<input type="file" accept="image/jpeg,image/png" disabled={!!busy} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; upload('image', f, (url) => setV({ image_url: url })) }} /></label>}</td>
-                            <td><input type="number" min="0" value={v.stock} onChange={(e) => setV({ stock: e.target.value })} /></td>
+                            <td className="wz-qty"><input type="number" min="0" aria-label="Quantity in stock" value={v.stock} onChange={(e) => setV({ stock: e.target.value })} /></td>
                             <td><input type="number" min="0" step="0.01" value={v.price} onChange={(e) => setV({ price: e.target.value })} />{err(`variants.${i}.price_cents`)}</td>
                             <td><input type="number" min="0" step="0.01" value={v.compare_at} onChange={(e) => setV({ compare_at: e.target.value })} /></td>
                             <td><input type="number" min="0" value={v.weight} onChange={(e) => setV({ weight: e.target.value })} /></td>
                             <td className="wz-dims"><input type="number" min="0" value={v.length} onChange={(e) => setV({ length: e.target.value })} />×<input type="number" min="0" value={v.width} onChange={(e) => setV({ width: e.target.value })} />×<input type="number" min="0" value={v.height} onChange={(e) => setV({ height: e.target.value })} /></td>
-                            <td><input value={v.seller_code} maxLength="60" onChange={(e) => setV({ seller_code: e.target.value })} /></td>
+                            <td><input value={v.seller_code} maxLength="60" placeholder="optional" onChange={(e) => setV({ seller_code: e.target.value })} /></td>
                           </tr>
                         )
                       })}
