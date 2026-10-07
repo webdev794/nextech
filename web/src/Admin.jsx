@@ -4249,7 +4249,7 @@ Reason:`, '')
                   <form className="admin-form" key={`payout-fees-${workMarket}`} onSubmit={async (event) => {
                     event.preventDefault()
                     const fd = new FormData(event.currentTarget)
-                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency }]))
+                    const body = Object.fromEntries(['bank', 'paypal'].map((m) => [m, { fixed_cents: Math.round(Number(fd.get(`${m}_fixed`) || 0) * 100), bps: Math.round(Number(fd.get(`${m}_pct`) || 0) * 100), currency: fd.get(`${m}_currency`) || activeCurrency, currencies: fd.getAll(`${m}_currencies`) }]))
                     if (await saveSetting({ payout_fees: { [workMarket]: body } })) setMessage('Withdrawal fees saved.')
                   }}>
                     <h3>Withdrawal fees — {marketOptions.find((m) => m.code === workMarket)?.name ?? workMarket} ({activeCurrency.toUpperCase()} {currencySymbol(activeCurrency)})</h3>
@@ -4257,6 +4257,7 @@ Reason:`, '')
                     <div className="admin-form-grid">
                       {['bank', 'paypal'].map((m) => <Fragment key={m}>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — pays sellers in<select name={`${m}_currency`} defaultValue={fees[m].currency ?? activeCurrency}>{[...new Set([activeCurrency, 'usd'])].map((c) => <option key={c} value={c}>{c.toUpperCase()} {currencySymbol(c)}</option>)}</select></label>
+                        <div className="wz-wide"><span className="muted">{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — sellers can choose to be paid in:</span> {(settings.payout_currency_options?.[workMarket] ?? [activeCurrency]).map((c) => <label key={c} className="admin-check" style={{ display: 'inline-flex', marginRight: 12 }}><input type="checkbox" name={`${m}_currencies`} value={c} defaultChecked={(fees[m].currencies ?? [fees[m].currency]).includes(c)} /> {c.toUpperCase()}</label>)}</div>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — fixed fee <small className="muted">in the currency it pays in</small><input name={`${m}_fixed`} type="number" min="0" step="0.01" defaultValue={(fees[m].fixed_cents / 100).toFixed(2)} /></label>
                         <label>{m === 'paypal' ? 'PayPal' : 'Bank transfer'} — percentage (%)<input name={`${m}_pct`} type="number" min="0" max="50" step="0.01" defaultValue={(fees[m].bps / 100).toFixed(2)} /></label>
                       </Fragment>)}
@@ -4664,6 +4665,7 @@ Reason:`, '')
                         <p className="muted">{d.payout_method
                           ? (d.payout_method === 'bank' ? <>Bank transfer — {d.payout_details?.holder_name}, {d.payout_details?.bank_name}, acct {d.payout_details?.account_number} · {d.payout_details?.bank_code_label ?? 'routing'} {d.payout_details?.routing_number}</> : <>PayPal — {d.payout_details?.paypal_email ?? d.payout_details?.email}</>)
                           : 'No payout method on file yet.'}
+                          {d.payout_details?.payout_currency && <> · wants payment in <b>{d.payout_details.payout_currency.toUpperCase()}</b>{d.payout_details.currency_confirmed_at ? ` (seller confirmed their account accepts it on ${new Date(d.payout_details.currency_confirmed_at).toLocaleDateString()})` : ''}</>}
                           {d.payout_method ? ` · The withdrawal fee for this method is deducted automatically (Settings → Withdrawal fees)` : ''}{d.max_payout_cents > 0 ? ` · Max per payout: ${money(d.max_payout_cents, d.currency)}` : ''}{d.daily_payout_remaining_cents != null ? ` · ${money(d.daily_payout_remaining_cents, d.currency)} left today (all sellers)` : ''}</p>
                         {(d.pending_orders ?? []).length > 0 && <p className="muted">Held: {d.pending_orders.map((p) => (p.order_missing ? `${money(p.amount_cents, d.currency)} sale credit with no order on record (held — check the ledger)` : `#${p.order_id} ${money(p.amount_cents, d.currency)} ${p.releases_at ? `→ ${new Date(p.releases_at).toLocaleDateString()}` : '(not delivered)'}`)).join(' · ')}</p>}
                         {d.status === 'approved' && (

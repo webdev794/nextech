@@ -32,10 +32,14 @@ class SellerPayouts
             $currency = strtolower((string) ($saved[$m]['currency'] ?? $local)) ?: $local;
             $fixed = max(0, (int) ($saved[$m]['fixed_cents'] ?? 0));
 
+            // Currencies a seller may choose to be paid in by this method (admin-set; default: the fee currency).
+            $allowed = array_values(array_intersect(array_map('strtolower', (array) ($saved[$m]['currencies'] ?? [])), self::currencyOptions($local))) ?: [$currency];
+
             return [$m => [
                 'fixed_cents' => $fixed,
                 'bps' => max(0, min(5000, (int) ($saved[$m]['bps'] ?? 0))),
                 'currency' => $currency,
+                'currencies' => $allowed,
                 'local_fixed_cents' => $currency === $local ? $fixed : self::convert($fixed, $currency, $local),
             ]];
         })->all();
@@ -49,14 +53,37 @@ class SellerPayouts
         return min($amountCents, $f['local_fixed_cents'] + (int) round($amountCents * $f['bps'] / 10000));
     }
 
-    /** What the seller gets in the method's payout currency (e.g. USD by PayPal), at today's rate. */
-    public static function received(?string $market, string $method, int $amountCents): array
+    /** Currencies a payout can be made in for a country: its own, USD, and the other selling countries'. */
+    public static function currencyOptions(string $local): array
+    {
+        return array_values(array_unique(array_merge([$local, 'usd'], array_map(fn ($c) => Market::currency($c), Market::codes()))));
+    }
+
+    /** The currency this seller is paid in by $method: their choice if the method allows it, else the method's default. */
+    public static function currencyFor(Seller $seller, string $method, ?string $market = null): string
+    {
+        $f = self::fees($market ?? $seller->shop?->market)[$method];
+        $chosen = strtolower((string) (((array) $seller->payout_details)['payout_currency'] ?? ''));
+
+        return in_array($chosen, $f['currencies'], true) ? $chosen : $f['currencies'][0];
+    }
+
+    /** What the seller gets after the fee, in the currency they're paid in, at today's rate. */
+    public static function received(?string $market, string $method, int $amountCents, ?string $currency = null): array
     {
         $local = Market::currency($market);
-        $f = self::fees($market)[$method] ?? ['currency' => $local];
+        $currency ??= (self::fees($market)[$method] ?? ['currency' => $local])['currency'];
         $net = $amountCents - self::fee($market, $method, $amountCents);
 
-        return ['currency' => $f['currency'], 'cents' => $f['currency'] === $local ? $net : self::convert($net, $local, $f['currency'])];
+        return ['currency' => $currency, 'cents' => self::convert($net, $local, $currency)];
+    }
+
+    /** Rate from the country's currency to each currency a payout can be made in. */
+    public static function rates(string $market): array
+    {
+        $local = Market::currency($market);
+
+        return collect(self::currencyOptions($local))->mapWithKeys(fn ($c) => [$c => $c === $local ? 1.0 : Fx::mid($c) / Fx::mid($local)])->all();
     }
 
     /** Plain exchange rate for payouts — no buyer currency margin. */

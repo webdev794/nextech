@@ -197,7 +197,7 @@ class AdminSellerController extends Controller
         });
 
         $sent = Money::format($data['amount_cents'] - $fee, $cur);
-        $got = \App\Support\SellerPayouts::received($shop->market, $method, (int) $data['amount_cents']);
+        $got = \App\Support\SellerPayouts::received($shop->market, $method, (int) $data['amount_cents'], \App\Support\SellerPayouts::currencyFor($seller, $method, $shop->market));
         if ($got['currency'] !== $cur) {
             $sent .= ' (about '.Money::format($got['cents'], $got['currency']).' in '.strtoupper($got['currency']).' at today’s rate)';
         }

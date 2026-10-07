@@ -180,7 +180,8 @@ class SellerController extends Controller
             // Payout fees per method (fixed + %), and whether this seller can be paid right now.
             $seller->payout_fees = SellerPayouts::fees($seller->shop->market);
             // Rate from the shop's currency to each method's payout currency (e.g. INR → USD for PayPal).
-            $seller->payout_rates = collect($seller->payout_fees)->map(fn ($f) => $f['currency'] === Market::currency($seller->shop->market) ? 1 : \App\Support\Fx::mid($f['currency']) / \App\Support\Fx::mid(Market::currency($seller->shop->market)));
+            $seller->payout_rates = SellerPayouts::rates($seller->shop->market);
+            $seller->payout_currency = SellerPayouts::currencyFor($seller, $seller->payout_method === 'paypal' ? 'paypal' : 'bank');
             $seller->payout_blocker = SellerPayouts::blocker($seller);
             $seller->last_payout_request = $seller->shop->payoutRequests()->latest('id')->first();
         }
@@ -214,8 +215,20 @@ class SellerController extends Controller
         $data = $request->validate([
             'method' => ['required', \Illuminate\Validation\Rule::in(SellerPayouts::METHODS)],
             'paypal_email' => ['required_if:method,paypal', 'nullable', 'email', 'max:160'],
+            'currency' => ['sometimes', 'nullable', 'string', 'size:3'],
+            // Paid in another currency: the seller confirms their account can receive it.
+            'currency_confirmed' => ['sometimes', 'boolean'],
         ]);
         $details = (array) $seller->payout_details;
+        // The currency they want to be paid in — only one the method allows in their country.
+        if (! empty($data['currency'])) {
+            $allowed = SellerPayouts::fees($seller->shop?->market)[$data['method']]['currencies'];
+            abort_unless(in_array(strtolower($data['currency']), $allowed, true), 422, 'That currency isn’t available for this payout method.');
+            $foreign = strtolower($data['currency']) !== Market::currency($seller->shop?->market);
+            abort_if($foreign && empty($data['currency_confirmed']), 422, 'Confirm that your '.($data['method'] === 'paypal' ? 'PayPal account' : 'bank account').' can receive '.strtoupper($data['currency']).'.');
+            $details['payout_currency'] = strtolower($data['currency']);
+            $details['currency_confirmed_at'] = $foreign ? now()->toIso8601String() : null;
+        }
         if ($data['method'] === 'bank') {
             abort_if(empty($details['account_number']), 422, 'Add your bank account first (Seller Center → Bank account).');
         } else {
@@ -223,7 +236,9 @@ class SellerController extends Controller
         }
         $seller->forceFill(['payout_method' => $data['method'], 'payout_details' => $details])->save();
 
-        return response()->json(['data' => ['payout_method' => $seller->payout_method, 'paypal_email' => $details['paypal_email'] ?? null, 'payout_blocker' => SellerPayouts::blocker($seller->fresh('shop'))]]);
+        $fresh = $seller->fresh('shop');
+
+        return response()->json(['data' => ['payout_method' => $seller->payout_method, 'paypal_email' => $details['paypal_email'] ?? null, 'payout_currency' => SellerPayouts::currencyFor($fresh, $data['method']), 'payout_blocker' => SellerPayouts::blocker($fresh)]]);
     }
 
     public function requestPayout(Request $request): JsonResponse

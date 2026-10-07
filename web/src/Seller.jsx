@@ -1132,7 +1132,7 @@ export default function Seller({ token, onSignOut }) {
                             return (
                               <div className="seller-payout-request">
                                 <button type="button" className="seller-btn" disabled={payoutReqBusy || !!why} onClick={() => setPayoutConfirm({ amount: (requestable / 100).toFixed(2), max: requestable, min: me.min_payout_cents ?? 0, method, fees: me.payout_fees ?? {} })}>{why ? 'Request payout' : `Request payout of ${money(requestable)}`}</button>
-                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)}{f.currency && f.currency !== me.currency ? ` (≈ ${formatMoney(Math.round((requestable - fee) * (me.payout_rates?.[method] ?? 1)), f.currency)})` : ''} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} withdrawal fee.</span>}
+                                {!why && fee > 0 && <span className="seller-earnings-note">You receive {money(requestable - fee)}{me.payout_currency && me.payout_currency !== me.currency ? ` (≈ ${formatMoney(Math.round((requestable - fee) * (me.payout_rates?.[me.payout_currency] ?? 1)), me.payout_currency)})` : ''} after the {money(fee)} {method === 'paypal' ? 'PayPal' : 'bank transfer'} withdrawal fee.</span>}
                                 {why && <span className="seller-earnings-note">{why}</span>}
                                 {!why && max > 0 && balance > max && <span className="seller-earnings-note">Single payouts are capped at {money(max)} — request the rest after this one is paid.</span>}
                               </div>
@@ -1147,8 +1147,9 @@ export default function Seller({ token, onSignOut }) {
                       const amount = Math.round(Number(c.amount || 0) * 100)
                       const f = c.fees[c.method] ?? { fixed_cents: 0, bps: 0 }
                       const fee = Math.min(amount, (f.local_fixed_cents ?? f.fixed_cents) + Math.round(amount * f.bps / 10000))
-                      const rate = me.payout_rates?.[c.method] ?? 1
-                      const paidIn = f.currency && f.currency !== (me.currency ?? f.currency) ? f.currency : null
+                      const payCur = me.payout_currency ?? me.currency
+                      const rate = me.payout_rates?.[payCur] ?? 1
+                      const paidIn = payCur && payCur !== me.currency ? payCur : null
                       const bad = amount < c.min ? `The minimum payout is ${money(c.min)}.` : amount > c.max ? `You can request up to ${money(c.max)} right now.` : null
                       const dest = c.method === 'paypal' ? `PayPal — ${me.payout_details?.paypal_email ?? ''}` : `Bank account${me.payout_details?.account_number ? ` ••••${String(me.payout_details.account_number).slice(-4)}` : ''}`
                       return (
@@ -1169,7 +1170,7 @@ export default function Seller({ token, onSignOut }) {
                         </div>
                       )
                     })()}
-                    <PayoutMethod me={me} headers={authHeaders} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email }, payout_blocker: d.payout_blocker }))} />
+                    <PayoutMethod me={me} headers={authHeaders} onSaved={(d) => setMe((m) => ({ ...m, payout_method: d.payout_method, payout_currency: d.payout_currency, payout_details: { ...(m.payout_details ?? {}), paypal_email: d.paypal_email, payout_currency: d.payout_currency }, payout_blocker: d.payout_blocker }))} />
                     <div className="seller-payout-limits">
                       <b>Payout limits</b>
                       <ul>
@@ -1817,18 +1818,24 @@ export default function Seller({ token, onSignOut }) {
   )
 }
 
-// Finances → how the seller is paid: their verified bank account or PayPal.
+// Finances → how the seller is paid: their verified bank account or PayPal,
+// and the currency they want it in (from those admin allows for the method).
 function PayoutMethod({ me, headers, onSaved }) {
   const [method, setMethod] = useState(me.payout_method === 'paypal' ? 'paypal' : 'bank')
   const [email, setEmail] = useState(me.payout_details?.paypal_email ?? '')
+  const [currency, setCurrency] = useState(me.payout_currency ?? me.currency ?? 'usd')
+  const [confirmed, setConfirmed] = useState(!!me.payout_details?.currency_confirmed_at)
   const [msg, setMsg] = useState('')
   const hasBank = !!me.payout_details?.account_number
+  const allowed = me.payout_fees?.[method]?.currencies ?? [me.currency ?? 'usd']
+  const chosen = allowed.includes(currency) ? currency : allowed[0]
+  const foreign = chosen !== (me.currency ?? chosen)
   const feeText = (m) => { const f = me.payout_fees?.[m]; return f && (f.fixed_cents > 0 || f.bps > 0) ? ` — withdrawal fee ${[f.fixed_cents > 0 && formatMoney(f.fixed_cents, f.currency ?? me.currency), f.bps > 0 && `${f.bps / 100}%`].filter(Boolean).join(' + ')}` : ' — no withdrawal fee' }
   async function save(event) {
     event.preventDefault()
     setMsg('')
     try {
-      const response = await fetch(`${API_URL}/seller/payout-method`, { method: 'PATCH', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ method, paypal_email: method === 'paypal' ? email.trim() : null }) })
+      const response = await fetch(`${API_URL}/seller/payout-method`, { method: 'PATCH', headers: { ...headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ method, paypal_email: method === 'paypal' ? email.trim() : null, currency: chosen, currency_confirmed: confirmed }) })
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save.')
       onSaved(data.data)
@@ -1841,7 +1848,14 @@ function PayoutMethod({ me, headers, onSaved }) {
       <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'bank'} onChange={() => setMethod('bank')} /> Bank account{hasBank ? ` (${me.payout_details.bank_name ?? 'bank'} ••••${String(me.payout_details.account_number).slice(-4)})` : ' — add it under Bank account'}{feeText('bank')}</label>
       <label className="sc-check"><input type="radio" name="payout_method" checked={method === 'paypal'} onChange={() => setMethod('paypal')} /> PayPal{feeText('paypal')}</label>
       {method === 'paypal' && <input type="email" required placeholder="PayPal email" value={email} onChange={(e) => setEmail(e.target.value)} />}
-      <div><button type="submit" className="seller-btn ghost" disabled={method === 'bank' && !hasBank}>Save payout method</button> {msg && <span className="seller-earnings-note">{msg}</span>}</div>
+      <label>Pay me in
+        <select value={chosen} onChange={(e) => { setCurrency(e.target.value); setConfirmed(false) }} disabled={allowed.length < 2}>
+          {allowed.map((c) => <option key={c} value={c}>{c.toUpperCase()}</option>)}
+        </select>
+      </label>
+      {foreign && <label className="sc-check"><input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} /> My {method === 'paypal' ? 'PayPal account' : 'bank account'} can receive {chosen.toUpperCase()}. (If it can&rsquo;t, the payment may be returned or converted by your bank with extra fees.)</label>}
+      {foreign && <small className="sc-muted">Your balance stays in {String(me.currency ?? '').toUpperCase()}; each payout is converted to {chosen.toUpperCase()} at the rate on the day it&rsquo;s sent.</small>}
+      <div><button type="submit" className="seller-btn ghost" disabled={(method === 'bank' && !hasBank) || (foreign && !confirmed)}>Save payout method</button> {msg && <span className="seller-earnings-note">{msg}</span>}</div>
     </form>
   )
 }
