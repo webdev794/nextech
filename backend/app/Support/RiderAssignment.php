@@ -74,6 +74,10 @@ class RiderAssignment
         $best = null;
 
         foreach ($riders as $rider) {
+            // Paused for cash (a seller's, or over the store's own limit) — not offered anything.
+            if (SellerRiderCash::blockedReason($rider)) {
+                continue;
+            }
             $location = $rider->riderLocation();
             if ($location === null) {
                 continue; // no live fix and no base — can't place this rider

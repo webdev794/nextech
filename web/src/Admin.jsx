@@ -16,8 +16,10 @@ import LightningDeal from './LightningDeal'
 import { ReturnPolicyFields } from './returnPolicy'
 import { AdminDigitalFiles } from './AdminDigitalFiles'
 import { KeptRates } from './AdminKeptRates'
-import { SellerPayouts, WithdrawalFees } from './AdminPayouts'
+import { AdjustBalance, SellerPayouts, WithdrawalFees } from './AdminPayouts'
 import { CategoryDetailsEditor } from './AdminCategoryDetails'
+import { SellerCard } from './AdminSellerCard'
+import { RiderMoneyTable } from './RiderMoneyTable'
 import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
@@ -167,6 +169,17 @@ function UpwardPicker({ placeholder, options, onPick }) {
   )
 }
 
+// A rider's passport photo (a private upload), loaded with the admin's sign-in.
+function RiderPhoto({ path, headers }) {
+  const [src, setSrc] = useState('')
+  useEffect(() => {
+    let url = ''
+    fetch(`${API_URL}/seller/kyc-document/${path}`, { headers: headers() }).then((r) => (r.ok ? r.blob() : null)).then((b) => { if (b) { url = URL.createObjectURL(b); setSrc(url) } }).catch(() => {})
+    return () => { if (url) URL.revokeObjectURL(url) }
+  }, [path, headers])
+  return src ? <img className="rider-photo" src={src} alt="" /> : <span className="rider-photo none" aria-hidden>👤</span>
+}
+
 function Loading({ children }) {
   return (
     <p className="admin-empty admin-loading" role="status">
@@ -258,7 +271,7 @@ const SELLER_STATUS_LABELS = { pending: 'Pending', needs_changes: 'Changes reque
 const PRODUCT_STATUS_FILTERS = ['unapproved', 'pending', 'draft', 'rejected', 'followups', 'approved', 'deletion']
 const PRODUCT_STATUS_LABELS = { unapproved: 'Not approved yet (all)', pending: 'Waiting for review', draft: 'Draft (seller not finished)', approved: 'Approved', rejected: 'Rejected', followups: 'Live — details missing', deletion: 'Removal requested' }
 const SELLER_ID_TYPE_LABELS = { aadhaar: 'Aadhaar', pan: 'PAN', passport: 'Passport', ssn: 'SSN', drivers_license: "Driver's License" }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery kept by seller', refund_debit: 'Refund', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)', adjustment: 'Adjustment', rider_pay: 'Rider pay', rider_cash_recovered: 'Cash a rider kept (from their earnings)' }
 const EMPTY_BRANDING = { store_name: '', tagline: '', logo_url: '', favicon_url: '', theme: 'light', layout_width: 'boxed', color_brand: '#1f7a3d', color_accent: '#ffd23f', color_heading: '#18211c' }
 const SOCIAL_PLATFORMS = [['facebook', 'Facebook'], ['x', 'X / Twitter'], ['instagram', 'Instagram'], ['linkedin', 'LinkedIn'], ['youtube', 'YouTube']]
 const EMPTY_FOOTER = { copyright: '© {year} {store}', app_store_url: '', play_store_url: '', socials: { facebook: '', x: '', instagram: '', linkedin: '', youtube: '' }, links: [], bg_color: '#f3f5f2', text_color: '#18211c' }
@@ -372,6 +385,16 @@ const FOOTER_COLUMNS = ['company', 'legal', 'help', 'bottom']
 // tracking/organization; show_in_footer is still what gates the real render.
 // Pages menu (left): its own order and names.
 const NAV_PAGE_GROUPS = ['blog', 'main_menu', 'main_footer', 'seller_footer']
+
+// Riders' experience (months) and time since a date, e.g. "1 yr 3 mos".
+const monthsText = (m) => (m == null ? '—' : m === 0 ? 'none' : [Math.floor(m / 12) && `${Math.floor(m / 12)} yr${Math.floor(m / 12) === 1 ? '' : 's'}`, m % 12 && `${m % 12} mo${m % 12 === 1 ? '' : 's'}`].filter(Boolean).join(' '))
+const tenure = (date) => {
+  if (!date) return '—'
+  const d = new Date(date)
+  const m = Math.max(0, (new Date().getFullYear() - d.getFullYear()) * 12 + new Date().getMonth() - d.getMonth())
+  const days = Math.max(1, Math.round((Date.now() - d) / 86400000))
+  return m < 1 ? `${days} day${days === 1 ? '' : 's'}` : monthsText(m)
+}
 
 // Secure access stays unlocked only while you're in it: leaving it, or a minute
 // without activity, locks it again (also on the server).
@@ -656,6 +679,8 @@ export default function Admin({ token, onClose }) {
   // Categories list: subcategories stay folded under their parent until its ▸ is clicked.
   const [openCategories, setOpenCategories] = useState(() => new Set())
   const [ridersPage, setRidersPage] = useState(1)
+  // Riders list filters: store, country, status, on shift now.
+  const [riderFilter, setRiderFilter] = useState({ store: '', country: '', status: '', shift: '' })
   const [storesPage, setStoresPage] = useState(1)
   const [sellersPage, setSellersPage] = useState(1)
   const setPageSize = useCallback((n) => {
@@ -668,6 +693,10 @@ export default function Admin({ token, onClose }) {
   const [productForm, setProductForm] = useState(null)
   const [categoryForm, setCategoryForm] = useState(null)
   const [stores, setStores] = useState([])
+  // NexTech's own stores (stock, product store filter); sellers' stores are their local-delivery bases.
+  const ownStores = stores.filter((s) => !s.shop_id)
+  const [storeKind, setStoreKind] = useState('all') // Stores / hubs filter: all | own | seller
+  const [sellerCardId, setSellerCardId] = useState(null)
   const [storeForm, setStoreForm] = useState(null)
   const [pages, setPages] = useState([])
   const [pageForm, setPageForm] = useState(null)
@@ -1021,7 +1050,9 @@ export default function Admin({ token, onClose }) {
 
   useEffect(() => { if (tab === 'riders') { loadRiders(); loadStores(); loadRiderApps() } }, [tab, loadRiders, loadStores, loadRiderApps])
   useEffect(() => { if (tab === 'sellers') loadSellers() }, [tab, loadSellers])
-  useEffect(() => { if (tab === 'stores') loadStores() }, [tab, loadStores])
+  useEffect(() => { if (tab === 'stores') { loadStores(); loadSellers() } }, [tab, loadStores, loadSellers])
+  // Secure access → Payouts: sellers and riders for Adjust a balance.
+  useEffect(() => { if (tab === 'secure' && secureSection === 'payouts' && secureGate === 'unlocked') { loadSellers(); loadRiders() } }, [tab, secureSection, secureGate, loadSellers, loadRiders])
   useEffect(() => { if (tab === 'support') loadThreads() }, [tab, loadThreads])
   const threadId = thread?.id ?? null
   useEffect(() => {
@@ -1156,6 +1187,39 @@ export default function Admin({ token, onClose }) {
     return () => { stopped = true; clearTimeout(kick); clearInterval(timer) }
   }, [authHeaders, soundMuted])
 
+  const shownStores = storeKind === 'own' ? ownStores : storeKind === 'seller' ? stores.filter((s) => s.shop_id) : stores
+
+  // A seller store's local delivery: on / off, or the seller's request to turn it off (approve / keep on).
+  const LOCAL_ACTION_DONE = { on: 'Local delivery is on', off: 'Local delivery turned off', approve_off: 'Approved — local delivery is off and its riders were told', keep_on: 'Kept on — the seller was told why' }
+  async function localDeliveryAction(store, action) {
+    const name = store.shop?.name ?? store.name ?? 'this store'
+    let reason
+    if (store.shop_id && (action === 'off' || action === 'keep_on')) {
+      reason = window.prompt(action === 'off' ? `Why turn off local delivery for ${name}? The seller gets this as a message.` : `Why keep local delivery on for ${name}? The seller gets this as a message.`, '')
+      if (!reason?.trim()) return
+    }
+    if (action === 'approve_off' && !window.confirm(`Turn off local delivery for ${name}? The ${store.riders_count ?? 0} rider(s) linked to this store are emailed and removed from it; only admin can turn it on again.`)) return
+    try {
+      const response = await fetch(`${API_URL}/admin/stores/${store.id}/local-delivery`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ action, reason: reason?.trim() || undefined }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not change local delivery.')
+      loadStores()
+      if (action === 'approve_off' || action === 'keep_on') setNotifications((cur) => ({ ...cur, local_delivery_off: (cur.local_delivery_off ?? []).filter((r) => r.store_id !== store.id) }))
+      setMessage(store.shop_id ? `${LOCAL_ACTION_DONE[action]} (${name}).` : `${name}: ${action === 'on' ? 'riders deliver nearby orders' : 'all orders go by courier'}.`)
+    } catch (error) { fail(error) }
+  }
+
+  // Hiring riders for a store on or off (application page + storefront "Work with us" link).
+  async function toggleHiring(store, open) {
+    try {
+      const response = await fetch(`${API_URL}/admin/stores/${store.id}/hiring`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ open }) })
+      const data = await readJson(response)
+      if (!response.ok) throw new Error(data.message ?? 'Could not change hiring.')
+      setStores((cur) => cur.map((s) => (s.id === store.id ? { ...s, hiring_open: open } : s)))
+      setMessage(`${store.shop?.name ?? store.name}: hiring ${open ? 'open' : 'closed'}.`)
+    } catch (error) { fail(error) }
+  }
+
   async function saveStore(event) {
     event.preventDefault()
     setMessage('')
@@ -1175,7 +1239,7 @@ export default function Admin({ token, onClose }) {
   }
 
   async function removeStore(store) {
-    if (!window.confirm(`Delete ${store.name}?`)) return
+    if (!window.confirm(`Delete ${store.name}?\n\nThis can't be undone. ${store.riders_count ? `${store.riders_count} rider(s) are linked to it. ` : ''}Its stock and delivery area go with it.`)) return
     setMessage('')
     try {
       const response = await fetch(`${API_URL}/admin/stores/${store.id}`, { method: 'DELETE', headers: authHeaders() })
@@ -1224,8 +1288,15 @@ export default function Admin({ token, onClose }) {
       store_ids: f.store_ids.map(Number),
     }
     try {
-      const response = await fetch(`${API_URL}/admin/riders/${f.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(payload) })
-      const data = await readJson(response)
+      let response = await fetch(`${API_URL}/admin/riders/${f.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify(payload) })
+      let data = await readJson(response)
+      // Removing a rider from a seller's store: the seller gets admin's reason.
+      if (response.status === 422 && /^Say why/.test(data.message ?? '')) {
+        const reason = window.prompt(data.message, '')
+        if (!reason?.trim()) return
+        response = await fetch(`${API_URL}/admin/riders/${f.id}`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ ...payload, reason: reason.trim() }) })
+        data = await readJson(response)
+      }
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not save the rider.')
       setRiderForm(null)
       loadRiders()
@@ -1233,7 +1304,7 @@ export default function Admin({ token, onClose }) {
   }
 
   async function removeRider(rider) {
-    if (!window.confirm(`Remove the rider role from ${rider.name}? Their account stays.`)) return
+    if (!window.confirm(`Remove ${rider.name} as a rider?\n\nThey stop getting orders from every store they're linked to${rider.stores?.length ? ` (${rider.stores.length})` : ''}. Their account stays and pay already earned is still due.`)) return
     setMessage('')
     try {
       const response = await fetch(`${API_URL}/admin/riders/${rider.id}`, { method: 'DELETE', headers: authHeaders() })
@@ -1898,7 +1969,7 @@ export default function Admin({ token, onClose }) {
     const rows = (variants ?? []).filter((row) => row.id || !row._delete)
     const liveVariants = rows.filter((v) => !v._delete && (v.label || '').trim())
     payload.store_stock = perStore
-      ? (stores.length ? stores.map((store) => String(store.id)) : Object.keys(storeStockMap ?? {})).flatMap((sid) => {
+      ? (ownStores.length ? ownStores.map((store) => String(store.id)) : Object.keys(storeStockMap ?? {})).flatMap((sid) => {
           const row = storeStockRow(productForm, sid)
           const stocked = row.is_stocked !== false
           const base = { store_id: Number(sid), variant_index: null, is_stocked: stocked, quantity: Number(row.base || 0) }
@@ -2327,23 +2398,26 @@ Reason:`, '')
   const labelRequests = notifications.label_requests ?? []
   const sellerLabelRequests = labelRequests.filter(notDismissed('label'))
   const riderPayoutRequests = notifications.rider_payout_requests ?? []
-  const riderApplications = notifications.rider_applications ?? []
+  const riderApplications = notifications.rider_applications ?? [] // stay until approved or declined
+  const riderNotices = notifications.rider_notices ?? [] // riders leaving, until their notice is processed
   const sellerApplications = (notifications.seller_applications ?? []).filter(notDismissed('app'))
   const categorySuggestions = (notifications.category_suggestions ?? []).filter(notDismissed('cat'))
   const refundsDue = notifications.refunds_due ?? []
   const sellerTasks = (notifications.seller_tasks ?? []).filter(notDismissed('task'))
   const codKept = (notifications.cod_kept ?? []).filter(notDismissed('cod'))
   const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
+  const localOffRequests = notifications.local_delivery_off ?? [] // sellers asking to turn local delivery off (admin decides)
   // Counts, not items: × hides the line until the number changes.
   const productsWaiting = dismissedNotifs.has(`sprod-${notifications.products_waiting}`) ? 0 : (notifications.products_waiting ?? 0)
   const trademarkReviews = dismissedNotifs.has(`stm-${notifications.trademark_reviews}`) ? 0 : (notifications.trademark_reviews ?? 0)
   const removalRequests = dismissedNotifs.has(`sdel-${notifications.removal_requests}`) ? 0 : (notifications.removal_requests ?? 0)
   // Seller items live under the top-bar "Sellers" button, not the main bell.
-  const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length
+  const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length + localOffRequests.length
     + sellerLabelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0) + (trademarkReviews > 0 ? 1 : 0)
   const notificationCount = refundsDue.length
     + riderPayoutRequests.length
     + riderApplications.length
+    + riderNotices.length
     + visibleRefusedCod.length
     + visibleCashOverdue.length
     + visibleNegativeFeedback.length
@@ -2371,6 +2445,18 @@ Reason:`, '')
     const next = !open
     try { localStorage.setItem('gdp_admin_nav', next ? '1' : '0') } catch { /* ignore */ }
     return next
+  })
+
+  const shownRiders = riders.filter((r) => {
+    const f = riderFilter
+    if (f.store === 'none' && (r.stores ?? []).length) return false
+    if (f.store && f.store !== 'none' && !(r.stores ?? []).some((s) => String(s.id) === f.store)) return false
+    if (f.country && !(r.stores ?? []).some((s) => s.country === f.country)) return false
+    if (f.status === 'active' && !r.rider_is_active) return false
+    if (f.status === 'inactive' && r.rider_is_active) return false
+    if (f.status === 'leaving' && !r.notice) return false
+    if (f.shift && (r.attendance?.status ?? 'off') !== f.shift) return false
+    return true
   })
 
   const categoryById = new Map(categories.map((c) => [c.id, c]))
@@ -2439,6 +2525,18 @@ Reason:`, '')
                               💵 {c.shop_name ?? 'Seller'} kept {money(c.amount_cents, c.currency)} — order #{c.order_id} · {new Date(c.at).toLocaleDateString()}
                             </button>
                             <button type="button" className="admin-bell-x" title="Dismiss" onClick={(event) => { event.stopPropagation(); dismissNotif(sellerKey.cod(c)) }}>×</button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {localOffRequests.length > 0 && (
+                      <section>
+                        <h5>Turn off local delivery?</h5>
+                        {localOffRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`localoff-${r.store_id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); setStoreKind('seller'); goTab('stores') }}>
+                              🛵 {r.shop_name} wants to turn off local delivery — {r.riders} rider{r.riders === 1 ? '' : 's'} linked · approve or keep on
+                            </button>
                           </div>
                         ))}
                       </section>
@@ -2588,13 +2686,25 @@ Reason:`, '')
                         )}
                       </section>
                     )}
+                    {riderNotices.length > 0 && (
+                      <section>
+                        <h5>Riders leaving</h5>
+                        {riderNotices.slice(0, BELL_ITEM_CAP).map((n) => (
+                          <div className="admin-bell-row" key={`rnotice-${n.rider_id}`}>
+                            <button type="button" className={n.due ? 'admin-bell-item warn' : 'admin-bell-item'} onClick={() => { setBellOpen(false); goTab('riders'); openRiderDetail(n.rider_id) }}>
+                              🚪 {n.name} — {n.due ? `last day ${new Date(n.leaving_on).toLocaleDateString()}: settle final pay` : `gave notice, leaving ${new Date(n.leaving_on).toLocaleDateString()}`}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
                     {riderApplications.length > 0 && (
                       <section>
                         <h5>Rider applications</h5>
                         {riderApplications.slice(0, BELL_ITEM_CAP).map((a) => (
                           <div className="admin-bell-row" key={`rapp-${a.id}`}>
                             <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('riders') }}>
-                              🙋 {a.name ?? 'Applicant'}{a.store_name ? ` — ${a.store_name}` : ''} · {new Date(a.at).toLocaleDateString()}
+                              🙋 {a.name ?? 'Applicant'}{a.store_name ? ` — ${a.store_name}` : ''}{a.seller_accepted ? ' · seller accepted, approve?' : ''} · {new Date(a.at).toLocaleDateString()}
                             </button>
                           </div>
                         ))}
@@ -3139,11 +3249,11 @@ Reason:`, '')
                 </select>
               </label>
             )}
-            {stores.length > 0 && (
+            {ownStores.length > 0 && (
               <label>Store
                 <select value={productStore} onChange={(event) => { setProductStore(event.target.value); setProductsPage(1); setProductForm(null) }}>
                   <option value="">All stores</option>
-                  {stores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.city ? ` — ${s.city}` : ''}</option>)}
+                  {ownStores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.city ? ` — ${s.city}` : ''}</option>)}
                 </select>
               </label>
             )}
@@ -3301,7 +3411,7 @@ Reason:`, '')
                   ? (stores.length >= 2
                     ? <p className="muted">You have <strong>{stores.length} stores</strong> — they can&rsquo;t share one inventory number. <button type="button" className="act" onClick={() => setProductForm({ ...productForm, per_store_stock: true })}>Give each store its own count</button></p>
                     : <p className="muted">Off — the single <strong>Inventory</strong> / variant <strong>Stock</strong> above applies at every store. Turn on for a multi-store shop so each store has its own count and out-of-stock state.</p>)
-                  : stores.length === 0
+                  : ownStores.length === 0
                     ? <p className="muted">No stores yet — add them under <strong>Stores</strong> first.</p>
                     : <>
                         <p className="muted">Untick <em>Carried</em> for a store that doesn&rsquo;t sell this at all (it disappears there). Quantity 0 keeps it listed as &ldquo;out of stock&rdquo;.</p>
@@ -3311,7 +3421,7 @@ Reason:`, '')
                               {(productForm.variants ?? []).filter((v) => !v._delete).map((v, i) => <th key={i}>{v.label || v.sku || `Variant ${i + 1}`}</th>)}
                             </tr></thead>
                             <tbody>
-                              {stores.map((store) => {
+                              {ownStores.map((store) => {
                                 const row = storeStockRow(productForm, store.id)
                                 const setRow = (patch) => setProductForm((form) => ({ ...form, store_stock: { ...form.store_stock, [store.id]: { ...row, ...patch } } }))
                                 return (
@@ -3530,7 +3640,7 @@ Reason:`, '')
             <input type="email" placeholder="rider@example.com" value={riderEmail} onChange={(event) => setRiderEmail(event.target.value)} />
             <select required value={riderHireStoreId} onChange={(event) => setRiderHireStoreId(event.target.value)}>
               <option value="" disabled>Assign to store…</option>
-              {stores.map((store) => <option key={store.id} value={store.id}>{store.name || `Store #${store.id}`}{store.city ? ` — ${store.city}` : ''}</option>)}
+              {stores.map((store) => <option key={store.id} value={store.id}>{store.name || `Store #${store.id}`}{store.city ? ` — ${store.city}` : ''}{store.shop_id ? ` (seller: ${store.shop?.name ?? ''})` : ''}</option>)}
             </select>
             <button className="act" type="submit" disabled={stores.length === 0}>Add rider</button>
             <span className="muted">{stores.length === 0
@@ -3594,24 +3704,27 @@ Reason:`, '')
 
           {riderApps.length > 0 && (
             <>
-              <h3 className="admin-subhead">Rider applications{riderApps.filter((a) => a.status === 'pending').length ? ` (${riderApps.filter((a) => a.status === 'pending').length} waiting)` : ''}</h3>
+              <h3 className="admin-subhead">Rider applications{riderApps.filter((a) => ['pending', 'seller_accepted'].includes(a.status)).length ? ` (${riderApps.filter((a) => ['pending', 'seller_accepted'].includes(a.status)).length} waiting)` : ''}</h3>
               <p className="muted">People apply at /rider, choosing a store near them. Approving makes them a rider for that store.</p>
               <table className="admin-table">
-                <thead><tr><th>Applicant</th><th>Store</th><th>Vehicle</th><th>Home</th><th>Licence</th><th>Status</th><th>Applied</th><th></th></tr></thead>
+                <thead><tr><th>Applicant</th><th>Store</th><th>Age</th><th>Vehicle</th><th>Experience</th><th>Home</th><th>Licence</th><th>Documents</th><th>Status</th><th>Applied</th><th></th></tr></thead>
                 <tbody>
                   {riderApps.map((app) => (
                     <tr key={app.id}>
                       <td>{app.user?.name}<br /><span className="muted">{app.user?.email} · {app.phone}</span></td>
-                      <td>{app.store?.name ?? <span className="muted">—</span>}</td>
-                      <td>{app.vehicle_type}</td>
+                      <td>{app.store?.name ?? <span className="muted">—</span>}{app.store?.shop && <><br /><small className="muted">Seller: {app.store.shop.name} — they decide{app.decided_by_seller ? ' (decided)' : ''}</small></>}</td>
+                      <td>{app.date_of_birth ? Math.floor((Date.now() - new Date(app.date_of_birth)) / 31557600000) : <span className="muted">—</span>}</td>
+                      <td>{app.vehicle_type}{app.own_vehicle ? ' (own)' : ''}</td>
+                      <td>{monthsText(app.experience_months)}</td>
                       <td>{app.home_address}</td>
                       <td>{app.license_number || <span className="muted">—</span>}{app.license_document_path && <> <button type="button" className="act ghost" onClick={() => viewKycDocument(app.license_document_path)}>View</button></>}</td>
-                      <td>{app.status === 'pending' ? <span className="admin-status-chip pending">Pending</span> : app.status === 'approved' ? <span className="admin-status-chip ok">Approved</span> : <span className="admin-status-chip bad" title={app.rejection_reason ?? ''}>Rejected</span>}</td>
+                      <td>{[['ID', app.id_document_path], ['Education', app.education_document_path], ['Photo', app.photo_path]].filter(([, p]) => p).map(([label, p]) => <button key={label} type="button" className="act ghost" onClick={() => viewKycDocument(p)}>{label}</button>)}</td>
+                      <td>{app.status === 'seller_accepted' ? <span className="admin-status-chip pending">Seller accepted — approve?</span> : app.status === 'pending' ? <span className="admin-status-chip pending">Pending</span> : app.status === 'approved' ? <span className="admin-status-chip ok">Approved</span> : <span className="admin-status-chip bad" title={app.rejection_reason ?? ''}>Rejected</span>}</td>
                       <td>{new Date(app.created_at).toLocaleDateString()}</td>
                       <td className="admin-actions">
-                        {app.status === 'pending' && (
+                        {['pending', 'seller_accepted'].includes(app.status) && (
                           <>
-                            <button className="act" type="button" disabled={busyId === `app-${app.id}`} onClick={() => riderAppAction(app, 'approve')}>Approve</button>
+                            <button className="act" type="button" disabled={busyId === `app-${app.id}`} onClick={() => { if (window.confirm(`Approve ${app.user?.name ?? 'this applicant'}?\n\nJust verify the basic requirements are met: age (from the ID), ID proof, photo, and licence + vehicle RC for motor vehicles.${app.status === 'seller_accepted' ? ' The seller has already chosen them.' : ''}`)) riderAppAction(app, 'approve') }}>Approve</button>
                             <button className="act danger" type="button" disabled={busyId === `app-${app.id}`} onClick={() => rejectRiderApp(app)}>Reject</button>
                           </>
                         )}
@@ -3624,17 +3737,44 @@ Reason:`, '')
             </>
           )}
 
-          {listBusy.riders && riders.length === 0 ? <Loading>Loading riders…</Loading> : riders.length === 0 ? <p className="admin-empty">No riders yet. Add one by email above.</p> : (
+          {riders.length > 0 && (
+            <div className="admin-toolbar admin-rider-filters">
+              <label>Store<select value={riderFilter.store} onChange={(event) => { setRiderFilter({ ...riderFilter, store: event.target.value }); setRidersPage(1) }}>
+                <option value="">All stores</option>
+                <option value="none">Not linked to a store</option>
+                {stores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.shop_id ? ` (seller: ${s.shop?.name ?? ''})` : ''}</option>)}
+              </select></label>
+              {adminMarket === 'ALL' && <label>Country<select value={riderFilter.country} onChange={(event) => { setRiderFilter({ ...riderFilter, country: event.target.value }); setRidersPage(1) }}>
+                <option value="">All countries</option>
+                {marketOptions.map((m) => <option key={m.code} value={m.code}>{m.name}</option>)}
+              </select></label>}
+              <label>Status<select value={riderFilter.status} onChange={(event) => { setRiderFilter({ ...riderFilter, status: event.target.value }); setRidersPage(1) }}>
+                <option value="">Any</option>
+                <option value="active">Active</option>
+                <option value="inactive">Not active</option>
+                <option value="leaving">Leaving (gave notice)</option>
+              </select></label>
+              <label>Right now<select value={riderFilter.shift} onChange={(event) => { setRiderFilter({ ...riderFilter, shift: event.target.value }); setRidersPage(1) }}>
+                <option value="">Any</option>
+                <option value="clocked_in">On shift</option>
+                <option value="on_break">On a break</option>
+                <option value="paused">Paused</option>
+                <option value="off">Off shift</option>
+              </select></label>
+              {Object.values(riderFilter).some(Boolean) && <button type="button" className="act ghost" onClick={() => { setRiderFilter({ store: '', country: '', status: '', shift: '' }); setRidersPage(1) }}>Clear ({shownRiders.length} of {riders.length})</button>}
+            </div>
+          )}
+          {listBusy.riders && riders.length === 0 ? <Loading>Loading riders…</Loading> : riders.length === 0 ? <p className="admin-empty">No riders yet. Add one by email above.</p> : shownRiders.length === 0 ? <p className="admin-empty">No riders match these filters.</p> : (
             <table className="admin-table">
               <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stores</th><th>Location</th><th>Rating</th><th>Active jobs</th><th>Earnings</th><th>On shift</th><th></th></tr></thead>
               <tbody>
-                {pageSlice(riders, ridersPage).map((rider) => (
+                {pageSlice(shownRiders, ridersPage).map((rider) => (
                   <tr key={rider.id}>
-                    <td>{rider.name}{countryBadge(rider.stores?.[0]?.country)}</td>
+                    <td className="rider-name-cell">{rider.photo_path ? <RiderPhoto path={rider.photo_path} headers={authHeaders} /> : <span className="rider-photo none" aria-hidden>👤</span>}<span>{rider.name}{countryBadge(rider.stores?.[0]?.country)}<br /><small className="muted">Rider for {tenure(rider.rider_since)} · experience {monthsText(rider.experience_months)}</small></span></td>
                     <td>{rider.phone || <span className="muted">—</span>}</td>
                     <td>{riderStatusChip(rider)}</td>
                     <td className={rider.cash_holding_cents > 0 ? (cashHoldingOverdue(rider.cash_holding_since) ? 'admin-td-cash-overdue' : 'admin-td-cash-today') : undefined}>{(rider.stores ?? []).length
-                      ? (rider.stores).map((s) => s.name).join(', ')
+                      ? (rider.stores).map((s) => <div key={s.id}>{s.name}{s.shop_id ? ' (seller)' : ''}</div>)
                       : <span className="muted">none — can&rsquo;t be auto-assigned</span>}
                       {rider.cash_holding_cents > 0 && (
                         <span className="admin-note admin-cash-note" title={rider.cash_holding_since ? `holding since ${new Date(rider.cash_holding_since).toLocaleDateString()}` : ''}>
@@ -3661,7 +3801,11 @@ Reason:`, '')
               </tbody>
             </table>
           )}
-          <Pager page={ridersPage} pageCount={Math.max(1, Math.ceil(riders.length / pageSize))} total={riders.length} onPage={setRidersPage} pageSize={pageSize} onPageSize={setPageSize} />
+          <Pager page={ridersPage} pageCount={Math.max(1, Math.ceil(shownRiders.length / pageSize))} total={shownRiders.length} onPage={setRidersPage} pageSize={pageSize} onPageSize={setPageSize} />
+          {riders.length > 0 && <>
+            <h3 className="admin-subhead">Rider money</h3>
+            <RiderMoneyTable key={adminMarket} headers={authHeaders} path="/admin/riders-money" currency={activeCurrency} admin />
+          </>}
         </section>
       )}
 
@@ -3708,6 +3852,11 @@ Reason:`, '')
         <section className="admin-panel">
           <div className="admin-toolbar">
             <button className="act" type="button" onClick={() => { setStoreForm({ ...EMPTY_STORE }); scrollFormIntoView('admin-store-form') }}>New store</button>
+            <label className="admin-inline-filter">Show <select value={storeKind} onChange={(event) => { setStoreKind(event.target.value); setStoresPage(1) }}>
+              <option value="all">All stores ({stores.length})</option>
+              <option value="own">Own stores ({ownStores.length})</option>
+              <option value="seller">Sellers&rsquo; stores ({stores.length - ownStores.length})</option>
+            </select></label>
             <span className="muted"><b>Stores are your warehouses or delivery hubs</b> — where stock is kept, riders pick up orders, and each delivery radius starts. Customers outside every active store&rsquo;s radius can browse but can&rsquo;t check out. (Your company&rsquo;s registered address for bills is in Settings &rarr; Business &amp; tax details.)</span>
           </div>
 
@@ -3715,6 +3864,14 @@ Reason:`, '')
             <form id="admin-store-form" className="admin-form" onSubmit={saveStore}>
               <h3>{storeForm.id ? `Edit store #${storeForm.id}` : 'New store (warehouse / hub)'}</h3>
               <div className="admin-form-grid">
+                {!storeForm.id
+                  ? <label>Belongs to
+                    <select value={storeForm.shop_id ?? ''} onChange={(event) => setStoreForm({ ...storeForm, shop_id: event.target.value || null })}>
+                      <option value="">{brandName()} — own store / hub</option>
+                      {sellers.filter((s) => s.status === 'approved' && s.shop?.id).map((s) => <option key={s.id} value={s.shop.id}>Seller — {s.shop.name}</option>)}
+                    </select>
+                  </label>
+                  : storeForm.shop_id && <p className="muted wz-wide">Seller&rsquo;s store — {stores.find((x) => x.id === storeForm.id)?.shop?.name}. Their riders deliver its local orders; {brandName()}&rsquo;s checkout and stock never use it.</p>}
                 <label>Name<input value={storeForm.name} placeholder="Main Store" onChange={(event) => setStoreForm({ ...storeForm, name: event.target.value })} /></label>
                 <label>Street<input required value={storeForm.line1} onChange={(event) => setStoreForm({ ...storeForm, line1: event.target.value })} /></label>
                 <label>Line 2<input value={storeForm.line2 ?? ''} onChange={(event) => setStoreForm({ ...storeForm, line2: event.target.value })} /></label>
@@ -3743,19 +3900,38 @@ Reason:`, '')
 
           {listBusy.stores && stores.length === 0 ? <Loading>Loading stores…</Loading> : stores.length === 0 ? <p className="admin-empty">No stores yet. Add one to switch on delivery-area checks.</p> : (
             <table className="admin-table">
-              <thead><tr><th>Name</th><th>Address</th><th>Radius</th><th>Location</th><th>Active</th><th></th></tr></thead>
+              <thead><tr><th>Name</th><th>Type</th><th>Address</th><th>Radius</th><th>Location</th><th>Riders</th><th>Active</th><th>Local delivery (riders)</th><th>Hiring</th><th></th></tr></thead>
               <tbody>
-                {pageSlice(stores, storesPage).map((store) => (
+                {pageSlice(shownStores, storesPage).map((store) => (
                   <tr key={store.id}>
-                    <td>{store.name}</td>
+                    <td>{store.name}<br /><small className="muted">Listed {tenure(store.created_at)} ago</small></td>
+                    <td>{store.shop_id
+                      ? <span className="store-owner"><span className="pill store-tag-seller">Seller</span> <button type="button" className="link" onClick={() => setSellerCardId(store.seller_id)}>{store.shop?.name ?? 'Seller'}</button>{sellerCardId === store.seller_id && <SellerCard sellerId={store.seller_id} headers={authHeaders} onClose={() => setSellerCardId(null)} onOpen={(id) => { setSellerCardId(null); goTab('sellers'); openSellerDetail(id) }} />}</span>
+                      : <span className="pill store-tag-own">Own store</span>}</td>
                     <td>{[store.line1, store.city, store.state, store.postal_code].filter(Boolean).join(', ')}</td>
                     <td>{store.delivery_radius_km} km</td>
                     <td>{store.latitude != null && store.longitude != null
                       ? `${Number(store.latitude).toFixed(4)}, ${Number(store.longitude).toFixed(4)}`
                       : <span className="muted">not located — add coordinates</span>}</td>
+                    <td>{store.riders_count ?? 0}</td>
                     <td>{store.is_active ? 'Yes' : 'No'}</td>
+                    <td>{store.shop_id ? <div className="store-local">
+                      {{ on: <span className="pill pill-approved">On</span>, off: <span className="pill">Off</span>, off_requested: <span className="pill pill-pending">Seller asks to turn off</span>, locked: <span className="pill store-tag-locked" title="Only admin can turn it on again">Off · locked</span> }[store.local_delivery_status]}
+                      {store.local_delivery_status === 'off_requested' ? <>
+                        <button type="button" className="act" onClick={() => localDeliveryAction(store, 'approve_off')}>Approve</button>
+                        <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'keep_on')}>Keep on</button>
+                      </> : store.local_delivery_status === 'on'
+                        ? <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'off')}>Turn off</button>
+                        : <button type="button" className="act ghost" title={store.latitude == null ? 'Set the store’s location first (Edit)' : ''} disabled={store.latitude == null} onClick={() => localDeliveryAction(store, 'on')}>Turn on</button>}
+                    </div> : <div className="store-local">
+                      {store.local_delivery_status === 'on' ? <span className="pill pill-approved">Riders on</span> : <span className="pill">Courier only</span>}
+                      {store.local_delivery_status === 'on'
+                        ? <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'off')}>Turn off</button>
+                        : <button type="button" className="act ghost" disabled={!store.riders_count} title={store.riders_count ? '' : 'Link a rider to this store first (Riders)'} onClick={() => localDeliveryAction(store, 'on')}>Turn on</button>}
+                    </div>}</td>
+                    <td><label className="admin-check" title="Shown on the rider application page and the storefront's Work with us link"><input type="checkbox" checked={!!store.hiring_open} disabled={!store.is_active && !store.hiring_open} onChange={(event) => toggleHiring(store, event.target.checked)} /> {store.hiring_open ? 'Open' : 'Closed'}</label></td>
                     <td className="admin-actions">
-                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', country: store.country ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
+                      <button className="act" type="button" onClick={() => { setStoreForm({ id: store.id, shop_id: store.shop_id ?? null, name: store.name ?? '', line1: store.line1 ?? '', line2: store.line2 ?? '', city: store.city ?? '', state: store.state ?? '', postal_code: store.postal_code ?? '', country: store.country ?? '', latitude: store.latitude ?? '', longitude: store.longitude ?? '', delivery_radius_km: store.delivery_radius_km ?? 5, is_active: store.is_active }); scrollFormIntoView('admin-store-form') }}>Edit</button>
                       <button className="act danger" type="button" onClick={() => removeStore(store)}>Delete</button>
                     </td>
                   </tr>
@@ -3763,7 +3939,7 @@ Reason:`, '')
               </tbody>
             </table>
           )}
-          <Pager page={storesPage} pageCount={Math.max(1, Math.ceil(stores.length / pageSize))} total={stores.length} onPage={setStoresPage} pageSize={pageSize} onPageSize={setPageSize} />
+          <Pager page={storesPage} pageCount={Math.max(1, Math.ceil(shownStores.length / pageSize))} total={shownStores.length} onPage={setStoresPage} pageSize={pageSize} onPageSize={setPageSize} />
         </section>
       )}
 
@@ -4245,6 +4421,7 @@ Reason:`, '')
             <>
               <p className="muted">Unlocked — locks when you open another menu or after a minute without activity. <button type="button" className="link" onClick={relockSecure}>Lock now</button></p>
 
+              {secureSection === 'payouts' && <AdjustBalance headers={secureHeaders} sellers={sellers} riders={riders} onMessage={setMessage} onError={(error) => { if (/Unlock the Secure access/.test(error.message)) relockSecure(); fail(error) }} />}
               {secureSection === 'payouts' && <SellerPayouts key={adminMarket} headers={secureHeaders} onMessage={setMessage} onError={(error) => { if (/Unlock the Secure access/.test(error.message)) relockSecure(); fail(error) }} onOpenSeller={(id) => { goTab('sellers'); openSellerDetail(id) }} />}
 
               {secureSection === 'fees' && settings?.payout_fees && <>
@@ -4545,7 +4722,7 @@ Reason:`, '')
                   </select>
                 </label>
                 {settings.seller_local_delivery !== 'hidden' && <label>Largest distance a seller can cover (km)
-                  <input type="number" min="1" max="100" step="0.5" defaultValue={settings.seller_local_max_km ?? 25} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 25) })} />
+                  <input type="number" min="1" max="50" step="0.5" defaultValue={settings.seller_local_max_km ?? 10} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 10) })} />
                 </label>}
                 <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
               </div>
@@ -4606,8 +4783,8 @@ Reason:`, '')
                       <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
                       Auto-assign riders to orders
                     </label>
-                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. Sellers&rsquo; own deliveries don&rsquo;t use these riders. Manage riders and stores under Riders and Stores.</p></>}
-                  </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). It&rsquo;s only for delivering {brandName()}&rsquo;s own stock — sellers ship their own orders.</p>}
+                    <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. It covers {brandName()}&rsquo;s own stock{(settings.nextech_pickup ?? 'available') !== 'hidden' ? <> and sellers&rsquo; items {brandName()} collects (&ldquo;{brandName()} collects &amp; delivers&rdquo; in Shipping → Seller shipping)</> : ''}. Sellers who ship themselves or deliver locally never use these riders — riders are always {brandName()}&rsquo;s. Manage riders and stores under Riders and Stores.</p></>}
+                  </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). Riders deliver {brandName()}&rsquo;s own stock and sellers&rsquo; items {brandName()} collects; sellers who ship themselves don&rsquo;t use them.</p>}
                 </div>
               {/* Delivery fee customers pay when NexTech delivers (moved from Settings → charges; same save). */}
               {chargesMarket !== 'home' && (settings.markets ?? []).some((m) => m.code === chargesMarket)
@@ -4648,6 +4825,12 @@ Reason:`, '')
                   <input type="checkbox" checked={!!settings.cod_enabled} onChange={(event) => saveSetting({ cod_enabled: event.target.checked })} />
                   Accept cash on delivery
                 </label>
+                {settings.cod_enabled && settings.cod_max_order && <label>Largest order for cash on delivery ({currencySymbol(activeCurrency)}) <small className="muted">at your own risk; bigger orders pay by card. Sellers can set lower for theirs.</small>
+                  <input type="number" min="0" step="1" defaultValue={Math.round((settings.cod_max_order[workMarket] ?? 0) / 100)} key={`codmax-${workMarket}`} onBlur={(event) => saveSetting({ cod_max_order: { [workMarket]: Math.round(Number(event.target.value || 0) * 100) } })} />
+                </label>}
+                {settings.cod_enabled && settings.rider_cash_limit && <label>Most cash one rider may hold ({currencySymbol(activeCurrency)}) <small className="muted">over it, they&rsquo;re paused in every store until it&rsquo;s returned</small>
+                  <input type="number" min="0" step="1" defaultValue={Math.round((settings.rider_cash_limit[workMarket] ?? 0) / 100)} key={`cashlimit-${workMarket}`} onBlur={(event) => saveSetting({ rider_cash_limit: { [workMarket]: Math.round(Number(event.target.value || 0) * 100) } })} />
+                </label>}
                 <p className="muted">When on, customers can choose to pay with cash at checkout. Cash-on-delivery orders are confirmed immediately; mark them paid from the Orders tab once the courier collects the cash.</p>
               </div>
               {/* Rider pay belongs with own stores & riders (moved from Settings → charges; same save). */}
@@ -5162,9 +5345,14 @@ Reason:`, '')
                             <PackageProgress pkg={pk} packedAt={ss.packed_at} cod={o.payment_method === 'cod'} />
                             <TrackingTimeline pkg={pk} />
                             {pk.has_label_file && <>{' '}<button type="button" className="link" onClick={() => downloadPackageLabel(pk)}>Label file</button></>}
+                            {pk.label_source === 'local'
+                              // The seller's own delivery: watch only — the seller or their rider moves it along.
+                              ? <div className="muted">Seller&rsquo;s own delivery — {pk.rider ? `rider ${pk.rider.name}${pk.rider.phone ? ` (${pk.rider.phone})` : ''}` : 'the seller delivers it'}{pk.delivered_by ? ` · delivered by ${pk.delivered_by === 'rider' ? 'the rider' : 'the seller'}` : ''}. Only the seller or their rider updates its steps; cancel or refund the order if needed.</div>
+                              : <>
                             {' '}<button type="button" className="link" disabled={busyId === o.id} onClick={() => editPackageTracking(o, pk)}>Edit tracking</button>
                             {pk.status !== 'delivered' && <button type="button" className="link" disabled={busyId === o.id} onClick={() => patchPackage(o, pk, { status: 'delivered' })}> Mark delivered</button>}
                             {!['lost', 'delivered'].includes(pk.status) && <button type="button" className="link" disabled={busyId === o.id} onClick={() => { if (window.confirm('Mark this package as lost?')) patchPackage(o, pk, { status: 'lost' }) }}> Lost</button>}
+                              </>}
                           </div>
                         ))}
                       </div>
@@ -5242,6 +5430,65 @@ Reason:`, '')
                   : riderDetail.rider?.rider_base_address
                     ? `Home base: ${riderDetail.rider.rider_base_address}`
                     : 'No address on file'}</p>
+
+                {riderDetail.view !== 'reviews' && riderDetail.settlement && (() => {
+                  const st = riderDetail.settlement
+                  const m = (c) => money(c, st.currency)
+                  return (
+                    <div className="rider-settle">
+                      <b>Settlement</b>
+                      <span>Earned {m(st.earned_cents)} − cash held {m(st.cash_held_cents)} = <b className={st.net_cents < 0 ? 'money-neg' : ''}>{st.net_cents >= 0 ? `${m(st.net_cents)} to pay them` : `they owe ${m(-st.net_cents)}`}</b></span>
+                      <small className="muted">Settle on {new Date(st.settle_on).toLocaleDateString()} — 7 days after their last delivery (only delivery claims involve the rider; product warranties and returns are the seller&rsquo;s).</small>
+                      {st.cash_held_cents > 0 && <button type="button" className="act ghost" onClick={async () => {
+                        if (!window.confirm('Take the cash this rider holds for sellers from their earnings and give it to those sellers now?')) return
+                        try {
+                          const response = await fetch(`${API_URL}/admin/riders/${riderDetail.rider.id}/offset-seller-cash`, { method: 'POST', headers: jsonHeaders() })
+                          const data = await readJson(response)
+                          if (!response.ok) throw new Error(data.message ?? 'Could not settle.')
+                          setRiderDetail((d) => ({ ...d, settlement: data.data.settlement }))
+                          setMessage(data.data.moved_cents > 0 ? `${m(data.data.moved_cents)} moved to the sellers.` : 'Their earnings don’t cover a whole delivery’s cash yet.')
+                        } catch (error) { fail(error) }
+                      }}>Give sellers their cash from earnings</button>}
+                    </div>
+                  )
+                })()}
+
+                {riderDetail.view !== 'reviews' && riderDetail.rider?.notice && (
+                  <div className="admin-alert">
+                    <span>Gave notice on {new Date(riderDetail.rider.notice.given_at).toLocaleDateString()} — last working day <b>{new Date(riderDetail.rider.notice.leaving_on).toLocaleDateString()}</b>. Settle their final pay (check open orders and any cash they hold), then mark it processed.</span>
+                    <button type="button" className="act" onClick={async () => {
+                      if (!window.confirm(`Mark ${riderDetail.rider.name}'s notice processed? Their final pay should be settled; they stop working (the account stays).`)) return
+                      try {
+                        const response = await fetch(`${API_URL}/admin/riders/${riderDetail.rider.id}/notice-processed`, { method: 'POST', headers: jsonHeaders() })
+                        const data = await readJson(response)
+                        if (!response.ok) throw new Error(data.message ?? 'Could not update.')
+                        setNotifications((cur) => ({ ...cur, rider_notices: (cur.rider_notices ?? []).filter((n) => n.rider_id !== riderDetail.rider.id) }))
+                        setRiderDetail(null); loadRiders(); setMessage('Notice processed.')
+                      } catch (error) { fail(error) }
+                    }}>Mark processed</button>
+                  </div>
+                )}
+
+                {riderDetail.view !== 'reviews' && riderDetail.profile && (() => {
+                  const p = riderDetail.profile
+                  return (
+                    <div className="rider-profile">
+                      {riderDetail.rider?.photo_path && <RiderPhoto path={riderDetail.rider.photo_path} headers={authHeaders} />}
+                      <dl>
+                        <dt>Age</dt><dd>{p.age ?? '—'}</dd>
+                        <dt>Vehicle</dt><dd>{p.vehicle_type}{p.own_vehicle ? ' (own)' : ''}{p.license_number ? ` · licence ${p.license_number}` : ''}</dd>
+                        <dt>Experience</dt><dd>{monthsText(p.experience_months)}</dd>
+                        <dt>Education</dt><dd>{p.education || '—'}</dd>
+                        {p.work_history && <><dt>Past work</dt><dd>{p.work_history}</dd></>}
+                        <dt>Health</dt><dd>{p.health}</dd>
+                        <dt>Rider for</dt><dd>{tenure(riderDetail.rider?.rider_since)}</dd>
+                        <dt>Stores wanted</dt><dd>{(p.preferred_stores ?? []).map((s, i) => `${i + 1}. ${s.name}${s.shop_id ? ' (seller)' : ''}`).join(' · ') || '—'}</dd>
+                        <dt>Documents</dt><dd>{Object.entries(p.documents ?? {}).map(([label, path]) => <button key={label} type="button" className="act ghost" onClick={() => viewKycDocument(path)}>{label}</button>)}</dd>
+                        <dt>Applied</dt><dd>{p.applied_at ? new Date(p.applied_at).toLocaleDateString() : '—'}</dd>
+                      </dl>
+                    </div>
+                  )
+                })()}
 
                 {riderDetail.view === 'reviews' ? (
                   <div className="admin-review-overview">

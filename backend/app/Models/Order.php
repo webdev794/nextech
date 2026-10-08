@@ -381,7 +381,7 @@ class Order extends Model
             return $this->relationLoaded('store') ? $this->store : $this->store()->first();
         }
 
-        $stores = Store::query()->where('is_active', true)->orderBy('id')->get();
+        $stores = Store::query()->own()->where('is_active', true)->orderBy('id')->get();
 
         if ($stores->isEmpty()) {
             return null;

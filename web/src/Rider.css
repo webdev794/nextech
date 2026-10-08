@@ -137,3 +137,7 @@
 .rider-earnings-list small{font-size:12px;color:#7c857a}
 .rider-earnings-list .pos{color:#2e7d32}
 .rider-earnings-list .neg{color:#a23b28}
+.rider-apply-check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.rider-apply-priority{margin:4px 0 10px 18px;padding:0;font-size:14px}.rider-apply-priority button{margin-left:6px;border:1px solid #d9ddd3;background:#fff;border-radius:4px;cursor:pointer}
+.rider-notice{margin-top:16px;padding-top:12px;border-top:1px solid #e3e6df}.rider-notice h3{margin:0 0 6px}
+.rider-card{border:1px solid #e3e6df;border-radius:10px;padding:12px;margin:0 0 10px;background:#fff;font-size:14px}.rider-card p{margin:4px 0}.rider-cash{color:#8a5a00}.rider-deliver-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}.rider-deliver-row input[type=text],.rider-deliver-row input:not([type]){width:160px}

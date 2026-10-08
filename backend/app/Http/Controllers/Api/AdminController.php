@@ -265,15 +265,18 @@ class AdminController extends Controller
                 'at' => $r->created_at,
             ]);
 
+        // Rider applications waiting for a decision (sellers' accepted ones first) — they stay until decided.
         $riderApplications = RiderApplication::query()
-            ->where('status', 'pending')
+            ->whereIn('status', ['pending', 'seller_accepted'])
             ->with(['user:id,name', 'store:id,name'])
+            ->orderByRaw("status = 'seller_accepted' desc")
             ->oldest()
             ->get()
             ->map(fn (RiderApplication $a) => [
                 'id' => $a->id,
                 'name' => $a->user?->name,
                 'store_name' => $a->store?->name,
+                'seller_accepted' => $a->status === 'seller_accepted',
                 'at' => $a->created_at,
             ]);
 
@@ -344,7 +347,17 @@ class AdminController extends Controller
             ->map(fn ($shop) => ['seller_id' => $shop->seller_id, 'shop_name' => $shop->name, 'owed_cents' => \App\Support\SellerCod::owedCents($shop), 'over_limit' => \App\Support\SellerCod::owedCents($shop) > \App\Support\SellerCod::maxOwedCents($shop->market), 'currency' => Market::currency($shop->market)])
             ->filter(fn ($r) => $r['owed_cents'] > 0)->sortByDesc('owed_cents')->values();
 
+        // Sellers asking to turn off local delivery (riders linked): admin decides.
+        $localOff = \App\Models\Store::query()->whereNotNull('local_delivery_off_requested_at')->with('shop:id,name,seller_id')->withCount('riders')->get()
+            ->map(fn ($s) => ['store_id' => $s->id, 'seller_id' => $s->shop?->seller_id, 'shop_name' => $s->shop?->name, 'riders' => $s->riders_count, 'at' => $s->local_delivery_off_requested_at]);
+
+        // Riders who gave notice, until admin marks it processed (due = leaving date reached).
+        $riderNotices = User::query()->where('is_rider', true)->whereNotNull('rider_notice_at')->whereNull('rider_notice_processed_at')->orderBy('rider_leaving_on')->get(['id', 'name', 'rider_notice_at', 'rider_leaving_on'])
+            ->map(fn ($u) => ['rider_id' => $u->id, 'name' => $u->name, 'leaving_on' => $u->rider_leaving_on?->toDateString(), 'due' => $u->rider_leaving_on && $u->rider_leaving_on->lte(today()), 'at' => $u->rider_notice_at]);
+
         return response()->json(['data' => [
+            'rider_notices' => $riderNotices,
+            'local_delivery_off' => $localOff,
             'cod_kept' => $codKept,
             'sellers_owing' => $sellersOwing,
             'refunds_due' => $refundsDue,

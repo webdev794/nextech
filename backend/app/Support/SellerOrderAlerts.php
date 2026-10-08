@@ -26,6 +26,10 @@ class SellerOrderAlerts
                 $shipsItself = $items->contains(fn ($i) => $i->fulfilled_by === 'seller');
                 $shipBy = $order->shopShipping->firstWhere('shop_id', (int) $shopId)?->ship_by?->toFormattedDateString();
                 $user->notify(new SellerNewOrder($order, $items->values(), $shipsItself, $shipBy));
+                // A valuable local order (over the cash-on-delivery maximum): a heads-up in Seller Center too.
+                if ($shop && \App\Support\SellerRiders::highValue($order, $shop)) {
+                    \App\Support\SellerNotify::send($shop->seller, \App\Models\User::where('is_admin', true)->first() ?? $user, "High-value order #{$order->id}", "Order #{$order->id} is worth more than cash on delivery allows (paid by card). For safety, send it by courier or deliver it yourself rather than giving it to a rider.");
+                }
             } catch (\Throwable $e) {
                 report($e);
             }

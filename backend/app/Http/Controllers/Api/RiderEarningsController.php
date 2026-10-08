@@ -17,6 +17,36 @@ use Illuminate\Validation\Rule;
 /** The rider's own pay: earnings ledger, payout method, and payout requests. */
 class RiderEarningsController extends Controller
 {
+    /**
+     * Give notice: the rider keeps working for 30 days; the store's admin is told
+     * now and again on the leaving date, to settle the final pay.
+     */
+    public function giveNotice(Request $request): JsonResponse
+    {
+        $rider = $request->user();
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+        abort_if($rider->rider_notice_at && ! $rider->rider_notice_processed_at, 422, 'You have already given notice.');
+        $rider->forceFill(['rider_notice_at' => now(), 'rider_leaving_on' => now()->addDays(30)->toDateString(), 'rider_notice_processed_at' => null])->save();
+        try {
+            \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice(
+                "{$rider->name} gave notice", "{$rider->name} gave 30 days' notice. Last working day: ".$rider->rider_leaving_on->toFormattedDateString().'.'.(! empty($data['reason']) ? " Reason: {$data['reason']}" : '').' Settle their final pay after that date (Riders).'));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return $this->show($request);
+    }
+
+    /** Take the notice back (before the leaving date). */
+    public function withdrawNotice(Request $request): JsonResponse
+    {
+        $rider = $request->user();
+        abort_unless($rider->rider_notice_at && ! $rider->rider_notice_processed_at, 422, 'You haven’t given notice.');
+        $rider->forceFill(['rider_notice_at' => null, 'rider_leaving_on' => null])->save();
+
+        return $this->show($request);
+    }
+
     public function show(Request $request): JsonResponse
     {
         $rider = $request->user();
@@ -38,6 +68,8 @@ class RiderEarningsController extends Controller
             ],
             'min_payout_cents' => RiderLedger::minPayoutCents($market),
             'max_payout_cents' => RiderLedger::maxPayoutCents($market),
+            // Notice to leave: given on, last working day (30 days later).
+            'notice' => $rider->rider_notice_at && ! $rider->rider_notice_processed_at ? ['given_at' => $rider->rider_notice_at, 'leaving_on' => $rider->rider_leaving_on?->toDateString()] : null,
             'payout_method' => $rider->rider_payout_method,
             'payout_details' => $rider->rider_payout_details,
             'last_payout_request' => RiderPayoutRequest::where('user_id', $rider->id)->latest('id')->first(),

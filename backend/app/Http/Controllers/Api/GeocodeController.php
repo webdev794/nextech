@@ -56,7 +56,7 @@ class GeocodeController extends Controller
      */
     private function biasCentre(?float $lat = null, ?float $lng = null): array
     {
-        $stores = Store::query()->where('is_active', true)
+        $stores = Store::query()->own()->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')
             ->orderBy('id')->get();
 

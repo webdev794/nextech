@@ -28,7 +28,7 @@ class SellerKycController extends Controller
     {
         $validated = $request->validate([
             'file' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf', 'max:8192'],
-            'kind' => ['required', 'string', 'in:id_document,business_document,license_document,tax_certificate,corporate_document,bank_document,product_document,trademark_certificate,export_document,address_document'],
+            'kind' => ['required', 'string', 'in:id_document,business_document,license_document,tax_certificate,corporate_document,bank_document,product_document,trademark_certificate,export_document,address_document,education_document,rider_photo,vehicle_rc'],
         ]);
 
         $folder = 'kyc/'.$request->user()->id;
@@ -70,7 +70,11 @@ class SellerKycController extends Controller
         $user = $request->user();
         $ownerId = (int) (explode('/', $path)[1] ?? 0);
 
-        abort_unless($user && ($user->is_admin || $user->id === $ownerId), 403);
+        // A seller may also see the documents of riders applying to (or hired at) their store.
+        $sellerSees = $user?->seller?->shop && \App\Models\RiderApplication::query()->where('user_id', $ownerId)
+            ->whereHas('store', fn ($q) => $q->where('shop_id', $user->seller->shop->id))
+            ->where(fn ($q) => $q->where('id_document_path', $path)->orWhere('education_document_path', $path)->orWhere('photo_path', $path)->orWhere('license_document_path', $path)->orWhere('rc_document_path', $path))->exists();
+        abort_unless($user && ($user->is_admin || $user->id === $ownerId || $sellerSees), 403);
 
         $disk = Storage::disk('local');
         abort_unless($disk->exists($path), 404);

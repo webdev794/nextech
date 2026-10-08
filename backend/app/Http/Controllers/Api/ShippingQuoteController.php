@@ -50,14 +50,16 @@ class ShippingQuoteController extends Controller
             $lines[] = ['product' => $product, 'quantity' => $line['quantity'], 'line_total_cents' => $line['price_cents'] * $line['quantity']];
         }
 
-        $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data), ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null,
+        // The cart's goods total, for the cash-on-delivery maximum.
+        $codTotal = (int) collect($data['lines'] ?? [])->sum(fn ($l) => (int) ($l['price_cents'] ?? 0) * (int) ($l['quantity'] ?? 0));
+                $quote = SellerShipping::quote($lines, $data['state'] ?? null, null, SellerShipping::addressType($data), ($request->header('X-Market') || $request->input('market')) ? Market::fromRequest($request) : null,
             // A street address or map pin lets sellers' own local delivery apply.
             (! empty($data['line1']) || isset($data['latitude'], $data['longitude'])) ? $data : null);
 
         return response()->json(['data' => $quote + [
             'seller_shipped_product_ids' => array_values(array_unique($sellerShipped)),
             // Cash on delivery for this cart: null = allowed, otherwise why not.
-            'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request)),
+            'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request), $codTotal),
             'state_known' => SellerShipping::stateCode($data['state'] ?? null, Market::fromRequest($request)) !== null,
             // Sales tax for this address, for the cart's estimate (checkout recalculates it).
             'tax_rate_bps' => SalesTax::rateBps(Market::fromRequest($request), $data['state'] ?? null, $data['postal_code'] ?? null, (int) CheckoutFees::current(Market::fromRequest($request))['tax_rate_bps']),

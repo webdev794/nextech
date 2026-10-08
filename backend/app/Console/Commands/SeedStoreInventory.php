@@ -16,7 +16,7 @@ class SeedStoreInventory extends Command
 
     public function handle(): int
     {
-        $stores = Store::query()
+        $stores = Store::query()->own()
             ->where('is_active', true)
             ->when($this->option('store'), fn ($q, $ids) => $q->whereIn('id', $ids))
             ->get();

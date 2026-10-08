@@ -26,7 +26,7 @@ class AdminRiderController extends Controller
             ->where('is_rider', true)
             // Riders of this country's stores (and ones not linked to a store yet).
             ->when($market, fn ($query) => $query->where(fn ($q) => $q->whereHas('stores', fn ($s) => $s->where('country', $market))->orWhereDoesntHave('stores')))
-            ->with('stores:id,name,city,country')
+            ->with('stores:id,name,city,country,shop_id')
             ->withCount(['deliveries as active_deliveries' => fn ($query) => $query
                 ->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])])
             ->orderBy('name')
@@ -43,7 +43,7 @@ class AdminRiderController extends Controller
     {
         abort_unless($user->is_rider, 404);
 
-        $user->load('stores:id,name,city')
+        $user->load('stores:id,name,city,country,shop_id')
             ->loadCount([
                 'deliveries as active_deliveries' => fn ($query) => $query
                     ->whereIn('status', ['ready_for_delivery', 'out_for_delivery']),
@@ -69,6 +69,19 @@ class AdminRiderController extends Controller
             'pay' => $this->pay($user),
             'reviews' => $reviews,
             'attendance' => RiderAttendance::summary($user, 14),
+            // Final settlement: earnings minus all cash held; paid 7 days after their last delivery.
+            'settlement' => \App\Support\RiderMoney::settlement($user),
+            // Everything from the application they were hired from (or their latest one).
+            'profile' => ($app = \App\Models\RiderApplication::find($user->rider_application_id) ?? \App\Models\RiderApplication::where('user_id', $user->id)->latest()->first()) ? [
+                'email' => $app->email, 'phone' => $app->phone, 'date_of_birth' => $app->date_of_birth, 'age' => $app->date_of_birth?->age,
+                'home_address' => $app->home_address, 'vehicle_type' => $app->vehicle_type, 'own_vehicle' => $app->own_vehicle, 'license_number' => $app->license_number,
+                'experience_months' => $app->experience_months, 'education' => $app->education, 'work_history' => $app->work_history,
+                'health' => $app->health_issue ? ($app->health_details ?: 'Yes') : 'None declared',
+                'preferred_stores' => \App\Models\Store::query()->whereIn('id', \App\Support\RiderHiring::preferred($app))->get(['id', 'name', 'shop_id'])
+                    ->sortBy(fn ($s) => array_search($s->id, \App\Support\RiderHiring::preferred($app), true))->values(),
+                'documents' => array_filter(['Photo' => $app->photo_path, 'ID proof' => $app->id_document_path, 'Driving licence' => $app->license_document_path, 'Vehicle RC' => $app->rc_document_path, 'Education' => $app->education_document_path]),
+                'applied_at' => $app->created_at,
+            ] : null,
         ]]);
     }
 
@@ -150,9 +163,10 @@ class AdminRiderController extends Controller
         ])->save();
 
         // A rider must have a store to return cash to — never hired store-less.
+        abort_if(\App\Models\Store::query()->whereIn('id', $data['store_ids'])->distinct()->count('country') > 1, 422, 'A rider works in one country only — pick stores in one country.');
         $user->stores()->sync($data['store_ids']);
 
-        return response()->json(['data' => $this->row($user->fresh()->load('stores:id,name,city'))], 201);
+        return response()->json(['data' => $this->row($user->fresh()->load('stores:id,name,city,country,shop_id'))], 201);
     }
 
     public function update(Request $request, User $user): JsonResponse
@@ -201,13 +215,47 @@ class AdminRiderController extends Controller
         }
 
         if (array_key_exists('store_ids', $data)) {
+            $removed = \App\Models\Store::query()->whereNotNull('shop_id')->whereIn('id', $user->stores()->pluck('stores.id'))->whereNotIn('id', $data['store_ids'])->with('shop.seller')->get();
+            abort_if(\App\Models\Store::query()->whereIn('id', $data['store_ids'])->distinct()->count('country') > 1, 422, 'A rider works in one country only — pick stores in one country.');
+            abort_if($removed->isNotEmpty() && blank($request->input('reason')), 422, 'Say why you’re removing this rider from '.$removed->pluck('shop.name')->join(', ').' — the seller gets it as a message.');
             $user->stores()->sync($data['store_ids']);
+            foreach ($removed as $store) {
+                if ($seller = $store->shop?->seller) {
+                    \App\Support\SellerNotify::send($seller, $request->user(), 'A rider was removed from your store', "{$user->name} no longer delivers for your store: ".trim((string) $request->input('reason')));
+                }
+            }
         }
 
         return response()->json(['data' => $this->row(
-            $user->fresh()->load('stores:id,name,city')->loadCount(['deliveries as active_deliveries' => fn ($query) => $query
+            $user->fresh()->load('stores:id,name,city,country,shop_id')->loadCount(['deliveries as active_deliveries' => fn ($query) => $query
                 ->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])])
         )]);
+    }
+
+    /** The riders' money table for a month (admin: every rider in the country). */
+    public function money(Request $request): JsonResponse
+    {
+        $month = \Illuminate\Support\Carbon::parse(($request->validate(['month' => ['sometimes', 'date_format:Y-m']])['month'] ?? now()->format('Y-m')).'-01');
+
+        return response()->json(['data' => \App\Support\RiderMoney::table($month, null, Market::adminFilter($request))]);
+    }
+
+    /** Take cash a rider holds for sellers from their earnings and give it to the sellers now. */
+    public function offsetSellerCash(Request $request, User $user): JsonResponse
+    {
+        abort_unless($user->is_rider, 404);
+        $moved = \App\Support\RiderMoney::offsetSellerCash($user, $request->user());
+
+        return response()->json(['data' => ['moved_cents' => $moved, 'settlement' => \App\Support\RiderMoney::settlement($user)]]);
+    }
+
+    /** A rider's notice is settled: final pay done, they stop working (account stays). */
+    public function noticeProcessed(User $user): JsonResponse
+    {
+        abort_unless($user->rider_notice_at && ! $user->rider_notice_processed_at, 422, 'This rider has no notice to process.');
+        $user->forceFill(['rider_notice_processed_at' => now(), 'rider_is_active' => false, 'rider_available' => false])->save();
+
+        return response()->json(['data' => ['processed' => true]]);
     }
 
     /**
@@ -360,8 +408,13 @@ class AdminRiderController extends Controller
             'cash_holding_since' => $rider->codHoldingSince(),
             'earnings_balance_cents' => RiderLedger::balanceCents($rider),
             'payout_requested_cents' => RiderPayoutRequest::where('user_id', $rider->id)->where('status', 'pending')->value('amount_cents'),
+            // Experience: from their application, total time as a rider, and time with each store.
+            'experience_months' => \App\Models\RiderApplication::where('user_id', $rider->id)->value('experience_months'),
+            'rider_since' => $rider->rider_since,
+            'photo_path' => $rider->rider_photo_path,
+            'notice' => $rider->rider_notice_at && ! $rider->rider_notice_processed_at ? ['given_at' => $rider->rider_notice_at, 'leaving_on' => $rider->rider_leaving_on?->toDateString()] : null,
             'stores' => $rider->relationLoaded('stores')
-                ? $rider->stores->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'city' => $s->city])->values()
+                ? $rider->stores->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'city' => $s->city, 'country' => $s->country, 'shop_id' => $s->shop_id, 'linked_at' => $s->pivot?->linked_at])->values()
                 : [],
         ];
     }

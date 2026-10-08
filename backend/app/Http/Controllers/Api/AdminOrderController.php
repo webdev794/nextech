@@ -43,7 +43,7 @@ class AdminOrderController extends Controller
             ->when(Market::adminFilter($request), fn ($q, $m) => $q->where('market', $m))
             ->with([
                 'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
-            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
+            'packages.items', 'packages.shop:id,name', 'packages.rider:id,name,phone', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
                 'riderReview:id,order_id,rating,comment,source',
                 'supportThreads:id,order_id,rating,rating_comment',
                 'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',
@@ -385,6 +385,8 @@ class AdminOrderController extends Controller
             'status' => ['sometimes', Rule::in(['shipped', 'in_transit', 'out_for_delivery', 'delivered', 'returned', 'lost'])],
         ]);
 
+        // A seller's own delivery (their riders or themselves) is the seller's to move along; admin only watches.
+        abort_if($package->carrier === \App\Support\SellerShipping::LOCAL && isset($data['status']), 422, 'This is the seller’s own delivery — only the seller or their rider updates its steps. Cancel or refund the order if needed.');
         if (isset($data['tracking_number'])) {
             $data['tracking_number'] = strtoupper(preg_replace('/\s+/', '', $data['tracking_number']));
         }
@@ -402,7 +404,7 @@ class AdminOrderController extends Controller
     {
         $fresh = $order->fresh()->load([
             'items', 'items.shop:id,name', 'user:id,name,email,phone', 'deliveryPartner:id,name', 'store:id,name,city', 'shipment',
-            'packages.items', 'packages.shop:id,name', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
+            'packages.items', 'packages.shop:id,name', 'packages.rider:id,name,phone', 'shopShipping.shop:id,name', 'labelRequests', 'addressChanges',
             'riderReview:id,order_id,rating,comment,source',
             'supportThreads:id,order_id,rating,rating_comment',
             'giftCards:id,order_id,code,initial_cents,balance_cents,reason,issued_by,created_at',

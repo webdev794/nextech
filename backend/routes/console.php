@@ -53,3 +53,32 @@ Artisan::command('deals:restart-lightning', function () {
     $this->info('Restarted: '.App\Support\LightningDeals::restartDue());
 })->purpose('Start the next round of auto-restarting lightning deals');
 Schedule::command('deals:restart-lightning')->everyTenMinutes()->withoutOverlapping();
+
+// Riders whose notice period ends today: remind the admins to settle their final pay.
+Artisan::command('riders:notice-due', function () {
+    $due = \App\Models\User::query()->where('is_rider', true)->whereNull('rider_notice_processed_at')->whereDate('rider_leaving_on', today())->get();
+    foreach ($due as $rider) {
+        \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice(
+            "{$rider->name}'s notice period ends today", "{$rider->name}'s last working day is today. Settle their final pay (check open orders and any cash they hold), then mark the notice processed under Riders."));
+    }
+    $this->info('Due: '.$due->count());
+})->purpose('Remind admins when a rider\'s notice period ends');
+Schedule::command('riders:notice-due')->dailyAt('08:00')->withoutOverlapping();
+
+// Sellers' riders and cash on delivery: remind at the end of the day, pause the next morning.
+Artisan::command('riders:seller-cash {when=evening}', function (string $when) {
+    $n = $when === 'morning' ? \App\Support\SellerRiderCash::morning() : \App\Support\SellerRiderCash::endOfDay();
+    $this->info(($when === 'morning' ? 'Paused: ' : 'Reminded: ').$n);
+})->purpose('Remind about / pause for sellers\' cash riders still hold');
+Schedule::command('riders:seller-cash evening')->dailyAt('20:00')->withoutOverlapping();
+Schedule::command('riders:seller-cash morning')->dailyAt('06:00')->withoutOverlapping();
+
+// Month end: cash riders still hold for sellers comes out of their earnings and goes to the sellers.
+Artisan::command('riders:offset-seller-cash', function () {
+    $moved = 0;
+    foreach (\App\Models\User::query()->where('is_rider', true)->get() as $rider) {
+        $moved += \App\Support\RiderMoney::offsetSellerCash($rider);
+    }
+    $this->info("Moved: {$moved}");
+})->purpose('Give sellers the cash riders kept, from the riders\' earnings');
+Schedule::command('riders:offset-seller-cash')->monthlyOn(1, '05:00')->withoutOverlapping();

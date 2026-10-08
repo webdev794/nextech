@@ -27,7 +27,7 @@ class DeliveryController extends Controller
         $fees = CheckoutFees::current($market);
 
         // This country's NexTech stores (and their quick-delivery radius).
-        $stores = Store::query()->where('country', $market)->where('is_active', true)
+        $stores = Store::query()->own()->where('country', $market)->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')->get();
 
         if ($stores->isEmpty()) {

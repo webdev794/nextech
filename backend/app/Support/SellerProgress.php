@@ -61,9 +61,14 @@ class SellerProgress
      *
      * @param  iterable<\App\Models\Product>  $products
      */
-    public static function codBlockedReason(iterable $products, string $market): ?string
+    public static function codBlockedReason(iterable $products, string $market, ?int $totalCents = null): ?string
     {
         $products = collect($products)->filter();
+        // Large orders aren't offered cash on delivery: no more than a rider may carry (admin / seller limit).
+        $sellerShop = $products->first(fn ($p) => $p->shop_id && $p->shop?->shipsItself())?->shop;
+        if ($totalCents !== null && $totalCents > ($max = SellerRiderCash::codMaxCents($market, $sellerShop))) {
+            return 'Cash on delivery is available on orders up to '.Money::format($max, Market::currency($market)).' — pay by card instead.';
+        }
         if ($products->contains(fn ($p) => $p->isDigital())) {
             return 'Digital downloads are paid online — choose card.';
         }

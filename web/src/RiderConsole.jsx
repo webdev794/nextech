@@ -388,6 +388,80 @@ function OfferPrompt({ offers, headers, onResolved }) {
   )
 }
 
+// Sellers' own deliveries given to this rider: pick up at the seller's address,
+// deliver, and confirm with the code the buyer reads out (and the cash, if any).
+function SellerDeliveries({ headers, refreshKey }) {
+  const [list, setList] = useState([])
+  const [cashBy, setCashBy] = useState([]) // cash I hold per seller store, and where I'm paused
+  const [code, setCode] = useState({})
+  const [cash, setCash] = useState({})
+  const [busy, setBusy] = useState(null)
+  const [msg, setMsg] = useState('')
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_URL}/rider/packages`, { headers: headers() })
+      const body = await readJson(res)
+      if (res.ok) { setList(body.data ?? []); setCashBy(body.cash ?? []) }
+    } catch { /* keep last */ }
+  }, [headers])
+  useEffect(() => {
+    Promise.resolve().then(load)
+    const t = setInterval(load, 30000)
+    return () => clearInterval(t)
+  }, [load, refreshKey])
+
+  async function deliver(p) {
+    setBusy(p.id); setMsg('')
+    try {
+      const res = await fetch(`${API_URL}/rider/packages/${p.id}/deliver`, { method: 'POST', headers: headers(true), body: JSON.stringify({ delivery_code: (code[p.id] ?? '').trim(), cash_collected: !!cash[p.id] }) })
+      const body = await readJson(res)
+      if (!res.ok) throw new Error(body.message ?? Object.values(body.errors ?? {})[0]?.[0] ?? 'Could not mark it delivered.')
+      setList(body.data ?? []); setCashBy(body.cash ?? [])
+      setMsg(`Order #${p.order_id} delivered.`)
+    } catch (e) { setMsg(e.message) } finally { setBusy(null) }
+  }
+
+  if (!list.length && !cashBy.length) return null
+  const fmt = (cents, cur) => new Intl.NumberFormat(undefined, { style: 'currency', currency: String(cur).toUpperCase() }).format(cents / 100)
+  return (
+    <section className="rider-section">
+      <h2>Store deliveries ({list.length})</h2>
+      {msg && <p className="rider-error">{msg}</p>}
+      {cashBy.map((c) => (
+        <div key={c.store} className={c.paused || c.disputed ? 'rider-error' : 'rider-cash'}>
+          {c.held_cents > 0 && <p>{c.paused ? `Paused for ${c.store}: visit the store and hand over the ${fmt(c.held_cents, c.currency)} you hold before more deliveries.` : `You hold ${fmt(c.held_cents, c.currency)} of ${c.store}’s cash (limit ${fmt(c.limit_cents, c.currency)}) — hand it over at the store today.`}</p>}
+          {c.held_cents > 0 && <button type="button" disabled={busy === `cash-${c.store_id}`} onClick={async () => {
+            if (!window.confirm(`Did you hand ${fmt(c.held_cents, c.currency)} to ${c.store}? They confirm it when they have it.`)) return
+            setBusy(`cash-${c.store_id}`)
+            try {
+              const res = await fetch(`${API_URL}/rider/stores/${c.store_id}/cash-handed`, { method: 'POST', headers: headers(true) })
+              const body = await readJson(res)
+              if (!res.ok) throw new Error(body.message ?? 'Could not send.')
+              setList(body.data ?? []); setCashBy(body.cash ?? []); setMsg(`${c.store} is asked to confirm.`)
+            } catch (e) { setMsg(e.message) } finally { setBusy(null) }
+          }}>I handed over the cash</button>}
+          {c.claimed && <p>You said you handed cash to {c.store} — waiting for them to confirm.</p>}
+        </div>
+      ))}
+      {list.map((p) => (
+        <div key={p.id} className="rider-card">
+          <strong>Order #{p.order_id} — {p.shop}</strong>
+          {p.pickup && <p>Pick up: {p.pickup}</p>}
+          <p>Deliver to: <b>{p.buyer}</b>{p.phone && <> · <a href={`tel:${p.phone}`}>{p.phone}</a></>}<br />{p.address}</p>
+          {p.instructions && <p>Note: {p.instructions}</p>}
+          <p>{p.items.join(', ')}</p>
+          {p.cash_cents > 0 && <p className="rider-cash">Cash on delivery: collect <b>{new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currency.toUpperCase() }).format(p.cash_cents / 100)}</b></p>}
+          <div className="rider-deliver-row">
+            <input inputMode="numeric" maxLength={8} placeholder="Buyer's delivery code" value={code[p.id] ?? ''} onChange={(e) => setCode({ ...code, [p.id]: e.target.value.replace(/[^0-9]/g, '') })} />
+            {p.cash_cents > 0 && <label><input type="checkbox" checked={!!cash[p.id]} onChange={(e) => setCash({ ...cash, [p.id]: e.target.checked })} /> Cash collected</label>}
+            <button type="button" disabled={busy === p.id || !(code[p.id] ?? '').trim() || (p.cash_cents > 0 && !cash[p.id])} onClick={() => deliver(p)}>Delivered</button>
+          </div>
+        </div>
+      ))}
+    </section>
+  )
+}
+
 export default function RiderConsole({ token, onSignOut }) {
   const headers = useCallback((json) => ({
     Accept: 'application/json',
@@ -477,6 +551,7 @@ export default function RiderConsole({ token, onSignOut }) {
       )}
 
       {error && <p className="rider-error">{error}</p>}
+      {data.cash_block && <p className="rider-error"><b>You&rsquo;re paused in every store</b> — {data.cash_block}. Visit the store to hand it over; you can take deliveries again once it&rsquo;s marked received.</p>}
 
       {stats && <RiderStats stats={stats} />}
 
@@ -493,6 +568,8 @@ export default function RiderConsole({ token, onSignOut }) {
           <p>The customer refused to pay — bring these items back to the store. This clears once the store confirms they're back.</p>
         </div>
       )}
+
+      <SellerDeliveries headers={headers} refreshKey={payKey} />
 
       <section className="rider-section">
         <h2>My deliveries ({data.assigned.length})</h2>

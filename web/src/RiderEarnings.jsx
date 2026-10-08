@@ -123,6 +123,16 @@ export default function RiderEarnings({ headers, refreshKey }) {
 
           {message && <p className="rider-error">{message}</p>}
 
+          <div className="rider-notice">
+            <h3>Leaving?</h3>
+            {pay.notice
+              ? <p className="rider-earnings-note">You gave notice on {new Date(pay.notice.given_at).toLocaleDateString()}. Your last working day is <b>{new Date(pay.notice.leaving_on).toLocaleDateString()}</b>; your final pay is settled after that, once your open orders and any cash you hold are checked. <button type="button" className="rider-link-inline" disabled={busy} onClick={() => { if (window.confirm('Take back your notice and keep working?')) post('notice', 'DELETE') }}>Take it back</button></p>
+              : <>
+                <p className="rider-earnings-note">Please give at least 30 days&rsquo; notice before you stop working. Leaving without notice delays your final pay until the store checks your open orders and any cash you hold.</p>
+                <button type="button" className="rider-earnings-btn ghost" disabled={busy} onClick={() => { if (!window.confirm('Give 30 days’ notice? You keep working until your last day; the store is told now.')) return; const reason = window.prompt('Reason (optional):', '') ?? ''; post('notice', 'POST', { reason: reason.trim() || undefined }) }}>Give 30 days&rsquo; notice</button>
+              </>}
+          </div>
+
           <h3>History</h3>
           {pay.entries.length === 0 ? <p className="rider-empty">No earnings yet — complete a delivery to get started.</p> : (
             <ul className="rider-earnings-list">

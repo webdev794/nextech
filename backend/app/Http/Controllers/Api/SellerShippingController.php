@@ -54,15 +54,21 @@ class SellerShippingController extends Controller
             'local_delivery.radius_km' => ['required_with:local_delivery', 'numeric', 'min:1', 'max:100'],
             'local_delivery.fee_cents' => ['required_with:local_delivery', 'integer', 'min:0', 'max:100000000'],
             'local_delivery.days' => ['required_with:local_delivery', 'integer', 'min:1', 'max:7'],
+            // The store's exact map point, if the seller sets it (else found from the address).
+            'local_delivery.lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:local_delivery.lng'],
+            'local_delivery.lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:local_delivery.lat'],
         ]);
 
         if (array_key_exists('local_delivery', $data)) {
             if ($data['local_delivery']) {
                 abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Own delivery isn\'t offered right now.');
+                abort_if(\App\Support\SellerStores::blockedByAdmin($shop), 422, \App\Support\Branding::name().' has switched off local delivery for your store — message us to turn it back on.');
                 abort_if((float) $data['local_delivery']['radius_km'] > SellerShipping::localMaxKm(), 422, 'Own delivery can cover up to '.SellerShipping::localMaxKm().' km.');
                 abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Own delivery is for sellers who ship orders themselves — choose how you ship first.');
                 $address = $shop->addresses()->findOrFail($data['local_delivery']['address_id']);
-                $point = $this->pointFor($address);
+                $point = isset($data['local_delivery']['lat'], $data['local_delivery']['lng'])
+                    ? [(float) $data['local_delivery']['lat'], (float) $data['local_delivery']['lng']]
+                    : $this->pointFor($address);
                 abort_unless($point, 422, 'We couldn\'t find that address on the map — check it, then try again.');
                 $shop->local_delivery = [
                     'address_id' => $address->id,
@@ -71,9 +77,16 @@ class SellerShippingController extends Controller
                     'days' => (int) $data['local_delivery']['days'],
                     'lat' => $point[0],
                     'lng' => $point[1],
+                    'pin_set' => isset($data['local_delivery']['lat']),
                 ];
-            } else {
-                $shop->local_delivery = null;
+            } elseif ($shop->local_delivery) {
+                // Turning it off is checked first (popup) and, with riders linked, waits for admin.
+                abort_unless($request->boolean('confirm_off'), 422, 'Confirm turning off local delivery.');
+                $status = \App\Support\SellerStores::sellerTurnsOff($shop, $request->user());
+                $shop->refresh();
+                if ($status === 'off_requested') {
+                    return response()->json(['data' => $this->payload($shop), 'message' => 'Sent to '.\App\Support\Branding::name().' to confirm — local delivery stays on until then.']);
+                }
             }
         }
 
@@ -393,7 +406,10 @@ class SellerShippingController extends Controller
             'intl_policies' => array_values(array_filter(\App\Support\SellerPolicies::status($shop->seller), fn ($p) => $p['for'] === 'international')),
             'local_delivery_offered' => SellerShipping::localDeliveryOffered(),
             'local_max_km' => SellerShipping::localMaxKm(),
-            'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(['lat', 'lng'])->all() : null,
+            'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(! empty($shop->local_delivery['pin_set']) ? [] : ['lat', 'lng'])->all() : null,
+            // Its store in Stores / hubs, and whether admin has switched local delivery off.
+            'local_store' => ($store = \App\Models\Store::query()->where('shop_id', $shop->id)->withCount('riders')->first())
+                ? ['id' => $store->id, 'active' => $store->is_active, 'blocked' => ! $store->local_delivery_active, 'status' => \App\Support\SellerStores::status($store), 'off_requested_at' => $store->local_delivery_off_requested_at, 'riders_count' => $store->riders_count] : null,
         ];
     }
 

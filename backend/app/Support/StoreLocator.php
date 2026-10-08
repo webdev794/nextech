@@ -19,7 +19,7 @@ class StoreLocator
      */
     public static function locatedStores(): Collection
     {
-        return Store::query()
+        return Store::query()->own()
             ->where('is_active', true)
             ->whereNotNull('latitude')
             ->whereNotNull('longitude')

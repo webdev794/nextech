@@ -336,7 +336,8 @@ class SellerShipping
     /** The largest own-delivery radius admin allows, in km. */
     public static function localMaxKm(): float
     {
-        return max(1.0, min(100.0, (float) Setting::get('seller_local_max_km', 25)));
+        // Small by default (10 km) so a rider's fuel is worth each delivery.
+        return max(1.0, min(50.0, (float) Setting::get('seller_local_max_km', 10)));
     }
 
     /** A shop's own-delivery terms when on and the buyer is within its radius, else null. */
@@ -344,6 +345,10 @@ class SellerShipping
     {
         $local = (array) $shop->local_delivery;
         if (! self::localDeliveryOffered() || ! in_array($shop->fulfillment_mode, ['self', 'label'], true) || empty($local['radius_km']) || ! isset($local['lat'], $local['lng'])) {
+            return null;
+        }
+        // Switched off by the store.
+        if (SellerStores::blockedByAdmin($shop)) {
             return null;
         }
         [$lat, $lng] = $buyerPoint() ?? [null, null];

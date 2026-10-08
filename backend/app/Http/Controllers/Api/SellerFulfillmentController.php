@@ -233,6 +233,9 @@ class SellerFulfillmentController extends Controller
     public function localDispatch(Request $request, Order $order): JsonResponse
     {
         $shop = $this->shop($request);
+        // One of the seller's riders, or none = the seller delivers it themselves.
+        $riderId = $request->validate(['rider_id' => ['sometimes', 'nullable', 'integer']])['rider_id'] ?? null;
+        $rider = $riderId ? \App\Support\SellerRiders::riderFor($shop, (int) $riderId) : null;
         $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
         abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for your own delivery — ship it with a courier.');
         $lines = SellerFulfillment::shopLines($order, $shop);
@@ -248,8 +251,21 @@ class SellerFulfillmentController extends Controller
             'delivery_code' => (string) random_int(1000, 9999),
         ]);
         SellerProgress::advance($package, 'out_for_delivery', 'seller');
+        \App\Support\SellerRiders::assign($package, $rider);
 
         return response()->json(['data' => $this->row($order->fresh()), 'package' => $package->fresh()], 201);
+    }
+
+    /** Give an own-delivery package that's on its way to another rider (or take it over: rider_id null). */
+    public function assignRider(Request $request, OrderPackage $package): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($package->shop_id === $shop->id, 404);
+        abort_unless($package->carrier === SellerShipping::LOCAL && $package->status !== 'delivered', 422, 'Only your own deliveries that aren’t delivered yet can be given to a rider.');
+        $riderId = $request->validate(['rider_id' => ['present', 'nullable', 'integer']])['rider_id'];
+        \App\Support\SellerRiders::assign($package, $riderId ? \App\Support\SellerRiders::riderFor($shop, (int) $riderId) : null);
+
+        return response()->json(['data' => $this->row($package->order->fresh())]);
     }
 
     /** Own-delivery packages are marked delivered only with the buyer's delivery code. */
@@ -351,6 +367,8 @@ class SellerFulfillmentController extends Controller
         $data = $request->validate(['cash_collected' => ['sometimes', 'boolean'], 'delivery_code' => ['sometimes', 'nullable', 'string', 'max:8']]);
         $this->checkDeliveryCode($package, 'delivered', $data['delivery_code'] ?? null);
         SellerProgress::advance($package, 'delivered', 'seller', (bool) ($data['cash_collected'] ?? false));
+        $package->forceFill(['delivered_by' => $package->rider_id ? 'rider' : 'self'])->save();
+        \App\Support\RiderMoney::creditSellerDelivery($package->fresh('shop'));
 
         return response()->json(['data' => $this->row($package->order->fresh())]);
     }
@@ -370,6 +388,10 @@ class SellerFulfillmentController extends Controller
         ]);
         $this->checkDeliveryCode($package, $data['status'], $data['delivery_code'] ?? null);
         SellerProgress::advance($package, $data['status'], 'seller', (bool) ($data['cash_collected'] ?? false));
+        if ($data['status'] === 'delivered') {
+            $package->forceFill(['delivered_by' => $package->rider_id ? 'rider' : 'self'])->save();
+        \App\Support\RiderMoney::creditSellerDelivery($package->fresh('shop'));
+        }
 
         return response()->json(['data' => $this->row($package->order->fresh())]);
     }
@@ -454,6 +476,8 @@ class SellerFulfillmentController extends Controller
             // Cash on delivery: the seller's courier collects it; the seller confirms when delivered.
             'cod' => $order->payment_method === 'cod',
             'cod_amount_cents' => $order->payment_method === 'cod' ? (int) $order->total_cents : null,
+            // Over the cash-on-delivery maximum: valuable — send it by courier or deliver it yourself, not with a rider.
+            'high_value' => ($shopModel = \App\Models\Shop::find($shopId)) ? \App\Support\SellerRiders::highValue($order, $shopModel) : false,
             'currency' => $order->currency,
             // Going abroad: the seller can print the International Delivery sheet.
             'international' => ($shop = request()->user()?->seller?->shop) ? $this->isInternational($order, $shop) : false,
@@ -480,7 +504,7 @@ class SellerFulfillmentController extends Controller
                 'label_requested' => SellerFulfillment::requestedQuantity($i),
             ]),
             'label_requests' => $order->labelRequests->where('shop_id', $shopId)->values(),
-            'packages' => $order->packages->where('shop_id', $shopId)->values(),
+            'packages' => $order->packages->where('shop_id', $shopId)->load('rider:id,name,phone')->values(),
             'to_ship' => $items->sum(fn ($i) => SellerFulfillment::remainingQuantity($i)),
             'overdue' => $promise && $promise->ship_by->lt(today()) && $items->contains(fn ($i) => SellerFulfillment::remainingQuantity($i) > 0),
             // Not to be shipped yet: still pending, or the buyer's address change is undecided.

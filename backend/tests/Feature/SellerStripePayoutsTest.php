@@ -117,4 +117,23 @@ class SellerStripePayoutsTest extends TestCase
         $this->withHeader('X-Secure-Access', $token)->postJson("/api/admin/sellers/{$shop->seller_id}/payout", ['amount_cents' => 10000])->assertOk();
         $this->assertDatabaseHas('seller_ledger_entries', ['shop_id' => $shop->id, 'type' => 'payout_fee', 'amount_cents' => -100]);
     }
+
+    public function test_admin_adjusts_a_seller_or_rider_balance_behind_secure_access(): void
+    {
+        $shop = $this->shop();
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true])->save();
+        Sanctum::actingAs($this->admin());
+
+        $body = ['target' => 'seller', 'id' => $shop->seller_id, 'amount_cents' => 1500, 'reason' => 'Missed credit for order #12'];
+        $this->postJson('/api/admin/secure-access/adjustments', $body)->assertForbidden();
+        $token = $this->postJson('/api/admin/secure-access/unlock', ['password' => 'password'])->json('data.token');
+        $this->withHeader('X-Secure-Access', $token)->postJson('/api/admin/secure-access/adjustments', ['reason' => ''] + $body)->assertStatus(422);
+        $this->withHeader('X-Secure-Access', $token)->postJson('/api/admin/secure-access/adjustments', $body)->assertCreated();
+        $this->assertSame(1500, \App\Support\SellerLedger::availableCents($shop));
+        $this->assertDatabaseHas('support_messages', ['body' => 'We added $15.00 to your balance: Missed credit for order #12 It shows under Finances.']);
+
+        $this->withHeader('X-Secure-Access', $token)->postJson('/api/admin/secure-access/adjustments', ['target' => 'rider', 'id' => $rider->id, 'amount_cents' => -800, 'reason' => 'Cash kept'])->assertCreated();
+        $this->assertSame(-800, \App\Support\RiderLedger::balanceCents($rider));
+    }
 }

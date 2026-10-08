@@ -249,7 +249,11 @@ class AdminSettingController extends Controller
                 // Deal sections, filled automatically (App\Support\DealSections).
                 'deal_rules' => ['sometimes', 'array'],
                 'deal_rules.*' => ['integer', 'min:1', 'max:500'],
-                'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:100'],
+                'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:50'],
+                'cod_max_order' => ['sometimes', 'array'],
+                'cod_max_order.*' => ['integer', 'min:0', 'max:100000000'],
+                'rider_cash_limit' => ['sometimes', 'array'],
+                'rider_cash_limit.*' => ['integer', 'min:0', 'max:100000000'],
                 'seller_update_rules' => ['sometimes', 'array'],
                 'seller_update_rules.pack_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:168'],
                 'seller_update_rules.repeat_hours' => ['required_with:seller_update_rules', 'integer', 'min:1', 'max:72'],
@@ -348,7 +352,7 @@ class AdminSettingController extends Controller
 
         // Options that need something else set up first (a hidden / unused option needs nothing).
         $courierConnected = (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current());
-        $ownStores = \App\Models\Store::query()->exists();
+        $ownStores = \App\Models\Store::query()->own()->exists();
         if (($validated['nextech_label_mode'] ?? null) === 'auto' && SellerFulfillment::labelMode() !== 'auto' && ! $courierConnected) {
             abort(422, 'Courier API labels need a real courier connected first (Secure access → Courier).');
         }
@@ -373,7 +377,7 @@ class AdminSettingController extends Controller
             Setting::put('nextech_pickup', $validated['nextech_pickup']);
         }
         if (($validated['nextech_own_delivery'] ?? null) === 'on' && Setting::get('nextech_own_delivery', 'on') === 'off'
-            && ! (\App\Models\Store::query()->where('is_active', true)->exists() && \App\Models\User::query()->where('is_rider', true)->exists())) {
+            && ! (\App\Models\Store::query()->own()->where('is_active', true)->exists() && \App\Models\User::query()->where('is_rider', true)->exists())) {
             abort(422, 'Add an active store and at least one rider first (Stores, Riders).');
         }
         if (array_key_exists('deal_rules', $validated)) {
@@ -394,6 +398,12 @@ class AdminSettingController extends Controller
         }
         if (array_key_exists('seller_local_delivery', $validated)) {
             Setting::put('seller_local_delivery', $validated['seller_local_delivery']);
+        }
+        if (array_key_exists('cod_max_order', $validated)) {
+            Setting::put('cod_max_order', array_merge((array) Setting::get('cod_max_order', []), collect($validated['cod_max_order'])->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => (int) $v])->all()));
+        }
+        if (array_key_exists('rider_cash_limit', $validated)) {
+            Setting::put('rider_cash_limit', array_merge((array) Setting::get('rider_cash_limit', []), collect($validated['rider_cash_limit'])->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => (int) $v])->all()));
         }
         if (array_key_exists('seller_local_max_km', $validated)) {
             Setting::put('seller_local_max_km', round((float) $validated['seller_local_max_km'], 1));
@@ -608,7 +618,7 @@ class AdminSettingController extends Controller
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
             // NexTech's own delivery network (rider auto-assign applies only to these).
-            'own_stores_count' => \App\Models\Store::query()->count(),
+            'own_stores_count' => \App\Models\Store::query()->own()->count(),
             'courier_connected' => (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current()),
             'riders_count' => \App\Models\User::query()->where('is_rider', true)->count(),
             'nextech_pickup' => SellerShipping::nextechPickup(),
@@ -619,6 +629,8 @@ class AdminSettingController extends Controller
             // What Unbeatable deals start from right now in each country (worked out from the catalogue).
             'deal_cutoffs' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => \App\Support\DealSections::forMarket($code)['unbeatable_from_pct']]),
             'seller_local_max_km' => SellerShipping::localMaxKm(),
+            'cod_max_order' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerRiderCash::codMaxCents($c)]),
+            'rider_cash_limit' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerRiderCash::ownLimitCents($c)]),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),
             // Couriers per country, for entering a hand-booked courier on NexTech orders.
             'carriers' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => collect(Market::carriers($code))->map(fn ($c, $key) => ['value' => $key, 'label' => $c[0]])->values()]),
@@ -744,7 +756,7 @@ class AdminSettingController extends Controller
         $cardsReady = $stripe['key'] !== '' && $stripe['secret'] !== '';
         $courier = CourierCredentials::current();
         $courierConnected = $courier['provider'] === 'real' && $courier['base_url'] !== '' && $courier['api_key'] !== '';
-        $stores = \App\Models\Store::query()->count();
+        $stores = \App\Models\Store::query()->own()->count();
         $riders = \App\Models\User::query()->where('is_rider', true)->count();
         $pickup = SellerShipping::nextechPickup();
         $details = (array) (Setting::get('business_details') ?? []);

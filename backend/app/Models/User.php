@@ -163,7 +163,7 @@ class User extends Authenticatable
     /** Stores this rider serves (auto-assignment only considers these). */
     public function stores(): BelongsToMany
     {
-        return $this->belongsToMany(Store::class, 'rider_store');
+        return $this->belongsToMany(Store::class, 'rider_store')->withPivot(['linked_at', 'cash_paused_at', 'cash_later_at']);
     }
 
     /**
@@ -215,6 +215,9 @@ class User extends Authenticatable
             'rider_last_seen_at' => 'datetime',
             'rider_base_lat' => 'float',
             'rider_base_lng' => 'float',
+            'rider_notice_at' => 'datetime',
+            'rider_leaving_on' => 'date',
+            'rider_notice_processed_at' => 'datetime',
             'rider_last_lat' => 'float',
             'rider_last_lng' => 'float',
             'rider_last_located_at' => 'datetime',

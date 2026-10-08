@@ -15,13 +15,14 @@ class AdminRiderApplicationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'status' => ['sometimes', Rule::in(['pending', 'approved', 'rejected'])],
+            'status' => ['sometimes', Rule::in(['pending', 'seller_accepted', 'approved', 'rejected'])],
         ]);
 
         $applications = RiderApplication::query()
-            ->with(['user:id,name,email', 'store:id,name,city', 'reviewer:id,name'])
+            ->with(['user:id,name,email', 'store:id,name,city,shop_id', 'store.shop:id,name', 'reviewer:id,name'])
             ->when($data['status'] ?? null, fn ($q, $status) => $q->where('status', $status))
-            ->orderByRaw("status = 'pending' desc")
+            // A seller's accepted applicant waiting for the final approval comes first.
+            ->orderByRaw("status = 'seller_accepted' desc, status = 'pending' desc")
             ->latest()
             ->limit(200)
             ->get();
@@ -39,41 +40,24 @@ class AdminRiderApplicationController extends Controller
             'store_ids.*' => ['integer', 'exists:stores,id'],
         ]);
 
-        DB::transaction(function () use ($request, $application, $data): void {
-            $user = $application->user;
-            abort_if($user->is_admin, 422, 'That account is an administrator.');
-
-            $user->forceFill([
-                'is_rider' => true,
-                'rider_is_active' => true,
-                'rider_since' => $user->rider_since ?? now(),
-                'phone' => $user->phone ?: $application->phone,
-                'rider_base_address' => $user->rider_base_address ?: $application->home_address,
-                'rider_base_lat' => $user->rider_base_lat ?? $application->home_lat,
-                'rider_base_lng' => $user->rider_base_lng ?? $application->home_lng,
-            ])->save();
-
-            $storeIds = $data['store_ids'] ?? array_filter([$application->store_id]);
-            abort_if($storeIds === [], 422, 'Pick a store for this rider.');
-            $user->stores()->syncWithoutDetaching($storeIds);
-
-            $application->update([
-                'status' => 'approved',
-                'rejection_reason' => null,
-                'reviewed_by' => $request->user()->id,
-                'reviewed_at' => now(),
-            ]);
-        });
+        $recommended = $application->status === 'seller_accepted';
+        DB::transaction(fn () => \App\Support\RiderHiring::hire($application, $request->user(), $data['store_ids'] ?? [], bySeller: $recommended));
+        if ($recommended && ($seller = $application->store?->shop?->seller)) {
+            \App\Support\SellerNotify::send($seller, $request->user(), 'Rider approved', "{$application->user?->name} is approved and now delivers for your store.");
+        }
 
         return response()->json(['data' => $application->fresh(['user:id,name,email', 'store:id,name,city', 'reviewer:id,name'])]);
     }
 
     public function reject(Request $request, RiderApplication $application): JsonResponse
     {
-        abort_unless($application->status === 'pending', 422, 'Only a pending application can be rejected.');
+        abort_unless(in_array($application->status, ['pending', 'seller_accepted'], true), 422, 'Only an application waiting for a decision can be rejected.');
 
         $data = $request->validate(['reason' => ['required', 'string', 'max:500']]);
 
+        if ($application->status === 'seller_accepted' && ($seller = $application->store?->shop?->seller)) {
+            \App\Support\SellerNotify::send($seller, $request->user(), 'Rider not approved', "{$application->user?->name} wasn't approved to deliver for your store: {$data['reason']}");
+        }
         $application->update([
             'status' => 'rejected',
             'rejection_reason' => $data['reason'],

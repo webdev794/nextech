@@ -199,6 +199,9 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::delete('/riders/{user}', [AdminRiderController::class, 'destroy']);
     Route::post('/riders/{user}/cash-settle', [AdminRiderController::class, 'settleCash']);
     Route::post('/riders/{user}/payout', [AdminRiderController::class, 'payout']);
+    Route::post('/riders/{user}/notice-processed', [AdminRiderController::class, 'noticeProcessed']);
+    Route::get('/riders-money', [AdminRiderController::class, 'money']);
+    Route::post('/riders/{user}/offset-seller-cash', [AdminRiderController::class, 'offsetSellerCash']);
     Route::post('/riders/{user}/payout-request/reject', [AdminRiderController::class, 'rejectPayoutRequest']);
     Route::get('/rider-applications', [AdminRiderApplicationController::class, 'index']);
     Route::post('/rider-applications/{application}/approve', [AdminRiderApplicationController::class, 'approve']);
@@ -214,6 +217,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/sellers/{seller}/reinstate', [AdminSellerController::class, 'reinstate']);
     Route::delete('/sellers/{seller}', [AdminSellerController::class, 'remove']);
     Route::get('/secure-access/payouts', [AdminSellerController::class, 'payoutQueue']);
+    Route::post('/secure-access/adjustments', [\App\Http\Controllers\Api\AdminAdjustmentController::class, 'store']);
     Route::get('/secure-access/state', [AdminSettingController::class, 'secureAccessState']);
     Route::post('/secure-access/lock', [AdminSettingController::class, 'secureAccessLock']);
     Route::post('/sellers/{seller}/payout', [AdminSellerController::class, 'payout']);
@@ -307,6 +311,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/stores', [AdminStoreController::class, 'index']);
     Route::post('/stores', [AdminStoreController::class, 'store']);
     Route::patch('/stores/{store}', [AdminStoreController::class, 'update']);
+    Route::patch('/stores/{store}/local-delivery', [AdminStoreController::class, 'localDelivery']);
+    Route::patch('/stores/{store}/hiring', [AdminStoreController::class, 'hiring']);
     Route::delete('/stores/{store}', [AdminStoreController::class, 'destroy']);
 
     Route::get('/categories', [AdminCategoryController::class, 'index']);
@@ -339,6 +345,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Rider applications — any signed-in user can apply (they're not a rider yet).
     Route::get('/rider-application', [RiderApplicationController::class, 'show']);
     Route::get('/rider-application/stores', [RiderApplicationController::class, 'stores']);
+    Route::get('/rider-application/hiring', [RiderApplicationController::class, 'hiring']);
     Route::post('/rider-application', [RiderApplicationController::class, 'apply']);
 });
 
@@ -356,6 +363,18 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/onboarding/stripe', [SellerOnboardingController::class, 'stripeLink']);
     Route::post('/seller/onboarding/stripe/refresh', [SellerOnboardingController::class, 'stripeRefresh']);
     Route::patch('/seller/payout-method', [SellerController::class, 'payoutMethod']);
+    // Local delivery: the seller's store, hiring riders and the riders who deliver for it.
+    Route::get('/seller/local-delivery', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'show']);
+    Route::patch('/seller/local-delivery/hiring', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'hiring']);
+    Route::post('/seller/rider-applications/{application}/approve', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'approve']);
+    Route::post('/seller/rider-applications/{application}/reject', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'reject']);
+    Route::post('/seller/riders/{rider}/cash-received', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashReceived']);
+    Route::post('/seller/riders/{rider}/cash-not-received', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashNotReceived']);
+    Route::post('/seller/riders/{rider}/cash-later', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLater']);
+    Route::patch('/seller/local-delivery/rider-pay', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderPay']);
+    Route::get('/seller/local-delivery/money', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'money']);
+    Route::patch('/seller/local-delivery/cash-limit', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLimit']);
+    Route::post('/seller/riders/{rider}/remove', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'removeRider']);
     Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
 
     // The `seller` middleware only requires having applied at all; the real
@@ -438,6 +457,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/fulfillment/packages/{package}/progress', [SellerFulfillmentController::class, 'progress']);
     Route::post('/seller/fulfillment/orders/{order}/packed', [SellerFulfillmentController::class, 'packed']);
     Route::post('/seller/fulfillment/orders/{order}/local-dispatch', [SellerFulfillmentController::class, 'localDispatch']);
+    Route::post('/seller/fulfillment/packages/{package}/rider', [SellerFulfillmentController::class, 'assignRider']);
     Route::post('/seller/fulfillment/packages/{package}/sync', [SellerFulfillmentController::class, 'syncLabel']);
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
     Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);
@@ -447,9 +467,14 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
 Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function () {
     Route::get('/orders', [RiderController::class, 'orders']);
     Route::get('/stats', [RiderController::class, 'stats']);
+    Route::get('/packages', [RiderController::class, 'packages']);
+    Route::post('/packages/{package}/deliver', [RiderController::class, 'deliverPackage']);
+    Route::post('/stores/{store}/cash-handed', [RiderController::class, 'cashHanded']);
     Route::get('/earnings', [RiderEarningsController::class, 'show']);
     Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
     Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);
+    Route::post('/notice', [RiderEarningsController::class, 'giveNotice']);
+    Route::delete('/notice', [RiderEarningsController::class, 'withdrawNotice']);
     Route::post('/shift', [RiderController::class, 'shift']);
     Route::post('/location', [RiderController::class, 'location']);
     Route::post('/orders/{order}/claim', [RiderController::class, 'claim']);

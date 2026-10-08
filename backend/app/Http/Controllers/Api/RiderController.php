@@ -35,7 +35,9 @@ class RiderController extends Controller
         }
 
         return response()->json(['data' => $this->board($request->user())
-            + ['shift' => RiderAttendance::state($request->user())]]);
+            + ['shift' => RiderAttendance::state($request->user()),
+                // Paused in every store until cash is handed over (a seller's, or over the store's own limit).
+                'cash_block' => \App\Support\SellerRiderCash::blockedReason($request->user())]]);
     }
 
     /**
@@ -164,6 +166,54 @@ class RiderController extends Controller
      * confirmed by a handover code, cash collected, and their most recent
      * ratings (scores and dates only — written feedback is for the admin).
      */
+    /** "I handed over the cash" for a seller's store: the seller confirms or disputes within 24 hours. */
+    public function cashHanded(Request $request, \App\Models\Store $store): JsonResponse
+    {
+        abort_unless($store->shop_id && $request->user()->stores()->whereKey($store->id)->exists(), 404);
+        \App\Support\SellerRiderCash::claimHandover($request->user(), $store);
+
+        return $this->packages($request);
+    }
+
+    /** Sellers' own-delivery packages given to me, not delivered yet. */
+    public function packages(Request $request): JsonResponse
+    {
+        $packages = \App\Models\OrderPackage::query()->where('rider_id', $request->user()->id)->whereNotIn('status', ['delivered', 'returned', 'lost'])
+            ->with(['order.user:id,name,phone', 'shop:id,name', 'items.orderItem:id,product_name,unit_price_cents'])->oldest('rider_assigned_at')->get();
+
+        // Cash I hold for each seller's store, and whether I'm paused there until I hand it over.
+        $cash = $request->user()->stores()->whereNotNull('shop_id')->get()->map(fn ($store) => [
+            'store_id' => $store->id,
+            'store' => $store->shop?->name ?? $store->name,
+            // Claimed as handed over, waiting for the seller to confirm.
+            'claimed' => \App\Support\SellerRiderCash::outstanding($request->user(), $store)->whereNotNull('cash_handover_claimed_at')->exists(),
+            'held_cents' => \App\Support\SellerRiderCash::heldCents($request->user(), $store),
+            'limit_cents' => \App\Support\SellerRiderCash::limitCents($store),
+            'currency' => \App\Support\Market::currency($store->country),
+            'paused' => (bool) $store->pivot?->cash_paused_at,
+        ])->filter(fn ($c) => $c['held_cents'] > 0 || $c['paused'] || $c['claimed'])->values();
+
+        return response()->json(['data' => $packages->map(fn ($p) => \App\Support\SellerRiders::forRider($p))->values(), 'cash' => $cash]);
+    }
+
+    /** Deliver a seller's package with the buyer's code (and the cash, for cash on delivery). */
+    public function deliverPackage(Request $request, \App\Models\OrderPackage $package): JsonResponse
+    {
+        abort_unless($package->rider_id === $request->user()->id, 404);
+        $data = $request->validate(['delivery_code' => ['required', 'string', 'max:8'], 'cash_collected' => ['sometimes', 'boolean']]);
+        abort_unless($package->delivery_code && hash_equals($package->delivery_code, trim($data['delivery_code'])), 422, 'That delivery code doesn’t match — check it with the buyer.');
+        $cod = $package->order?->payment_method === 'cod';
+        abort_if($cod && empty($data['cash_collected']), 422, 'Cash on delivery: collect the cash and tick "Cash collected".');
+        \App\Support\SellerProgress::advance($package, 'delivered', 'rider', $cod);
+        $package->forceFill(['delivered_by' => 'rider'])->save();
+        \App\Support\RiderMoney::creditSellerDelivery($package->fresh('shop'));
+        if ($cod) {
+            \App\Support\SellerRiderCash::collected($package->fresh('shop.seller'), $request->user());
+        }
+
+        return $this->packages($request);
+    }
+
     public function stats(Request $request): JsonResponse
     {
         $rider = $request->user();
@@ -225,6 +275,9 @@ class RiderController extends Controller
 
     public function claim(Request $request, Order $order): JsonResponse
     {
+        if ($why = \App\Support\SellerRiderCash::blockedReason($request->user())) {
+            return response()->json(['message' => "You’re paused in every store — {$why}."], 422);
+        }
         if ($order->status !== 'ready_for_delivery'
             || ($order->delivery_partner_id && $order->delivery_partner_id !== $request->user()->id)) {
             return response()->json(['message' => 'This order is not available to pick up.'], 422);
@@ -452,6 +505,18 @@ class RiderController extends Controller
             SellerLedger::creditForOrder($order);
             // Cash settled after the drop-off completes the paid + delivered pair.
             $order->sendDeliveredReceiptIfReady();
+            // Over the store's own cash limit: paused in every store until the cash is returned.
+            $rider = $request->user();
+            $country = $order->market ?? $rider->stores()->whereNull('shop_id')->value('country');
+            if ($rider->codHoldingCents() > \App\Support\SellerRiderCash::ownLimitCents($country)) {
+                $held = \App\Support\Money::format($rider->codHoldingCents(), \App\Support\Market::currency($country));
+                try {
+                    $rider->notify(new \App\Notifications\RiderNotice('Paused — return your cash', "You hold {$held} of cash on delivery, over the limit. Return it to the store before more deliveries — until then you’re paused in every store."));
+                    \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice("{$rider->name} is over the cash limit", "{$rider->name} holds {$held} of cash on delivery (over the limit) and is paused until it's returned. Settle it under Riders."));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
         }
 
         return response()->json(['data' => $this->row($order->fresh(['items', 'user:id,name,phone']))]);

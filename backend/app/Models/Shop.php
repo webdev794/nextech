@@ -59,6 +59,15 @@ class Shop extends Model
 
     protected static function booted(): void
     {
+        // The seller's store in Stores / hubs follows their own-delivery settings.
+        static::saved(function (Shop $shop): void {
+            if ($shop->wasRecentlyCreated && $shop->seller_id) {
+                \App\Support\SellerStores::ensure($shop); // every seller has a store (local delivery off)
+            }
+            if ($shop->wasChanged(['local_delivery', 'fulfillment_mode', 'name']) || ($shop->wasRecentlyCreated && $shop->local_delivery)) {
+                \App\Support\SellerStores::sync($shop);
+            }
+        });
         // A shop sells in its seller's country; its products follow it.
         static::creating(function (Shop $shop): void {
             if (! $shop->isDirty('market')) {

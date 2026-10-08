@@ -17,13 +17,19 @@ class OrderPackage extends Model
     protected $fillable = [
         'order_id', 'shop_id', 'ship_from_address_id', 'label_source', 'carrier', 'tracking_number', 'label_url', 'label_path',
         'label_cost_cents', 'status', 'status_history', 'progress_updated_at', 'cash_collected_at', 'shipped_at', 'delivered_at', 'edit_count', 'last_edited_at',
-        'carrier_name', 'tracking_site', 'delivery_code',
+        'carrier_name', 'tracking_site', 'delivery_code', 'rider_id', 'rider_assigned_at', 'delivered_by',
     ];
+
+    /** The seller's rider delivering this own-delivery package (null = the seller themselves). */
+    public function rider(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rider_id');
+    }
 
     // The delivery code is the buyer's — shown on their order, never to the seller.
     protected $hidden = ['label_path', 'delivery_code'];
 
-    protected $appends = ['tracking_url', 'can_edit', 'has_label_file', 'tracking_label', 'carrier_label'];
+    protected $appends = ['tracking_url', 'can_edit', 'has_label_file', 'tracking_label', 'carrier_label', 'deliverer'];
 
     protected function casts(): array
     {
@@ -36,6 +42,7 @@ class OrderPackage extends Model
             'progress_updated_at' => 'datetime',
             'cash_collected_at' => 'datetime',
             'last_edited_at' => 'datetime',
+            'rider_assigned_at' => 'datetime',
             'tracking_eta' => 'date',
             'tracking_events' => 'array',
             'tracking_synced_at' => 'datetime',
@@ -74,10 +81,25 @@ class OrderPackage extends Model
     }
 
     /** The courier's name as the buyer reads it. */
+    /**
+     * Who brings a local (own-delivery) package, as the buyer sees it — like any
+     * rider: the seller's rider, or the seller themselves by name. Null otherwise.
+     */
+    public function getDelivererAttribute(): ?string
+    {
+        if ($this->carrier !== SellerShipping::LOCAL) {
+            return null;
+        }
+        $rider = $this->rider_id ? User::query()->whereKey($this->rider_id)->value('name') : null;
+
+        // A rider by first name (as delivery apps show it); otherwise the seller's shop name.
+        return $rider ? strtok($rider, ' ') : Shop::query()->whereKey($this->shop_id)->value('name');
+    }
+
     public function getCarrierLabelAttribute(): string
     {
         return match (true) {
-            $this->carrier === SellerShipping::LOCAL => 'Seller\'s own delivery',
+            $this->carrier === SellerShipping::LOCAL => 'Local delivery',
             $this->carrier === 'Other' && $this->carrier_name => $this->carrier_name,
             default => \App\Support\Market::allCarriers()[$this->carrier][0] ?? (string) $this->carrier,
         };

@@ -151,7 +151,8 @@ class CheckoutController extends Controller
                 }
             }
 
-            if ($paymentMethod === 'cod' && ($codBlocked = SellerProgress::codBlockedReason($cart->items->pluck('product'), $market))) {
+            $cartTotal = (int) $cart->items->sum(fn ($i) => (int) ($i->unit_price_cents ?? $i->product?->price_cents ?? 0) * (int) $i->quantity);
+            if ($paymentMethod === 'cod' && ($codBlocked = SellerProgress::codBlockedReason($cart->items->pluck('product'), $market, $cartTotal))) {
                 throw ValidationException::withMessages(['payment_method' => [$codBlocked]]);
             }
 
@@ -449,7 +450,7 @@ class CheckoutController extends Controller
         $none = ['km' => null, 'radius_km' => null, 'store' => null, 'delivery_method' => 'own_rider', 'courier_quote_cents' => null];
 
         // This country's NexTech stores.
-        $stores = Store::query()->where('country', $market)->where('is_active', true)
+        $stores = Store::query()->own()->where('country', $market)->where('is_active', true)
             ->whereNotNull('latitude')->whereNotNull('longitude')->get();
 
         // No NexTech stores in this country: the US keeps the original
@@ -488,7 +489,8 @@ class CheckoutController extends Controller
         // availability applies). Stores can be in different cities.
         // Admin can turn own-rider delivery off: then even nearby orders go by courier.
         $courierOnly = \App\Models\Setting::get('nextech_own_delivery', 'on') === 'off';
-        $serving = $courierOnly ? null : Geo::servingStore($stores, (float) $lat, (float) $lng);
+        // Riders only from stores that have them switched on (Stores / hubs → Local delivery).
+        $serving = $courierOnly ? null : Geo::servingStore($stores->where('local_delivery_active', true)->values(), (float) $lat, (float) $lng);
 
         // Outside every store's radius: hand off to the online courier instead
         // of hard-rejecting, when it can reach the address (the mock provider

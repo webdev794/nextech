@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\RiderApplication;
 use App\Models\Store;
 use App\Support\Geo;
+use App\Support\RiderHiring;
 use App\Support\VisitorCountry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,11 +55,11 @@ class RiderApplicationController extends Controller
         // No location yet: the visitor's own country (from their IP) first.
         $country = ($lat === null || $lng === null) ? VisitorCountry::detect($request) : null;
 
-        $stores = Store::query()
-            ->where('is_active', true)
+        // Only stores that are hiring: NexTech's own and sellers' (local delivery on).
+        $stores = RiderHiring::hiringStores()->with('shop:id,name')
             ->withCount(['riders' => fn ($q) => $q->where('is_rider', true)])
             ->when($country, fn ($q) => $q->orderByRaw('country = ? DESC', [$country]))
-            ->get(['id', 'name', 'line1', 'city', 'state', 'postal_code', 'country', 'latitude', 'longitude'])
+            ->get(['id', 'shop_id', 'name', 'line1', 'city', 'state', 'postal_code', 'country', 'latitude', 'longitude', 'delivery_radius_km'])
             ->map(function (Store $store) use ($lat, $lng) {
                 $km = ($lat !== null && $lng !== null && $store->latitude !== null && $store->longitude !== null)
                     ? Geo::haversineKm($lat, $lng, (float) $store->latitude, (float) $store->longitude)
@@ -69,6 +70,10 @@ class RiderApplicationController extends Controller
                     'name' => $store->name,
                     'address' => implode(', ', array_filter([$store->line1, $store->city, trim($store->state.' '.$store->postal_code)])),
                     'riders_count' => (int) $store->riders_count,
+                    // Who the rider would deliver for: the store itself, or the seller who runs it.
+                    'seller' => $store->shop?->name,
+                    'country' => $store->country,
+                    'min_age' => RiderHiring::minAge($store->country),
                     'distance_miles' => $km !== null ? round($km / 1.609344, 1) : null,
                 ];
             })
@@ -81,6 +86,15 @@ class RiderApplicationController extends Controller
         ]]);
     }
 
+    /** Whether any store is hiring in the visitor's country — turns on the storefront's "Work with us" link. */
+    public function hiring(Request $request): JsonResponse
+    {
+        $country = VisitorCountry::detect($request);
+        $count = RiderHiring::hiringStores()->when($country, fn ($q) => $q->where('country', $country))->count();
+
+        return response()->json(['data' => ['open' => $count > 0, 'stores' => $count]]);
+    }
+
     /** Submit (or, after a rejection, resubmit) an application. */
     public function apply(Request $request): JsonResponse
     {
@@ -89,8 +103,28 @@ class RiderApplicationController extends Controller
         abort_if($user->is_admin, 422, 'Administrator accounts cannot apply as riders.');
 
         $data = $request->validate([
-            'store_id' => ['required', 'integer', Rule::exists('stores', 'id')->where('is_active', true)],
+            // The stores they're willing to work for, most wanted first.
+            'store_ids' => ['required', 'array', 'min:1', 'max:10'],
+            'store_ids.*' => ['integer', 'distinct', Rule::in(RiderHiring::hiringStores()->pluck('id')->all())],
             'phone' => ['required', 'string', 'max:40'],
+            'email' => ['required', 'email', 'max:160'],
+            'date_of_birth' => ['required', 'date', 'before:today'],
+            // Riders bring their own vehicle and pay its running costs.
+            'own_vehicle' => ['accepted'],
+            // Delivery / driving work experience in months (0 = none).
+            'experience_months' => ['required', 'integer', 'min:0', 'max:600'],
+            'education' => ['required', 'string', 'max:160'],
+            'work_history' => ['nullable', 'string', 'max:2000'],
+            'health_issue' => ['required', 'boolean'],
+            'health_details' => ['required_if_accepted:health_issue', 'nullable', 'string', 'max:300'],
+            // "The seller or the store can remove me at any time if stores aren't available, or for behaviour, health or other issues",
+            // and "I'll give 30 days' notice before leaving; without notice, final pay is settled after checks".
+            'consent_removal' => ['accepted'],
+            'rc_document_path' => ['required_unless:vehicle_type,bicycle', 'nullable', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
+            // ID proof is required; an education document and a photo are optional (private uploads).
+            'id_document_path' => ['required', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
+            'education_document_path' => ['nullable', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
+            'photo_path' => ['required', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
             'home_address' => ['required', 'string', 'max:255'],
             'home_lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'home_lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
@@ -101,13 +135,25 @@ class RiderApplicationController extends Controller
             'license_document_path' => ['required_unless:vehicle_type,bicycle', 'nullable', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
         ]);
 
+        // Minimum age in the store's country (checked against the ID when the application is decided).
+        $data['preferred_store_ids'] = array_values(array_map('intval', $data['store_ids']));
+        $data['store_id'] = $data['preferred_store_ids'][0];
+        unset($data['store_ids']);
+        $data['consent_removal'] = true;
+        $store = Store::find($data['store_id']);
+        $min = RiderHiring::minAge($store?->country);
+        abort_if(\Illuminate\Support\Carbon::parse($data['date_of_birth'])->age < $min, 422, "Riders must be at least {$min} years old.");
+        $data['own_vehicle'] = true;
+
         if (empty($data['home_lat']) || empty($data['home_lng'])) {
             [$data['home_lat'], $data['home_lng']] = Geo::geocode($data['home_address']);
         }
+        // Their base location is needed to offer nearby work.
+        abort_if($data['home_lat'] === null || $data['home_lng'] === null, 422, 'We couldn’t find your home address on the map — press “Use my location” or check the address.');
 
         $application = DB::transaction(function () use ($user, $data): RiderApplication {
             $existing = RiderApplication::where('user_id', $user->id)->lockForUpdate()->first();
-            abort_if($existing?->status === 'pending', 422, 'Your application is already under review.');
+            abort_if(in_array($existing?->status, ['pending', 'seller_accepted'], true), 422, 'Your application is already under review.');
 
             return RiderApplication::updateOrCreate(['user_id' => $user->id], $data + [
                 'status' => 'pending',
@@ -119,6 +165,13 @@ class RiderApplicationController extends Controller
 
         if (! $user->phone) {
             $user->forceFill(['phone' => $data['phone']])->save();
+        }
+
+        // Sellers whose stores they picked decide (Seller Center → Local delivery), and are told.
+        foreach (Store::query()->whereIn('id', $data['preferred_store_ids'])->whereNotNull('shop_id')->with('shop.seller')->get() as $picked) {
+            if ($picked->shop?->seller) {
+                \App\Support\SellerNotify::send($picked->shop->seller, $user, 'New rider application', "{$user->name} applied to deliver for your store. Review it in Seller Center → Local delivery → Applications.");
+            }
         }
 
         return response()->json(['data' => $application->load('store:id,name,city')], 201);

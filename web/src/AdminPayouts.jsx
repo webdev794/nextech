@@ -167,3 +167,45 @@ export function WithdrawalFees({ settings, market, marketName, currency, save, o
     </form>
   )
 }
+
+// Secure access → Payouts → Adjust a balance: a credit or charge by hand on a
+// seller's or rider's ledger (e.g. the system missed something), with a reason
+// they see. Applied before final payments.
+export function AdjustBalance({ headers, sellers, riders, onMessage, onError }) {
+  const [form, setForm] = useState({ target: 'seller', id: '', sign: 'credit', amount: '', reason: '' })
+  const [busy, setBusy] = useState(false)
+  const list = form.target === 'seller'
+    ? sellers.filter((s) => s.status === 'approved' && s.shop).map((s) => [s.id, s.shop.name])
+    : riders.map((r) => [r.id, r.name])
+
+  async function submit(event) {
+    event.preventDefault()
+    const cents = Math.round(Number(form.amount) * 100)
+    if (!form.id || !cents || !form.reason.trim()) return
+    const name = list.find(([id]) => String(id) === String(form.id))?.[1]
+    if (!window.confirm(`${form.sign === 'credit' ? 'Add' : 'Take'} ${form.amount} ${form.sign === 'credit' ? 'to' : 'from'} ${name}'s balance?\n\nThey see this with your reason. It applies before their next payout.`)) return
+    setBusy(true)
+    try {
+      const response = await fetch(`${API_URL}/admin/secure-access/adjustments`, { method: 'POST', headers: headers(), body: JSON.stringify({ target: form.target, id: Number(form.id), amount_cents: form.sign === 'credit' ? cents : -cents, reason: form.reason.trim() }) })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not adjust.')
+      onMessage(`Adjustment saved for ${name}.`)
+      setForm({ ...form, amount: '', reason: '' })
+    } catch (error) { onError(error) } finally { setBusy(false) }
+  }
+
+  return (
+    <form className="admin-form" onSubmit={submit}>
+      <h3>Adjust a balance</h3>
+      <p className="muted">Correct money by hand before final payments — for example when the system missed a credit, or to recover cash a rider kept. It shows in their ledger as &ldquo;Adjustment&rdquo; with your reason, and they&rsquo;re told.</p>
+      <div className="admin-form-grid">
+        <label>Who<select value={form.target} onChange={(e) => setForm({ ...form, target: e.target.value, id: '' })}><option value="seller">Seller</option><option value="rider">Rider</option></select></label>
+        <label>{form.target === 'seller' ? 'Seller' : 'Rider'}<select required value={form.id} onChange={(e) => setForm({ ...form, id: e.target.value })}><option value="">Choose…</option>{list.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        <label>Credit or charge<select value={form.sign} onChange={(e) => setForm({ ...form, sign: e.target.value })}><option value="credit">Credit — add to their balance</option><option value="charge">Charge — take from their balance</option></select></label>
+        <label>Amount<input required type="number" min="0.01" step="0.01" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label>
+        <label className="wz-wide">Reason (they see it)<input required maxLength="300" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} /></label>
+      </div>
+      <div className="admin-form-actions"><button className="act" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save adjustment'}</button></div>
+    </form>
+  )
+}

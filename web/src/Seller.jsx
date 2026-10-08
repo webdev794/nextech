@@ -10,6 +10,7 @@ import { requestPolicies } from './policyGateEvents'
 import LightningDeal from './LightningDeal'
 import { LineChart, PieChart } from './Charts'
 import { ShipOrders, ShippingSettings } from './SellerShipping'
+import { LocalDelivery } from './SellerLocalDelivery'
 import { BankAccount, ComplianceInformation, OnboardingTasks, TaxInformation } from './SellerOnboarding'
 import { ManageOrders } from './SellerOrders'
 import { changeItemLabel, changeItemStep } from './sellerChangeItems'
@@ -67,7 +68,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)', adjustment: 'Adjustment', rider_pay: 'Rider pay', rider_cash_recovered: 'Cash a rider kept (from their earnings)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -963,7 +964,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Payout method'], ['shipping', 'Shipping settings'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Payout method'], ['shipping', 'Shipping settings'], ['local', 'Local delivery'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
     ]
     const activePage = pageView ? 'page' : section
 
@@ -1536,6 +1537,8 @@ export default function Seller({ token, onSignOut }) {
               <BankAccount headers={authHeaders} onSupport={() => go('messages')} go={go} onChanged={(bankStatus) => setMe((m) => ({ ...m, bank_status: bankStatus }))} />
             ) : section === 'shipping' ? (
               <ShippingSettings headers={authHeaders} onChanged={(settings) => setMe((m) => (m?.shop ? { ...m, shop: { ...m.shop, fulfillment_mode: settings.fulfillment_mode } } : m))} />
+            ) : section === 'local' ? (
+              <LocalDelivery headers={authHeaders} go={go} />
             ) : section === 'policies' ? (
               <>
                 <h1 className="sc-title">Policies &amp; rules</h1>

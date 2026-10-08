@@ -1,53 +1,46 @@
-# Tasks Done Today — 7 Oct 2026
+# Tasks Done Today — 8 Oct 2026
 
-(The 6 Oct list that was here is in git history: `git show 8df2c46:tasks_done_today.md`.)
+Sellers' own local delivery with their own riders, built step by step (plan and what's still to do: `Possible_tasks.md`, section 2).
 
-## Seller payouts
-- **Bank or PayPal, chosen per country:** admin turns each payout method on or off per country (at least one stays on). Sellers pick theirs in onboarding Task 3 "Set up how you get paid" and in Finances, seeing only the methods offered in their country.
-- **Payout currency:** each method has the currency it pays in per country (e.g. PayPal pays Indian sellers in USD). Sellers choose from the currencies admin allows and confirm that their account can receive a foreign currency.
-- **Withdrawal fee** (the name used everywhere): fixed amount and/or % per method and country, plus an optional minimum payout per method. Sellers see the fee and what they'll receive before requesting. The ledger shows a "Withdrawal fee" line.
-- **Request payout:** always-visible button, a limits box (minimum, maximum per payout, daily limit, bank-rules note editable by admin), and a confirmation showing amount, method, fee and amount received. "Available" shows $0 until it reaches the minimum.
-- **Stripe payouts** *(not committed yet)*: a third method. The seller sets up a Stripe account on Stripe's own pages and comes back to Seller Center. Admin's **Pay** sends the money from the store's Stripe balance. The seller pays the withdrawal fee. Stripe is off until admin switches it on, and is greyed out with the reason where it can't work: India (Stripe won't open Indian accounts for a US Stripe account) or no Stripe keys.
+## Stores / hubs
+- **Every seller has a store** (from their ship-from or registered address), shown once the seller is approved. Each store is tagged **Own store** or **Seller**, with a filter, a riders count and how long it has been listed. The seller's name opens a **card**: owner, email, phone, business type, status, "selling since" (admin only), last message.
+- **Local delivery (riders) per store:** own stores show **Riders on / Courier only** (new stores start off; needs a rider linked). Seller stores show **On / Off / Seller asks to turn off / Off · locked**, with Turn on, Turn off (reason), Approve, Keep on.
+- **NexTech's own checkout, delivery fee, routing, stock and rider pay never use sellers' stores.**
+- **Hiring** switch per store.
 
-## Admin → Secure access (password) *(not committed yet)*
-- **Three submenus after unlocking:** **Withdrawal fees** (moved from Store settings, with the payout note), **Payouts** and **Keys & account**.
-- **Payouts table:** every seller with money to pay or a payout request, showing their payment method and details, available and held amounts, request, amount to pay, fee and what they receive, status (Ready / below minimum / why blocked), with **Pay** / **Decline**. It also shows totals, today's remaining cap and the Stripe balance. The bell and the seller page now link here.
-- **Locks itself:** opening another menu, or a minute without activity, locks Secure access (on the server too). Changing withdrawal fees and paying sellers needs the unlock.
+## Seller local delivery
+- The seller's **Own delivery (local)** settings (address, map point — latitude/longitude can be entered — radius up to 10 km by default, fee, days) create or update their store.
+- **Turning it off:** a confirmation popup; with riders linked it's a request to admin (riders told only after approval, they stay linked for pay); without riders it's simply off and can be turned on again. Locked turn-offs can only be turned back on by admin.
+- **"Before you turn it on"** box: deliver yourself until riders are hired, delivery fees, cash on delivery is the seller's to collect daily, products and cash riders keep are the seller's risk.
+- **Seller Center → My account → Local delivery:** store status, step-by-step hiring guide (Quikr, OLX, shop poster, people you trust; riders bring their own vehicle), hiring switch, applications, riders, cash, pay per delivery and a **rider money** table.
 
-## Products & categories
-- **Product details per category, set by admin** *(not committed yet)*: Categories → edit a category → "Product details sellers fill in".
-  - Each detail is a text box, number box (with unit), dropdown, checkboxes or a yes/no checkbox, with a label, an optional "required" tick and an order.
-  - Subcategories use their parent's list until given their own. The 13 built-in lists were copied in so they can be edited.
-- **Common product details** *(not committed yet)*: Categories → Common product details. Every category, including new ones, asks for them; admin can add, rename or remove them.
-- **Locked when used:** a detail or a dropdown choice that products use shows in red "🔒 used by N products". It can be renamed but not removed or changed in kind. Model number and Warranty are always kept (follow-ups use them).
-- **Out of stock:** a seller product with variations is sold only as its variants. The product page shows a red **Out of stock** button. Seller Center shows "⚠ Out of stock" with a count, a red banner and a Products badge.
-- **Update stock** button in Manage products (applies at once, no review). SKU table has Variation and highlighted Quantity in stock columns; the seller's own code is optional. Digital downloads can be limited copies.
-- **Edits to live products** (e.g. adding an FAQ) wait for approval while the product stays on sale. Admins are **emailed** when products or edits are sent for review. Admin Products says how many are waiting in other countries (hidden by the top-bar country).
-- **Refurbished** tag (optional) on products.
-- **Ads as a product kind:** Not demo / Demo / Ad with a partner link. Ads show with an "Ad" label, open the partner site and count clicks, and appear only on the home Recommended list.
-- **Trademark change requests** with a warranty check and admin advice.
+## Hiring riders
+- **"Work with us — deliver"** footer link for signed-in buyers when a store in their country is hiring.
+- **Application form:** email, date of birth (minimum age per country, 18 by default), education, past work, experience, health, stores they'd work for in priority order, ID proof, photo, licence + vehicle RC for motor vehicles, own-vehicle and consent ticks (removal terms, 30 days' notice, pay per delivery, same-day cash handover).
+- **Seller accepts → admin approves** (basic requirements only); minimum rules enforced (nobody under the minimum age). Applications stay in the admin 🔔 until decided.
+- **Rider profile** filled from the application (home base, passport photo, all details); admin Riders list shows the photo; the rider panel shows the full profile.
+- **Riders work in one country only.** Admin removing a rider from a seller's store needs a reason (the seller is told); a seller removing one needs a reason (admin is told) and no open orders.
+- **Notice period:** "Give 30 days' notice" in the Rider app; admin told when given and on the last day, until marked processed.
 
-## Deals & home page
-- **Deals filled automatically:** Lightning deals (seller- or admin-set % off, start time, units, countdown, optional auto-restart, at most 40% of live products), Unbeatable (biggest discounts, cut-off worked out from the catalogue, spread across categories) and Exclusive (cheapest per country). No product in two sections. Demo store has auto-renewing ~30% lightning deals.
-- **Personal Recommended:** recently viewed categories first.
+## Deliveries by sellers' riders
+- **Ship orders:** "Who delivers it" — a rider (on shift first) or "I'll deliver it myself"; change the rider later. High-value local orders (over the cash-on-delivery maximum) are flagged: send by courier or deliver yourself.
+- **Rider app → Store deliveries:** pickup and buyer details, cash to collect, delivered with the buyer's code.
+- Buyers see **"Sam is delivering your order"** (rider's first name, or the seller's shop name).
+- Admin can only watch a seller's own-delivery steps (no status changes; cancel/refund still possible).
 
-## Sellers
-- **Signed policies:** Seller Center footer pages can require reading and signing (before listing or selling abroad), with name, date, IP and version kept.
-- **Selling abroad:** export ID plus signed declaration, approved on signing. Per-product "sell abroad" choice with optional extra shipping per item. Seller money is held through the warranty, and there's an optional customs/paperwork fee line. Plus an International Delivery label + customs sheet.
-- **Sign-up:** proof of registered address (admin checks it, then the address is locked with history); save and finish later.
-- **Own delivery (local):** radius, fee, days and a buyer delivery code. "Other courier" takes a name and tracking link. Hourly reminders, with admin alerted on missed ship-by dates.
-- **Store decoration:** images by upload or link; size and KB limits per image, with automatic crop and compression and links to free tools. Phone, email, social and outside links aren't allowed, with a warning that the store can be paused. "View store page" link. The shop page has no breadcrumb and has a share icon.
-- **Seller Center button** on the storefront for signed-in sellers only.
+## Cash on delivery and riders' money
+- **Cash on delivery only up to ₹5,000 / $200 per order** by default (admin can raise it at their own risk; a seller's limit lowers it for their orders).
+- **Cash limits:** sellers set the most one rider may hold; the store sets one for its own riders. Over a limit, or paused by any seller for cash, a rider is **paused in every store** until it's handed over.
+- **Seller cash handling:** notifications when a rider collects cash, evening reminders, next-morning pause (a few days' grace if their earnings cover it), **Cash received**, **Later** (seller's own risk). The rider can say **"I handed over the cash"**; only the seller confirms it or marks it **Not received** (rider paused; covered only by their earnings).
+- **Pay per delivery** set by the seller: the store pays the rider and charges the seller ("Rider pay"). At month end, cash a rider kept goes to the seller from their earnings ("Cash a rider kept").
+- **Money table** per month (admin: all riders + balance; seller: their store) and a **settlement box** per rider (earned − cash held, settle 7 days after their last delivery).
+- **Adjust a balance** (Secure access → Payouts): admin credit or charge on a seller's or rider's ledger, with a reason they see (also for fines).
+- End of day: the store's own riders holding cash, and admin, are told.
 
-## Admin screens & settings
-- **Left menu order:** Dashboard, Orders, Categories, Products, Stores / hubs, Sellers, Customers, Emails, Reviews, Riders, Shipping, Store settings, Secure access.
-- **Shipping menu** with submenus: Seller shipping & labels, Sellers' own delivery, Selling abroad, Order update reminders, Seller cash on delivery, NexTech delivery. Checkout charges follow the country chosen in the top bar.
-- **Pages menu:** All pages, All blogs, Main help pages, Main footer pages, Seller policies & rules. **New page** asks which menu it goes under. Footer settings moved to Store settings.
-- **Store settings:** Setup checklist at the top with Change / Set up buttons; Selling, House shop and Deals next. Settings hide what's unused and require what's needed (checked on the server).
-- **House shop** for the store owner (seller tools, no commission or review). NexTech delivery: own riders within the store radius, or a courier for everything.
-- **Category requests** from sellers can be declined (removed from the bell).
-- **Store name everywhere,** including the mobile app, emails and label headers (`{store}` placeholder).
+## Admin screens & other
+- **Riders filters:** store, country, status (active / not active / leaving), right now (on shift…).
+- Fixed: the rider application file had two imports on one line (separated only by a bare carriage return).
 
-## Fixed / checks
-- Tests: **431, all passing** (new: Stripe payouts, payouts table and Secure access, category details).
-- ESLint can't run while drive C: is full; changed files were checked with the JS parser instead.
+## Checks
+- Tests: **443, all passing** (new: seller stores, rider hiring, own-delivery riders, cash rules, rider money, adjustments).
+- ESLint passes (the pagefile was moved to D:, so linting no longer runs out of memory); production build passes.

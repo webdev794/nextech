@@ -144,30 +144,61 @@ function IntlShipping({ data, patch, headers, onData }) {
 // ---------------------------------------------------------------------------
 function LocalDelivery({ data, patch }) {
   const ld = data.local_delivery
-  const [form, setForm] = useState(() => ({ on: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? 10, fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1 }))
+  const [form, setForm] = useState(() => ({ on: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? Math.min(10, data.local_max_km ?? 10), fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1, lat: ld?.lat ?? '', lng: ld?.lng ?? '' }))
   if (!['self', 'label'].includes(data.fulfillment_mode) || !data.local_delivery_offered) return null
   const set = (p) => setForm((f) => ({ ...f, ...p }))
 
   function save(event) {
     event.preventDefault()
-    if (!form.on) { patch({ local_delivery: null }, 'Own delivery is off — all orders go by courier.'); return }
-    patch({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days) } }, `Saved — buyers within ${form.radius} km get your own delivery.`)
+    if (!form.on) {
+      if (!ld) return
+      // With riders linked it's hard to undo: the store confirms, riders lose it, and only the store can turn it on again.
+      const riders = data.local_store?.riders_count ?? 0
+      const ok = window.confirm(riders
+        ? `Turn off your own local delivery?\n\nThis affects the ${riders} rider${riders === 1 ? '' : 's'} linked to your store: ${brandName()} confirms it first, then they're told and removed from your store.\n\nOnce it's off you can't turn it back on yourself — only ${brandName()} can (for example when you have riders again). You can always deliver nearby orders yourself or send them by courier instead.`
+        : 'Turn off your own local delivery? All orders go by courier until you turn it on again.')
+      if (!ok) { set({ on: true }); return }
+      patch({ local_delivery: null, confirm_off: true }, riders ? `Sent to ${brandName()} to confirm — local delivery stays on until then.` : 'Own delivery is off — all orders go by courier.')
+      return
+    }
+    const pin = String(form.lat).trim() !== '' && String(form.lng).trim() !== '' ? { lat: Number(form.lat), lng: Number(form.lng) } : {}
+    patch({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days), ...pin } }, `Saved — buyers within ${form.radius} km get your own delivery.`)
   }
 
   return (
     <div className="sc-card">
       <h2 className="sc-h2">Own delivery (local)</h2>
       <p className="sc-muted">Have your own delivery person? Buyers within the distance you set get your own delivery instead of a courier — free, or for a flat fee you choose (the fee is paid to you). There&rsquo;s no tracking number: when it leaves, click <b>Out for delivery (own delivery)</b>; the buyer gets a delivery code, and you enter it to mark the order delivered. Buyers further away still get your normal shipping.</p>
+      {data.local_store?.blocked && <p className="ss-warn">Local delivery is off for your store and only {brandName()} can turn it back on — message us (for example when you have riders again). Orders go by courier meanwhile.</p>}
+      {data.local_store?.status === 'off_requested' && <p className="ss-warn">You asked to turn off local delivery — waiting for {brandName()} to confirm. It stays on until then.</p>}
+      <div className="ss-info">
+        <b>Before you turn it on</b>
+        <ul>
+          <li>Until riders are hired for your store, <b>you deliver these orders yourself</b> — or send any order by courier as usual.</li>
+          <li>Buyers pay the delivery fee you set (paid to you). If you choose free delivery, you cover the delivery cost.</li>
+          <li><b>Cash on delivery:</b> your riders collect the cash for you. Collect it from them by the end of each day — it&rsquo;s your responsibility; {brandName()} isn&rsquo;t responsible for cash your riders hold.</li>
+          <li><b>Your risk:</b> cash your riders keep and products they damage are your risk — {brandName()} can&rsquo;t cover them. The only cover is a rider&rsquo;s unpaid earnings for the month, which go to you instead.</li>
+          <li>Keep the area small (up to {data.local_max_km ?? 10} km) so each delivery is worth a rider&rsquo;s fuel.</li>
+        </ul>
+      </div>
+      {ld && data.local_store && !data.local_store.blocked && <p className="sc-muted">Your store is listed with {brandName()} as a local-delivery base ({ld.radius_km} km){data.local_store.riders_count ? ` · ${data.local_store.riders_count} rider${data.local_store.riders_count === 1 ? '' : 's'} linked` : ''}.</p>}
       {!data.addresses?.length ? <p className="ss-warn">Add a ship-from address first — the distance is measured from it.</p> : (
         <form onSubmit={save} className="ss-intl">
-          <label className="sc-check"><input type="checkbox" checked={form.on} onChange={(e) => set({ on: e.target.checked })} /> Offer own delivery</label>
+          <label className="sc-check"><input type="checkbox" checked={form.on} disabled={!!data.local_store?.blocked && !form.on} onChange={(e) => set({ on: e.target.checked })} /> Offer own delivery</label>
           {form.on && <div className="ss-row">
             <label>Deliver from<select required value={form.address} onChange={(e) => set({ address: e.target.value })}>{data.addresses.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.city}</option>)}</select></label>
             <label>Within (km) <small className="sc-muted">up to {data.local_max_km}</small><input type="number" min="1" max={data.local_max_km ?? 100} step="0.5" required value={form.radius} onChange={(e) => set({ radius: e.target.value })} /></label>
             <label>Delivery fee ({currencySymbol(data.currency)}) <small className="sc-muted">0 = free</small><input type="number" min="0" step="0.01" required value={form.fee} onChange={(e) => set({ fee: e.target.value })} /></label>
             <label>Delivered within (days)<input type="number" min="1" max="7" required value={form.days} onChange={(e) => set({ days: e.target.value })} /></label>
           </div>}
-          <div><button type="submit" className="sc-primary">Save own delivery</button></div>
+          {form.on && <div className="ss-row">
+            <label>Map point — latitude <small className="sc-muted">optional</small><input type="number" step="any" min="-90" max="90" value={form.lat} placeholder="found from the address" onChange={(e) => set({ lat: e.target.value })} /></label>
+            <label>Longitude <small className="sc-muted">optional</small><input type="number" step="any" min="-180" max="180" value={form.lng} placeholder="found from the address" onChange={(e) => set({ lng: e.target.value })} /></label>
+          </div>}
+          {form.on && <p className="sc-muted">Leave the map point empty to use the address. To find yours: open Google Maps, press and hold on your shop, and copy the two numbers shown.</p>}
+          <div className="ss-actions">
+            <button type="submit" className="sc-primary">Save own delivery</button>
+          </div>
         </form>
       )}
     </div>
@@ -502,10 +533,14 @@ export function ShipOrders({ headers, mode }) {
   const [editForm, setEditForm] = useState(null) // { package, carrier, tracking, warn }
   const [selected, setSelected] = useState([])
   const [bulk, setBulk] = useState(null) // { [packageId]: { carrier, tracking } }
+  // Own delivery: the seller's riders (on shift first), and who each order goes out with.
+  const [myRiders, setMyRiders] = useState([])
+  const [riderPick, setRiderPick] = useState({}) // { [orderId]: riderId | '' (me) }
 
   const load = useCallback(() => {
     send(headers, '/seller/fulfillment').then((d) => setRows(d.data)).catch((e) => setMsg(e.message))
     send(headers, '/seller/shipping').then((d) => setSettings(d.data)).catch(() => {})
+    send(headers, '/seller/local-delivery').then((d) => setMyRiders((d.data?.riders ?? []).filter((r) => r.active).sort((a, b) => (b.shift === 'clocked_in') - (a.shift === 'clocked_in')))).catch(() => {})
   }, [headers])
   useEffect(() => { Promise.resolve().then(load) }, [load])
 
@@ -649,7 +684,14 @@ export function ShipOrders({ headers, mode }) {
         {p.label_url && <a href={p.label_url} target="_blank" rel="noreferrer">Print label</a>}
         {p.has_label_file && <button type="button" onClick={() => downloadLabel(p)}>Download label</button>}
         {p.label_source === 'nextech' && !p.has_label_file && ['shipped', 'in_transit'].includes(p.status) && <button type="button" onClick={() => act(`/seller/fulfillment/packages/${p.id}/sync`)}>Refresh tracking</button>}
-        {p.label_source === 'local' && p.status === 'out_for_delivery' && <button type="button" onClick={() => deliverLocal(p)}>{p.order.cod ? 'Delivered & cash collected' : 'Delivered'}</button>}
+        {p.label_source === 'local' && p.status === 'out_for_delivery' && <>
+          <small className="sc-muted">{p.rider ? `With ${p.rider.name}${p.rider.phone ? ` (${p.rider.phone})` : ''} — they mark it delivered in the Rider app` : 'You deliver it'}</small>
+          {myRiders.length > 0 && <select aria-label="Give to another rider" value={p.rider_id ?? ''} onChange={(e) => { if (window.confirm(e.target.value ? 'Give this delivery to that rider? They are told now.' : 'Take this delivery back and deliver it yourself?')) act(`/seller/fulfillment/packages/${p.id}/rider`, { rider_id: e.target.value ? Number(e.target.value) : null }) }}>
+            <option value="">Me</option>
+            {myRiders.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>}
+          <button type="button" onClick={() => deliverLocal(p)}>{p.order.cod ? 'Delivered & cash collected' : 'Delivered'}</button>
+        </>}
         {(p.label_source === 'own' || p.has_label_file) && (NEXT[p.status] ?? []).map(([status, label]) => <button type="button" key={status} onClick={() => progress(p, status)}>{status === 'delivered' && p.order.cod ? 'Delivered & cash collected' : label}</button>)}
         {p.status === 'delivered' && p.order.cod && !p.cash_collected_at && <button type="button" className="sc-primary" onClick={() => progress(p, 'delivered')}>Confirm cash collected</button>}
       </td>
@@ -700,7 +742,15 @@ export function ShipOrders({ headers, mode }) {
                       {(o.label_requests ?? []).filter((r) => r.status === 'cancelled' && r.admin_note && r.admin_note !== 'Cancelled by the seller.').slice(0, 1).map((r) => <small key={r.id} className="sc-low">Label request declined: {r.admin_note}</small>)}
                       {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
-                      {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="Your own delivery person takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => { if (window.confirm('Send it out with your own delivery person now? The buyer is told it’s on the way and gets a delivery code.')) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`) }}>Out for delivery (own delivery)</button>}
+                      {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="Your own delivery person takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => {
+                        const rider = myRiders.find((r) => String(r.id) === String(riderPick[o.id] ?? ''))
+                        if (window.confirm(`Send it out now${rider ? ` with ${rider.name}` : ' — you deliver it yourself'}? The buyer is told it’s on the way and gets a delivery code.`)) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`, { rider_id: rider?.id ?? null })
+                      }}>Out for delivery (own delivery)</button>}
+                      {o.high_value && o.items.some((i) => free(i) > 0) && <small className="sc-low">High-value order — send it by courier or deliver it yourself, not with a rider.</small>}
+                      {o.shipping?.method === 'local' && myRiders.length > 0 && o.items.some((i) => free(i) > 0) && !onHold(o) && <select aria-label="Who delivers it" value={riderPick[o.id] ?? ''} onChange={(e) => setRiderPick({ ...riderPick, [o.id]: e.target.value })}>
+                        <option value="">I&rsquo;ll deliver it myself</option>
+                        {myRiders.map((r) => <option key={r.id} value={r.id}>{r.name}{r.shift === 'clocked_in' ? ' — on shift' : ' — off shift'}{r.active_deliveries ? ` · ${r.active_deliveries} out` : ''}</option>)}
+                      </select>}
                       {o.shipping?.method !== 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <>
                         {mode !== 'label' && <button type="button" onClick={() => openShip(o, false)}>Confirm shipment</button>}
                         <button type="button" onClick={() => openShip(o, true)}>{manualLabels ? (labelTemplates.length ? 'Get shipping label' : `Request ${brandName()} label`) : `Buy ${brandName()} label`}</button>

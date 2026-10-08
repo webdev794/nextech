@@ -51,7 +51,7 @@ class ConfigController extends Controller
                 'return_window_days' => SellerLedger::returnWindowDays(),
                 'max_return_days' => SellerLedger::maxReturnDays(),
                 ...CheckoutFees::current($market),
-                'stores' => Store::query()->where('country', $market)->where('is_active', true)
+                'stores' => Store::query()->own()->where('country', $market)->where('is_active', true)
                     ->whereNotNull('latitude')->whereNotNull('longitude')
                     ->get(['id', 'name', 'latitude', 'longitude', 'delivery_radius_km']),
                 'banners' => Banner::query()->active()->ordered()
