@@ -157,6 +157,7 @@ class RiderHiringTest extends TestCase
         $this->travel(1)->hours(); // past the pending half hour
         Sanctum::actingAs($shop->seller->user);
         $this->postJson("/api/seller/fulfillment/orders/{$order->id}/local-dispatch", ['rider_id' => $other->id])->assertStatus(422); // not their rider
+        $this->postJson("/api/seller/fulfillment/orders/{$order->id}/local-dispatch", ['rider_id' => 'auto'])->assertStatus(422); // nobody on shift
         $this->postJson("/api/seller/fulfillment/orders/{$order->id}/local-dispatch", ['rider_id' => $rider->id])->assertCreated();
         $package = \App\Models\OrderPackage::where('order_id', $order->id)->first();
         $this->assertSame($rider->id, $package->rider_id);

@@ -29,6 +29,31 @@ class SellerRiders
         return $rider;
     }
 
+    /**
+     * The best free rider for the seller's store right now: on shift, not paused
+     * (for cash anywhere), nearest the store, nudged toward riders with fewer
+     * deliveries out. Null when none is free.
+     */
+    public static function nearestFree(Shop $shop): ?User
+    {
+        $store = SellerStores::ensure($shop);
+        $best = null;
+        foreach ($store->riders()->where('is_rider', true)->where('rider_is_active', true)->where('rider_available', true)->get() as $rider) {
+            if ($rider->pivot?->cash_paused_at || SellerRiderCash::blockedReason($rider) || ! $rider->currentShift()) {
+                continue;
+            }
+            $out = OrderPackage::query()->where('rider_id', $rider->id)->whereNotIn('status', ['delivered', 'returned', 'lost'])->count();
+            $at = $rider->riderLocation();
+            $km = $at && $store->hasCoordinates() ? Geo::haversineKm($at['lat'], $at['lng'], (float) $store->latitude, (float) $store->longitude) : 50.0;
+            $score = $km + $out * 2.0; // each delivery already out counts as 2 km
+            if (! $best || $score < $best[1]) {
+                $best = [$rider, $score];
+            }
+        }
+
+        return $best[0] ?? null;
+    }
+
     /** Give a package to a rider (or null = the seller delivers it), telling the rider. */
     public static function assign(OrderPackage $package, ?User $rider): void
     {

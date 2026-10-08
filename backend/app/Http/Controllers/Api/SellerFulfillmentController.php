@@ -234,8 +234,14 @@ class SellerFulfillmentController extends Controller
     {
         $shop = $this->shop($request);
         // One of the seller's riders, or none = the seller delivers it themselves.
-        $riderId = $request->validate(['rider_id' => ['sometimes', 'nullable', 'integer']])['rider_id'] ?? null;
-        $rider = $riderId ? \App\Support\SellerRiders::riderFor($shop, (int) $riderId) : null;
+        // "auto" = the nearest free rider (on shift, not paused); none free → ask the seller to choose.
+        $choice = $request->validate(['rider_id' => ['sometimes', 'nullable']])['rider_id'] ?? null;
+        if ($choice === 'auto') {
+            $rider = \App\Support\SellerRiders::nearestFree($shop);
+            abort_unless($rider, 422, 'No rider is free right now — choose one, deliver it yourself, or send it by courier.');
+        } else {
+            $rider = $choice ? \App\Support\SellerRiders::riderFor($shop, (int) $choice) : null;
+        }
         $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
         abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for your own delivery — ship it with a courier.');
         $lines = SellerFulfillment::shopLines($order, $shop);

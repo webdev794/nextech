@@ -743,12 +743,14 @@ export function ShipOrders({ headers, mode }) {
                       {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
                       {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="Your own delivery person takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => {
-                        const rider = myRiders.find((r) => String(r.id) === String(riderPick[o.id] ?? ''))
-                        if (window.confirm(`Send it out now${rider ? ` with ${rider.name}` : ' — you deliver it yourself'}? The buyer is told it’s on the way and gets a delivery code.`)) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`, { rider_id: rider?.id ?? null })
+                        const pick = riderPick[o.id] ?? ''
+                        const rider = myRiders.find((r) => String(r.id) === String(pick))
+                        if (window.confirm(`Send it out now${pick === 'auto' ? ' with the nearest free rider' : rider ? ` with ${rider.name}` : ' — you deliver it yourself'}? The buyer is told it’s on the way and gets a delivery code.`)) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`, { rider_id: pick === 'auto' ? 'auto' : rider?.id ?? null })
                       }}>Out for delivery (own delivery)</button>}
                       {o.high_value && o.items.some((i) => free(i) > 0) && <small className="sc-low">High-value order — send it by courier or deliver it yourself, not with a rider.</small>}
                       {o.shipping?.method === 'local' && myRiders.length > 0 && o.items.some((i) => free(i) > 0) && !onHold(o) && <select aria-label="Who delivers it" value={riderPick[o.id] ?? ''} onChange={(e) => setRiderPick({ ...riderPick, [o.id]: e.target.value })}>
                         <option value="">I&rsquo;ll deliver it myself</option>
+                        <option value="auto">Auto — nearest free rider</option>
                         {myRiders.map((r) => <option key={r.id} value={r.id}>{r.name}{r.shift === 'clocked_in' ? ' — on shift' : ' — off shift'}{r.active_deliveries ? ` · ${r.active_deliveries} out` : ''}</option>)}
                       </select>}
                       {o.shipping?.method !== 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <>

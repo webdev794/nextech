@@ -24,6 +24,7 @@ Sellers' own local delivery with their own riders, built step by step (plan and 
 
 ## Deliveries by sellers' riders
 - **Ship orders:** "Who delivers it" — a rider (on shift first) or "I'll deliver it myself"; change the rider later. High-value local orders (over the cash-on-delivery maximum) are flagged: send by courier or deliver yourself.
+- **Auto — nearest free rider** when sending an order out (on shift, not paused, nearest the store, fewest deliveries out).
 - **Rider app → Store deliveries:** pickup and buyer details, cash to collect, delivered with the buyer's code.
 - Buyers see **"Sam is delivering your order"** (rider's first name, or the seller's shop name).
 - Admin can only watch a seller's own-delivery steps (no status changes; cancel/refund still possible).
