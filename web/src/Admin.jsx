@@ -20,6 +20,10 @@ import { AdjustBalance, SellerPayouts, WithdrawalFees } from './AdminPayouts'
 import { CategoryDetailsEditor } from './AdminCategoryDetails'
 import { SellerCard } from './AdminSellerCard'
 import { RiderMoneyTable } from './RiderMoneyTable'
+import { AdminHolidays } from './AdminHolidays'
+import { RiderHoursEditor } from './RiderHoursEditor'
+import { hoursLabel } from './riderHours'
+import { onLiveChange, useLiveRefresh } from './useLiveRefresh'
 import { SalesTaxKey, SalesTaxSettings } from './AdminSalesTax'
 import { currencySymbol, setStoreCurrency, storeMoney } from './money'
 import MapPicker from './MapPicker'
@@ -107,7 +111,7 @@ const toSlug = (text, typing = false) => {
 // Why an admin cancels an order (the customer and the order record see it).
 const CANCEL_REASONS = ['Item out of stock / missing', 'Item damaged before dispatch', 'Customer asked to cancel', 'Can’t deliver to this address', 'Payment problem / suspected fraud', 'Duplicate order', 'Other']
 
-const STATUS_FILTERS = ['all', 'open', 'refund_due', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
+const STATUS_FILTERS = ['all', 'open', 'refund_due', 'needs_courier', 'confirmed', 'packing', 'ready_for_delivery', 'out_for_delivery', 'completed', 'cancelled']
 const PAGE_SIZES = [5, 10, 20, 50, 100, 500, 1000]
 
 // Rows-per-page + page nav shown under a list. `total`/`pageCount` come from the
@@ -745,6 +749,7 @@ export default function Admin({ token, onClose }) {
   const [subnavFolded, setSubnavFolded] = useState(false)
   // Shipping (left menu): which shipping form is open.
   const [shipSection, setShipSection] = useState('options')
+  const [hoursFor, setHoursFor] = useState(null) // Stores: editing riders' hours for this store
   // Admin cancelling an order: { order, reason, note } — a reason is required.
   const [cancelling, setCancelling] = useState(null)
   const [shops, setShops] = useState([])
@@ -1016,8 +1021,9 @@ export default function Admin({ token, onClose }) {
   // seconds (and each poll drives the server-side offer-timeout sweep).
   useEffect(() => {
     if (tab !== 'orders') return undefined
-    const t = setInterval(loadOrders, 15000)
-    return () => clearInterval(t)
+    const off = onLiveChange(loadOrders) // a rider accepting / an order changing shows at once; light on the server
+    const t = setInterval(loadOrders, 120000)
+    return () => { clearInterval(t); off() }
   }, [tab, loadOrders])
   useEffect(() => { if (tab === 'products') { loadProducts(); loadCategories(); loadStores(); loadShops() } }, [tab, loadProducts, loadCategories, loadStores, loadShops])
   useEffect(() => { if (tab === 'categories') loadCategories() }, [tab, loadCategories])
@@ -1057,11 +1063,11 @@ export default function Admin({ token, onClose }) {
   const threadId = thread?.id ?? null
   useEffect(() => {
     if (!threadId) return
-    const timer = setInterval(() => {
-      fetch(`${API_URL}/admin/support/threads/${threadId}`, { headers: authHeaders() }).then(readJson)
-        .then((data) => setThread((cur) => (cur && cur.id === data.data.id ? data.data : cur))).catch(() => {})
-    }, 5000)
-    return () => clearInterval(timer)
+    const pull = () => fetch(`${API_URL}/admin/support/threads/${threadId}`, { headers: authHeaders() }).then(readJson)
+      .then((data) => setThread((cur) => (cur && cur.id === data.data.id ? data.data : cur))).catch(() => {})
+    const off = onLiveChange(pull)
+    const timer = setInterval(pull, 5000) // an open chat stays instant
+    return () => { clearInterval(timer); off() }
   }, [threadId, authHeaders])
   useEffect(() => { if (tab === 'settings' || tab === 'shipping') { loadSettings(); loadStores() } }, [tab, loadSettings, loadStores])
   // The country dropdown in the top bar is built from the settings — load them on open.
@@ -1183,9 +1189,29 @@ export default function Admin({ token, onClose }) {
     // Delay the first poll so it doesn't compete with the tab's own requests
     // on a single-threaded dev server.
     const kick = setTimeout(check, 2500)
+    // Notifications stay instant (every 10 s), and also check at once when something changed.
+    const off = onLiveChange(check)
     const timer = setInterval(check, 10000)
-    return () => { stopped = true; clearTimeout(kick); clearInterval(timer) }
+    return () => { stopped = true; clearTimeout(kick); clearInterval(timer); off() }
   }, [authHeaders, soundMuted])
+
+  // Live tables: the open tab fetches its data again as soon as anything changes on the
+  // server (checked every 3 s), and when the 🔔 sees something new — no page refresh.
+  const reloadTab = useCallback(() => {
+    if (tab === 'stores') { loadStores(); loadSellers() }
+    else if (tab === 'riders') { loadRiders(); loadRiderApps() }
+    else if (tab === 'sellers') loadSellers()
+    else if (tab === 'customers') loadCustomers()
+    else if (tab === 'products') loadProducts()
+    else if (tab === 'support') loadThreads()
+  }, [tab, loadStores, loadSellers, loadRiders, loadRiderApps, loadCustomers, loadProducts, loadThreads])
+  useLiveRefresh(reloadTab)
+  const notifPrint = useRef(null)
+  useEffect(() => {
+    const print = JSON.stringify(notifications)
+    if (notifPrint.current !== null && notifPrint.current !== print) reloadTab()
+    notifPrint.current = print
+  }, [notifications, reloadTab])
 
   const shownStores = storeKind === 'own' ? ownStores : storeKind === 'seller' ? stores.filter((s) => s.shop_id) : stores
 
@@ -2403,6 +2429,8 @@ Reason:`, '')
   const sellerApplications = (notifications.seller_applications ?? []).filter(notDismissed('app'))
   const categorySuggestions = (notifications.category_suggestions ?? []).filter(notDismissed('cat'))
   const refundsDue = notifications.refunds_due ?? []
+  const needsCourier = notifications.needs_courier ?? [] // stay until sent out (rider took it, or a courier was entered)
+  const holidayRequests = notifications.holiday_requests ?? [] // sellers' day-off requests, until decided
   const sellerTasks = (notifications.seller_tasks ?? []).filter(notDismissed('task'))
   const codKept = (notifications.cod_kept ?? []).filter(notDismissed('cod'))
   const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
@@ -2415,6 +2443,8 @@ Reason:`, '')
   const sellerNotificationCount = sellerApplications.length + sellerTasks.length + payoutRequests.length + codKept.length + sellersOwing.length + localOffRequests.length
     + sellerLabelRequests.length + categorySuggestions.length + (productsWaiting > 0 ? 1 : 0) + (removalRequests > 0 ? 1 : 0) + (trademarkReviews > 0 ? 1 : 0)
   const notificationCount = refundsDue.length
+    + needsCourier.length
+    + holidayRequests.length
     + riderPayoutRequests.length
     + riderApplications.length
     + riderNotices.length
@@ -2656,6 +2686,33 @@ Reason:`, '')
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {holidayRequests.length > 0 && (
+                      <section>
+                        <h5>Day-off requests</h5>
+                        {holidayRequests.slice(0, BELL_ITEM_CAP).map((r) => (
+                          <div className="admin-bell-row" key={`hol-${r.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('shipping'); setShipSection('holidays') }}>
+                              📅 {r.shop ?? 'A seller'} — {r.date} ({r.name})
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {needsCourier.length > 0 && (
+                      <section>
+                        <h5>Send by courier</h5>
+                        {needsCourier.slice(0, BELL_ITEM_CAP).map((o) => (
+                          <div className="admin-bell-row" key={`courier-${o.id}`}>
+                            <button type="button" className="admin-bell-item warn" title="Book a courier, then open the order and use Shipped with a courier" onClick={() => openOrderById(o.id)}>
+                              🚚 Order #{o.id}{o.customer ? ` · ${o.customer}` : ''} — {o.reason === 'outside_area' ? 'outside the delivery area' : 'no rider took it'}
+                            </button>
+                          </div>
+                        ))}
+                        {needsCourier.length > BELL_ITEM_CAP && (
+                          <button type="button" className="admin-bell-more" onClick={() => { setBellOpen(false); goTab('orders'); setStatusFilter('needs_courier'); setOrdersPage(1) }}>+{needsCourier.length - BELL_ITEM_CAP} more — see Orders</button>
+                        )}
+                      </section>
+                    )}
                     {refundsDue.length > 0 && (
                       <section>
                         <h5>Refunds to issue</h5>
@@ -2874,11 +2931,12 @@ Reason:`, '')
             {name === 'shipping' && tab === 'shipping' && !subnavFolded && (
               <div className="admin-nav-sub">
                 <button type="button" className={shipSection === 'options' ? 'active' : ''} onClick={() => setShipSection('options')}>Seller shipping &amp; labels</button>
-                <button type="button" className={shipSection === 'local' ? 'active' : ''} onClick={() => setShipSection('local')}>Sellers’ own delivery (local)</button>
+                <button type="button" className={shipSection === 'local' ? 'active' : ''} onClick={() => setShipSection('local')}>Sellers’ local delivery</button>
                 <button type="button" className={shipSection === 'abroad' ? 'active' : ''} onClick={() => setShipSection('abroad')}>Selling abroad</button>
                 <button type="button" className={shipSection === 'updates' ? 'active' : ''} onClick={() => setShipSection('updates')}>Order update reminders</button>
                 <button type="button" className={shipSection === 'cod' ? 'active' : ''} onClick={() => setShipSection('cod')}>Seller cash on delivery</button>
                 <button type="button" className={shipSection === 'own' ? 'active' : ''} onClick={() => setShipSection('own')}>{brandName()} delivery</button>
+                <button type="button" className={shipSection === 'holidays' ? 'active' : ''} onClick={() => setShipSection('holidays')}>Holidays{(notifications.holiday_requests ?? []).length ? ` (${notifications.holiday_requests.length})` : ''}</button>
               </div>
             )}
             {name === 'secure' && tab === 'secure' && secureGate === 'unlocked' && (
@@ -3133,7 +3191,7 @@ Reason:`, '')
           <div className="admin-filters">
             {STATUS_FILTERS.map((value) => (
               <button key={value} type="button" className={statusFilter === value ? 'chip active' : 'chip'} onClick={() => { setStatusFilter(value); setOrdersPage(1) }}>
-                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : value === 'refund_due' ? `Refund due${refundsDue.length > 0 ? ` (${refundsDue.length})` : ''}` : STATUS_LABELS[value]}
+                {value === 'all' ? 'All' : value === 'open' ? `Open${openOrders > 0 ? ` (${openOrders})` : ''}` : value === 'refund_due' ? `Refund due${refundsDue.length > 0 ? ` (${refundsDue.length})` : ''}` : value === 'needs_courier' ? `Needs courier${needsCourier.length > 0 ? ` (${needsCourier.length})` : ''}` : STATUS_LABELS[value]}
               </button>
             ))}
           </div>
@@ -3150,7 +3208,7 @@ Reason:`, '')
                     <td>{new Date(order.created_at).toLocaleDateString()}</td>
                     <td>{money(order.total_cents, order.currency)}<span className="admin-note">{order.items?.length ?? 0} item{order.items?.length === 1 ? '' : 's'}</span></td>
                     <td>{order.payment_status === 'refund_pending' || (order.status === 'cancelled' && order.payment_status === 'paid') ? <span className="pill pill-refund_due">refund due</span> : <span className={`pill pill-${order.payment_status}`}>{order.payment_status.replace('_', ' ')}</span>}<span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
-                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.status === 'cancelled' && order.cancel_reason && <span className="admin-note" title={order.cancel_reason}>{order.cancelled_by === 'customer' ? 'By customer' : order.cancelled_by === 'rider' ? 'At the door' : `By ${brandName()}`}: {order.cancel_reason}</span>}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
+                    <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.needs_courier_at && <span className="pill pill-refund_due" title={order.needs_courier_reason === 'outside_area' ? 'Outside every store’s delivery area, no courier account connected — book a courier and enter it on the order' : 'No rider took it in time — book a courier and enter it on the order'}>Needs courier</span>}{order.status === 'cancelled' && order.cancel_reason && <span className="admin-note" title={order.cancel_reason}>{order.cancelled_by === 'customer' ? 'By customer' : order.cancelled_by === 'rider' ? 'At the door' : `By ${brandName()}`}: {order.cancel_reason}</span>}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
                       {order.delivery_method === 'seller' ? (
                         <>
@@ -3925,6 +3983,16 @@ Reason:`, '')
                         : <button type="button" className="act ghost" title={store.latitude == null ? 'Set the store’s location first (Edit)' : ''} disabled={store.latitude == null} onClick={() => localDeliveryAction(store, 'on')}>Turn on</button>}
                     </div> : <div className="store-local">
                       {store.local_delivery_status === 'on' ? <span className="pill pill-approved">Riders on</span> : <span className="pill">Courier only</span>}
+                      {store.local_delivery_status === 'on' && (hoursFor === store.id
+                        ? <RiderHoursEditor value={store.rider_hours} saveClass="act" linkClass="act ghost" onSave={async (hours) => {
+                          try {
+                            const res = await fetch(`${API_URL}/admin/stores/${store.id}/rider-hours`, { method: 'PATCH', headers: jsonHeaders(), body: JSON.stringify({ hours }) })
+                            const body = await readJson(res)
+                            if (!res.ok) throw new Error(body.message ?? 'Could not save the hours.')
+                            setHoursFor(null); loadStores(); setMessage(hours ? `Riders' hours at ${store.name}: ${hoursLabel(hours)}.` : `No set hours at ${store.name}.`)
+                          } catch (error) { fail(error) }
+                        }} />
+                        : <button type="button" className="act ghost" title="The days and hours this store's riders must be on duty" onClick={() => setHoursFor(store.id)}>{store.rider_hours ? `Hours: ${hoursLabel(store.rider_hours)}` : 'Set riders’ hours'}</button>)}
                       {store.local_delivery_status === 'on'
                         ? <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'off')}>Turn off</button>
                         : <button type="button" className="act ghost" disabled={!store.riders_count} title={store.riders_count ? '' : 'Link a rider to this store first (Riders)'} onClick={() => localDeliveryAction(store, 'on')}>Turn on</button>}
@@ -4714,8 +4782,8 @@ Reason:`, '')
               </>}
               {shipSection === 'local' && <>
               <div className="admin-form">
-                <h4>Sellers&rsquo; own delivery (local)</h4>
-                <label>&ldquo;Own delivery&rdquo; option for sellers who ship themselves
+                <h4>Sellers&rsquo; local delivery</h4>
+                <label>&ldquo;Local delivery&rdquo; option for sellers who ship themselves
                   <select value={settings.seller_local_delivery ?? 'available'} onChange={(event) => saveSetting({ seller_local_delivery: event.target.value })}>
                     <option value="available">Available — sellers can deliver nearby orders with their own delivery person</option>
                     <option value="hidden">Hidden</option>
@@ -4755,6 +4823,7 @@ Reason:`, '')
                     <option value="approved">Each seller as I set it (Sellers &rarr; View &rarr; Cash on delivery)</option>
                     <option value="off">Off for every seller</option>
                     <option value="all">On for any seller who switches it on</option>
+                    <option value="local">Only for local deliveries — the seller&rsquo;s riders collect it, on orders up to the cash-on-delivery maximum</option>
                   </select>
                 </label>
                 {settings.seller_cod_mode !== 'off' && <div className="admin-form-grid wide">
@@ -4767,6 +4836,7 @@ Reason:`, '')
                 <p className="muted">The seller&rsquo;s courier collects the cash and the seller keeps it; {brandName()}&rsquo;s commission and fees come out of their next orders&rsquo; earnings. Every cash order a seller keeps shows under <b>Sellers</b> in the top bar (and is emailed), with what each seller owes. Never for sellers in another country.</p>
               </div>
               </>}
+              {shipSection === 'holidays' && <AdminHolidays headers={jsonHeaders} markets={marketOptions} defaultMarket={adminMarket} onMessage={setMessage} />}
               {shipSection === 'own' && <>
               <section className="admin-group">
                 <h3 className="admin-group-title">{brandName()} delivery — own stores &amp; riders</h3>
@@ -4783,6 +4853,10 @@ Reason:`, '')
                       <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
                       Auto-assign riders to orders
                     </label>
+                    <label>Riders have this long to take a ready order (minutes; default 300 = 5 hours, up to 1440 = a day)
+                      <input type="number" min="1" max="1440" defaultValue={settings.rider_offer_minutes ?? 300} onBlur={(event) => { const v = Number(event.target.value); if (v >= 1 && v <= 1440 && v !== settings.rider_offer_minutes) saveSetting({ rider_offer_minutes: v }) }} />
+                    </label>
+                    <p className="muted">The nearest on-shift rider is alerted, and every rider at the store sees it with the same countdown — the first to take it gets it. If nobody has when time runs out, it stays open to all riders and you&rsquo;re emailed and see <b>Needs courier</b> (🔔 and Orders): call a rider, deliver it yourself, or book a courier and enter it on the order. If no rider is available at all (on leave, logged out), you&rsquo;re told as soon as it&rsquo;s ready. Orders outside every store&rsquo;s area are flagged at once when no courier account is connected.</p>
                     <p className="muted">For orders delivered from {brandName()}&rsquo;s own stores ({settings.own_stores_count} store{settings.own_stores_count === 1 ? '' : 's'}, {settings.riders_count ?? 0} rider{settings.riders_count === 1 ? '' : 's'}): when an order is ready, the nearest on-shift rider linked to its store is assigned (preferring riders with fewer active jobs); if none is eligible it waits in the pickup pool. It covers {brandName()}&rsquo;s own stock{(settings.nextech_pickup ?? 'available') !== 'hidden' ? <> and sellers&rsquo; items {brandName()} collects (&ldquo;{brandName()} collects &amp; delivers&rdquo; in Shipping → Seller shipping)</> : ''}. Sellers who ship themselves or deliver locally never use these riders — riders are always {brandName()}&rsquo;s. Manage riders and stores under Riders and Stores.</p></>}
                   </> : <p className="muted">Rider auto-assign appears here once you add a {brandName()} store (Stores) and riders (Riders). Riders deliver {brandName()}&rsquo;s own stock and sellers&rsquo; items {brandName()} collects; sellers who ship themselves don&rsquo;t use them.</p>}
                 </div>
@@ -4909,7 +4983,7 @@ Reason:`, '')
                   const pks = (thread.order.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
                   return (
                     <div key={ss.id}>
-                      <p className="muted"><b>{ss.shop?.name ?? `Shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'own delivery (local)' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}{ss.reminder_count > 0 ? ` · seller reminded ${ss.reminder_count}×` : ''}</p>
+                      <p className="muted"><b>{ss.shop?.name ?? `Shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'local delivery (seller)' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}{ss.reminder_count > 0 ? ` · seller reminded ${ss.reminder_count}×` : ''}</p>
                       {pks.length === 0 ? <p className="muted">{ss.packed_at ? `Packed ${new Date(ss.packed_at).toLocaleString()} — not shipped yet` : 'Not packed yet'}{new Date(ss.ship_by) < new Date() ? ' (overdue)' : ''}</p> : pks.map((pk) => (
                         <p key={pk.id} className="muted">📦 {pk.carrier_label ?? pk.carrier} {pk.tracking_url ? <a href={pk.tracking_url} target="_blank" rel="noreferrer">{pk.tracking_number}</a> : pk.tracking_number} · <span className={`pill pill-${pk.status}`}>{pk.status.replaceAll('_', ' ')}</span>{pk.tracking_detail ? ` · ${pk.tracking_detail}` : ''}{pk.delivery_code ? ` · delivery code ${pk.delivery_code}` : ''} · updated {new Date(pk.progress_updated_at ?? pk.shipped_at).toLocaleString()}</p>
                       ))}
@@ -5334,7 +5408,7 @@ Reason:`, '')
                     const pks = (o.packages ?? []).filter((pk) => pk.shop_id === ss.shop_id)
                     return (
                       <div key={ss.id}>
-                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'seller’s own delivery (local)' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
+                        <p><b>Shipped by {ss.shop?.name ?? `shop #${ss.shop_id}`}</b> · {ss.method === 'local' ? 'seller’s local delivery' : ss.mode === 'label' ? `${brandName()} label` : 'own courier'} · shipping {ss.free_shipping ? 'free (seller covers)' : money(ss.fee_cents, o.currency)} · ship by {new Date(ss.ship_by).toLocaleDateString()} · arrives {new Date(ss.deliver_from).toLocaleDateString()}–{new Date(ss.deliver_by).toLocaleDateString()}</p>
                         {pks.length === 0 && <p className="muted">Not shipped yet{ss.packed_at ? ` · packed ${new Date(ss.packed_at).toLocaleString()}` : ' · not packed'}{new Date(ss.ship_by) < new Date() && o.status !== 'cancelled' ? ' — overdue' : ''}.</p>}
                         {ss.reminder_count > 0 && <p className="muted">Seller reminded {ss.reminder_count}× · last {new Date(ss.reminded_at).toLocaleString()}{ss.escalated_at ? ' · flagged overdue to admin' : ''}</p>}
                         {pks.map((pk) => (

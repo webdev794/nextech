@@ -61,7 +61,7 @@ class SellerProgress
      *
      * @param  iterable<\App\Models\Product>  $products
      */
-    public static function codBlockedReason(iterable $products, string $market, ?int $totalCents = null): ?string
+    public static function codBlockedReason(iterable $products, string $market, ?int $totalCents = null, ?bool $local = null): ?string
     {
         $products = collect($products)->filter();
         // Large orders aren't offered cash on delivery: no more than a rider may carry (admin / seller limit).
@@ -85,6 +85,10 @@ class SellerProgress
         }
         if ($shop->market !== strtoupper($market)) {
             return 'Cash on delivery isn’t available for items shipped from another country — pay by card instead.';
+        }
+        // Admin allows sellers' cash on delivery only on local deliveries ($local null = not known yet; checked again once it is).
+        if (SellerCod::mode() === 'local' && $local === false) {
+            return "{$shop->name} takes cash on delivery only for buyers near their shop (local delivery) — pay by card instead.";
         }
 
         return null;

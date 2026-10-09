@@ -21,7 +21,8 @@ All seeded passwords are **`password`**.
 | Role | Email | Notes |
 |---|---|---|
 | Admin | `test@example.com` | Seeded with `is_admin = true` |
-| Rider | `rider@example.com` | Seeded with `is_rider = true` |
+| Rider | `rider@example.com` | Seeded with `is_rider = true`. Linked to NexTech's own store **Caresort Solutions** (US market). Gets NexTech orders. |
+| Rider (seller's) | `rider2@example.com` | Created 9 Oct, password `password`. Linked to seller@example.com's store **cs** (India, local delivery on). Gets only that seller's own-delivery orders. Different country from `rider@example.com`, since a rider works in one country only. |
 | Customer | `testcaresort@outlook.com` | A manually-created test signup, not seeded — its password isn't tracked here |
 | Seller (demo) | `seller@example.com` | Manually created, password `password` — already **approved**, shop name "cs". Signing in at `/seller` skips the wizard and goes straight to the post-approval dashboard. `is_admin` is **off** (`/admin` is reserved for the website owner — funds/payouts/product-approval access — sellers only ever use `/seller`). |
 | Admin (secondary) | `uiadmin@ex.com` | Another manually-created admin account on this local DB; password not tracked here. |

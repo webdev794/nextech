@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveRefresh } from './useLiveRefresh'
 import { storeMoney } from './money'
 import { PersonalizationView } from './Personalization'
 import { brandName } from './useBranding'
@@ -66,6 +67,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
       .finally(() => setBusy(false))
   }, [headers, filters, search.applied, search.type, onSummary])
   useEffect(() => { Promise.resolve().then(load) }, [load])
+  useLiveRefresh(load)
 
   const set = (patch) => setFilters((f) => ({ ...f, page: 1, ...patch }))
 

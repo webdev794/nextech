@@ -43,6 +43,7 @@ class Order extends Model
         'small_cart_fee_cents', 'gift_card_discount_cents', 'total_cents', 'delivery_address', 'delivery_instructions',
         'stripe_payment_intent_id', 'stripe_refund_id', 'refunded_amount_cents',
         'delivery_partner_id',
+        'ready_at', 'needs_courier_at', 'needs_courier_reason',
         'rider_offer_expires_at', 'rider_accepted_at', 'rider_offer_declined_ids', 'rider_offer_decline_count',
         'delivered_at', 'cash_settled_at', 'cash_collected_at', 'items_returned_at', 'delivery_verified', 'delivery_note',
         'delivery_code', 'delivery_code_expires_at', 'receipt_emailed_at',
@@ -68,6 +69,8 @@ class Order extends Model
             'delivery_address' => 'array',
             'fx_rates' => 'array',
             'rider_offer_expires_at' => 'datetime',
+            'ready_at' => 'datetime',
+            'needs_courier_at' => 'datetime',
             'rider_accepted_at' => 'datetime',
             'rider_offer_declined_ids' => 'array',
             'rider_offer_decline_count' => 'integer',
@@ -83,6 +86,16 @@ class Order extends Model
 
     protected static function booted(): void
     {
+        // When it became ready (the rider pickup timer), and clearing "Needs courier" once a rider accepts or it moves on.
+        static::saving(function (Order $order): void {
+            if ($order->isDirty('status') && $order->status === 'ready_for_delivery') {
+                $order->ready_at = now();
+            }
+            if ($order->needs_courier_at && (($order->isDirty('status') && $order->status !== 'ready_for_delivery') || ($order->isDirty('rider_accepted_at') && $order->rider_accepted_at))) {
+                $order->needs_courier_at = null;
+                $order->needs_courier_reason = null;
+            }
+        });
         // Order emails (the customer, and each seller with items on it). Sent after the surrounding transaction commits, so a
         // rolled-back checkout never emails, and the order's items exist by then.
         static::created(function (Order $order): void {

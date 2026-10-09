@@ -239,6 +239,7 @@ class AdminSettingController extends Controller
             [
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
+                'rider_offer_minutes' => ['sometimes', 'integer', 'min:1', 'max:1440'],
                 'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
                 // Sellers' own local delivery, and how hard sellers are chased for order updates.
                 'seller_local_delivery' => ['sometimes', Rule::in(['available', 'hidden'])],
@@ -412,6 +413,9 @@ class AdminSettingController extends Controller
             Setting::put('seller_update_rules', array_map('intval', array_intersect_key($validated['seller_update_rules'], array_flip(['pack_hours', 'repeat_hours', 'escalate_hours']))));
         }
 
+        if (array_key_exists('rider_offer_minutes', $validated)) {
+            Setting::put('rider_offer_minutes', (int) $validated['rider_offer_minutes']);
+        }
         if (array_key_exists('rider_auto_assign', $validated)) {
             Setting::put('rider_auto_assign', (bool) $validated['rider_auto_assign']);
         }
@@ -617,6 +621,7 @@ class AdminSettingController extends Controller
         return [
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
+            'rider_offer_minutes' => intdiv(\App\Support\RiderAssignment::offerSeconds(), 60),
             // NexTech's own delivery network (rider auto-assign applies only to these).
             'own_stores_count' => \App\Models\Store::query()->own()->count(),
             'courier_connected' => (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current()),

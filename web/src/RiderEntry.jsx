@@ -8,6 +8,8 @@ const RiderApply = lazy(() => import('./RiderApply'))
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 const STORE_URL = import.meta.env.BASE_URL || '/'
+const APPLY_URL = `${STORE_URL}rider/apply`
+const RIDER_URL = `${STORE_URL}rider`
 
 async function readJson(response) {
   const text = await response.text()
@@ -20,11 +22,11 @@ async function readJson(response) {
  * rider application (RiderApply) instead of being turned away, and new
  * people can create an account right here to apply.
  */
-export default function RiderEntry() {
+export default function RiderEntry({ apply = false }) {
   const [token, setToken] = useState(() => localStorage.getItem('gdp_token') || '')
   const [authed, setAuthed] = useState(false)
   const [applicant, setApplicant] = useState(false) // signed in, not a rider (yet)
-  const [signup, setSignup] = useState(false)
+  const [signup, setSignup] = useState(apply) // the application page starts on "create an account"
   const [checking, setChecking] = useState(() => !!localStorage.getItem('gdp_token'))
   const [form, setForm] = useState({ name: '', email: '', password: '', password_confirmation: '' })
   const [otp, setOtp] = useState(null)
@@ -124,6 +126,19 @@ export default function RiderEntry() {
       <RiderConsole token={token} onSignOut={signOut} />
     </Suspense>
   )
+  // Signed in with an account that isn't a rider: the application lives at /rider/apply.
+  if (applicant && !apply) return (
+    <div className="admin-gate">
+      <div className="admin-gate-card">
+        <div className="entry-logo"><BrandLogo /></div>
+        <h1>Rider sign-in</h1>
+        <p className="admin-gate-sub">This account isn&rsquo;t a rider account. Sign out and sign in with your rider account — or apply to deliver with this one.</p>
+        <button type="button" onClick={signOut}>Sign out &rarr;</button>
+        <a className="admin-gate-link" href={APPLY_URL}>Apply to become a rider</a>
+        <a className="admin-gate-back" href={STORE_URL}>&larr; Back to store</a>
+      </div>
+    </div>
+  )
   if (applicant) return (
     <Suspense fallback={<div className="admin-gate"><p>Loading&hellip;</p></div>}>
       <RiderApply token={token} onApproved={approved} onSignOut={signOut} />
@@ -134,12 +149,12 @@ export default function RiderEntry() {
     <div className="admin-gate">
       <form className="admin-gate-card" onSubmit={otp ? submitCode : signup ? submitSignup : submitPassword}>
         <div className="entry-logo"><BrandLogo /></div>
-        <h1>{signup ? 'Become a rider' : 'Rider sign-in'}</h1>
+        <h1>{apply ? 'Become a rider' : 'Rider sign-in'}</h1>
         <p className="admin-gate-sub">{otp
           ? `Enter the 6-digit code sent to ${otp.email}.`
           : signup
             ? 'Create an account, then apply to deliver for a store near you.'
-            : 'For delivery riders. Sign in to see your deliveries — or to apply if you’re new.'}</p>
+            : apply ? 'Sign in to apply to deliver for a store near you.' : 'For delivery riders. Sign in to see your deliveries.'}</p>
         {otp
           ? <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]*" maxLength="8" placeholder="6-digit code" value={code} onChange={(event) => setCode(event.target.value.replace(/[^0-9]/g, ''))} />
           : <>
@@ -151,7 +166,9 @@ export default function RiderEntry() {
         <button type="submit">{otp ? 'Verify' : signup ? 'Create account' : 'Sign in'} &rarr;</button>
         {message && <p className="admin-gate-msg">{message}</p>}
         {otp && <button type="button" className="admin-gate-link" onClick={() => { setOtp(null); setMessage('') }}>Use a different account</button>}
-        {!otp && <button type="button" className="admin-gate-link" onClick={() => { setSignup((v) => !v); setMessage('') }}>{signup ? 'Already have an account? Sign in' : 'New here? Apply to become a rider'}</button>}
+        {!otp && apply && <button type="button" className="admin-gate-link" onClick={() => { setSignup((v) => !v); setMessage('') }}>{signup ? 'Already have an account? Sign in' : 'New here? Create an account'}</button>}
+        {!otp && !apply && <a className="admin-gate-link" href={APPLY_URL}>New here? Apply to become a rider</a>}
+        {apply && <a className="admin-gate-link" href={RIDER_URL}>Already a rider? Rider sign-in</a>}
         <a className="admin-gate-back" href={STORE_URL}>&larr; Back to store</a>
       </form>
     </div>

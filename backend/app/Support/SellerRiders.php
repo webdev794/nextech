@@ -54,6 +54,101 @@ class SellerRiders
         return $best[0] ?? null;
     }
 
+    /** Hours the seller's riders get to take an offered order (seller sets 1–72; default 5). */
+    public static function pickupHours(\App\Models\Store $store): int
+    {
+        return max(1, min(72, (int) ($store->rider_pickup_hours ?? 5)));
+    }
+
+    /**
+     * Send the shop's part of a local order out now, with a rider (or null = the seller delivers it):
+     * package, delivery code, buyer told. Any open offer to the riders ends.
+     */
+    public static function dispatchLocal(\App\Models\Order $order, Shop $shop, ?User $rider): OrderPackage
+    {
+        $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
+        abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for local delivery — ship it with a courier.');
+        $items = SellerFulfillment::shopLines($order, $shop)
+            ->map(fn ($l) => ['order_item_id' => $l->id, 'quantity' => SellerFulfillment::remainingQuantity($l) - SellerFulfillment::requestedQuantity($l)])
+            ->filter(fn ($i) => $i['quantity'] > 0)->values()->all();
+        abort_if($items === [], 422, 'Everything on this order has already gone out.');
+        $addressId = (int) ($shop->local_delivery['address_id'] ?? 0) ?: $shop->addresses()->orderByDesc('is_default')->value('id');
+        $package = SellerFulfillment::createPackage($order, $shop, $items, (int) $addressId, [
+            'label_source' => 'local',
+            'carrier' => SellerShipping::LOCAL,
+            'tracking_number' => sprintf('NT-%d-L%d', $order->id, $order->packages()->count() + 1),
+            'delivery_code' => (string) random_int(1000, 9999),
+        ]);
+        SellerProgress::advance($package, 'out_for_delivery', 'seller');
+        self::assign($package, $rider);
+        $promise->forceFill(['rider_offer_until' => null, 'rider_offer_missed_at' => null])->save();
+
+        return $package;
+    }
+
+    /**
+     * Offer a local order to all the seller's riders: every rider at the store sees it with one
+     * deadline, and the first to take it gets it. The buyer is told only when a rider takes it.
+     */
+    public static function offer(\App\Models\Order $order, Shop $shop): void
+    {
+        $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
+        abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for local delivery — ship it with a courier.');
+        $store = SellerStores::ensure($shop);
+        $until = now()->addHours(self::pickupHours($store));
+        $promise->forceFill(['rider_offer_until' => $until, 'rider_offer_missed_at' => null])->save();
+        $online = $store->riders()->where('is_rider', true)->where('rider_is_active', true)->where('rider_available', true)->get()
+            ->filter(fn (User $r) => $r->currentShift() && ! SellerRiderCash::blockedReason($r));
+        foreach ($online as $rider) {
+            try {
+                $rider->notify(new RiderNotice("Delivery to take — {$shop->name}", "{$shop->name} has order #{$order->id} for its riders until {$until->format('j M H:i')}. The first to press Take it in the Rider app (Store deliveries) gets it."));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+        if ($online->isEmpty() && $shop->seller) {
+            SellerNotify::send($shop->seller, $shop->seller->user, 'No rider online', "None of your riders is on shift right now. Order #{$order->id} stays open to them until {$until->format('j M H:i')} — call a rider, or deliver it yourself.");
+        }
+    }
+
+    /** Orders offered to a rider's stores (still open, incl. past the deadline until someone sends them out). */
+    public static function openOffers(User $rider)
+    {
+        $shopIds = $rider->stores()->whereNotNull('shop_id')->where('local_delivery_active', true)->pluck('shop_id');
+
+        return \App\Models\OrderShopShipping::query()->whereIn('shop_id', $shopIds)->whereNotNull('rider_offer_until')
+            ->with(['order.items', 'shop:id,name'])->oldest('rider_offer_until')->get();
+    }
+
+    /** A rider takes an offered order: first come, first served (locked). */
+    public static function take(User $rider, \App\Models\OrderShopShipping $promise): OrderPackage
+    {
+        abort_unless($rider->stores()->where('shop_id', $promise->shop_id)->exists(), 404);
+        abort_if(SellerRiderCash::blockedReason($rider) || SellerRiderCash::paused($rider, SellerStores::ensure($promise->shop)), 422, 'You’re paused for cash — hand it over before taking more deliveries.');
+
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($rider, $promise) {
+            $locked = \App\Models\OrderShopShipping::whereKey($promise->id)->lockForUpdate()->first();
+            abort_unless($locked?->rider_offer_until, 422, 'Another rider has already taken this order.');
+
+            return self::dispatchLocal($locked->order, $locked->shop, $rider);
+        });
+    }
+
+    /** Every few minutes: offers past their deadline with nobody → the seller is told (once); riders can still take them. */
+    public static function sweepOffers(): int
+    {
+        $missed = \App\Models\OrderShopShipping::query()->whereNotNull('rider_offer_until')->whereNull('rider_offer_missed_at')
+            ->where('rider_offer_until', '<=', now())->with('shop.seller')->get();
+        foreach ($missed as $promise) {
+            $promise->forceFill(['rider_offer_missed_at' => now()])->save();
+            if ($promise->shop?->seller) {
+                SellerNotify::send($promise->shop->seller, $promise->shop->seller->user, 'Nobody took a delivery', "No rider took order #{$promise->order_id} in time. Deliver it yourself, give it to a rider, or send it by courier (Manage orders → Orders you ship). It stays open to your riders meanwhile.");
+            }
+        }
+
+        return $missed->count();
+    }
+
     /** Give a package to a rider (or null = the seller delivers it), telling the rider. */
     public static function assign(OrderPackage $package, ?User $rider): void
     {

@@ -35,6 +35,7 @@ class AdminOrderController extends Controller
         // Loading the orders board also drives the offer-timeout sweep.
         try {
             DeliveryOfferSweeper::sweep();
+            \App\Support\NeedsCourier::sweep();
         } catch (\Throwable $e) {
             report($e);
         }
@@ -54,6 +55,7 @@ class AdminOrderController extends Controller
             ->when($validated['status'] ?? null, fn ($query, $status) => match ($status) {
                 'open' => $query->open(),
                 'refund_due' => $query->refundDue(),
+                'needs_courier' => $query->whereNotNull('needs_courier_at'),
                 default => $query->where('status', $status),
             })
             ->latest()
@@ -181,7 +183,7 @@ class AdminOrderController extends Controller
                 $changes['rider_accepted_at'] = null;
                 $effectiveStatus = $changes['status'] ?? $order->status;
                 if ($effectiveStatus === 'ready_for_delivery') {
-                    $changes['rider_offer_expires_at'] = now()->addSeconds(RiderAssignment::OFFER_TTL_SECONDS);
+                    $changes['rider_offer_expires_at'] = now()->addSeconds(RiderAssignment::offerSeconds());
                     User::whereKey($rider->id)->increment('rider_offers_count');
                 } else {
                     $changes['rider_offer_expires_at'] = null;
@@ -199,7 +201,7 @@ class AdminOrderController extends Controller
             && ($changes['status'] ?? null) === 'ready_for_delivery'
             && $order->delivery_partner_id
             && $order->rider_accepted_at === null) {
-            $changes['rider_offer_expires_at'] = now()->addSeconds(RiderAssignment::OFFER_TTL_SECONDS);
+            $changes['rider_offer_expires_at'] = now()->addSeconds(RiderAssignment::offerSeconds());
             User::whereKey($order->delivery_partner_id)->increment('rider_offers_count');
         }
 
@@ -276,7 +278,10 @@ class AdminOrderController extends Controller
         // gets one auto-assigned, or drops into the first-come pool as before.
         if (($changes['status'] ?? null) === 'ready_for_delivery') {
             if ($order->usesOnlineCourier()) {
-                if (! $order->shipment) {
+                if (! $order->shipment && ! \App\Support\NeedsCourier::hasCourierConnection()) {
+                    // No courier account: admin books one by hand (alerted).
+                    \App\Support\NeedsCourier::flag($order->fresh(), 'outside_area');
+                } elseif (! $order->shipment) {
                     $shipment = Courier::book($order);
                     $order->update(['courier_name' => $shipment->carrier, 'status' => 'out_for_delivery']);
                 }

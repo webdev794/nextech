@@ -28,6 +28,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Live pages: any saved / deleted record bumps the "something changed" counter (GET /api/live).
+        \Illuminate\Support\Facades\Event::listen(['eloquent.saved: *', 'eloquent.deleted: *'], fn (string $event, array $models) => \App\Support\LiveVersion::touched($models[0] ?? null));
+
        // $this->ensureCaBundle();
        // $this->applyStoredStripeCredentials();
         if (! $this->app->runningInConsole()) {

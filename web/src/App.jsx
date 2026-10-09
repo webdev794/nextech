@@ -10,6 +10,8 @@ const path = window.location.pathname.replace(/\/$/, '')
 const routeIs = (name) => path === `${base}${name}`.replace(/\/$/, '') || window.location.hash === `#/${name}`
 const isAdminRoute = routeIs('admin')
 const isRiderRoute = routeIs('rider')
+// Hiring: the rider application has its own address; /rider stays the riders' sign-in and console.
+const isRiderApplyRoute = path === `${base}rider/apply`.replace(/\/$/, '') || window.location.hash === '#/rider-apply'
 const isSellerRoute = routeIs('seller')
 // The admin's chat with one seller, in its own pop-up window.
 const isAdminChatRoute = window.location.hash.startsWith('#/admin-chat/')
@@ -25,6 +27,7 @@ const fallback = (label) => <div style={{ padding: 40, font: '14px system-ui, sa
 function App() {
   if (isAdminChatRoute) return <Suspense fallback={fallback('chat')}><SellerChatPopup /></Suspense>
   if (isAdminRoute) return <Suspense fallback={fallback('admin')}><AdminEntry /></Suspense>
+  if (isRiderApplyRoute) return <Suspense fallback={fallback('rider application')}><RiderEntry apply /></Suspense>
   if (isRiderRoute) return <Suspense fallback={fallback('rider app')}><RiderEntry /></Suspense>
   if (isSellerRoute) return <Suspense fallback={fallback('seller center')}><SellerEntry /></Suspense>
   return <Storefront />

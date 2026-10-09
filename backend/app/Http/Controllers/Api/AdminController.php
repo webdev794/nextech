@@ -355,7 +355,16 @@ class AdminController extends Controller
         $riderNotices = User::query()->where('is_rider', true)->whereNotNull('rider_notice_at')->whereNull('rider_notice_processed_at')->orderBy('rider_leaving_on')->get(['id', 'name', 'rider_notice_at', 'rider_leaving_on'])
             ->map(fn ($u) => ['rider_id' => $u->id, 'name' => $u->name, 'leaving_on' => $u->rider_leaving_on?->toDateString(), 'due' => $u->rider_leaving_on && $u->rider_leaving_on->lte(today()), 'at' => $u->rider_notice_at]);
 
+        // Orders admin has to send by courier by hand (no rider in time, or outside every area with no courier account).
+        $needsCourier = Order::query()->whereNotNull('needs_courier_at')->with('user:id,name,email')->oldest('needs_courier_at')->limit(50)->get()
+            ->map(fn (Order $o) => ['id' => $o->id, 'reason' => $o->needs_courier_reason, 'customer' => $o->user?->name ?? $o->user?->email, 'at' => $o->needs_courier_at]);
+
+        $holidayShops = \App\Models\Shop::whereIn('id', collect(\App\Support\ExtraHolidays::requests())->pluck('shop_id'))->pluck('name', 'id');
+
         return response()->json(['data' => [
+            // Sellers asking for a day off for their store (Shipping → Holidays).
+            'holiday_requests' => collect(\App\Support\ExtraHolidays::requests())->map(fn ($r) => $r + ['shop' => $holidayShops[$r['shop_id']] ?? null])->values(),
+            'needs_courier' => $needsCourier,
             'rider_notices' => $riderNotices,
             'local_delivery_off' => $localOff,
             'cod_kept' => $codKept,

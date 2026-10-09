@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { onLiveChange } from './useLiveRefresh'
 import { BrandLogo } from './BrandLogo'
 import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
@@ -75,11 +76,17 @@ function DeliveryCard({ order, pool, headers, onDone, onChat }) {
         {order.items?.map((it, i) => <li key={i}>{it.quantity} × {it.name}</li>)}
       </ul>
       {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due, order.currency)}</b></p>}
+      {pool && order.pickup_by && <p className="rider-card-note">{order.offer_pending ? 'Offered to another rider' : 'Open to all riders'} — <TimeLeft until={order.pickup_by} /> left to pick it up. Free now? The first to take it gets it.</p>}
+      {!pool && order.offer_pending && <p className="rider-card-note">Offered to you — <TimeLeft until={order.offer_expires_at} /> left. Other riders at the store can take it meanwhile.</p>}
 
       <div className="rider-card-actions">
         <a className="rider-btn ghost" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressText(a))}`} target="_blank" rel="noreferrer">Directions</a>
         <button className="rider-btn ghost" type="button" onClick={() => onChat(order.id)}>Message customer</button>
         {pool && <button className="rider-btn" type="button" disabled={working} onClick={() => simpleAct('claim')}>Pick up</button>}
+        {!pool && order.offer_pending && <>
+          <button className="rider-btn primary" type="button" disabled={working} onClick={() => simpleAct('respond', { accept: true })}>Accept</button>
+          <button className="rider-btn reject" type="button" disabled={working} onClick={() => simpleAct('respond', { accept: false })}>Reject</button>
+        </>}
         {!pool && preparing && <span className="rider-wait">Waiting for the store to pack it…</span>}
         {!pool && canStart && <button className="rider-btn" type="button" disabled={working} onClick={() => simpleAct('status', { status: 'out_for_delivery' })}>Picked up — start delivery</button>}
         {!pool && order.cod_due > 0 && (canStart || canDeliver) && <button className="rider-btn" type="button" disabled={working} onClick={() => simpleAct('cash-collected')}>Cash collected</button>}
@@ -253,7 +260,16 @@ function AlertSettings({ open, onClose }) {
   )
 }
 
-const fmtMMSS = (secs) => `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`
+const fmtMMSS = (secs) => (secs >= 3600
+  ? `${Math.floor(secs / 3600)}h ${String(Math.floor((secs % 3600) / 60)).padStart(2, '0')}m`
+  : `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`)
+
+// Ticking time left until an offer runs out.
+function TimeLeft({ until }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
+  return <b>{fmtMMSS(Math.max(0, Math.ceil((new Date(until).getTime() - now) / 1000)))}</b>
+}
 const fmtDur = (mins) => { const m = Math.max(0, Math.round(mins)); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m` }
 const clockTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
 
@@ -262,7 +278,7 @@ const clockTime = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour: '2
  * check out. Drives `rider_available`, so being off the clock or on a break
  * means the system won't offer this rider a delivery.
  */
-function ShiftBar({ shift, headers, onChange }) {
+function ShiftBar({ shift, headers, onChange, workHours = [] }) {
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
 
@@ -278,7 +294,10 @@ function ShiftBar({ shift, headers, onChange }) {
 
   async function act(action, reason) {
     if (busy) return
-    if (action === 'clock_out' && !window.confirm('Clock out and stop receiving deliveries?')) return
+    const during = workHours.filter((w) => w.now)
+    if (action === 'clock_out' && !window.confirm(during.length
+      ? `Your working hours aren’t over (${during.map((w) => `${w.store} until ${w.end}`).join(', ')}). Clock out anyway? The store will be told.`
+      : 'Clock out and stop receiving deliveries?')) return
     setBusy(true)
     try {
       const res = await fetch(`${API_URL}/rider/shift`, {
@@ -324,7 +343,7 @@ function ShiftBar({ shift, headers, onChange }) {
  * Blocking prompt for pending delivery offers: a live countdown plus Accept /
  * Reject. Rejecting (or letting it lapse) re-offers the order to another rider.
  */
-function OfferPrompt({ offers, headers, onResolved }) {
+function OfferPrompt({ offers, headers, onResolved, onLater }) {
   const [now, setNow] = useState(() => Date.now())
   const [working, setWorking] = useState(false)
 
@@ -377,6 +396,7 @@ function OfferPrompt({ offers, headers, onResolved }) {
                   <div className="rider-offer-actions">
                     <button type="button" className="rider-btn primary" disabled={working} onClick={() => respond(o.id, true)}>Accept</button>
                     <button type="button" className="rider-btn reject" disabled={working} onClick={() => respond(o.id, false)}>Reject</button>
+                    {secs > 300 && <button type="button" className="rider-btn ghost" onClick={() => onLater(o.id)}>Decide later</button>}
                   </div>
                 )}
               <button type="button" className="rider-offer-replay" onClick={() => previewTone(loadAlertPrefs().toneId)}>▶ Replay tone</button>
@@ -393,6 +413,8 @@ function OfferPrompt({ offers, headers, onResolved }) {
 function SellerDeliveries({ headers, refreshKey }) {
   const [list, setList] = useState([])
   const [cashBy, setCashBy] = useState([]) // cash I hold per seller store, and where I'm paused
+  const [daysOff, setDaysOff] = useState([]) // each seller store's days off in the next 2 weeks
+  const [open, setOpen] = useState([]) // orders sellers offered to all their riders (first to take it)
   const [code, setCode] = useState({})
   const [cash, setCash] = useState({})
   const [busy, setBusy] = useState(null)
@@ -401,13 +423,14 @@ function SellerDeliveries({ headers, refreshKey }) {
     try {
       const res = await fetch(`${API_URL}/rider/packages`, { headers: headers() })
       const body = await readJson(res)
-      if (res.ok) { setList(body.data ?? []); setCashBy(body.cash ?? []) }
+      if (res.ok) { setList(body.data ?? []); setCashBy(body.cash ?? []); setDaysOff(body.days_off ?? []); setOpen(body.open ?? []) }
     } catch { /* keep last */ }
   }, [headers])
   useEffect(() => {
     Promise.resolve().then(load)
+    const off = onLiveChange(load) // a seller offering an order shows at once
     const t = setInterval(load, 30000)
-    return () => clearInterval(t)
+    return () => { clearInterval(t); off() }
   }, [load, refreshKey])
 
   async function deliver(p) {
@@ -427,6 +450,28 @@ function SellerDeliveries({ headers, refreshKey }) {
     <section className="rider-section">
       <h2>Store deliveries ({list.length})</h2>
       {msg && <p className="rider-error">{msg}</p>}
+      {open.length > 0 && <div className="rider-section">
+        <h3>Open to take ({open.length})</h3>
+        {open.map((o) => (
+          <article key={o.id} className="rider-card">
+            <div className="rider-card-top"><strong>{o.store} · Order #{o.order_id}</strong></div>
+            <p className="rider-card-addr">To {o.area || 'a buyer nearby'} · {o.items} item{o.items === 1 ? '' : 's'}{o.cod ? ' · cash on delivery' : ''}</p>
+            <p className="rider-card-note">{o.missed ? 'Past the deadline — still open if you can take it now.' : <>The first rider to take it gets it — <TimeLeft until={o.until} /> left.</>}</p>
+            <div className="rider-card-actions">
+              <button type="button" className="rider-btn primary" disabled={busy === `take-${o.id}`} onClick={async () => {
+                setBusy(`take-${o.id}`)
+                try {
+                  const res = await fetch(`${API_URL}/rider/local-offers/${o.id}/take`, { method: 'POST', headers: headers(true) })
+                  const body = await readJson(res)
+                  if (!res.ok) throw new Error(body.message ?? 'Could not take it.')
+                  setList(body.data ?? []); setCashBy(body.cash ?? []); setOpen(body.open ?? []); setMsg(`Order #${o.order_id} is yours — pick it up at ${o.store}.`)
+                } catch (e) { setMsg(e.message); load() } finally { setBusy(null) }
+              }}>Take it</button>
+            </div>
+          </article>
+        ))}
+      </div>}
+      {daysOff.map((d) => <p key={d.store} className="rider-cash">📅 {d.store} is closed (no deliveries unless they tell you): {d.days.join(', ')}</p>)}
       {cashBy.map((c) => (
         <div key={c.store} className={c.paused || c.disputed ? 'rider-error' : 'rider-cash'}>
           {c.held_cents > 0 && <p>{c.paused ? `Paused for ${c.store}: visit the store and hand over the ${fmt(c.held_cents, c.currency)} you hold before more deliveries.` : `You hold ${fmt(c.held_cents, c.currency)} of ${c.store}’s cash (limit ${fmt(c.limit_cents, c.currency)}) — hand it over at the store today.`}</p>}
@@ -489,7 +534,9 @@ export default function RiderConsole({ token, onSignOut }) {
 
   // Orders assigned to me that I haven't accepted yet — drive the blocking
   // prompt + the repeating alarm.
-  const pendingOffers = data.assigned.filter((o) => o.offer_pending)
+  // Long offers (admin can allow up to a day) can be put aside: "Decide later" keeps it in My deliveries with Accept / Reject.
+  const [laterIds, setLaterIds] = useState([])
+  const pendingOffers = data.assigned.filter((o) => o.offer_pending && !laterIds.includes(o.id))
 
   const applyBoard = useCallback((board) => {
     if (board) setData(board)
@@ -513,8 +560,9 @@ export default function RiderConsole({ token, onSignOut }) {
   useEffect(() => {
     let stop = false
     ;(async () => { await load(); if (!stop) setLoading(false) })()
+    const off = onLiveChange(load) // new offers are notifications: keep them quick
     const t = setInterval(load, 15000)
-    return () => { stop = true; clearInterval(t) }
+    return () => { stop = true; clearInterval(t); off() }
   }, [load])
 
   useEffect(() => {
@@ -544,10 +592,11 @@ export default function RiderConsole({ token, onSignOut }) {
         </div>
       </header>
 
-      <ShiftBar shift={data.shift} headers={headers} onChange={(s) => setData((d) => ({ ...d, shift: s }))} />
+      <ShiftBar shift={data.shift} headers={headers} workHours={data.work_hours ?? []} onChange={(s) => setData((d) => ({ ...d, shift: s }))} />
+      {(data.work_hours ?? []).map((w) => <p key={w.store} className="rider-cash">🕘 {w.store}: your working hours are {w.hours}{w.now && !data.shift?.clocked_in ? ' — you should be on duty now: clock in.' : '.'}</p>)}
 
       {pendingOffers.length > 0 && (
-        <OfferPrompt offers={pendingOffers} headers={headers} onResolved={applyBoard} />
+        <OfferPrompt offers={pendingOffers} headers={headers} onResolved={applyBoard} onLater={(id) => setLaterIds((ids) => [...ids, id])} />
       )}
 
       {error && <p className="rider-error">{error}</p>}

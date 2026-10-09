@@ -173,7 +173,7 @@ class SellerStores
             ]])->save();
         }
         if ($seller = $shop->seller) {
-            SellerNotify::send($seller, $by, 'Local delivery is on', 'Your own local delivery is on — buyers within '.$store->delivery_radius_km.' km of your store can get it. Check the fee and delivery days in Shipping settings → Own delivery (local).');
+            SellerNotify::send($seller, $by, 'Local delivery is on', 'Your local delivery is on — only buyers within '.$store->delivery_radius_km.' km of your store get it (you or your riders deliver); everyone else still gets courier shipping. Check the fee and delivery days in Shipping settings → Local delivery.');
         }
     }
 }

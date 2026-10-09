@@ -678,3 +678,4 @@ button.admin-bell-more:hover{text-decoration:underline}
 .admin-rider-filters{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}.admin-rider-filters label{display:flex;flex-direction:column;gap:2px;font-size:12px}
 .rider-settle{display:flex;flex-direction:column;gap:4px;background:#f4f8f1;border:1px solid #dfe8d8;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12px}.rider-settle button{align-self:flex-start}.money-neg{color:#c62828}.rider-money-month{display:inline-flex;gap:8px;align-items:center;margin:4px 0 8px;font-size:12px}
 .rider-name-cell>span{min-width:150px}
+.rider-hours-edit{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:6px 0}.rider-hours-days{display:flex;flex-wrap:wrap;gap:4px 8px}

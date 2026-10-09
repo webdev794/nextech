@@ -123,7 +123,7 @@ class DeliveryOfferTest extends TestCase
         $this->assertSame(1, $a->fresh()->rider_declined_count);
     }
 
-    public function test_offer_timeout_reassigns_and_bumps_missed_count(): void
+    public function test_offer_timeout_opens_it_to_every_rider_and_tells_the_store(): void
     {
         $store = $this->store();
         $a = $this->rider('A', $store, ['lat' => 40.7130, 'lng' => -74.0058]);
@@ -135,7 +135,8 @@ class DeliveryOfferTest extends TestCase
         $this->assertSame(1, DeliveryOfferSweeper::sweep());
 
         $order->refresh();
-        $this->assertSame($b->id, $order->delivery_partner_id);
+        $this->assertNull($order->delivery_partner_id); // in the pool: any rider can take it
+        $this->assertSame('no_rider', $order->needs_courier_reason);
         $this->assertSame(1, $a->fresh()->rider_missed_count);
         $this->assertSame(0, $a->fresh()->rider_declined_count);
         $this->assertContains($a->id, $order->rider_offer_declined_ids);
@@ -200,11 +201,11 @@ class DeliveryOfferTest extends TestCase
         RiderAssignment::assign($order);
         $order->forceFill(['rider_offer_expires_at' => now()->subSecond()])->save();
         DeliveryOfferSweeper::sweep();
-        $this->assertSame($b->id, $order->fresh()->delivery_partner_id);
+        $this->assertNull($order->fresh()->delivery_partner_id);
 
         Sanctum::actingAs($a);
         $this->postJson("/api/rider/orders/{$order->id}/respond", ['accept' => true])->assertStatus(409);
-        $this->assertSame($b->id, $order->fresh()->delivery_partner_id);
+        $this->postJson("/api/rider/orders/{$order->id}/claim")->assertOk(); // still open to pick up
     }
 
     public function test_claim_from_the_pool_auto_accepts(): void
@@ -301,8 +302,7 @@ class DeliveryOfferTest extends TestCase
         Sanctum::actingAs($b);
         $this->getJson('/api/rider/orders')
             ->assertOk()
-            ->assertJsonPath('data.assigned.0.id', $order->id)
-            ->assertJsonPath('data.assigned.0.offer_pending', true);
+            ->assertJsonPath('data.pool.0.id', $order->id); // time's up: open to every rider
         $this->assertSame(1, $a->fresh()->rider_missed_count);
     }
 
@@ -409,6 +409,46 @@ class DeliveryOfferTest extends TestCase
         $order->forceFill(['rider_offer_expires_at' => now()->subSecond()])->save();
 
         $this->artisan('riders:sweep-offers')->assertExitCode(0);
+        $this->assertNull($order->fresh()->delivery_partner_id);
+        $this->assertSame('no_rider', $order->fresh()->needs_courier_reason);
+    }
+
+    public function test_offer_moves_on_when_the_rider_goes_on_a_break(): void
+    {
+        $store = $this->store();
+        $a = $this->rider('A', $store, ['lat' => 40.7130, 'lng' => -74.0058]);
+        $b = $this->rider('B', $store, ['lat' => 40.7600, 'lng' => -73.9800]);
+        $order = $this->order($store);
+        RiderAssignment::assign($order);
+        $this->assertSame($a->id, $order->fresh()->delivery_partner_id);
+
+        Sanctum::actingAs($a);
+        $this->postJson('/api/rider/shift', ['action' => 'clock_in']);
+        $this->postJson('/api/rider/shift', ['action' => 'break_start', 'reason' => 'Lunch'])->assertOk();
         $this->assertSame($b->id, $order->fresh()->delivery_partner_id);
+    }
+
+    public function test_rider_coming_online_late_gets_the_same_deadline_and_store_is_told_only_at_the_end(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $store = $this->store();
+        $a = $this->rider('A', $store, ['lat' => 40.7130, 'lng' => -74.0058]);
+        $a->forceFill(['rider_available' => false])->save(); // logged out
+        $order = $this->order($store);
+        $order->forceFill(['ready_at' => now()])->save();
+        $this->assertNull(RiderAssignment::assign($order)); // nobody online: heads-up only
+        $this->assertNull($order->fresh()->needs_courier_at);
+        $deadline = RiderAssignment::deadline($order->fresh());
+
+        $this->travel(2)->hours();
+        Sanctum::actingAs($a);
+        $this->postJson('/api/rider/shift', ['action' => 'clock_in'])->assertOk();
+        $order->refresh();
+        $this->assertSame($a->id, $order->delivery_partner_id);
+        $this->assertSame($deadline->timestamp, $order->rider_offer_expires_at->timestamp); // ends with everyone's
+
+        $this->travel(4)->hours(); // past the deadline, not accepted
+        DeliveryOfferSweeper::sweep();
+        $this->assertSame('no_rider', $order->fresh()->needs_courier_reason);
     }
 }

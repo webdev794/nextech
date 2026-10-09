@@ -14,7 +14,8 @@ use App\Models\Shop;
  */
 class SellerCod
 {
-    public const MODES = ['off', 'approved', 'all'];
+    /** off · approved (each seller as admin sets) · all · local = only on the seller's local deliveries (their riders carry it, up to the per-order maximum). */
+    public const MODES = ['off', 'approved', 'all', 'local'];
 
     /** Default "owed" limit per market, in that market's currency (cents). */
     private const DEFAULT_MAX_OWED = ['US' => 10000, 'IN' => 500000];
@@ -43,11 +44,18 @@ class SellerCod
     public static function sellerReason(Shop $shop): ?string
     {
         return match (true) {
-            self::mode() === 'off' => ''.\App\Support\Branding::name().' doesn’t offer cash on delivery for sellers’ orders right now.',
+            self::mode() === 'off' => \App\Support\Branding::name().' has switched off cash on delivery for all sellers for now. Buyers pay by card. Send '.\App\Support\Branding::name().' a message if you’d like it.',
+            self::mode() === 'local' && ! self::localOn($shop) => 'Cash on delivery is only for your local deliveries (buyers near your shop). Turn on local deliveries first.',
             self::mode() === 'approved' && ! $shop->cod_approved => 'Cash on delivery needs '.\App\Support\Branding::name().'’s approval for your shop — message '.\App\Support\Branding::name().' to ask for it.',
             self::owedCents($shop) > self::maxOwedCents($shop->market) => 'Paused: you owe '.\App\Support\Branding::name().' '.Money::format(self::owedCents($shop), Market::currency($shop->market)).' from cash orders (more than the '.Money::format(self::maxOwedCents($shop->market), Market::currency($shop->market)).' limit). It switches back on once that’s settled from your card sales or paid to '.\App\Support\Branding::name().'.',
             default => null,
         };
+    }
+
+    /** The shop's local delivery is on (and not switched off by the store). */
+    public static function localOn(Shop $shop): bool
+    {
+        return ! empty($shop->local_delivery) && ! SellerStores::blockedByAdmin($shop);
     }
 
     /** @return array{available: bool, reason: ?string, mode: string, approved: bool, owed_cents: int, max_owed_cents: int} */

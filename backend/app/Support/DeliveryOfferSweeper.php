@@ -90,9 +90,9 @@ final class DeliveryOfferSweeper
                 User::whereKey($missedRiderId)->increment('rider_missed_count');
             }
 
-            // Next-best eligible rider, skipping everyone who has passed on it.
-            // Null return -> the order stays unassigned = shared-pool fallback.
-            RiderAssignment::assign($order->fresh(), $declined);
+            // Time's up: it stays open to every rider at the store (the pool), and the store is
+            // told nobody took it — call a rider, deliver it yourself, or send it by courier.
+            NeedsCourier::flag($order->fresh(), 'no_rider');
 
             return true;
         });

@@ -34,6 +34,15 @@ class AdminStoreController extends Controller
         ])]);
     }
 
+    /** The hours this store's riders must be on duty (null = no set hours). */
+    public function riderHours(Request $request, Store $store): JsonResponse
+    {
+        $data = $request->validate(\App\Support\RiderWorkHours::rules());
+        $store->forceFill(['rider_hours' => $data['hours'] ? ['days' => array_values(array_unique(array_map('intval', $data['hours']['days']))), 'start' => $data['hours']['start'], 'end' => $data['hours']['end']] : null])->save();
+
+        return response()->json(['data' => $store->fresh()]);
+    }
+
     /** Hiring riders for a store on or off (shown on the rider application page and the "Work with us" link). */
     public function hiring(Request $request, Store $store): JsonResponse
     {

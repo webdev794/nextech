@@ -295,6 +295,11 @@ class CheckoutController extends Controller
                     'address' => ['The seller can\'t ship '.implode(', ', $sellerQuote['unshippable']).' to '.$where.' yet — remove it or use another address.'],
                 ]);
             }
+            // Now that we know whether the seller delivers locally: admin may allow sellers' cash on delivery only then.
+            if ($paymentMethod === 'cod' && $sellerLines->isNotEmpty()
+                && ($codBlocked = SellerProgress::codBlockedReason($cart->items->pluck('product'), $market, $cartTotal, collect($sellerQuote['shops'])->contains(fn ($q) => ($q['method'] ?? null) === 'local')))) {
+                throw ValidationException::withMessages(['payment_method' => [$codBlocked]]);
+            }
             if (! $isHome && $sellerLines->isNotEmpty() && SellerShipping::stateCode($address['state'] ?? null, $market) === null) {
                 throw ValidationException::withMessages(['address' => ['Choose your state so the seller can ship to you.']]);
             }

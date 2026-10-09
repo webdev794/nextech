@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { onLiveChange } from './useLiveRefresh'
 import { BrandLogo } from './BrandLogo'
 import { useBranding, brandName } from './useBranding'
 import { mediaUrl } from './mediaUrl'
@@ -680,8 +681,9 @@ export default function Seller({ token, onSignOut }) {
         }
       } catch { /* keep last */ }
     }
-    const timer = setInterval(check, 8000)
-    return () => { stopped = true; clearInterval(timer) }
+    const off = onLiveChange(check)
+    const timer = setInterval(check, 8000) // chats & alerts stay instant
+    return () => { stopped = true; clearInterval(timer); off() }
   }, [me?.status, authHeaders, soundMuted, markSeen])
 
   // Customer chats: poll the inbox, chime on a new customer/NexTech message,
@@ -711,8 +713,9 @@ export default function Seller({ token, onSignOut }) {
       } catch { /* keep last */ }
     }
     check()
-    const timer = setInterval(check, 10000)
-    return () => { stopped = true; clearInterval(timer) }
+    const off = onLiveChange(check)
+    const timer = setInterval(check, 10000) // chats & alerts stay instant
+    return () => { stopped = true; clearInterval(timer); off() }
   }, [me?.status, authHeaders, soundMuted, markSeen])
 
   // Shipping templates, for the product form's "Ships under" picker.
@@ -783,9 +786,10 @@ export default function Seller({ token, onSignOut }) {
       } catch { /* keep last */ }
     }
     check()
-    const timer = setInterval(check, 30000)
+    const off = onLiveChange(check)
+    const timer = setInterval(check, 30000) // chats & alerts stay instant
     if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {})
-    return () => { stopped = true; clearInterval(timer) }
+    return () => { stopped = true; clearInterval(timer); off() }
   }, [me?.status, authHeaders, soundMuted])
   const newestAlerted = useRef(null)
   const seeNewOrders = () => {
@@ -964,7 +968,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
-      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Payout method'], ['shipping', 'Shipping settings'], ['local', 'Local delivery'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
+      { key: 'account', label: 'My account', icon: '◉', children: [['shop', 'Shop profile'], ['decoration', 'Store decoration'], ['tax', 'Tax information'], ['compliance', 'Compliance information'], ['bank', 'Payout method'], ['shipping', 'Shipping settings'], ['local', 'Local delivery & riders'], ['policies', `Policies & rules${policyStatus.filter((p) => !p.accepted).length ? ` (${policyStatus.filter((p) => !p.accepted).length} to accept)` : ''}`]] },
     ]
     const activePage = pageView ? 'page' : section
 

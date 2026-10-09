@@ -59,7 +59,7 @@ class ShippingQuoteController extends Controller
         return response()->json(['data' => $quote + [
             'seller_shipped_product_ids' => array_values(array_unique($sellerShipped)),
             // Cash on delivery for this cart: null = allowed, otherwise why not.
-            'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request), $codTotal),
+            'cod_blocked' => SellerProgress::codBlockedReason($products->values(), Market::fromRequest($request), $codTotal, collect($quote['shops'] ?? [])->contains(fn ($q) => ($q['method'] ?? null) === 'local')),
             'state_known' => SellerShipping::stateCode($data['state'] ?? null, Market::fromRequest($request)) !== null,
             // Sales tax for this address, for the cart's estimate (checkout recalculates it).
             'tax_rate_bps' => SalesTax::rateBps(Market::fromRequest($request), $data['state'] ?? null, $data['postal_code'] ?? null, (int) CheckoutFees::current(Market::fromRequest($request))['tax_rate_bps']),

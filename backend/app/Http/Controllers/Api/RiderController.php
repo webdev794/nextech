@@ -37,7 +37,11 @@ class RiderController extends Controller
         return response()->json(['data' => $this->board($request->user())
             + ['shift' => RiderAttendance::state($request->user()),
                 // Paused in every store until cash is handed over (a seller's, or over the store's own limit).
-                'cash_block' => \App\Support\SellerRiderCash::blockedReason($request->user())]]);
+                'cash_block' => \App\Support\SellerRiderCash::blockedReason($request->user()),
+                // The hours each of my stores needs me on duty.
+                'work_hours' => $request->user()->stores()->with('shop:id,name')->get()
+                    ->filter(fn ($s) => \App\Support\RiderWorkHours::of($s))
+                    ->map(fn ($s) => ['store' => $s->shop?->name ?? $s->name, 'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($s)), 'end' => \App\Support\RiderWorkHours::of($s)['end'], 'now' => \App\Support\RiderWorkHours::isWorkTime($s)])->values()]]);
     }
 
     /**
@@ -103,6 +107,29 @@ class RiderController extends Controller
             return response()->json(['message' => $error], 422);
         }
 
+        // Coming online (clock in / back from a break): open orders at my stores with nobody offered get offered
+        // now — ending at the same deadline as for everyone else.
+        if (in_array($request->input('action'), ['clock_in', 'break_end'], true)) {
+            Order::query()->where('status', 'ready_for_delivery')->whereNull('delivery_partner_id')->where('delivery_method', 'own_rider')
+                ->whereIn('store_id', $rider->stores()->pluck('stores.id'))->get()
+                ->each(fn (Order $order) => \App\Support\RiderAssignment::assign($order));
+        }
+
+        if ($request->input('action') === 'clock_out') {
+            \App\Support\RiderWorkHours::clockedOut($rider); // during a store's hours: the store is told
+        }
+
+        // Going on a break or clocking out: offers not accepted yet go to the next available rider
+        // (or, with nobody free, the store is told at once).
+        if (in_array($request->input('action'), ['clock_out', 'break_start'], true)) {
+            Order::query()->where('delivery_partner_id', $rider->id)->where('status', 'ready_for_delivery')
+                ->whereNull('rider_accepted_at')->whereNotNull('rider_offer_expires_at')->get()
+                ->each(function (Order $order) use ($rider) {
+                    $order->forceFill(['delivery_partner_id' => null, 'courier_name' => null, 'rider_offer_expires_at' => null])->save();
+                    \App\Support\RiderAssignment::assign($order->fresh(), [$rider->id]);
+                });
+        }
+
         return response()->json(['data' => RiderAttendance::state($rider->fresh())]);
     }
 
@@ -131,8 +158,11 @@ class RiderController extends Controller
         // rider with no store links yet sees the whole pool, as before.
         $storeIds = $rider->stores()->pluck('stores.id');
 
+        // Unassigned orders, plus ones offered to another rider who hasn't accepted yet:
+        // every rider at the store sees the same countdown, and the first to take it gets it.
         $pool = Order::query()
-            ->whereNull('delivery_partner_id')
+            ->where(fn ($q) => $q->whereNull('delivery_partner_id')->orWhere(fn ($q) => $q
+                ->where('delivery_partner_id', '!=', $me)->whereNull('rider_accepted_at')->whereNotNull('rider_offer_expires_at')))
             ->where('status', 'ready_for_delivery')
             ->when($storeIds->isNotEmpty(), fn ($query) => $query->where(fn ($q) => $q
                 ->whereNull('store_id')
@@ -175,6 +205,14 @@ class RiderController extends Controller
         return $this->packages($request);
     }
 
+    /** Take an order a seller offered to all their riders (first come, first served). */
+    public function takeOffer(Request $request, \App\Models\OrderShopShipping $promise): JsonResponse
+    {
+        \App\Support\SellerRiders::take($request->user(), $promise);
+
+        return $this->packages($request);
+    }
+
     /** Sellers' own-delivery packages given to me, not delivered yet. */
     public function packages(Request $request): JsonResponse
     {
@@ -193,7 +231,24 @@ class RiderController extends Controller
             'paused' => (bool) $store->pivot?->cash_paused_at,
         ])->filter(fn ($c) => $c['held_cents'] > 0 || $c['paused'] || $c['claimed'])->values();
 
-        return response()->json(['data' => $packages->map(fn ($p) => \App\Support\SellerRiders::forRider($p))->values(), 'cash' => $cash]);
+        // Each seller store's days off in the next 2 weeks (weekends it doesn't ship, holidays): my timetable.
+        $daysOff = $request->user()->stores()->whereNotNull('shop_id')->with('shop')->get()->filter(fn ($s) => $s->shop)
+            ->map(fn ($s) => ['store' => $s->shop->name, 'days' => \App\Support\SellerShipping::daysOff($s->shop, now(), now()->addDays(14))])
+            ->filter(fn ($d) => $d['days'] !== [])->values();
+
+        // Orders sellers offered to all their riders: the first to take it gets it (same deadline for everyone).
+        $open = \App\Support\SellerRiders::openOffers($request->user())->map(fn ($p) => [
+            'id' => $p->id,
+            'order_id' => $p->order_id,
+            'store' => $p->shop?->name,
+            'area' => trim(($p->order?->delivery_address['city'] ?? '').' '.($p->order?->delivery_address['postal_code'] ?? '')),
+            'items' => (int) $p->order?->items->where('shop_id', $p->shop_id)->sum('quantity'),
+            'cod' => $p->order?->payment_method === 'cod',
+            'until' => $p->rider_offer_until,
+            'missed' => (bool) $p->rider_offer_missed_at,
+        ])->values();
+
+        return response()->json(['data' => $packages->map(fn ($p) => \App\Support\SellerRiders::forRider($p))->values(), 'cash' => $cash, 'days_off' => $daysOff, 'open' => $open]);
     }
 
     /** Deliver a seller's package with the buyer's code (and the cash, for cash on delivery). */
@@ -278,21 +333,35 @@ class RiderController extends Controller
         if ($why = \App\Support\SellerRiderCash::blockedReason($request->user())) {
             return response()->json(['message' => "You’re paused in every store — {$why}."], 422);
         }
-        if ($order->status !== 'ready_for_delivery'
-            || ($order->delivery_partner_id && $order->delivery_partner_id !== $request->user()->id)) {
-            return response()->json(['message' => 'This order is not available to pick up.'], 422);
+        $me = $request->user();
+        $storeIds = $me->stores()->pluck('stores.id');
+        abort_if($order->store_id && $storeIds->isNotEmpty() && ! $storeIds->contains($order->store_id), 422, 'This order is for a store you don’t deliver for.');
+
+        // Locked: two riders pressing at once — only the first gets it.
+        $taken = \Illuminate\Support\Facades\DB::transaction(function () use ($order, $me) {
+            $locked = Order::whereKey($order->id)->lockForUpdate()->first();
+            // Free, or offered to someone who hasn't accepted yet (the first to take it gets it).
+            $free = ! $locked->delivery_partner_id || $locked->delivery_partner_id === $me->id
+                || ($locked->rider_accepted_at === null && $locked->rider_offer_expires_at !== null);
+            if ($locked->status !== 'ready_for_delivery' || ! $free) {
+                return null;
+            }
+            $locked->update([
+                'delivery_partner_id' => $me->id,
+                'courier_name' => $me->name,
+                'status' => 'out_for_delivery',
+                // Pulling from the pool is a deliberate choice — no offer to accept.
+                'rider_accepted_at' => now(),
+                'rider_offer_expires_at' => null,
+            ]);
+
+            return $locked;
+        });
+        if (! $taken) {
+            return response()->json(['message' => 'Another rider has already taken this order.'], 422);
         }
 
-        $order->update([
-            'delivery_partner_id' => $request->user()->id,
-            'courier_name' => $request->user()->name,
-            'status' => 'out_for_delivery',
-            // Pulling from the pool is a deliberate choice — no offer to accept.
-            'rider_accepted_at' => now(),
-            'rider_offer_expires_at' => null,
-        ]);
-
-        return response()->json(['data' => $this->row($order->fresh(['items', 'user:id,name,phone']))]);
+        return response()->json(['data' => $this->row($taken->fresh(['items', 'user:id,name,phone']))]);
     }
 
     /**
@@ -666,6 +735,8 @@ class RiderController extends Controller
                 && $order->rider_accepted_at === null
                 && $order->status === 'ready_for_delivery',
             'offer_expires_at' => $order->rider_offer_expires_at,
+            // The same pick-up deadline for every rider; after it the store is told nobody took it.
+            'pickup_by' => $order->status === 'ready_for_delivery' && $order->rider_accepted_at === null ? \App\Support\RiderAssignment::deadline($order) : null,
             'accepted' => $order->rider_accepted_at !== null,
             'delivery_code_active' => $order->deliveryCodeActive(),
             'delivered_at' => $order->delivered_at,

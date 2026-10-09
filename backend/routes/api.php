@@ -63,6 +63,7 @@ use App\Http\Controllers\Api\TrackingWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
+
 Route::middleware('throttle:12,1')->group(function () {
     Route::post('/auth/start', [AuthController::class, 'start']);
     Route::post('/auth/register', [AuthController::class, 'register']);
@@ -106,7 +107,7 @@ Route::get('/pages/{slug}', [PageController::class, 'show']);
 Route::post('/site-feedback', [SiteFeedbackController::class, 'store'])->middleware('throttle:6,1');
 
 Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/me/category-views', [\App\Http\Controllers\Api\CategoryInterestController::class, 'store'])->middleware('throttle:120,1');
+    Route::post('/me/category-views', [\App\Http\Controllers\Api\CategoryInterestController::class, 'store'])->middleware('throttle:600,1');
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::post('/addresses', [AddressController::class, 'store']);
     Route::patch('/addresses/{address}', [AddressController::class, 'update']);
@@ -202,6 +203,11 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/riders/{user}/notice-processed', [AdminRiderController::class, 'noticeProcessed']);
     Route::get('/riders-money', [AdminRiderController::class, 'money']);
     Route::post('/riders/{user}/offset-seller-cash', [AdminRiderController::class, 'offsetSellerCash']);
+    Route::patch('/stores/{store}/rider-hours', [\App\Http\Controllers\Api\AdminStoreController::class, 'riderHours']);
+    Route::get('/holidays', [\App\Http\Controllers\Api\AdminHolidayController::class, 'index']);
+    Route::post('/holidays', [\App\Http\Controllers\Api\AdminHolidayController::class, 'store']);
+    Route::delete('/holidays/{id}', [\App\Http\Controllers\Api\AdminHolidayController::class, 'destroy']);
+    Route::post('/holiday-requests/{id}', [\App\Http\Controllers\Api\AdminHolidayController::class, 'decide']);
     Route::post('/riders/{user}/payout-request/reject', [AdminRiderController::class, 'rejectPayoutRequest']);
     Route::get('/rider-applications', [AdminRiderApplicationController::class, 'index']);
     Route::post('/rider-applications/{application}/approve', [AdminRiderApplicationController::class, 'approve']);
@@ -373,6 +379,8 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/riders/{rider}/cash-later', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLater']);
     Route::patch('/seller/local-delivery/rider-pay', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderPay']);
     Route::get('/seller/local-delivery/money', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'money']);
+    Route::patch('/seller/local-delivery/rider-hours', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderHours']);
+    Route::patch('/seller/local-delivery/pickup-hours', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'pickupHours']);
     Route::patch('/seller/local-delivery/cash-limit', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLimit']);
     Route::post('/seller/riders/{rider}/remove', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'removeRider']);
     Route::post('/seller/payout-requests', [SellerController::class, 'requestPayout']);
@@ -435,6 +443,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     // Shipping settings (fulfillment mode, addresses, templates, working days).
     Route::get('/seller/shipping', [SellerShippingController::class, 'show']);
     Route::patch('/seller/shipping', [SellerShippingController::class, 'update']);
+    Route::post('/seller/shipping/holiday-requests', [SellerShippingController::class, 'requestHoliday']);
     Route::post('/seller/shipping/addresses', [SellerShippingController::class, 'storeAddress']);
     Route::patch('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'updateAddress']);
     Route::delete('/seller/shipping/addresses/{address}', [SellerShippingController::class, 'destroyAddress']);
@@ -470,6 +479,7 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
     Route::get('/packages', [RiderController::class, 'packages']);
     Route::post('/packages/{package}/deliver', [RiderController::class, 'deliverPackage']);
     Route::post('/stores/{store}/cash-handed', [RiderController::class, 'cashHanded']);
+    Route::post('/local-offers/{promise}/take', [RiderController::class, 'takeOffer']);
     Route::get('/earnings', [RiderEarningsController::class, 'show']);
     Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
     Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);

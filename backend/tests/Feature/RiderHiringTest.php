@@ -306,4 +306,40 @@ class RiderHiringTest extends TestCase
         Sanctum::actingAs($admin);
         $this->patchJson("/api/admin/riders/{$rider->id}", ['store_ids' => [$sellerStore->id, $india->id]])->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'one country'));
     }
+
+    public function test_seller_offers_an_order_to_all_riders_first_to_take_it_gets_it(): void
+    {
+        Notification::fake();
+        $store = $this->sellerStore();
+        $store->forceFill(['local_delivery_active' => true])->save();
+        $shop = $store->shop;
+        [$a, $b] = [User::factory()->create(), User::factory()->create()];
+        foreach ([$a, $b] as $r) {
+            $r->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+            $r->stores()->attach($store->id);
+        }
+        $order = Order::query()->forceCreate(['user_id' => User::factory()->create()->id, 'market' => 'US', 'status' => 'processing', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500,
+            'delivery_address' => ['name' => 'Bea Buyer', 'phone' => '5125550199', 'line1' => '7 Pine St', 'city' => 'Austin', 'postal_code' => '73301']]);
+        $product = \App\Models\Product::query()->forceCreate(['name' => 'Earbuds', 'slug' => 'earbuds', 'sku' => 'EB-1', 'price_cents' => 2500, 'shop_id' => $shop->id]);
+        \App\Models\OrderItem::query()->forceCreate(['order_id' => $order->id, 'product_id' => $product->id, 'shop_id' => $shop->id, 'fulfilled_by' => 'seller', 'product_name' => 'Earbuds', 'sku' => 'EB-1', 'quantity' => 1, 'unit_price_cents' => 2500, 'line_total_cents' => 2500]);
+        $promise = \App\Models\OrderShopShipping::query()->forceCreate(['order_id' => $order->id, 'shop_id' => $shop->id, 'mode' => 'self', 'method' => 'local', 'fee_cents' => 0, 'transit_min_days' => 1, 'transit_max_days' => 1, 'ship_by' => now()->addDay(), 'deliver_from' => now()->addDay(), 'deliver_by' => now()->addDays(2)]);
+        $this->travel(1)->hours();
+
+        Sanctum::actingAs($shop->seller->user);
+        $this->postJson("/api/seller/fulfillment/orders/{$order->id}/local-dispatch", ['rider_id' => 'offer'])->assertOk();
+        $this->assertNotNull($promise->fresh()->rider_offer_until);
+        $this->assertSame(0, $order->packages()->count()); // buyer not told yet
+
+        // Nobody by the deadline: the seller is told once; it stays open.
+        $this->travel(6)->hours();
+        $this->assertSame(1, \App\Support\SellerRiders::sweepOffers());
+        $this->assertSame(0, \App\Support\SellerRiders::sweepOffers());
+
+        Sanctum::actingAs($b);
+        $this->getJson('/api/rider/packages')->assertOk()->assertJsonPath('open.0.order_id', $order->id);
+        $this->postJson("/api/rider/local-offers/{$promise->id}/take")->assertOk();
+        $this->assertSame($b->id, $order->packages()->first()->rider_id);
+        Sanctum::actingAs($a);
+        $this->postJson("/api/rider/local-offers/{$promise->id}/take")->assertStatus(422);
+    }
 }

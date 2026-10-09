@@ -90,6 +90,7 @@ class SellerShipping
                     }
                 }
             }
+            $dates += ExtraHolidays::countryDates($year, $market); // added by admin
             ksort($dates);
 
             return $dates;
@@ -98,7 +99,7 @@ class SellerShipping
         $nth = fn (int $month, int $dow, int $n) => Carbon::create($year, $month, 1)->nthOfMonth($n, $dow);
         $last = fn (int $month, int $dow) => Carbon::create($year, $month, 1)->lastOfMonth($dow);
 
-        return [
+        return ExtraHolidays::countryDates($year, $market) + [
             Carbon::create($year, 1, 1)->toDateString() => 'new_year',
             $nth(1, Carbon::MONDAY, 3)->toDateString() => 'mlk',
             $nth(2, Carbon::MONDAY, 3)->toDateString() => 'presidents',
@@ -118,8 +119,18 @@ class SellerShipping
      * delivery estimate)? Weekends and federal holidays are off unless the
      * shop has switched them on — matching Temu's defaults.
      */
+    /** Holiday names for a market: built-in ones plus those admin added. */
+    public static function holidayNames(?string $market): array
+    {
+        return Market::holidays($market) + ExtraHolidays::countryNames($market);
+    }
+
     public static function isWorkingDay(Shop $shop, Carbon $day): bool
     {
+        // The store's own days off (asked for by the seller, added by admin): always off.
+        if (isset(ExtraHolidays::storeDays($shop)[$day->toDateString()])) {
+            return false;
+        }
         if ($day->isSaturday() && ! $shop->ships_saturday) {
             return false;
         }
@@ -129,6 +140,34 @@ class SellerShipping
         $holiday = self::holidayDates($day->year, $shop->market)[$day->toDateString()] ?? null;
 
         return $holiday === null || in_array($holiday, (array) $shop->working_holidays, true);
+    }
+
+    /**
+     * The shop's days off between two dates (weekends it doesn't ship, holidays it doesn't work),
+     * e.g. ['Sat 10 Oct', 'Sun 11 Oct', 'Diwali (8 Nov)'] — shown to buyers next to delivery dates
+     * and to the shop's riders as their timetable.
+     *
+     * @return array<int, string>
+     */
+    public static function daysOff(Shop $shop, Carbon $from, Carbon $to): array
+    {
+        $names = self::holidayNames($shop->market);
+        $storeDays = ExtraHolidays::storeDays($shop);
+        $out = [];
+        for ($day = $from->copy()->startOfDay()->addDay(); $day->lte($to); $day->addDay()) {
+            if (self::isWorkingDay($shop, $day)) {
+                continue;
+            }
+            $holiday = self::holidayDates($day->year, $shop->market)[$day->toDateString()] ?? null;
+            if (isset($storeDays[$day->toDateString()])) {
+                $out[] = $storeDays[$day->toDateString()].' ('.$day->format('j M').')';
+
+                continue;
+            }
+            $out[] = $holiday ? ($names[$holiday] ?? ucfirst($holiday)).' ('.$day->format('j M').')' : $day->format('D j M');
+        }
+
+        return $out;
     }
 
     public static function addWorkingDays(Shop $shop, Carbon $from, int $days): Carbon
@@ -320,6 +359,8 @@ class SellerShipping
                 'ship_by' => $shipBy->toDateString(),
                 'deliver_from' => self::addWorkingDays($e['shop'], $shipBy, $e['min'])->toDateString(),
                 'deliver_by' => self::addWorkingDays($e['shop'], $shipBy, $e['max'])->toDateString(),
+                // Days off the dates above skip (the seller's weekends / holidays), told to the buyer.
+                'days_off' => self::daysOff($e['shop'], $orderedAt, self::addWorkingDays($e['shop'], $shipBy, $e['max'])),
             ];
             $total += $fee + (int) ($e['paperwork'] ?? 0);
         }

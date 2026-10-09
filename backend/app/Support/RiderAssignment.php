@@ -23,8 +23,23 @@ class RiderAssignment
     /** Deliveries that count as "still on the rider's plate". */
     private const ACTIVE_STATUSES = ['ready_for_delivery', 'out_for_delivery'];
 
-    /** How long a rider has to Accept/Reject an offer before it is re-offered. */
+    /**
+     * How long riders have to take a ready order (admin sets 1 minute – 1 day; default 5 hours —
+     * electronics needn't go out the same hour). The nearest rider is offered it, every rider at
+     * the store sees it with the same countdown, and when time runs out the store is told.
+     */
     public const OFFER_TTL_SECONDS = 60;
+
+    public static function offerSeconds(): int
+    {
+        return 60 * max(1, min(1440, (int) Setting::get('rider_offer_minutes', 300)));
+    }
+
+    /** One deadline per order for every rider: ready time + the riders' time. Offers never run past it. */
+    public static function deadline(Order $order): \Illuminate\Support\Carbon
+    {
+        return ($order->ready_at ?? $order->updated_at ?? now())->copy()->addSeconds(self::offerSeconds());
+    }
 
     public static function isEnabled(): bool
     {
@@ -47,6 +62,10 @@ class RiderAssignment
     public static function assign(Order $order, array $excludeRiderIds = []): ?User
     {
         if (! self::isEnabled() || $order->delivery_partner_id || ! $order->store_id) {
+            return null;
+        }
+        // Past the shared deadline: the store has been told; riders can still pick it up from the pool.
+        if ($order->status === 'ready_for_delivery' && self::deadline($order)->isPast()) {
             return null;
         }
 
@@ -95,13 +114,19 @@ class RiderAssignment
         }
 
         if ($best === null) {
+            // Nobody on shift (on leave, logged out, paused): a heads-up now; the order stays open to riders
+            // who come online until the shared deadline, when the store is told nobody took it.
+            if ($order->status === 'ready_for_delivery') {
+                NeedsCourier::headsUp($order);
+            }
+
             return null;
         }
 
         $order->update([
             'delivery_partner_id' => $best['rider']->id,
             'courier_name' => $best['rider']->name,
-            'rider_offer_expires_at' => now()->addSeconds(self::OFFER_TTL_SECONDS),
+            'rider_offer_expires_at' => min(now()->addSeconds(self::offerSeconds()), self::deadline($order)),
             'rider_accepted_at' => null,
         ]);
 

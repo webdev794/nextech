@@ -82,3 +82,16 @@ Artisan::command('riders:offset-seller-cash', function () {
     $this->info("Moved: {$moved}");
 })->purpose('Give sellers the cash riders kept, from the riders\' earnings');
 Schedule::command('riders:offset-seller-cash')->monthlyOn(1, '05:00')->withoutOverlapping();
+
+// Sellers' days off for local delivery: admin and riders told the evening before; riders with no other open store get the day off.
+Artisan::command('stores:days-off {when=evening}', function (string $when) {
+    $this->info($when === 'morning' ? 'Riders given the day off: '.\App\Support\StoreDaysOff::markRiders() : 'Stores closed tomorrow: '.\App\Support\StoreDaysOff::warnTomorrow());
+})->purpose('Tell admin and riders about seller stores closed tomorrow, and give riders the day off');
+Schedule::command('stores:days-off evening')->dailyAt('18:00')->withoutOverlapping();
+Schedule::command('stores:days-off morning')->dailyAt('00:15')->withoutOverlapping();
+
+// Store work hours for riders: remind riders not on duty, tell the store who is missing.
+Artisan::command('riders:work-hours', function () {
+    $this->info('Riders reminded: '.\App\Support\RiderWorkHours::check());
+})->purpose('Remind riders to clock in during their store\'s hours and tell the store who is missing');
+Schedule::command('riders:work-hours')->everyFifteenMinutes()->withoutOverlapping();

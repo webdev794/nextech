@@ -14,6 +14,8 @@ class SweepDeliveryOffers extends Command
     public function handle(): int
     {
         $n = DeliveryOfferSweeper::sweep();
+        \App\Support\NeedsCourier::sweep(); // ready too long with no rider → admin sends it by courier
+        \App\Support\SellerRiders::sweepOffers(); // sellers' offers nobody took by the deadline → the seller is told
         $this->info("riders:sweep-offers — processed {$n} expired offer(s).");
 
         return self::SUCCESS;

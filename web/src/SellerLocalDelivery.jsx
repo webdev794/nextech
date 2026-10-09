@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useLiveRefresh } from './useLiveRefresh'
 import { brandName } from './useBranding'
 import { RiderMoneyTable } from './RiderMoneyTable'
+import { RiderHoursEditor } from './RiderHoursEditor'
+import { hoursLabel } from './riderHours'
 
 // Seller Center → Local delivery: the seller's store, a step-by-step guide to
 // hiring riders, the hiring switch, applications to accept or decline, and the
@@ -37,6 +40,7 @@ export function LocalDelivery({ headers, go }) {
 
   const load = useCallback(() => send(headers, '/seller/local-delivery').then((d) => setData(d.data)).catch((e) => setMsg(e.message)), [headers])
   useEffect(() => { Promise.resolve().then(load) }, [load])
+  useLiveRefresh(useCallback(() => send(headers, '/seller/local-delivery').then((d) => setData(d.data)).catch(() => {}), [headers]))
 
   async function act(path, method, body, ok) {
     setBusy(true); setMsg('')
@@ -67,7 +71,7 @@ export function LocalDelivery({ headers, go }) {
       <div className="sc-card">
         <h2 className="sc-h2">Your store</h2>
         <p>Local delivery: <b>{STATUS[store.status]}</b>{store.address ? ` · ${store.address}` : ''}{on ? ` · within ${store.radius_km} km` : ''}</p>
-        <p className="sc-muted">Turn it on, and set the address, area and fee, in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings → Own delivery (local)</button>.</p>
+        <p className="sc-muted">Turn it on, and set the address, area and fee, in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings → Local delivery</button>.</p>
       </div>
 
       <div className="sc-card ld-guide">
@@ -123,6 +127,13 @@ export function LocalDelivery({ headers, go }) {
           <input type="number" min="0" step="0.01" defaultValue={((data.rider_pay_cents ?? 0) / 100).toFixed(2)} onBlur={(e) => { const v = Math.round(Number(e.target.value || 0) * 100); if (v !== data.rider_pay_cents) act('/seller/local-delivery/rider-pay', 'PATCH', { pay_cents: v }, `Riders are paid ${money(v)} per delivery.`) }} />
         </label>
         <p className="sc-muted">{brandName()} pays your riders for each delivery they make for you and takes it from your earnings (shown as &ldquo;Rider pay&rdquo; in Finances). Deliveries you make yourself cost nothing.</p>
+        <h3 className="ss-sub">Riders&rsquo; working hours</h3>
+        <p className="sc-muted">The days and hours your riders must be on duty. A rider who hasn&rsquo;t clocked in when they start gets a reminder; 30 minutes in, you&rsquo;re told who is missing, and if someone clocks out early. Your days off don&rsquo;t count.{data.rider_hours ? <> Now: <b>{hoursLabel(data.rider_hours)}</b>.</> : ' No hours set yet.'}</p>
+        <RiderHoursEditor key={JSON.stringify(data.rider_hours ?? null)} value={data.rider_hours} onSave={(hours) => act('/seller/local-delivery/rider-hours', 'PATCH', { hours }, hours ? `Riders' hours: ${hoursLabel(hours)}.` : 'No set hours for riders.')} />
+        <label className="ld-limit">Hours riders get to take an order you offer them
+          <input type="number" min="1" max="72" step="1" defaultValue={data.rider_pickup_hours ?? 5} onBlur={(e) => { const v = Number(e.target.value || 0); if (v >= 1 && v <= 72 && v !== data.rider_pickup_hours) act('/seller/local-delivery/pickup-hours', 'PATCH', { hours: v }, `Riders get ${v} hour${v === 1 ? '' : 's'} to take an order you offer them.`) }} />
+        </label>
+        <p className="sc-muted">When you send a local order out you can <b>offer it to all your riders</b>: everyone on your store sees it with the same deadline (riders who come online later too), and the first to take it gets it. If nobody has by then, you&rsquo;re told — deliver it yourself, give it to a rider, or send it by courier. Riders on a break, logged out or on a day off aren&rsquo;t alerted.</p>
         <label className="ld-limit" title="Also the largest order you accept cash on delivery for">Most cash one rider may hold (and largest cash-on-delivery order)
           <input type="number" min="0" step="1" defaultValue={Math.round((data.cash_limit_cents ?? 0) / 100)} onBlur={(e) => { const v = Math.round(Number(e.target.value || 0) * 100); if (v !== data.cash_limit_cents) act('/seller/local-delivery/cash-limit', 'PATCH', { limit_cents: v }, `Limit set to ${money(v)}.`) }} />
         </label>

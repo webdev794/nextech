@@ -124,7 +124,7 @@ class OrderController extends Controller
             return response()->json(['message' => 'Cash on delivery is not available right now.'], 422);
         }
         if ($validated['payment_method'] === 'cod'
-            && ($blocked = SellerProgress::codBlockedReason($order->items()->with('product.shop')->get()->pluck('product'), (string) $order->market, (int) $order->total_cents))) {
+            && ($blocked = SellerProgress::codBlockedReason($order->items()->with('product.shop')->get()->pluck('product'), (string) $order->market, (int) $order->total_cents, $order->shopShipping()->where('method', 'local')->exists()))) {
             return response()->json(['message' => $blocked], 422);
         }
 

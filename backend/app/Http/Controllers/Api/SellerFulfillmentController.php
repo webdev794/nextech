@@ -236,28 +236,19 @@ class SellerFulfillmentController extends Controller
         // One of the seller's riders, or none = the seller delivers it themselves.
         // "auto" = the nearest free rider (on shift, not paused); none free → ask the seller to choose.
         $choice = $request->validate(['rider_id' => ['sometimes', 'nullable']])['rider_id'] ?? null;
+        // "offer" = every rider at the store sees it until the seller's deadline; the first to take it gets it.
+        if ($choice === 'offer') {
+            \App\Support\SellerRiders::offer($order, $shop);
+
+            return response()->json(['data' => $this->row($order->fresh())]);
+        }
         if ($choice === 'auto') {
             $rider = \App\Support\SellerRiders::nearestFree($shop);
             abort_unless($rider, 422, 'No rider is free right now — choose one, deliver it yourself, or send it by courier.');
         } else {
             $rider = $choice ? \App\Support\SellerRiders::riderFor($shop, (int) $choice) : null;
         }
-        $promise = $order->shopShipping()->where('shop_id', $shop->id)->first();
-        abort_unless($promise?->method === 'local', 422, 'This order wasn\'t placed for your own delivery — ship it with a courier.');
-        $lines = SellerFulfillment::shopLines($order, $shop);
-        $items = $lines->map(fn ($l) => ['order_item_id' => $l->id, 'quantity' => SellerFulfillment::remainingQuantity($l) - SellerFulfillment::requestedQuantity($l)])
-            ->filter(fn ($i) => $i['quantity'] > 0)->values()->all();
-        abort_if($items === [], 422, 'Everything on this order has already gone out.');
-        $addressId = (int) ($shop->local_delivery['address_id'] ?? 0) ?: $shop->addresses()->orderByDesc('is_default')->value('id');
-
-        $package = $this->createPackage($order, $shop, $items, (int) $addressId, [
-            'label_source' => 'local',
-            'carrier' => SellerShipping::LOCAL,
-            'tracking_number' => sprintf('NT-%d-L%d', $order->id, $order->packages()->count() + 1),
-            'delivery_code' => (string) random_int(1000, 9999),
-        ]);
-        SellerProgress::advance($package, 'out_for_delivery', 'seller');
-        \App\Support\SellerRiders::assign($package, $rider);
+        $package = \App\Support\SellerRiders::dispatchLocal($order, $shop, $rider);
 
         return response()->json(['data' => $this->row($order->fresh()), 'package' => $package->fresh()], 201);
     }

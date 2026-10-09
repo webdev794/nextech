@@ -52,6 +52,7 @@ class Store extends Model
             'longitude' => 'float',
             'delivery_radius_km' => 'integer',
             'is_active' => 'boolean',
+            'rider_hours' => 'array',
             'local_delivery_active' => 'boolean',
             'hiring_open' => 'boolean',
         ];

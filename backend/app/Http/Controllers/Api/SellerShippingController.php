@@ -38,7 +38,7 @@ class SellerShippingController extends Controller
             'ships_saturday' => ['sometimes', 'boolean'],
             'ships_sunday' => ['sometimes', 'boolean'],
             'working_holidays' => ['sometimes', 'array'],
-            'working_holidays.*' => [Rule::in(array_keys(Market::holidays($shop->market)))],
+            'working_holidays.*' => [Rule::in(array_keys(SellerShipping::holidayNames($shop->market)))],
             'accept_free_shipping' => ['sometimes', 'accepted'],
             'accepts_cod' => ['sometimes', 'boolean'],
             // Countries shipped to, keyed by market code; fee in the shop's currency.
@@ -61,10 +61,10 @@ class SellerShippingController extends Controller
 
         if (array_key_exists('local_delivery', $data)) {
             if ($data['local_delivery']) {
-                abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Own delivery isn\'t offered right now.');
+                abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Local delivery isn\'t offered right now.');
                 abort_if(\App\Support\SellerStores::blockedByAdmin($shop), 422, \App\Support\Branding::name().' has switched off local delivery for your store — message us to turn it back on.');
-                abort_if((float) $data['local_delivery']['radius_km'] > SellerShipping::localMaxKm(), 422, 'Own delivery can cover up to '.SellerShipping::localMaxKm().' km.');
-                abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Own delivery is for sellers who ship orders themselves — choose how you ship first.');
+                abort_if((float) $data['local_delivery']['radius_km'] > SellerShipping::localMaxKm(), 422, 'Local delivery can cover up to '.SellerShipping::localMaxKm().' km.');
+                abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Local delivery is for sellers who ship orders themselves — choose how you ship first.');
                 $address = $shop->addresses()->findOrFail($data['local_delivery']['address_id']);
                 $point = isset($data['local_delivery']['lat'], $data['local_delivery']['lng'])
                     ? [(float) $data['local_delivery']['lat'], (float) $data['local_delivery']['lng']]
@@ -357,11 +357,30 @@ class SellerShippingController extends Controller
         return $data;
     }
 
+    /** Ask the store's admin for a day off for this store (they add it, or decline). */
+    public function requestHoliday(Request $request): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $data = $request->validate([
+            'date' => ['required', 'date_format:Y-m-d', 'after:today'],
+            'name' => ['required', 'string', 'max:60'],
+            'reason' => ['nullable', 'string', 'max:300'],
+        ]);
+        \App\Support\ExtraHolidays::request($shop, $data['date'], $data['name'], $data['reason'] ?? null);
+        try {
+            \Illuminate\Support\Facades\Notification::send(\App\Models\User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice("Day off requested — {$shop->name}", "{$shop->name} asks for {$data['date']} ({$data['name']}) as a day off".($data['reason'] ?? '' ? ": {$data['reason']}" : '').'. Decide it under Shipping → Holidays.'));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
     /** @return array<string, mixed> */
     private function payload(Shop $shop): array
     {
         $today = now();
-        $names = Market::holidays($shop->market);
+        $names = SellerShipping::holidayNames($shop->market);
         $upcoming = collect(SellerShipping::holidayDates($today->year, $shop->market) + SellerShipping::holidayDates($today->year + 1, $shop->market))
             ->filter(fn ($key, $date) => $date >= $today->toDateString())
             ->unique()
@@ -393,6 +412,9 @@ class SellerShippingController extends Controller
             'templates' => $shop->shippingTemplates()->with(['groups', 'address'])->orderByDesc('is_default')->orderBy('id')->get(),
             'states' => Market::states($shop->market),
             'holidays' => $upcoming,
+            // The store's own days off (added by admin on request), and requests still waiting.
+            'store_days_off' => collect(\App\Support\ExtraHolidays::storeDays($shop))->filter(fn ($n, $d) => $d >= $today->toDateString())->map(fn ($name, $date) => ['date' => $date, 'name' => $name])->values(),
+            'holiday_requests' => collect(\App\Support\ExtraHolidays::requests())->where('shop_id', $shop->id)->values(),
             'carriers' => collect(Market::carriers($shop->market))->map(fn ($c, $key) => ['value' => $key, 'label' => $c[0]])->values(),
             // International shipping: countries admin has switched on, other than the shop's own.
             'intl_shipping' => (object) ((array) $shop->intl_shipping),

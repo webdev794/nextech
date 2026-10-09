@@ -573,3 +573,6 @@ s.sc-muted{display:inline}
 .ld-limit{display:inline-flex;gap:8px;align-items:center;margin:4px 0 10px;font-size:14px}.ld-limit input{width:120px}
 .money-neg{color:#c62828}.rider-money-month{display:inline-flex;gap:8px;align-items:center;margin:4px 0 8px;font-size:12px}
 .ld-claim{background:#fff3df;border:1px solid #f0d9a8;border-radius:6px;padding:6px 8px;margin:4px 0}
+.ss-status{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600;vertical-align:middle}.ss-status.on{background:#e3f5e8;color:#1c7a3c}.ss-status.off{background:#eee;color:#555}.ss-status.wait{background:#fff4e5;color:#8a4b00}
+.ss-btn-on{padding:10px 18px;border:0;border-radius:8px;background:#1c8c45;color:#fff;font:600 14px 'Okra',sans-serif;cursor:pointer}.ss-btn-off{padding:10px 18px;border:0;border-radius:8px;background:#c62828;color:#fff;font:600 14px 'Okra',sans-serif;cursor:pointer}.ss-pin{margin:10px 0}.ss-pin summary{cursor:pointer;font-size:12px;color:#555}
+.rider-hours-edit{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin:8px 0}.rider-hours-days{display:flex;flex-wrap:wrap;gap:4px 10px}.rider-hours-edit input[type=time]{margin-left:4px}

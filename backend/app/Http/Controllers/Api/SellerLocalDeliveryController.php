@@ -154,6 +154,26 @@ class SellerLocalDeliveryController extends Controller
         return response()->json(['data' => \App\Support\RiderMoney::table($month, SellerStores::ensure($shop))]);
     }
 
+    /** Hours riders get to take an order the seller offers them (then the seller is told nobody took it). */
+    public function pickupHours(Request $request): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $data = $request->validate(['hours' => ['required', 'integer', 'min:1', 'max:72']]);
+        SellerStores::ensure($shop)->forceFill(['rider_pickup_hours' => $data['hours']])->save();
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
+    /** The hours riders must be on duty for this store (null = no set hours). */
+    public function riderHours(Request $request): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $data = $request->validate(\App\Support\RiderWorkHours::rules());
+        SellerStores::ensure($shop)->forceFill(['rider_hours' => $data['hours'] ? ['days' => array_values(array_unique(array_map('intval', $data['hours']['days']))), 'start' => $data['hours']['start'], 'end' => $data['hours']['end']] : null])->save();
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
     /** The most cash one rider may hold for the store before they're paused. */
     public function cashLimit(Request $request): JsonResponse
     {
@@ -195,8 +215,10 @@ class SellerLocalDeliveryController extends Controller
             'min_age' => RiderHiring::minAge($store->country),
             'cash_limit_cents' => \App\Support\SellerRiderCash::limitCents($store),
             'rider_pay_cents' => \App\Support\RiderMoney::sellerRateCents($store),
+            'rider_pickup_hours' => \App\Support\SellerRiders::pickupHours($store),
+            'rider_hours' => \App\Support\RiderWorkHours::of($store),
             'currency' => \App\Support\Market::currency($store->country),
-            'apply_url' => rtrim((string) config('app.url'), '/').'/#/rider',
+            'apply_url' => rtrim((string) config('app.url'), '/').'/#/rider-apply',
             'riders' => $riders->map(fn (User $r) => [
                 'id' => $r->id,
                 'name' => $r->name,
