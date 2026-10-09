@@ -21,6 +21,10 @@ import { CategoryDetailsEditor } from './AdminCategoryDetails'
 import { SellerCard } from './AdminSellerCard'
 import { RiderMoneyTable } from './RiderMoneyTable'
 import { AdminHolidays } from './AdminHolidays'
+import { AdminRiderInvites } from './AdminRiderInvites'
+import { EmailRoutineToggle } from './EmailRoutineToggle'
+import { AdminSupportTeam } from './AdminSupportTeam'
+import { RiderPayPlanEditor, RiderTopUpPools } from './RiderPayPlan'
 import { RiderHoursEditor } from './RiderHoursEditor'
 import { hoursLabel } from './riderHours'
 import { onLiveChange, useLiveRefresh } from './useLiveRefresh'
@@ -196,16 +200,16 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'categories', 'products', 'stores', 'sellers', 'customers', 'emails', 'reviews', 'riders', 'shipping', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'categories', 'products', 'stores', 'sellers', 'customers', 'emails', 'reviews', 'riders', 'supportteam', 'shipping', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
   customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', shipping: 'Shipping', branding: 'Store settings', secure: 'Secure access',
-  support: 'Support', settings: 'Settings',
+  supportteam: 'Support team', support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', reviews: '\u{2B50}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', shipping: '\u{1F69A}', branding: '\u{1F3A8}', secure: '\u{1F510}',
+  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', supportteam: '\u{1F3A7}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', shipping: '\u{1F69A}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
 // Cross-border currency conversion: the market rate (fetched daily from two
 // sources and cross-checked), an optional fixed rate, and the platform margin
@@ -285,6 +289,7 @@ const ISSUE_LABELS = {
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other',
   delivery: 'Delivery message',
   seller_product_issue: 'Seller: product issue', seller_other: 'Seller: other',
+  rider_seller: 'Rider–seller ticket',
 }
 const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
 
@@ -1198,13 +1203,14 @@ export default function Admin({ token, onClose }) {
   // Live tables: the open tab fetches its data again as soon as anything changes on the
   // server (checked every 3 s), and when the 🔔 sees something new — no page refresh.
   const reloadTab = useCallback(() => {
-    if (tab === 'stores') { loadStores(); loadSellers() }
+    if (tab === 'dashboard') loadMetrics()
+    else if (tab === 'stores') { loadStores(); loadSellers() }
     else if (tab === 'riders') { loadRiders(); loadRiderApps() }
     else if (tab === 'sellers') loadSellers()
     else if (tab === 'customers') loadCustomers()
     else if (tab === 'products') loadProducts()
     else if (tab === 'support') loadThreads()
-  }, [tab, loadStores, loadSellers, loadRiders, loadRiderApps, loadCustomers, loadProducts, loadThreads])
+  }, [tab, loadMetrics, loadStores, loadSellers, loadRiders, loadRiderApps, loadCustomers, loadProducts, loadThreads])
   useLiveRefresh(reloadTab)
   const notifPrint = useRef(null)
   useEffect(() => {
@@ -2431,6 +2437,10 @@ Reason:`, '')
   const refundsDue = notifications.refunds_due ?? []
   const needsCourier = notifications.needs_courier ?? [] // stay until sent out (rider took it, or a courier was entered)
   const holidayRequests = notifications.holiday_requests ?? [] // sellers' day-off requests, until decided
+  const bonusSuggestions = notifications.rider_bonus_suggestions ?? [] // riders with an excellent month, until dismissed
+  const riderMoves = notifications.rider_moves ?? [] // riders asking to move, until decided
+  const perfWarnings = notifications.performance_warnings ?? [] // poor ratings / late shipping / missed days, until dismissed
+  const supportTickets = notifications.support_tickets ?? [] // rider–seller tickets waiting for a support person
   const sellerTasks = (notifications.seller_tasks ?? []).filter(notDismissed('task'))
   const codKept = (notifications.cod_kept ?? []).filter(notDismissed('cod'))
   const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
@@ -2445,6 +2455,10 @@ Reason:`, '')
   const notificationCount = refundsDue.length
     + needsCourier.length
     + holidayRequests.length
+    + bonusSuggestions.length
+    + riderMoves.length
+    + perfWarnings.length
+    + supportTickets.length
     + riderPayoutRequests.length
     + riderApplications.length
     + riderNotices.length
@@ -2686,6 +2700,59 @@ Reason:`, '')
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {supportTickets.length > 0 && (
+                      <section>
+                        <h5>Support tickets</h5>
+                        {supportTickets.slice(0, BELL_ITEM_CAP).map((t) => (
+                          <div className="admin-bell-row" key={`ticket-${t.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('support'); openThread(t.id) }}>
+                              🎫 {t.rider} ↔ {t.shop} — opened by the {t.by}{t.agent ? ` · ${t.agent}` : ' · assign someone'}
+                            </button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {perfWarnings.length > 0 && (
+                      <section>
+                        <h5>Performance warnings</h5>
+                        {perfWarnings.slice(0, BELL_ITEM_CAP).map((w) => (
+                          <div className="admin-bell-row" key={`perf-${w.id}`}>
+                            <button type="button" className="admin-bell-item warn" onClick={() => {
+                              setBellOpen(false)
+                              if (w.link?.rider_id) { goTab('riders'); openRiderDetail(w.link.rider_id) } else if (w.link?.seller_id) goTab('sellers'); else goTab('products')
+                            }}>⚠ {w.text}</button>
+                            <button type="button" className="admin-bell-x" title="Dismiss" onClick={async () => {
+                              try { await fetch(`${API_URL}/admin/performance-warnings/${w.id}`, { method: 'DELETE', headers: authHeaders() }); setNotifications((n) => ({ ...n, performance_warnings: (n.performance_warnings ?? []).filter((x) => x.id !== w.id) })) } catch { /* keep */ }
+                            }}>×</button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {riderMoves.length > 0 && (
+                      <section>
+                        <h5>Riders asking to move</h5>
+                        {riderMoves.map((m) => (
+                          <div className="admin-bell-row" key={`move-${m.rider_id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('riders'); openRiderDetail(m.rider_id) }}>🏠 {m.name} → {m.address}</button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {bonusSuggestions.length > 0 && (
+                      <section>
+                        <h5>Bonus suggestions</h5>
+                        {bonusSuggestions.slice(0, BELL_ITEM_CAP).map((b) => (
+                          <div className="admin-bell-row" key={`bonus-${b.id}`}>
+                            <button type="button" className="admin-bell-item" title="Add the bonus in Secure access → Payouts → Adjust a balance" onClick={() => { setBellOpen(false); goTab('secure') }}>
+                              🏅 {b.name} — {b.month}: {b.deliveries} deliveries, ★{b.rating}, earned {money(b.earned_cents, b.currency)}
+                            </button>
+                            <button type="button" className="admin-bell-x" title="Done / not needed" onClick={async () => {
+                              try { await fetch(`${API_URL}/admin/rider-bonus-suggestions/${b.id}`, { method: 'DELETE', headers: authHeaders() }); setNotifications((n) => ({ ...n, rider_bonus_suggestions: (n.rider_bonus_suggestions ?? []).filter((x) => x.id !== b.id) })) } catch { /* keep */ }
+                            }}>×</button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
                     {holidayRequests.length > 0 && (
                       <section>
                         <h5>Day-off requests</h5>
@@ -2852,6 +2919,7 @@ Reason:`, '')
                 <button type="button" className="admin-bell-mute" onClick={() => setSoundMuted((m) => { const next = !m; try { localStorage.setItem('gdp_support_muted', next ? '1' : '0') } catch { /* ignore */ } return next })}>
                   {soundMuted ? '🔇 Sound is muted — tap to unmute' : '🔊 Sound is on — tap to mute'}
                 </button>
+                <EmailRoutineToggle headers={authHeaders} className="admin-speaker-email" />
                 {visibleAwaitingPacking.length === 0 && pendingThreads.length === 0 ? <p className="muted">Nothing new.</p> : (
                   <>
                     {visibleAwaitingPacking.length > 0 && (
@@ -3762,6 +3830,8 @@ Reason:`, '')
 
           {riderApps.length > 0 && (
             <>
+              <AdminRiderInvites headers={authHeaders} onMessage={setMessage} />
+              <RiderTopUpPools headers={jsonHeaders} onMessage={setMessage} />
               <h3 className="admin-subhead">Rider applications{riderApps.filter((a) => ['pending', 'seller_accepted'].includes(a.status)).length ? ` (${riderApps.filter((a) => ['pending', 'seller_accepted'].includes(a.status)).length} waiting)` : ''}</h3>
               <p className="muted">People apply at /rider, choosing a store near them. Approving makes them a rider for that store.</p>
               <table className="admin-table">
@@ -4283,6 +4353,7 @@ Reason:`, '')
         )
       })()}
 
+      {tab === 'supportteam' && <AdminSupportTeam key={(settings?.support_agents ?? []).join(',')} names={settings?.support_agents} onSave={(names) => saveSetting({ support_agents: names })} />}
       {tab === 'support' && (
         <section className="admin-panel">
           <div className="admin-filters">
@@ -4789,9 +4860,17 @@ Reason:`, '')
                     <option value="hidden">Hidden</option>
                   </select>
                 </label>
-                {settings.seller_local_delivery !== 'hidden' && <label>Largest distance a seller can cover (km)
+                {settings.seller_local_delivery !== 'hidden' && <><label>Largest distance a seller can cover (km)
                   <input type="number" min="1" max="50" step="0.5" defaultValue={settings.seller_local_max_km ?? 10} onBlur={(event) => saveSetting({ seller_local_max_km: Number(event.target.value || 10) })} />
-                </label>}
+                </label>
+                <label>Most days a seller&rsquo;s local delivery may take
+                  <input type="number" min="1" max="14" defaultValue={settings.seller_max_local_days ?? 7} onBlur={(event) => saveSetting({ seller_max_local_days: Number(event.target.value || 7) })} />
+                </label>
+                </>}
+                <label>Most courier transit days a seller may promise
+                  <input type="number" min="1" max="90" defaultValue={settings.seller_max_courier_days ?? 30} onBlur={(event) => saveSetting({ seller_max_courier_days: Number(event.target.value || 30) })} />
+                </label>
+
                 <p className="muted">Buyers within the seller&rsquo;s distance get the seller&rsquo;s own delivery (free or the seller&rsquo;s flat fee, paid to them). There&rsquo;s no tracking number: the buyer gets a delivery code, and the seller must enter it to mark the order delivered. You see the code and every step on the order and in chat. Hidden: sellers can&rsquo;t offer it and all their orders go by courier.</p>
               </div>
               </>}
@@ -4853,6 +4932,15 @@ Reason:`, '')
                       <input type="checkbox" checked={settings.rider_auto_assign !== false} onChange={(event) => saveSetting({ rider_auto_assign: event.target.checked })} />
                       Auto-assign riders to orders
                     </label>
+                    <div className="admin-form-grid wide">
+                      {marketOptions.map((m) => { const b = settings.rider_bonus?.[m.code] ?? { benchmark_cents: 0, min_deliveries: 100, min_rating: 4.8 }; const save = (patch) => saveSetting({ rider_bonus: { [m.code]: { ...b, ...patch } } }); return (
+                        <fieldset key={m.code} className="admin-fieldset"><legend>Bonus suggestions — {m.name}</legend>
+                          <label>A normal month&rsquo;s pay ({currencySymbol(m.currency)})<input type="number" min="0" step="1" defaultValue={Math.round(b.benchmark_cents / 100)} onBlur={(e) => save({ benchmark_cents: Math.round(Number(e.target.value || 0) * 100) })} /></label>
+                          <label>At least (deliveries a month)<input type="number" min="1" defaultValue={b.min_deliveries} onBlur={(e) => save({ min_deliveries: Number(e.target.value || 1) })} /></label>
+                          <label>Rating at least (★)<input type="number" min="1" max="5" step="0.1" defaultValue={b.min_rating} onBlur={(e) => save({ min_rating: Number(e.target.value || 4.8) })} /></label>
+                        </fieldset>) })}
+                    </div>
+                    <p className="muted">On the 25th of each month (so it can be paid by the month&rsquo;s end), riders whose month so far beat all three (more deliveries, 5-star ratings, earned above a normal month) show in the 🔔 as <b>Bonus suggestions</b>, and you&rsquo;re emailed — add the bonus in Secure access → Payouts → Adjust a balance. Their seller is told too.</p>
                     <label>Riders have this long to take a ready order (minutes; default 300 = 5 hours, up to 1440 = a day)
                       <input type="number" min="1" max="1440" defaultValue={settings.rider_offer_minutes ?? 300} onBlur={(event) => { const v = Number(event.target.value); if (v >= 1 && v <= 1440 && v !== settings.rider_offer_minutes) saveSetting({ rider_offer_minutes: v }) }} />
                     </label>
@@ -4947,6 +5035,35 @@ Reason:`, '')
                 : <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('open')}>Re-open</button>}
               <button className="act ghost" type="button" style={{ marginLeft: 8 }} onClick={() => openSupportChat(thread, ISSUE_LABELS)}>Open chat</button>
             </p>
+            <p className="muted">Replies show as &ldquo;{thread.support_agent ? `${thread.support_agent} from ` : ''}{brandName()} Support&rdquo; — never as admin.{' '}
+              <input list="support-agents" placeholder="Support name" defaultValue={thread.support_agent ?? ''} style={{ marginLeft: 8, width: 120 }} id={`agent-${thread.id}`} />
+                <datalist id="support-agents">{(notifications.support_agents ?? []).map((n) => <option key={n} value={n} />)}</datalist>
+                <button type="button" className="act" style={{ marginLeft: 4 }} onClick={async () => {
+                  const agent = document.getElementById(`agent-${thread.id}`)?.value?.trim()
+                  if (!agent) return
+                  try {
+                    const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/agent`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ agent }) })
+                    const data = await readJson(response)
+                    if (!response.ok) throw new Error(data.message ?? 'Could not assign.')
+                    setThread((cur) => ({ ...cur, ...data.data })); setMessage(`${agent} handles this ticket.`)
+                  } catch (error) { fail(error) }
+                }}>Assign</button>
+            </p>
+            {thread.issue_type === 'rider_seller' && thread.ticket_status === 'open' && (
+              <p className="admin-alert">Support ticket (opened by the {thread.ticket_by}) — assign a support person above, read the whole chat, reply within 1–2 working days.
+
+                {[['resolved', 'Close — resolved'], ['declined', 'Close — can’t take this up now']].map(([how, label]) => (
+                  <button key={how} type="button" className="act ghost" style={{ marginLeft: 8 }} onClick={async () => {
+                    try {
+                      const response = await fetch(`${API_URL}/admin/support/threads/${thread.id}/ticket`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ how }) })
+                      const data = await readJson(response)
+                      if (!response.ok) throw new Error(data.message ?? 'Could not close.')
+                      setThread((cur) => ({ ...cur, ...data.data })); loadThreads(); setMessage('Ticket closed — both sides see a note in the chat.')
+                    } catch (error) { fail(error) }
+                  }}>{label}</button>
+                ))}
+              </p>
+            )}
             {thread.rating != null && (
               <p className="admin-chat-rating">
                 <span className="admin-review-stars">{'★'.repeat(thread.rating)}<span className="dim">{'★'.repeat(5 - thread.rating)}</span></span>
@@ -5527,6 +5644,27 @@ Reason:`, '')
                   )
                 })()}
 
+                {riderDetail.view !== 'reviews' && riderDetail.rider && (
+                  <RiderPayPlanEditor key={JSON.stringify(riderDetail.rider.pay_plan ?? null)} rider={riderDetail.rider} headers={jsonHeaders} currency={riderDetail.settlement?.currency} onSaved={(plan) => { setRiderDetail((cur) => ({ ...cur, rider: { ...cur.rider, pay_plan: plan } })); setMessage(plan ? 'Monthly pay set.' : 'Back to pay per delivery.') }} />
+                )}
+                {riderDetail.view !== 'reviews' && riderDetail.rider?.move_request && (
+                  <div className="admin-alert">
+                    <span>Asks to move to <b>{riderDetail.rider.move_request.address}</b> (at their own expense).</span>
+                    {[[true, 'Approve'], [false, 'Decline']].map(([approve, label]) => (
+                      <button key={label} type="button" className={approve ? 'act' : 'act ghost'} onClick={async () => {
+                        let reason = null
+                        if (!approve) { reason = window.prompt('Why not? The rider is told.', ''); if (reason === null) return }
+                        else if (!window.confirm(`Approve the move? ${riderDetail.rider.name} is unlinked from their stores (pay earned is still due) and stores near the new home can invite them.`)) return
+                        try {
+                          const response = await fetch(`${API_URL}/admin/riders/${riderDetail.rider.id}/move`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ approve, reason }) })
+                          const data = await readJson(response)
+                          if (!response.ok) throw new Error(data.message ?? 'Could not decide.')
+                          setRiderDetail(null); loadRiders(); setMessage(data.message)
+                        } catch (error) { fail(error) }
+                      }}>{label}</button>
+                    ))}
+                  </div>
+                )}
                 {riderDetail.view !== 'reviews' && riderDetail.rider?.notice && (
                   <div className="admin-alert">
                     <span>Gave notice on {new Date(riderDetail.rider.notice.given_at).toLocaleDateString()} — last working day <b>{new Date(riderDetail.rider.notice.leaving_on).toLocaleDateString()}</b>. Settle their final pay (check open orders and any cash they hold), then mark it processed.</span>
@@ -5559,6 +5697,8 @@ Reason:`, '')
                         <dt>Stores wanted</dt><dd>{(p.preferred_stores ?? []).map((s, i) => `${i + 1}. ${s.name}${s.shop_id ? ' (seller)' : ''}`).join(' · ') || '—'}</dd>
                         <dt>Documents</dt><dd>{Object.entries(p.documents ?? {}).map(([label, path]) => <button key={label} type="button" className="act ghost" onClick={() => viewKycDocument(path)}>{label}</button>)}</dd>
                         <dt>Applied</dt><dd>{p.applied_at ? new Date(p.applied_at).toLocaleDateString() : '—'}</dd>
+                        <dt>Rates others</dt><dd>{riderDetail.rider?.feedback_given ? `${riderDetail.rider.feedback_given.count} deliveries · stores ★${riderDetail.rider.feedback_given.store_avg ?? '—'} · buyers ★${riderDetail.rider.feedback_given.buyer_avg ?? '—'} (private, admin only)` : '—'}</dd>
+                        <dt>Signed terms</dt><dd>{p.signed ? <details><summary>{p.signed.name}, {p.signed.place} · {new Date(p.signed.at).toLocaleDateString()}</summary><ul>{p.signed.terms.map((t) => <li key={t}>{t}</li>)}</ul></details> : '—'}</dd>
                       </dl>
                     </div>
                   )

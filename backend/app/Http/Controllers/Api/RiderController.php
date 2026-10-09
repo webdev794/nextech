@@ -41,7 +41,21 @@ class RiderController extends Controller
                 // The hours each of my stores needs me on duty.
                 'work_hours' => $request->user()->stores()->with('shop:id,name')->get()
                     ->filter(fn ($s) => \App\Support\RiderWorkHours::of($s))
-                    ->map(fn ($s) => ['store' => $s->shop?->name ?? $s->name, 'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($s)), 'end' => \App\Support\RiderWorkHours::of($s)['end'], 'now' => \App\Support\RiderWorkHours::isWorkTime($s)])->values()]]);
+                    ->map(fn ($s) => ['store' => $s->shop?->name ?? $s->name, 'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($s)), 'end' => \App\Support\RiderWorkHours::of($s)['end'], 'now' => \App\Support\RiderWorkHours::isWorkTime($s)])->values(),
+                // No store delivering now: details on file, linked again automatically, or delete them.
+                'no_active_store' => \App\Support\RiderHiring::activeStores($request->user())->isEmpty(),
+                'move_request' => $request->user()->rider_move_request,
+                // Deliveries of the last 3 days to rate (store + buyer; private, only admin sees it).
+                'to_rate' => $this->toRate($request->user()),
+                // Stores inviting me to deliver for them again.
+                'invites' => \App\Models\RiderInvite::query()->where('user_id', $request->user()->id)->where('status', 'invited')->with('store.shop:id,name')->get()
+                    ->map(fn ($i) => ['id' => $i->id, 'store' => $i->store?->shop?->name ?? $i->store?->name, 'city' => $i->store?->city]),
+                // Days off: allowed a month, used, and coming up.
+                'leave' => [
+                    'allowed' => \App\Support\RiderWorkHours::allowedFor($request->user()),
+                    'used' => \App\Support\RiderWorkHours::usedThisMonth($request->user()),
+                    'list' => \App\Models\RiderLeave::query()->where('user_id', $request->user()->id)->whereDate('date', '>=', now()->startOfMonth()->toDateString())->orderBy('date')->get(['id', 'date', 'kind', 'told_ahead', 'reason']),
+                ]]]);
     }
 
     /**
@@ -65,6 +79,10 @@ class RiderController extends Controller
                 case 'clock_in':
                     if ($shift) {
                         return 'You are already clocked in.';
+                    }
+                    // No work without a way to be paid (one the store allows).
+                    if ($why = \App\Support\RiderLedger::payoutBlocker($rider)) {
+                        return $why;
                     }
                     $rider->riderShifts()->create(['clock_in_at' => now(), 'source' => 'rider']);
                     $rider->forceFill(['rider_available' => true, 'rider_unavailable_reason' => null])->save();
@@ -211,6 +229,158 @@ class RiderController extends Controller
         \App\Support\SellerRiders::take($request->user(), $promise);
 
         return $this->packages($request);
+    }
+
+    /**
+     * My joining letters: for each store I work for, when I joined and my pay.
+     * (The full terms are shown once, when joining; the store keeps the signed copy.)
+     */
+    public function letters(Request $request): JsonResponse
+    {
+        $rider = $request->user();
+        $letters = $rider->stores()->with('shop:id,name')->get()->map(function ($store) use ($rider) {
+            $currency = \App\Support\Market::currency($store->country);
+            $pay = $store->shop_id
+                ? \App\Support\Money::format(\App\Support\RiderMoney::sellerRateCents($store), $currency).' per delivery'
+                : \App\Support\Money::format(\App\Support\RiderLedger::baseCents($store->country), $currency).' per delivery + '.\App\Support\Money::format(\App\Support\RiderLedger::perMileCents($store->country), $currency).' per '.($store->country === 'US' ? 'mile' : 'km');
+
+            return [
+                'store' => $store->shop?->name ?? $store->name,
+                'name' => $rider->name,
+                'joined_on' => ($store->pivot?->linked_at ? \Illuminate\Support\Carbon::parse($store->pivot->linked_at) : ($rider->rider_since ?? $rider->created_at))->toDateString(),
+                'pay' => $pay,
+                'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($store)),
+            ];
+        })->values();
+
+        return response()->json(['data' => $letters]);
+    }
+
+    /** Answer a store's invitation: join or no thanks. */
+    public function answerInvite(Request $request, \App\Models\RiderInvite $invite): JsonResponse
+    {
+        abort_unless($invite->user_id === $request->user()->id, 404);
+        $join = (bool) $request->validate(['join' => ['required', 'boolean']])['join'];
+        \App\Support\RiderHiring::riderDecides($invite, $join);
+
+        return response()->json(['message' => $join ? 'You’re linked to the store — clock in during its working hours.' : 'Done — the store is told.']);
+    }
+
+    /** Recent deliveries I haven't rated yet (NexTech orders and sellers' packages). */
+    private function toRate(\App\Models\User $rider): array
+    {
+        $done = \App\Models\RiderFeedback::query()->where('rider_id', $rider->id)->where('created_at', '>=', now()->subDays(4))->pluck('order_id');
+        $own = Order::query()->where('delivery_partner_id', $rider->id)->whereNotNull('delivered_at')->where('delivered_at', '>=', now()->subDays(3))
+            ->whereNotIn('id', $done)->with('user:id,name')->latest('delivered_at')->limit(5)->get()
+            ->map(fn ($o) => ['order_id' => $o->id, 'shop_id' => null, 'store' => \App\Support\Branding::name(), 'buyer' => $o->user?->name]);
+        $seller = \App\Models\OrderPackage::query()->where('rider_id', $rider->id)->where('status', 'delivered')->where('delivered_at', '>=', now()->subDays(3))
+            ->whereNotIn('order_id', $done)->with(['shop:id,name', 'order.user:id,name'])->latest('delivered_at')->limit(5)->get()
+            ->map(fn ($p) => ['order_id' => $p->order_id, 'shop_id' => $p->shop_id, 'store' => $p->shop?->name, 'buyer' => $p->order?->user?->name]);
+
+        return $own->concat($seller)->unique('order_id')->take(5)->values()->all();
+    }
+
+    /** Rate the store and the buyer of a delivery I made (private — only admin sees it). */
+    public function feedback(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'order_id' => ['required', 'integer'],
+            'store_rating' => ['nullable', 'integer', 'between:1,5'],
+            'buyer_rating' => ['nullable', 'integer', 'between:1,5'],
+            'note' => ['nullable', 'string', 'max:300'],
+        ]);
+        $rider = $request->user();
+        $package = \App\Models\OrderPackage::query()->where('order_id', $data['order_id'])->where('rider_id', $rider->id)->first();
+        abort_unless($package || Order::query()->whereKey($data['order_id'])->where('delivery_partner_id', $rider->id)->exists(), 404);
+        \App\Models\RiderFeedback::updateOrCreate(['rider_id' => $rider->id, 'order_id' => $data['order_id']],
+            ['shop_id' => $package?->shop_id, 'store_rating' => $data['store_rating'] ?? null, 'buyer_rating' => $data['buyer_rating'] ?? null, 'note' => $data['note'] ?? null]);
+
+        return response()->json(['message' => 'Thanks — only '.\App\Support\Branding::name().'’s team sees this.']);
+    }
+
+    /** My chats with the sellers I deliver for (one per seller store). */
+    public function sellerChats(Request $request): JsonResponse
+    {
+        $rider = $request->user();
+        $list = $rider->stores()->whereNotNull('shop_id')->with('shop:id,name')->get()->filter(fn ($s) => $s->shop)->map(function ($s) use ($rider) {
+            $t = \App\Support\RiderSellerChat::thread($rider, $s->shop);
+
+            return ['store_id' => $s->id, 'shop' => $s->shop->name, 'thread_id' => $t?->id, 'last_message_at' => $t?->last_message_at, 'ticket_status' => $t?->ticket_status, 'ticket_by' => $t?->ticket_by,
+                'messages' => $t ? \App\Support\RiderSellerChat::messages($t, $rider) : []];
+        })->values();
+
+        return response()->json(['data' => $list]);
+    }
+
+    /** Send a message to a seller I deliver for. */
+    public function postSellerChat(Request $request, \App\Models\Store $store): JsonResponse
+    {
+        $rider = $request->user();
+        abort_unless($store->shop_id && $rider->stores()->whereKey($store->id)->exists(), 404);
+        $body = $request->validate(['body' => ['required', 'string', 'max:2000']])['body'];
+        $thread = \App\Support\RiderSellerChat::open($rider, $store->shop);
+        if ($thread->status === 'resolved') {
+            $thread->forceFill(['status' => 'open', 'resolved_at' => null])->save();
+        }
+        $thread->post($rider, trim($body));
+
+        return $this->sellerChats($request);
+    }
+
+    /** Open a support ticket on my chat with a seller (or close the one I opened). */
+    public function sellerChatTicket(Request $request, \App\Models\SupportThread $thread): JsonResponse
+    {
+        abort_unless($thread->user_id === $request->user()->id, 404);
+        $request->validate(['action' => ['required', 'in:open,close']])['action'] === 'open'
+            ? \App\Support\RiderSellerChat::openTicket($thread, $request->user(), 'rider')
+            : \App\Support\RiderSellerChat::withdrawTicket($thread, $request->user(), 'rider');
+
+        return $this->sellerChats($request);
+    }
+
+    /** Ask to move to a new home area (the store approves or declines). */
+    public function requestMove(Request $request): JsonResponse
+    {
+        $data = $request->validate(['address' => ['required', 'string', 'min:5', 'max:255']]);
+        \App\Support\RiderHiring::requestMove($request->user(), $data['address']);
+
+        return response()->json(['message' => 'Sent — the store will approve or decline your move.']);
+    }
+
+    /** Delete my rider details (no active store, nothing owed either way). */
+    public function deleteDetails(Request $request): JsonResponse
+    {
+        \App\Support\RiderHiring::deleteDetails($request->user());
+
+        return response()->json(['message' => 'Your rider details and documents are deleted. To deliver again, apply with new documents.']);
+    }
+
+    /** Ask for a day off: a day ahead or more is planned; today is told late. Every store I work for is told. */
+    public function requestLeave(Request $request): JsonResponse
+    {
+        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d', 'after_or_equal:today'], 'reason' => ['nullable', 'string', 'max:300']]);
+        $rider = $request->user();
+        abort_if(\App\Support\RiderHiring::activeStores($rider)->isEmpty(), 422, 'You have no store right now, so there’s no day off to ask for.');
+        abort_if(\App\Models\RiderLeave::query()->where('user_id', $rider->id)->whereDate('date', $data['date'])->exists(), 422, 'You already have that day off.');
+        $ahead = $data['date'] > now()->toDateString();
+        \App\Models\RiderLeave::create(['user_id' => $rider->id, 'date' => $data['date'], 'kind' => 'leave', 'told_ahead' => $ahead, 'reason' => $data['reason'] ?? null]);
+        $used = \App\Support\RiderWorkHours::usedThisMonth($rider);
+        $allowed = \App\Support\RiderWorkHours::allowedFor($rider);
+        $note = ($ahead ? '' : ' (asked on the day, not a day ahead)').($allowed !== null && $used > $allowed ? " — that's {$used} days off this month, more than the {$allowed} allowed" : '');
+        foreach ($rider->stores()->with('shop.seller')->get() as $store) {
+            \App\Support\RiderWorkHours::notifyStore($store, 'Rider day off', "{$rider->name} asked for a day off on {$data['date']}".($data['reason'] ?? '' ? ": {$data['reason']}" : '')."{$note}.", $ahead && $note === '');
+        }
+
+        return response()->json(['message' => $ahead ? 'Day off asked for — your store is told.' : 'Your store is told. Days off should be asked for a day ahead; this may affect today’s pay.'], 201);
+    }
+
+    /** Take back a day off that hasn't come yet. */
+    public function cancelLeave(Request $request, \App\Models\RiderLeave $leave): JsonResponse
+    {
+        abort_unless($leave->user_id === $request->user()->id && $leave->kind === 'leave' && $leave->date->toDateString() > now()->toDateString(), 422, 'Only a day off that hasn’t come yet can be taken back.');
+        $leave->delete();
+
+        return response()->json(['message' => 'Day off taken back.']);
     }
 
     /** Sellers' own-delivery packages given to me, not delivered yet. */

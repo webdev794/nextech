@@ -101,7 +101,7 @@ class SellerRiders
             ->filter(fn (User $r) => $r->currentShift() && ! SellerRiderCash::blockedReason($r));
         foreach ($online as $rider) {
             try {
-                $rider->notify(new RiderNotice("Delivery to take — {$shop->name}", "{$shop->name} has order #{$order->id} for its riders until {$until->format('j M H:i')}. The first to press Take it in the Rider app (Store deliveries) gets it."));
+                $rider->notify(new RiderNotice("Delivery to take — {$shop->name}", "{$shop->name} has order #{$order->id} for its riders until {$until->format('j M H:i')}. The first to press Take it in the Rider app (Store deliveries) gets it.", true));
             } catch (\Throwable $e) {
                 report($e);
             }

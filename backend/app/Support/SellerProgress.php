@@ -251,6 +251,48 @@ class SellerProgress
      *
      * @return array{reminded: int, escalated: int}
      */
+    /**
+     * Arrival deadlines (the "arrives by" date the buyer was shown): a seller's part due
+     * today or tomorrow and not delivered → the seller is reminded (once a day); past the
+     * date and still not delivered → admin is told once.
+     */
+    public static function arrivalDeadlines(): int
+    {
+        $n = 0;
+        $late = [];
+        $rows = \App\Models\OrderShopShipping::query()->whereNotNull('deliver_by')->whereDate('deliver_by', '<=', now()->addDay()->toDateString())
+            ->whereDate('deliver_by', '>=', now()->subDays(14)->toDateString())
+            ->whereHas('order', fn ($q) => $q->whereNotIn('status', ['cancelled', 'completed']))->with('shop.seller')->get();
+        foreach ($rows as $row) {
+            $packages = OrderPackage::where('order_id', $row->order_id)->where('shop_id', $row->shop_id)->get();
+            if ($packages->isNotEmpty() && $packages->every(fn ($p) => in_array($p->status, ['delivered', 'returned', 'lost'], true))) {
+                continue; // delivered
+            }
+            $by = $row->deliver_by->toDateString();
+            if ($by < now()->toDateString()) {
+                if (\Illuminate\Support\Facades\Cache::add("arrival-late-{$row->id}", 1, now()->addDays(60))) {
+                    $late[] = "#{$row->order_id} ({$row->shop?->name}, due {$by})";
+                }
+
+                continue;
+            }
+            if ($row->shop?->seller && \Illuminate\Support\Facades\Cache::add("arrival-soon-{$row->id}-".now()->toDateString(), 1, now()->addDay())) {
+                SellerNotify::send($row->shop->seller, $row->shop->seller->user, 'Order due to arrive '.($by === now()->toDateString() ? 'today' : 'tomorrow'),
+                    "Order #{$row->order_id} should reach the buyer by ".$row->deliver_by->format('j M').' and isn’t delivered yet. '.($row->method === 'local' ? 'Send it out (you or a rider) today.' : 'Ship it now, or update the tracking.'));
+                $n++;
+            }
+        }
+        if ($late) {
+            try {
+                Notification::send(User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice('Seller orders past their arrival date', 'Not delivered by the date the buyer was given: '.implode('; ', $late).'.'));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
+        return $n + count($late);
+    }
+
     public static function chase(): array
     {
         $rules = self::rules();
@@ -293,6 +335,8 @@ class SellerProgress
                     }
                 }
             });
+
+        self::arrivalDeadlines();
 
         if ($overdue) {
             try {

@@ -65,7 +65,11 @@ class Shop extends Model
                 \App\Support\SellerStores::ensure($shop); // every seller has a store (local delivery off)
             }
             if ($shop->wasChanged(['local_delivery', 'fulfillment_mode', 'name']) || ($shop->wasRecentlyCreated && $shop->local_delivery)) {
-                \App\Support\SellerStores::sync($shop);
+                $store = \App\Support\SellerStores::sync($shop);
+                // Just turned on: riders near it with no active store are suggested to it (it invites; they accept).
+                if ($shop->local_delivery && ($shop->wasRecentlyCreated || empty($shop->getOriginal('local_delivery')))) {
+                    \App\Support\RiderHiring::relinkNearby($store);
+                }
             }
         });
         // A shop sells in its seller's country; its products follow it.

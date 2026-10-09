@@ -41,6 +41,10 @@ export function SellerCard({ sellerId, headers, onClose, onOpen }) {
           <dt>Status</dt><dd>{STATUS[seller.status] ?? seller.status}{seller.shop ? ` · shop ${seller.shop.is_active ? 'open' : 'paused'}` : ''}</dd>
           {/* Admin only: how long they've sold here (from approval). */}
           <dt>Selling since</dt><dd>{seller.status === 'approved' && seller.reviewed_at ? `${new Date(seller.reviewed_at).toLocaleDateString()} (${sellingFor(seller.reviewed_at)})` : '—'}</dd>
+          {seller.rider_feedback?.count > 0 && <><dt>Riders say</dt><dd>
+            ★{seller.rider_feedback.avg ?? '—'} from {seller.rider_feedback.count} deliveries <small className="muted">(private — the seller doesn&rsquo;t see this)</small>
+            <ul className="seller-card-notes">{seller.rider_feedback.recent.filter((f) => f.note || f.rating <= 2).map((f) => <li key={`${f.order_id}-${f.at}`}>{f.rating ? `★${f.rating} ` : ''}{f.note ?? ''} <small className="muted">— {f.rider}, order #{f.order_id}</small></li>)}</ul>
+          </dd></>}
           <dt>Last message</dt><dd>{seller.last_message ? <>{seller.last_message.is_staff ? 'You: ' : ''}{String(seller.last_message.body).slice(0, 140)}{String(seller.last_message.body).length > 140 ? '…' : ''} <small className="muted">· {new Date(seller.last_message.created_at).toLocaleDateString()}</small></> : 'No messages yet'}</dd>
         </dl>
         <div className="admin-form-actions"><button type="button" className="act" onClick={() => onOpen(seller.id)}>Open seller page</button></div>

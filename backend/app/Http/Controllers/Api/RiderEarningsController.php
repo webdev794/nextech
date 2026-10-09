@@ -62,6 +62,9 @@ class RiderEarningsController extends Controller
                 ->where('type', 'delivery_credit')
                 ->where('created_at', '>=', now()->subDays(7))
                 ->sum('amount_cents'),
+            // Monthly pay (if admin set it): the plan and this month's deliveries so far.
+            'pay_plan' => \App\Support\RiderPayPlan::of($rider),
+            'deliveries_this_month' => \App\Support\RiderPayPlan::deliveries($rider, now()),
             'rates' => [
                 'base_cents' => RiderLedger::baseCents($market),
                 'per_mile_cents' => RiderLedger::perMileCents($market),
@@ -71,6 +74,9 @@ class RiderEarningsController extends Controller
             // Notice to leave: given on, last working day (30 days later).
             'notice' => $rider->rider_notice_at && ! $rider->rider_notice_processed_at ? ['given_at' => $rider->rider_notice_at, 'leaving_on' => $rider->rider_leaving_on?->toDateString()] : null,
             'payout_method' => $rider->rider_payout_method,
+            // Only the ways the store allows in this country (and only then can the rider start work).
+            'allowed_methods' => RiderLedger::allowedPayoutMethods($rider),
+            'payout_blocker' => RiderLedger::payoutBlocker($rider),
             'payout_details' => $rider->rider_payout_details,
             'last_payout_request' => RiderPayoutRequest::where('user_id', $rider->id)->latest('id')->first(),
             'entries' => RiderLedgerEntry::where('user_id', $rider->id)
@@ -83,7 +89,7 @@ class RiderEarningsController extends Controller
     public function payoutMethod(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'payout_method' => ['required', Rule::in(['bank', 'paypal'])],
+            'payout_method' => ['required', Rule::in(RiderLedger::allowedPayoutMethods($request->user()))],
             'holder_name' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:160'],
             'account_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],
             'routing_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],

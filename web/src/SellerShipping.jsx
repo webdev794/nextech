@@ -190,7 +190,7 @@ function StoreDaysOff({ data, headers, onSaved }) {
 function LocalDelivery({ data, patch, note, setNote }) {
   const ld = data.local_delivery
   const status = data.local_store?.blocked ? 'locked' : data.local_store?.status === 'off_requested' ? 'turning_off' : ld ? 'on' : 'off'
-  const [form, setForm] = useState(() => ({ open: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? Math.min(10, data.local_max_km ?? 10), fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1, lat: ld?.pin_set ? ld?.lat ?? '' : '', lng: ld?.pin_set ? ld?.lng ?? '' : '' }))
+  const [form, setForm] = useState(() => ({ open: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? Math.min(10, data.local_max_km ?? 10), selfKm: ld?.self_km ?? '', fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1, lat: ld?.pin_set ? ld?.lat ?? '' : '', lng: ld?.pin_set ? ld?.lng ?? '' : '' }))
   if (!['self', 'label'].includes(data.fulfillment_mode) || !data.local_delivery_offered) return null
   const set = (p) => setForm((f) => ({ ...f, ...p }))
   // The result shows right by the buttons (the page message is far up at the top); kept by the parent across reloads.
@@ -199,7 +199,7 @@ function LocalDelivery({ data, patch, note, setNote }) {
   function save(event) {
     event.preventDefault()
     const pin = String(form.lat).trim() !== '' && String(form.lng).trim() !== '' ? { lat: Number(form.lat), lng: Number(form.lng) } : {}
-    send({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days), ...pin } }, localSavedMsg(form, data, !ld))
+    send({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days), self_km: form.selfKm === '' ? null : Number(form.selfKm), ...pin } }, localSavedMsg(form, data, !ld))
   }
 
   function turnOff() {
@@ -238,7 +238,8 @@ function LocalDelivery({ data, patch, note, setNote }) {
               <label>Your shop address<select required value={form.address} onChange={(e) => set({ address: e.target.value })}>{data.addresses.map((a) => <option key={a.id} value={a.id}>{a.name} — {a.city}</option>)}</select></label>
               <label>Area around your shop (km) <small className="sc-muted">up to {data.local_max_km}</small><input type="number" min="1" max={data.local_max_km ?? 100} step="0.5" required value={form.radius} onChange={(e) => set({ radius: e.target.value })} /></label>
               <label>Delivery fee ({currencySymbol(data.currency)}) <small className="sc-muted">0 = free</small><input type="number" min="0" step="0.01" required value={form.fee} onChange={(e) => set({ fee: e.target.value })} /></label>
-              <label>Arrives within (days)<input type="number" min="1" max="7" required value={form.days} onChange={(e) => set({ days: e.target.value })} /></label>
+              <label>Arrives within (days) <small className="sc-muted">up to {data.max_local_days ?? 7}</small><input type="number" min="1" max={data.max_local_days ?? 7} required value={form.days} onChange={(e) => set({ days: e.target.value })} /></label>
+              <label>You deliver yourself within (km) <small className="sc-muted">optional — riders take the rest</small><input type="number" min="0" max={form.radius} step="0.5" placeholder="e.g. 1" value={form.selfKm} onChange={(e) => set({ selfKm: e.target.value })} /></label>
             </div>
             <details className="ss-pin">
               <summary>Shop location on the map (optional)</summary>
@@ -485,7 +486,7 @@ export function ShippingSettings({ headers, onChanged }) {
                 </tbody>
               </table>
             )}
-            <p className="sc-muted">Transit times must be accurate — they set the delivery dates customers see. Regions with different transit times may need their own group or template.</p>
+            <p className="sc-muted">Transit times must be accurate — they set the delivery dates customers see (at most {data.max_courier_days ?? 30} days). Regions with different transit times may need their own group or template.</p>
           </div>
         </>
       )}
@@ -806,19 +807,20 @@ export function ShipOrders({ headers, mode }) {
                       {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
                       {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
                       {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="You or your rider takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => {
-                        const pick = riderPick[o.id] ?? ''
+                        const pick = riderPick[o.id] ?? (o.self_zone || o.local_km == null || !myRiders.length ? '' : 'offer')
                         const rider = myRiders.find((r) => String(r.id) === String(pick))
                         if (pick === 'offer') {
                           if (window.confirm('Offer it to all your riders? Each rider at your store sees it with the same deadline, and the first to take it gets it. The buyer is told once a rider takes it. If nobody does, you’re told.')) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`, { rider_id: 'offer' })
                           return
                         }
                         if (window.confirm(`Send it out now${pick === 'auto' ? ' with the nearest free rider' : rider ? ` with ${rider.name}` : ' — you deliver it yourself'}? The buyer is told it’s on the way and gets a delivery code.`)) act(`/seller/fulfillment/orders/${o.id}/local-dispatch`, { rider_id: pick === 'auto' ? 'auto' : rider?.id ?? null })
-                      }}>{(riderPick[o.id] ?? '') === 'offer' ? 'Offer to my riders' : 'Out for delivery (local)'}</button>}
+                      }}>{(riderPick[o.id] ?? (o.self_zone || o.local_km == null || !myRiders.length ? '' : 'offer')) === 'offer' ? 'Offer to my riders' : 'Out for delivery (local)'}</button>}
                       {o.shipping?.rider_offer_until && o.items.some((i) => free(i) > 0) && (o.shipping.rider_offer_missed_at
                         ? <small className="sc-low">Nobody took it by {new Date(o.shipping.rider_offer_until).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} — deliver it yourself, pick a rider, or send it by courier. Still open to your riders.</small>
                         : <small className="sc-muted">Offered to your riders until {new Date(o.shipping.rider_offer_until).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} — the first to take it gets it.</small>)}
                       {o.high_value && o.items.some((i) => free(i) > 0) && <small className="sc-low">High-value order — send it by courier or deliver it yourself, not with a rider.</small>}
-                      {o.shipping?.method === 'local' && myRiders.length > 0 && o.items.some((i) => free(i) > 0) && !onHold(o) && <select aria-label="Who delivers it" value={riderPick[o.id] ?? ''} onChange={(e) => setRiderPick({ ...riderPick, [o.id]: e.target.value })}>
+                      {o.local_km != null && o.items.some((i) => free(i) > 0) && <small className="sc-muted">{o.local_km} km from your shop{o.self_zone ? ' — your own zone: you deliver' : myRiders.length ? ' — for your riders' : ''}</small>}
+                      {o.shipping?.method === 'local' && myRiders.length > 0 && o.items.some((i) => free(i) > 0) && !onHold(o) && <select aria-label="Who delivers it" value={riderPick[o.id] ?? (o.self_zone || o.local_km == null ? '' : 'offer')} onChange={(e) => setRiderPick({ ...riderPick, [o.id]: e.target.value })}>
                         <option value="">I&rsquo;ll deliver it myself</option>
                         <option value="offer">Offer to all my riders (first to take it)</option>
                         <option value="auto">Auto — nearest free rider</option>

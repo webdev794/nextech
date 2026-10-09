@@ -135,7 +135,7 @@ class RiderMoney
                 ->with(['order:id,total_cents,payment_method', 'order.shopShipping'])->get();
             $ownOrders = $store ? collect() : Order::query()->where('delivery_partner_id', $rider->id)->whereBetween('delivered_at', [$from, $to])->get(['id', 'delivery_fee_cents', 'total_cents', 'payment_method']);
             $credits = RiderLedgerEntry::query()->where('user_id', $rider->id)->whereBetween('created_at', [$from, $to])
-                ->whereIn('type', $store ? ['seller_delivery'] : ['delivery_credit', 'seller_delivery', 'adjustment'])
+                ->whereIn('type', $store ? ['seller_delivery', 'bonus'] : ['delivery_credit', 'seller_delivery', 'adjustment', 'bonus', 'monthly_pay', 'top_up'])
                 ->when($store, fn ($q) => $q->where('note', 'like', '% — '.$store->shop?->name))->sum('amount_cents');
             $feesFromBuyers = (int) $packages->sum(fn ($p) => (int) ($p->order?->shopShipping->firstWhere('shop_id', $p->shop_id)?->fee_cents ?? 0))
                 + (int) $ownOrders->sum('delivery_fee_cents');

@@ -95,3 +95,27 @@ Artisan::command('riders:work-hours', function () {
     $this->info('Riders reminded: '.\App\Support\RiderWorkHours::check());
 })->purpose('Remind riders to clock in during their store\'s hours and tell the store who is missing');
 Schedule::command('riders:work-hours')->everyFifteenMinutes()->withoutOverlapping();
+
+// Bonus suggestions on the 25th: riders with an excellent month so far (many deliveries, 5-star, earned above a normal month).
+Artisan::command('riders:bonus-suggestions', function () {
+    $this->info('Suggested: '.\App\Support\RiderBonus::suggest());
+})->purpose('Suggest bonuses for riders who did excellent work last month');
+Schedule::command('riders:bonus-suggestions')->monthlyOn(25, '06:30')->withoutOverlapping(); // in time to pay by the month's end
+
+// Payday (25th): riders owed pay without a payout method are told, and their sellers too.
+Artisan::command('riders:payout-method-reminders', function () {
+    $this->info('Reminded: '.\App\Support\RiderLedger::remindMissingPayoutMethods());
+})->purpose('Remind riders owed pay to add a payout method');
+Schedule::command('riders:payout-method-reminders')->monthlyOn(25, '07:00')->withoutOverlapping();
+
+// Performance watch: sellers, riders and products with poor ratings / late shipping / missed days → admin.
+Artisan::command('watch:performance', function () {
+    $this->info('New warnings: '.\App\Support\PerformanceWatch::check());
+})->purpose('Warn admin about sellers, riders and products performing poorly');
+Schedule::command('watch:performance')->dailyAt('07:30')->withoutOverlapping();
+
+// Monthly pay (NexTech riders on monthly pay): paid on the 1st for last month; extra above the bonus cap → top-up pool.
+Artisan::command('riders:monthly-pay', function () {
+    $this->info('Riders paid: '.\App\Support\RiderPayPlan::payMonth());
+})->purpose('Pay riders on monthly pay for last month');
+Schedule::command('riders:monthly-pay')->monthlyOn(1, '04:30')->withoutOverlapping();

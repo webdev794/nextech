@@ -9,8 +9,8 @@ import { useEffect, useRef } from 'react'
 // Text being typed is never lost: only the data is fetched, nothing reloads.
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
-// live.json sits next to the API, in the backend's public folder.
-const LIVE_URL = `${API_URL.replace(/\/api\/?$/, '')}/live.json`
+// live.json sits next to the API, in the backend's public folder (in dev, Vite passes it through).
+const LIVE_URL = import.meta.env.DEV ? '/live.json' : `${API_URL.replace(/\/api\/?$/, '')}/live.json`
 // Light on the server: 10 s after a change or while someone is using the page,
 // stretching to every 30 s when nothing happens; nothing while the tab is hidden.
 const FAST_MS = 10000
@@ -31,10 +31,13 @@ if (channel) {
     const original = window.fetch.bind(window)
     window.fetch = async (input, init) => {
       const res = await original(input, init)
-      const method = (init?.method ?? (typeof input === 'object' && input?.method) ?? 'GET').toUpperCase()
-      if (method !== 'GET' && res.ok && String(typeof input === 'string' ? input : input?.url ?? '').startsWith(API_URL)) {
-        setTimeout(() => channel.postMessage('changed'), 300) // after the server has finished writing
-      }
+      // Never let this side job break the page's own request.
+      try {
+        const method = String(init?.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase()
+        if (method !== 'GET' && res.ok && String(typeof input === 'string' ? input : input?.url ?? '').startsWith(API_URL)) {
+          setTimeout(() => channel.postMessage('changed'), 300) // after the server has finished writing
+        }
+      } catch { /* ignore */ }
       return res
     }
   }

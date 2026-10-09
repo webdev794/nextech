@@ -75,6 +75,12 @@ class RiderApplicationController extends Controller
                     'country' => $store->country,
                     'min_age' => RiderHiring::minAge($store->country),
                     'distance_miles' => $km !== null ? round($km / 1.609344, 1) : null,
+                    // The store's terms the rider signs: working hours and days off a month.
+                    'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($store)),
+                    'days_off_per_month' => \App\Support\RiderWorkHours::daysOffAllowed($store),
+                    'terms' => RiderHiring::terms($store),
+                    // How riders may be paid in this country (admin's allowed methods).
+                    'payout_methods' => array_values(array_filter(['bank', 'paypal'], fn ($m) => (bool) (\App\Support\SellerPayouts::fees($store->country)[$m]['enabled'] ?? false))) ?: ['bank'],
                 ];
             })
             ->sortBy(fn ($s) => $s['distance_miles'] ?? PHP_FLOAT_MAX)
@@ -120,6 +126,16 @@ class RiderApplicationController extends Controller
             // "The seller or the store can remove me at any time if stores aren't available, or for behaviour, health or other issues",
             // and "I'll give 30 days' notice before leaving; without notice, final pay is settled after checks".
             'consent_removal' => ['accepted'],
+            // Signed at the end: their name and the place they are now, after reading the store's terms.
+            'signed_name' => ['required', 'string', 'min:2', 'max:120'],
+            'signed_place' => ['required', 'string', 'min:2', 'max:120'],
+            // How they want to be paid (so they can start on day one).
+            'payout_method' => ['required', Rule::in(['bank', 'paypal'])],
+            'holder_name' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:160'],
+            'account_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],
+            'routing_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],
+            'bank_name' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:160'],
+            'payout_email' => ['required_if:payout_method,paypal', 'nullable', 'email', 'max:160'],
             'rc_document_path' => ['required_unless:vehicle_type,bicycle', 'nullable', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
             // ID proof is required; an education document and a photo are optional (private uploads).
             'id_document_path' => ['required', 'string', 'max:255', 'starts_with:kyc/'.$user->id.'/'],
@@ -140,7 +156,15 @@ class RiderApplicationController extends Controller
         $data['store_id'] = $data['preferred_store_ids'][0];
         unset($data['store_ids']);
         $data['consent_removal'] = true;
+        $data['signed_at'] = now();
         $store = Store::find($data['store_id']);
+        $data['signed_terms'] = RiderHiring::terms($store); // exactly what they signed, kept with the application
+        $allowed = array_values(array_filter(['bank', 'paypal'], fn ($m) => (bool) (\App\Support\SellerPayouts::fees($store?->country)[$m]['enabled'] ?? false))) ?: ['bank'];
+        abort_unless(in_array($data['payout_method'], $allowed, true), 422, 'Choose how to be paid from: '.implode(' or ', array_map(fn ($m) => \App\Support\SellerPayouts::label($m), $allowed)).'.');
+        $data['payout_details'] = $data['payout_method'] === 'bank'
+            ? array_intersect_key($data, array_flip(['holder_name', 'account_number', 'routing_number', 'bank_name']))
+            : ['email' => $data['payout_email']];
+        unset($data['holder_name'], $data['account_number'], $data['routing_number'], $data['bank_name'], $data['payout_email']);
         $min = RiderHiring::minAge($store?->country);
         abort_if(\Illuminate\Support\Carbon::parse($data['date_of_birth'])->age < $min, 422, "Riders must be at least {$min} years old.");
         $data['own_vehicle'] = true;

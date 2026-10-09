@@ -4,5 +4,5 @@ export const DAYS = [[1, 'Mon'], [2, 'Tue'], [3, 'Wed'], [4, 'Thu'], [5, 'Fri'],
 export function hoursLabel(h) {
   if (!h) return ''
   const names = DAYS.filter(([d]) => h.days.includes(d)).map(([, n]) => n)
-  return `${names.join(', ')} · ${h.start}–${h.end}`
+  return `${names.join(', ')} · ${h.start}–${h.end} · ${h.days_off_per_month ?? 4} day${(h.days_off_per_month ?? 4) === 1 ? '' : 's'} off a month`
 }

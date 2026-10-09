@@ -42,6 +42,56 @@ class RiderLedger
     }
 
     /** The market a rider works in: their (first) store's country. */
+    /**
+     * How a rider may be paid in their country: the methods admin allows
+     * (Secure access → Withdrawal fees), of those riders can use (bank, PayPal).
+     *
+     * @return list<string>
+     */
+    public static function allowedPayoutMethods(User $rider): array
+    {
+        $fees = SellerPayouts::fees(self::marketFor($rider));
+        $allowed = array_values(array_filter(['bank', 'paypal'], fn ($m) => (bool) ($fees[$m]['enabled'] ?? false)));
+
+        return $allowed ?: ['bank'];
+    }
+
+    /**
+     * Payday check (25th): riders with pay owed but no allowed payout method are told,
+     * and so are the sellers they work for (to remind them). Returns how many.
+     */
+    public static function remindMissingPayoutMethods(): int
+    {
+        $n = 0;
+        foreach (User::query()->where('is_rider', true)->get() as $rider) {
+            if (self::balanceCents($rider) <= 0 || ! self::payoutBlocker($rider)) {
+                continue;
+            }
+            $owed = Money::format(self::balanceCents($rider), Market::currency(self::marketFor($rider)));
+            try {
+                $rider->notify(new \App\Notifications\RiderNotice('Add how you want to be paid', "You have {$owed} to be paid, but no payout method yet. ".self::payoutBlocker($rider).' Your pay can’t be sent until you do.'));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+            foreach ($rider->stores()->whereNotNull('shop_id')->with('shop.seller')->get() as $store) {
+                if ($store->shop?->seller) {
+                    SellerNotify::send($store->shop->seller, $store->shop->seller->user, 'Rider without a payout method', "{$rider->name} has {$owed} to be paid but hasn’t added how they want to be paid. Please ask them to add it in the Rider app (Earnings → Payout method).");
+                }
+            }
+            $n++;
+        }
+
+        return $n;
+    }
+
+    /** Why the rider can't start work yet for lack of a payout method, or null. */
+    public static function payoutBlocker(User $rider): ?string
+    {
+        return in_array($rider->rider_payout_method, self::allowedPayoutMethods($rider), true)
+            ? null
+            : 'Add how you want to be paid first (Earnings → Payout method: '.implode(' or ', array_map(fn ($m) => SellerPayouts::label($m), self::allowedPayoutMethods($rider))).').';
+    }
+
     public static function marketFor(User $rider): string
     {
         return Market::forCountry($rider->stores()->value('country'));
@@ -109,6 +159,10 @@ class RiderLedger
     public static function creditForDelivery(Order $order): void
     {
         if (! $order->delivery_partner_id || $order->status !== 'completed' || $order->usesOnlineCourier()) {
+            return;
+        }
+        // On monthly pay: no per-delivery credit — the delivery counts towards the month.
+        if (RiderPayPlan::of(User::find($order->delivery_partner_id) ?? new User)) {
             return;
         }
 

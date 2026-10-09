@@ -363,6 +363,17 @@ class AdminController extends Controller
 
         return response()->json(['data' => [
             // Sellers asking for a day off for their store (Shipping → Holidays).
+            // Riders who did excellent work last month: admin may add a bonus (dismissed when done).
+            'rider_bonus_suggestions' => \App\Support\RiderBonus::suggestions(),
+            // Sellers, riders and products performing poorly (daily watch), until dismissed.
+            'performance_warnings' => \App\Support\PerformanceWatch::warnings(),
+            // Open rider–seller support tickets: assign a support person to answer (no email).
+            'support_tickets' => \App\Models\SupportThread::query()->where('issue_type', 'rider_seller')->where('ticket_status', 'open')->with(['user:id,name', 'sellerShop:id,name'])->oldest('updated_at')->get()
+                ->map(fn ($t) => ['id' => $t->id, 'rider' => $t->user?->name, 'shop' => $t->sellerShop?->name, 'by' => $t->ticket_by, 'agent' => $t->support_agent, 'at' => $t->updated_at]),
+            'support_agents' => \App\Support\RiderSellerChat::agents(),
+            // Riders asking to move to a new area (approve / decline in their panel).
+            'rider_moves' => User::query()->where('is_rider', true)->whereNotNull('rider_move_request')->get(['id', 'name', 'rider_move_request'])
+                ->map(fn ($u) => ['rider_id' => $u->id, 'name' => $u->name, 'address' => $u->rider_move_request['address'] ?? null, 'at' => $u->rider_move_request['at'] ?? null]),
             'holiday_requests' => collect(\App\Support\ExtraHolidays::requests())->map(fn ($r) => $r + ['shop' => $holidayShops[$r['shop_id']] ?? null])->values(),
             'needs_courier' => $needsCourier,
             'rider_notices' => $riderNotices,

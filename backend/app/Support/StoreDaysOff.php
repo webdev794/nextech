@@ -36,14 +36,14 @@ final class StoreDaysOff
         $closed = self::closedOn(now()->addDay()->startOfDay());
         foreach ($closed as [$store, $name]) {
             foreach ($store->riders()->get() as $rider) {
-                self::tell($rider, 'No deliveries tomorrow', "{$store->shop->name} is closed tomorrow ({$name}) — no deliveries for them unless they ask you to work.");
+                self::tell($rider, 'No deliveries tomorrow', "{$store->shop->name} is closed tomorrow ({$name}) — no deliveries for them unless they ask you to work.", true);
             }
         }
         // Only weekday closures are news to admin (weekends are routine).
         $news = array_filter($closed, fn ($c) => ! now()->addDay()->isWeekend());
         if ($news !== []) {
             try {
-                Notification::send(User::where('is_admin', true)->get(), new AdminNotice('Seller stores closed tomorrow', 'Closed tomorrow (no local delivery): '.collect($news)->map(fn ($c) => "{$c[0]->shop->name} — {$c[1]}")->join('; ').'.'));
+                Notification::send(User::where('is_admin', true)->get(), new AdminNotice('Seller stores closed tomorrow', 'Closed tomorrow (no local delivery): '.collect($news)->map(fn ($c) => "{$c[0]->shop->name} — {$c[1]}")->join('; ').'.', true));
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -61,6 +61,13 @@ final class StoreDaysOff
         User::query()->where('is_rider', true)->where('rider_available', false)->where('rider_unavailable_reason', 'like', 'Day off — %')->with('stores')->get()
             ->filter(fn ($r) => $r->stores->contains(fn ($s) => ! $closedIds->has($s->id)))
             ->each(fn ($r) => $r->forceFill(['rider_available' => true, 'rider_unavailable_reason' => null])->save());
+        // Riders on a day off they asked for: off duty today.
+        $onLeave = \App\Models\RiderLeave::query()->whereDate('date', $today->toDateString())->where('kind', 'leave')->pluck('user_id');
+        User::query()->whereIn('id', $onLeave)->where('rider_available', true)->get()->each(function ($r) {
+            if (! $r->currentShift()) {
+                $r->forceFill(['rider_available' => false, 'rider_unavailable_reason' => 'Day off — leave'])->save();
+            }
+        });
         if ($closedIds->isEmpty()) {
             return 0;
         }
@@ -80,10 +87,10 @@ final class StoreDaysOff
         return $n;
     }
 
-    private static function tell(User $rider, string $subject, string $body): void
+    private static function tell(User $rider, string $subject, string $body, bool $routine = false): void
     {
         try {
-            $rider->notify(new RiderNotice($subject, $body));
+            $rider->notify(new RiderNotice($subject, $body, $routine));
         } catch (\Throwable $e) {
             report($e);
         }

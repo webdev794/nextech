@@ -129,9 +129,13 @@ class SellerStores
         }
         $name = $shop?->name ?? $store->name;
         foreach ($riders as $rider) {
+            // No other store delivering now: their details stay on file; they're linked again when a store near home starts.
+            $none = RiderHiring::activeStores($rider)->isEmpty();
             try {
                 $rider->notify(new RiderNotice("{$name} has ended local delivery",
-                    "{$name} has ended its local delivery, so you won't get its orders any more. Delivery fees you earned there are paid at the end of the month to the payout method in your Rider account.".($rider->stores()->whereKeyNot($store->id)->exists() ? ' Your other stores aren’t affected.' : '')));
+                    "{$name} has ended its local delivery, so you won't get its orders any more. Delivery fees you earned there are paid at the end of the month to the payout method in your Rider account.".($none
+                        ? ' You have no other store right now. Your details stay on file, and a store near your home that starts deliveries may invite you (you choose whether to join). Moving? Apply to a store near your new home. Or delete your details in the Rider app once your pay is settled.'
+                        : ' Your other stores aren’t affected.')));
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -172,6 +176,7 @@ class SellerStores
                 'lat' => $store->latitude, 'lng' => $store->longitude,
             ]])->save();
         }
+        RiderHiring::relinkNearby($store->fresh()); // riders near it with no active store are suggested to it
         if ($seller = $shop->seller) {
             SellerNotify::send($seller, $by, 'Local delivery is on', 'Your local delivery is on — only buyers within '.$store->delivery_radius_km.' km of your store get it (you or your riders deliver); everyone else still gets courier shipping. Check the fee and delivery days in Shipping settings → Local delivery.');
         }

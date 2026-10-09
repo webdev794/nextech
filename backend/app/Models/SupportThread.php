@@ -17,11 +17,13 @@ class SupportThread extends Model
         'seller_product_issue', 'seller_other',
         // A rider's own chat with NexTech (StaffChat).
         'rider_support',
+        // A rider and a seller they deliver for (the store's team joins only when called in).
+        'rider_seller',
     ];
 
     protected $fillable = [
         'user_id', 'order_id', 'seller_shop_id', 'seller_joined_at', 'issue_type', 'status',
-        'last_message_at', 'last_staff_message_at', 'resolved_at',
+        'last_message_at', 'last_staff_message_at', 'resolved_at', 'admin_called_at', 'ticket_by', 'ticket_status', 'support_agent',
     ];
 
     protected $appends = ['needs_reply'];
@@ -33,6 +35,7 @@ class SupportThread extends Model
             'last_staff_message_at' => 'datetime',
             'resolved_at' => 'datetime',
             'seller_joined_at' => 'datetime',
+            'admin_called_at' => 'datetime',
             'rating' => 'integer',
             'rated_at' => 'datetime',
         ];

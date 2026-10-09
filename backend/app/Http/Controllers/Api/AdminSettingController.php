@@ -240,6 +240,11 @@ class AdminSettingController extends Controller
                 'cod_enabled' => ['sometimes', 'boolean'],
                 'rider_auto_assign' => ['sometimes', 'boolean'],
                 'rider_offer_minutes' => ['sometimes', 'integer', 'min:1', 'max:1440'],
+                // Bonus suggestions per country: a normal month's pay, fewest deliveries, lowest rating.
+                'rider_bonus' => ['sometimes', 'array'],
+                'rider_bonus.*.benchmark_cents' => ['required', 'integer', 'min:0'],
+                'rider_bonus.*.min_deliveries' => ['required', 'integer', 'min:1', 'max:10000'],
+                'rider_bonus.*.min_rating' => ['required', 'numeric', 'between:1,5'],
                 'nextech_pickup' => ['sometimes', Rule::in(['available', 'disabled', 'hidden'])],
                 // Sellers' own local delivery, and how hard sellers are chased for order updates.
                 'seller_local_delivery' => ['sometimes', Rule::in(['available', 'hidden'])],
@@ -251,6 +256,11 @@ class AdminSettingController extends Controller
                 'deal_rules' => ['sometimes', 'array'],
                 'deal_rules.*' => ['integer', 'min:1', 'max:500'],
                 'seller_local_max_km' => ['sometimes', 'numeric', 'min:1', 'max:50'],
+                'seller_max_local_days' => ['sometimes', 'integer', 'min:1', 'max:14'],
+                'seller_max_courier_days' => ['sometimes', 'integer', 'min:1', 'max:90'],
+                // Names support replies are signed with ("Mak from … Support").
+                'support_agents' => ['sometimes', 'array', 'min:1', 'max:30'],
+                'support_agents.*' => ['string', 'min:1', 'max:40'],
                 'cod_max_order' => ['sometimes', 'array'],
                 'cod_max_order.*' => ['integer', 'min:0', 'max:100000000'],
                 'rider_cash_limit' => ['sometimes', 'array'],
@@ -406,6 +416,14 @@ class AdminSettingController extends Controller
         if (array_key_exists('rider_cash_limit', $validated)) {
             Setting::put('rider_cash_limit', array_merge((array) Setting::get('rider_cash_limit', []), collect($validated['rider_cash_limit'])->mapWithKeys(fn ($v, $k) => [strtoupper((string) $k) => (int) $v])->all()));
         }
+        if (array_key_exists('support_agents', $validated)) {
+            Setting::put('support_agents', array_values(array_unique(array_filter(array_map('trim', $validated['support_agents'])))));
+        }
+        foreach (['seller_max_local_days', 'seller_max_courier_days'] as $key) {
+            if (array_key_exists($key, $validated)) {
+                Setting::put($key, (int) $validated[$key]);
+            }
+        }
         if (array_key_exists('seller_local_max_km', $validated)) {
             Setting::put('seller_local_max_km', round((float) $validated['seller_local_max_km'], 1));
         }
@@ -413,6 +431,9 @@ class AdminSettingController extends Controller
             Setting::put('seller_update_rules', array_map('intval', array_intersect_key($validated['seller_update_rules'], array_flip(['pack_hours', 'repeat_hours', 'escalate_hours']))));
         }
 
+        if (array_key_exists('rider_bonus', $validated)) {
+            Setting::put('rider_bonus', array_replace((array) Setting::get('rider_bonus', []), array_intersect_key($validated['rider_bonus'], array_flip(Market::codes()))));
+        }
         if (array_key_exists('rider_offer_minutes', $validated)) {
             Setting::put('rider_offer_minutes', (int) $validated['rider_offer_minutes']);
         }
@@ -622,6 +643,7 @@ class AdminSettingController extends Controller
             'cod_enabled' => (bool) Setting::get('cod_enabled', false),
             'rider_auto_assign' => (bool) Setting::get('rider_auto_assign', true),
             'rider_offer_minutes' => intdiv(\App\Support\RiderAssignment::offerSeconds(), 60),
+            'rider_bonus' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\RiderBonus::rules($c)]),
             // NexTech's own delivery network (rider auto-assign applies only to these).
             'own_stores_count' => \App\Models\Store::query()->own()->count(),
             'courier_connected' => (fn ($c) => $c['provider'] === 'real' && $c['base_url'] !== '' && $c['api_key'] !== '')(CourierCredentials::current()),
@@ -634,6 +656,9 @@ class AdminSettingController extends Controller
             // What Unbeatable deals start from right now in each country (worked out from the catalogue).
             'deal_cutoffs' => collect(Market::codes())->mapWithKeys(fn ($code) => [$code => \App\Support\DealSections::forMarket($code)['unbeatable_from_pct']]),
             'seller_local_max_km' => SellerShipping::localMaxKm(),
+            'seller_max_local_days' => SellerShipping::maxLocalDays(),
+            'seller_max_courier_days' => SellerShipping::maxCourierDays(),
+            'support_agents' => \App\Support\RiderSellerChat::agents(),
             'cod_max_order' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerRiderCash::codMaxCents($c)]),
             'rider_cash_limit' => collect(Market::codes())->mapWithKeys(fn ($c) => [$c => \App\Support\SellerRiderCash::ownLimitCents($c)]),
             'seller_update_rules' => \App\Support\SellerProgress::rules(),

@@ -76,7 +76,9 @@ export default function RiderEarnings({ headers, refreshKey }) {
 
       {open && (
         <div className="rider-earnings-body">
-          <p className="rider-earnings-note">You earn {money(pay.rates.base_cents)} per delivery + {money(pay.rates.per_mile_cents)} per mile from the store to the customer.</p>
+          {pay.pay_plan
+            ? <p className="rider-earnings-note">Monthly pay: <b>{money(pay.pay_plan.monthly_cents)}</b> at {pay.pay_plan.target} deliveries (less in proportion below it){pay.pay_plan.bonus_per_extra_cents ? <>, plus {money(pay.pay_plan.bonus_per_extra_cents)} for each extra delivery (up to {money(pay.pay_plan.bonus_cap_cents)})</> : null}. This month so far: <b>{pay.deliveries_this_month} of {pay.pay_plan.target}</b>. Paid on the 1st.</p>
+            : <p className="rider-earnings-note">You earn {money(pay.rates.base_cents)} per delivery + {money(pay.rates.per_mile_cents)} per mile from the store to the customer.</p>}
           <ul className="rider-earnings-sums">
             <li><span>Total earned, not yet paid</span><b>{money(pay.balance_cents)}</b></li>
             {pay.cash_holding_cents > 0 && <li className="neg"><span>Cash you&rsquo;re holding (return to store)</span><b>−{money(pay.cash_holding_cents)}</b></li>}
@@ -96,8 +98,8 @@ export default function RiderEarnings({ headers, refreshKey }) {
           {methodForm ? (
             <form className="rider-earnings-method" onSubmit={saveMethod}>
               <div className="rider-earnings-radios">
-                <label><input type="radio" checked={methodForm.payout_method === 'bank'} onChange={() => setMethodForm({ ...methodForm, payout_method: 'bank' })} /> Bank account</label>
-                <label><input type="radio" checked={methodForm.payout_method === 'paypal'} onChange={() => setMethodForm({ ...methodForm, payout_method: 'paypal' })} /> PayPal</label>
+                {(pay.allowed_methods ?? ['bank', 'paypal']).includes('bank') && <label><input type="radio" checked={methodForm.payout_method === 'bank'} onChange={() => setMethodForm({ ...methodForm, payout_method: 'bank' })} /> Bank account</label>}
+                {(pay.allowed_methods ?? ['bank', 'paypal']).includes('paypal') && <label><input type="radio" checked={methodForm.payout_method === 'paypal'} onChange={() => setMethodForm({ ...methodForm, payout_method: 'paypal' })} /> PayPal</label>}
               </div>
               {methodForm.payout_method === 'bank' ? (
                 <>
@@ -117,7 +119,8 @@ export default function RiderEarnings({ headers, refreshKey }) {
           ) : (
             <p className="rider-earnings-note">
               Payout method: {pay.payout_method === 'bank' ? `Bank — ${pay.payout_details?.bank_name ?? ''} ····${String(pay.payout_details?.account_number ?? '').slice(-4)}` : pay.payout_method === 'paypal' ? `PayPal — ${pay.payout_details?.email}` : 'none yet'}
-              {' '}<button type="button" className="rider-link-inline" onClick={() => setMethodForm({ ...EMPTY_METHOD, ...(pay.payout_details ?? {}), payout_method: pay.payout_method ?? 'bank' })}>{pay.payout_method ? 'Change' : 'Add'}</button>
+              {' '}<button type="button" className="rider-link-inline" onClick={() => setMethodForm({ ...EMPTY_METHOD, ...(pay.payout_details ?? {}), payout_method: pay.payout_method ?? pay.allowed_methods?.[0] ?? 'bank' })}>{pay.payout_method ? 'Change' : 'Add'}</button>
+              {pay.payout_blocker && <p className="rider-error">{pay.payout_blocker} You can&rsquo;t clock in until it&rsquo;s added.</p>}
             </p>
           )}
 
@@ -139,7 +142,7 @@ export default function RiderEarnings({ headers, refreshKey }) {
               {pay.entries.map((e) => (
                 <li key={e.id}>
                   <span>
-                    {e.type === 'payout_debit' ? 'Payout' : `Delivery #${e.order_id ?? '—'}`}
+                    {e.type === 'payout_debit' ? 'Payout' : e.type === 'bonus' ? '🏅 Bonus' : e.type === 'adjustment' ? 'Adjustment' : `Delivery #${e.order_id ?? '—'}`}
                     {e.distance_miles != null ? ` · ${e.distance_miles} mi` : ''}
                     {e.note ? ` — ${e.note}` : ''}
                     <small>{new Date(e.created_at).toLocaleDateString()}</small>

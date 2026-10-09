@@ -54,6 +54,7 @@ class SellerShippingController extends Controller
             'local_delivery.radius_km' => ['required_with:local_delivery', 'numeric', 'min:1', 'max:100'],
             'local_delivery.fee_cents' => ['required_with:local_delivery', 'integer', 'min:0', 'max:100000000'],
             'local_delivery.days' => ['required_with:local_delivery', 'integer', 'min:1', 'max:7'],
+            'local_delivery.self_km' => ['nullable', 'numeric', 'min:0', 'max:50'], // you deliver yourself within this; riders beyond
             // The store's exact map point, if the seller sets it (else found from the address).
             'local_delivery.lat' => ['sometimes', 'nullable', 'numeric', 'between:-90,90', 'required_with:local_delivery.lng'],
             'local_delivery.lng' => ['sometimes', 'nullable', 'numeric', 'between:-180,180', 'required_with:local_delivery.lat'],
@@ -63,6 +64,7 @@ class SellerShippingController extends Controller
             if ($data['local_delivery']) {
                 abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Local delivery isn\'t offered right now.');
                 abort_if(\App\Support\SellerStores::blockedByAdmin($shop), 422, \App\Support\Branding::name().' has switched off local delivery for your store — message us to turn it back on.');
+                abort_if((int) $data['local_delivery']['days'] > SellerShipping::maxLocalDays(), 422, 'Local delivery can take at most '.SellerShipping::maxLocalDays().' days.');
                 abort_if((float) $data['local_delivery']['radius_km'] > SellerShipping::localMaxKm(), 422, 'Local delivery can cover up to '.SellerShipping::localMaxKm().' km.');
                 abort_unless(in_array($data['fulfillment_mode'] ?? $shop->fulfillment_mode, ['self', 'label'], true), 422, 'Local delivery is for sellers who ship orders themselves — choose how you ship first.');
                 $address = $shop->addresses()->findOrFail($data['local_delivery']['address_id']);
@@ -78,6 +80,8 @@ class SellerShippingController extends Controller
                     'lat' => $point[0],
                     'lng' => $point[1],
                     'pin_set' => isset($data['local_delivery']['lat']),
+                    // Inside this distance you deliver yourself; beyond it, your riders (0 / empty = riders for all).
+                    'self_km' => isset($data['local_delivery']['self_km']) && (float) $data['local_delivery']['self_km'] > 0 ? min(round((float) $data['local_delivery']['self_km'], 1), round((float) $data['local_delivery']['radius_km'], 1)) : null,
                 ];
             } elseif ($shop->local_delivery) {
                 // Turning it off is checked first (popup) and, with riders linked, waits for admin.
@@ -329,6 +333,7 @@ class SellerShippingController extends Controller
         }
         foreach ($data['groups'] as $group) {
             abort_if($group['transit_max_days'] < $group['transit_min_days'], 422, 'Transit time "to" must be at least "from".');
+            abort_if($group['transit_max_days'] > SellerShipping::maxCourierDays(), 422, 'Transit time can be at most '.SellerShipping::maxCourierDays().' days.');
         }
 
         return $data;
@@ -427,6 +432,8 @@ class SellerShippingController extends Controller
             'intl_declaration' => \App\Support\SellerIntl::declaration(Country::find($shop->market)['name'] ?? $shop->market),
             'intl_policies' => array_values(array_filter(\App\Support\SellerPolicies::status($shop->seller), fn ($p) => $p['for'] === 'international')),
             'local_delivery_offered' => SellerShipping::localDeliveryOffered(),
+            'max_local_days' => SellerShipping::maxLocalDays(),
+            'max_courier_days' => SellerShipping::maxCourierDays(),
             'local_max_km' => SellerShipping::localMaxKm(),
             'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(! empty($shop->local_delivery['pin_set']) ? [] : ['lat', 'lng'])->all() : null,
             // Its store in Stores / hubs, and whether admin has switched local delivery off.

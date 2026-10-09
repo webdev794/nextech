@@ -28,7 +28,7 @@ class DeliveryOfferTest extends TestCase
     {
         $rider = User::factory()->create([
             'name' => $name, 'is_rider' => true, 'rider_is_active' => true, 'rider_available' => true,
-            'rider_base_lat' => $base['lat'], 'rider_base_lng' => $base['lng'],
+            'rider_base_lat' => $base['lat'], 'rider_base_lng' => $base['lng'], 'rider_payout_method' => 'bank',
         ]);
         $rider->stores()->attach($store->id);
 

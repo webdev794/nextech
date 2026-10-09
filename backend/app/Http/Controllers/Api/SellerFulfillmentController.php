@@ -465,6 +465,9 @@ class SellerFulfillmentController extends Controller
         $items = $order->items->where('shop_id', $shopId)->where('fulfilled_by', 'seller')->values();
         $address = (array) $order->delivery_address;
         $promise = $order->shopShipping->firstWhere('shop_id', $shopId);
+        // Local delivery: how far the buyer is, and whether it's inside the seller's own zone (they deliver; riders beyond).
+        $selfKm = (float) (request()->user()?->seller?->shop?->local_delivery['self_km'] ?? 0);
+        $localKm = $promise?->method === 'local' ? $promise->local_km : null;
 
         return [
             'id' => $order->id,
@@ -490,6 +493,8 @@ class SellerFulfillmentController extends Controller
                 'postal_code' => $ownLabel ? ($address['postal_code'] ?? null) : null,
             ],
             'shipping' => $promise,
+            'local_km' => $localKm,
+            'self_zone' => $localKm !== null && $selfKm > 0 && $localKm <= $selfKm,
             'items' => $items->map(fn ($i) => [
                 'id' => $i->id,
                 'product_name' => $i->product_name,

@@ -107,6 +107,13 @@ Route::get('/pages/{slug}', [PageController::class, 'show']);
 Route::post('/site-feedback', [SiteFeedbackController::class, 'store'])->middleware('throttle:6,1');
 
 Route::middleware('auth:sanctum')->group(function () {
+    // Routine reminder emails on / off (riders, sellers, admins); important emails always go.
+    Route::patch('/me/email-routine', function (\Illuminate\Http\Request $request) {
+        $on = (bool) $request->validate(['on' => ['required', 'boolean']])['on'];
+        $request->user()->forceFill(['email_routine' => $on])->save();
+
+        return response()->json(['data' => ['email_routine' => $on]]);
+    });
     Route::post('/me/category-views', [\App\Http\Controllers\Api\CategoryInterestController::class, 'store'])->middleware('throttle:600,1');
     Route::get('/addresses', [AddressController::class, 'index']);
     Route::post('/addresses', [AddressController::class, 'store']);
@@ -203,6 +210,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/riders/{user}/notice-processed', [AdminRiderController::class, 'noticeProcessed']);
     Route::get('/riders-money', [AdminRiderController::class, 'money']);
     Route::post('/riders/{user}/offset-seller-cash', [AdminRiderController::class, 'offsetSellerCash']);
+    Route::delete('/rider-bonus-suggestions/{id}', [AdminRiderController::class, 'dismissBonus']);
+    Route::delete('/performance-warnings/{id}', [AdminRiderController::class, 'dismissWarning']);
+    Route::get('/rider-invites', [AdminRiderController::class, 'invites']);
+    Route::post('/riders/{user}/move', [AdminRiderController::class, 'decideMove']);
+    Route::patch('/riders/{user}/pay-plan', [AdminRiderController::class, 'payPlan']);
+    Route::get('/rider-pools', [AdminRiderController::class, 'pools']);
+    Route::post('/rider-pools/top-up', [AdminRiderController::class, 'topUp']);
+    Route::post('/rider-invites/{invite}', [AdminRiderController::class, 'decideInvite']);
     Route::patch('/stores/{store}/rider-hours', [\App\Http\Controllers\Api\AdminStoreController::class, 'riderHours']);
     Route::get('/holidays', [\App\Http\Controllers\Api\AdminHolidayController::class, 'index']);
     Route::post('/holidays', [\App\Http\Controllers\Api\AdminHolidayController::class, 'store']);
@@ -250,6 +265,8 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::post('/orders/{order}/apply-gift-card', [AdminGiftCardController::class, 'applyToOrder']);
 
     Route::get('/support/threads', [AdminSupportController::class, 'index']);
+    Route::post('/support/threads/{thread}/ticket', [AdminSupportController::class, 'closeTicket']);
+    Route::post('/support/threads/{thread}/agent', [AdminSupportController::class, 'assignAgent']);
     Route::get('/support/threads/{thread}', [AdminSupportController::class, 'show']);
     Route::get('/support/threads/{thread}/chat', [AdminSupportController::class, 'chat']);
     Route::post('/support/threads/{thread}/notes', [AdminSupportController::class, 'addNote']);
@@ -379,6 +396,9 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::post('/seller/riders/{rider}/cash-later', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLater']);
     Route::patch('/seller/local-delivery/rider-pay', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderPay']);
     Route::get('/seller/local-delivery/money', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'money']);
+    Route::get('/seller/local-delivery/deliveries.csv', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'deliveriesCsv']);
+    Route::post('/seller/rider-invites/{invite}', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'decideInvite']);
+    Route::post('/seller/riders/{rider}/bonus', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderBonus']);
     Route::patch('/seller/local-delivery/rider-hours', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderHours']);
     Route::patch('/seller/local-delivery/pickup-hours', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'pickupHours']);
     Route::patch('/seller/local-delivery/cash-limit', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'cashLimit']);
@@ -471,6 +491,7 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::get('/seller/customer-chats/{thread}', [SellerCustomerChatController::class, 'show']);
     Route::get('/seller/customer-chats/{thread}/chat', [SellerCustomerChatController::class, 'chat']);
     Route::post('/seller/customer-chats/{thread}/messages', [SellerCustomerChatController::class, 'message']);
+    Route::post('/seller/customer-chats/{thread}/ticket', [SellerCustomerChatController::class, 'ticket']);
 });
 
 Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function () {
@@ -480,6 +501,16 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
     Route::post('/packages/{package}/deliver', [RiderController::class, 'deliverPackage']);
     Route::post('/stores/{store}/cash-handed', [RiderController::class, 'cashHanded']);
     Route::post('/local-offers/{promise}/take', [RiderController::class, 'takeOffer']);
+    Route::post('/leave', [RiderController::class, 'requestLeave']);
+    Route::get('/letters', [RiderController::class, 'letters']);
+    Route::delete('/details', [RiderController::class, 'deleteDetails']);
+    Route::post('/move', [RiderController::class, 'requestMove']);
+    Route::post('/feedback', [RiderController::class, 'feedback']);
+    Route::get('/seller-chats', [RiderController::class, 'sellerChats']);
+    Route::post('/seller-chats/{store}', [RiderController::class, 'postSellerChat']);
+    Route::post('/seller-chats/thread/{thread}/ticket', [RiderController::class, 'sellerChatTicket']);
+    Route::post('/invites/{invite}', [RiderController::class, 'answerInvite']);
+    Route::delete('/leave/{leave}', [RiderController::class, 'cancelLeave']);
     Route::get('/earnings', [RiderEarningsController::class, 'show']);
     Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
     Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);

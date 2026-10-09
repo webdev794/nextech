@@ -38,7 +38,7 @@ class AdminStoreController extends Controller
     public function riderHours(Request $request, Store $store): JsonResponse
     {
         $data = $request->validate(\App\Support\RiderWorkHours::rules());
-        $store->forceFill(['rider_hours' => $data['hours'] ? ['days' => array_values(array_unique(array_map('intval', $data['hours']['days']))), 'start' => $data['hours']['start'], 'end' => $data['hours']['end']] : null])->save();
+        $store->forceFill(['rider_hours' => \App\Support\RiderWorkHours::fromInput($data['hours'])])->save();
 
         return response()->json(['data' => $store->fresh()]);
     }
@@ -65,6 +65,9 @@ class AdminStoreController extends Controller
             $data = $request->validate(['action' => ['required', Rule::in(['on', 'off'])]]);
             abort_if($data['action'] === 'on' && ! $store->riders()->exists(), 422, 'Link a rider to this store first (Riders).');
             $store->forceFill(['local_delivery_active' => $data['action'] === 'on'])->save();
+            if ($data['action'] === 'on') {
+                \App\Support\RiderHiring::relinkNearby($store); // riders near it with no active store are suggested
+            }
 
             return response()->json(['data' => $store->fresh()]);
         }

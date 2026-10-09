@@ -69,7 +69,7 @@ const SELLER_CHART_LINES = [
   { key: 'earnings_cents', label: 'Earned', color: '#e69138', axis: 'usd', format: money, tickFormat: dollarTick },
 ]
 const STATS_PERIOD = { day: 'last 14 days', week: 'last 12 weeks', month: 'last 12 months' }
-const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)', adjustment: 'Adjustment', rider_pay: 'Rider pay', rider_cash_recovered: 'Cash a rider kept (from their earnings)' }
+const LEDGER_TYPE_LABELS = { order_credit: 'Order credit', cod_cash_held: 'Cash on delivery you kept', refund_debit: 'Refund (item returned)', payout_debit: 'Payout', payout_fee: 'Withdrawal fee', return_pickup_fee: 'Return pickup fee', delivery_fee_charge: 'Delivery fee (refunded order)', shipping_label: `Shipping label (${brandName()})`, tcs_gst: 'TCS withheld (GST sec. 52)', tds_194o: 'TDS withheld (sec. 194-O)', adjustment: 'Adjustment', rider_pay: 'Rider pay', rider_bonus: 'Rider bonus', rider_cash_recovered: 'Cash a rider kept (from their earnings)' }
 
 const STEPS = ['Business information', 'Seller information', 'Shop', 'Verification']
 
@@ -742,6 +742,16 @@ export default function Seller({ token, onSignOut }) {
       .catch(() => {})
     return () => { stop = true }
   }, [me, token])
+
+  // Live: balance / Finances, products and orders update when something changes (no page reload).
+  useEffect(() => {
+    if (me?.status !== 'approved') return undefined
+    return onLiveChange(() => {
+      fetch(`${API_URL}/seller/me`, { headers: authHeaders() }).then(readJson).then((res) => { if (res?.data) setMe(res.data) }).catch(() => {})
+      loadProducts()
+      loadOrders()
+    })
+  }, [me?.status, authHeaders, loadProducts, loadOrders])
 
   const loadPolicies = useCallback(() => {
     if (!token) return
@@ -1424,6 +1434,17 @@ export default function Seller({ token, onSignOut }) {
                       <div className="sc-chat">
                         <button type="button" className="sc-link" onClick={() => setCustomerChat(null)}>&larr; All customer chats</button>
                         <h2 className="sc-h2">{customerChat.customer_name}{customerChat.order ? ` · Order #${customerChat.order.id}` : ''}</h2>
+                        {customerChat.kind === 'rider' && (() => {
+                          const ticket = async (action) => {
+                            if (action === 'open' && !window.confirm('Open a support ticket? Our support team will read the whole chat and reply within 1–2 working days.')) return
+                            const r = await fetch(`${API_URL}/seller/customer-chats/${customerChat.id}/ticket`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })
+                            const d = await readJson(r)
+                            if (r.ok && d.data) setCustomerChat(d.data); else window.alert(d.message ?? 'That failed.')
+                          }
+                          return customerChat.ticket_status === 'open'
+                            ? <p className="sc-muted">Support ticket open — support will reply within 1–2 working days.{customerChat.ticket_by === 'seller' && <> <button type="button" className="sc-link" onClick={() => ticket('close')}>Close ticket</button></>}</p>
+                            : <button type="button" className="sc-link" onClick={() => ticket('open')}>Open a support ticket</button>
+                        })()}
                         {customerChat.order && (
                           <p className="sc-muted">Your items: {(customerChat.order.items ?? []).map((i) => `${i.product_name} × ${i.quantity}`).join(', ') || '—'} · order {customerChat.order.status}</p>
                         )}
@@ -1432,7 +1453,7 @@ export default function Seller({ token, onSignOut }) {
                         <div className="sc-chat-log">
                           {(customerChat.messages ?? []).map((m) => (
                             <div key={m.id} className={`sc-msg ${m.from}`}>
-                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? `${brandName()}` : m.from === 'customer' ? customerChat.customer_name : ''}</b>
+                              <b>{m.from === 'you' ? 'You' : m.from === 'nextech' ? (m.agent ? `${m.agent} from ${brandName()} Support` : customerChat.kind === 'rider' ? `${brandName()} Support` : brandName()) : m.from === 'customer' ? customerChat.customer_name : ''}</b>
                               {m.body && <span>{m.body}</span>}
                               <ChatPhotos urls={m.attachments} />
                               <small>{new Date(m.created_at).toLocaleString()}</small>
@@ -1456,7 +1477,7 @@ export default function Seller({ token, onSignOut }) {
                             <tr key={t.id}>
                               <td><b>{t.customer_name}</b></td>
                               <td>{t.order_id ? `#${t.order_id}` : '—'}</td>
-                              <td>Order issue (with {brandName()})</td>
+                              <td>{t.kind === 'rider' ? 'Chat with your rider' : `Order issue (with ${brandName()})`}</td>
                               <td>{t.last_message_at ? new Date(t.last_message_at).toLocaleString() : '—'}</td>
                               <td>{customerUnread(t) ? <span className="sc-pill rejected">Unread</span> : t.needs_seller_reply ? <span className="sc-pill pending">Awaiting your reply</span> : <span className={`sc-pill ${t.status === 'resolved' ? 'approved' : ''}`}>{t.status === 'resolved' ? 'Resolved' : 'Open'}</span>}</td>
                               <td className="sc-actions"><button type="button" onClick={() => openCustomerChat(t)}>Open</button></td>
@@ -1518,7 +1539,7 @@ export default function Seller({ token, onSignOut }) {
                         <div className="seller-thread-messages">
                           {(supportThread.messages ?? []).map((msg) => (
                             <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
-                              <strong>{msg.is_staff ? `${brandName()}` : 'You'}:</strong> {msg.body}
+                              <strong>{msg.is_staff ? (msg.agent_name ? `${msg.agent_name} from ${brandName()} Support` : brandName()) : 'You'}:</strong> {msg.body}
                             </p>
                           ))}
                         </div>
@@ -1929,7 +1950,7 @@ export default function Seller({ token, onSignOut }) {
                   <div className="seller-thread-messages">
                     {(supportThread.messages ?? []).map((msg) => (
                       <p key={msg.id} className={msg.is_staff ? 'seller-thread-msg staff' : 'seller-thread-msg'}>
-                        <strong>{msg.is_staff ? `${brandName()}` : 'You'}:</strong> {msg.body}
+                        <strong>{msg.is_staff ? (msg.agent_name ? `${msg.agent_name} from ${brandName()} Support` : brandName()) : 'You'}:</strong> {msg.body}
                       </p>
                     ))}
                     {(supportThread.messages ?? []).length === 0 && <p className="seller-earnings-empty">No messages yet.</p>}

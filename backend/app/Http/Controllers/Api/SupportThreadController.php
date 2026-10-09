@@ -18,6 +18,7 @@ class SupportThreadController extends Controller
         // the seller<->NexTech ones, so neither sees the other's conversations.
         $sellerTypes = self::sellerTypes();
         $threads = $request->user()->supportThreads()
+            ->where('issue_type', '!=', 'rider_seller') // a rider's chats with sellers live in the Rider app
             ->when(
                 self::sellerContext($request),
                 fn ($q) => $q->whereIn('issue_type', $sellerTypes),

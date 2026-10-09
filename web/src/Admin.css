@@ -679,3 +679,7 @@ button.admin-bell-more:hover{text-decoration:underline}
 .rider-settle{display:flex;flex-direction:column;gap:4px;background:#f4f8f1;border:1px solid #dfe8d8;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:12px}.rider-settle button{align-self:flex-start}.money-neg{color:#c62828}.rider-money-month{display:inline-flex;gap:8px;align-items:center;margin:4px 0 8px;font-size:12px}
 .rider-name-cell>span{min-width:150px}
 .rider-hours-edit{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:6px 0}.rider-hours-days{display:flex;flex-wrap:wrap;gap:4px 8px}
+.email-routine{display:flex;gap:6px;align-items:center;font-size:12px;margin:6px 0}.email-routine small{color:#777}.admin-speaker-email{padding:6px 10px}
+.seller-card-notes{margin:4px 0 0;padding-left:16px;font-size:12px}
+.admin-support-names{list-style:none;padding:0;margin:10px 0;display:grid;gap:6px;max-width:420px}.admin-support-names li{display:flex;gap:8px}.admin-support-names input{flex:1}
+.rider-pay-plan label{margin-right:8px}.rider-pay-fields{display:inline-flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-left:8px}.rider-pay-fields input{width:90px}

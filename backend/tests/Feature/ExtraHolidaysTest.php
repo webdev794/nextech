@@ -97,4 +97,65 @@ class ExtraHolidaysTest extends TestCase
         $this->assertNull(\App\Support\SellerProgress::codBlockedReason([$product], 'US', 2500, true));
         $this->assertStringContainsString('only for buyers near their shop', (string) \App\Support\SellerProgress::codBlockedReason([$product], 'US', 2500, false));
     }
+
+    public function test_store_work_hours_remind_riders_and_report_who_is_missing(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true])->save();
+        $store = \App\Models\Store::query()->forceCreate(['name' => 'Hub', 'line1' => '1 Main St', 'city' => 'Austin', 'state' => 'TX', 'postal_code' => '73301', 'country' => 'US', 'delivery_radius_km' => 5, 'is_active' => true,
+            'rider_hours' => ['days' => [1, 2, 3, 4, 5], 'start' => '09:00', 'end' => '18:00']]);
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+        $rider->stores()->attach($store->id);
+
+        $this->travelTo(Carbon::parse('2026-10-13 09:05')); // a Tuesday
+        $this->assertSame(1, \App\Support\RiderWorkHours::check());
+        \Illuminate\Support\Facades\Notification::assertSentTo($rider, \App\Notifications\RiderNotice::class);
+        \Illuminate\Support\Facades\Notification::assertNotSentTo($admin, \App\Notifications\AdminNotice::class);
+
+        $this->travelTo(Carbon::parse('2026-10-13 09:35'));
+        $this->assertSame(0, \App\Support\RiderWorkHours::check()); // reminded once a day
+        \Illuminate\Support\Facades\Notification::assertSentTo($admin, \App\Notifications\AdminNotice::class);
+
+        $this->travelTo(Carbon::parse('2026-10-17 10:00')); // Saturday: not a working day
+        $this->assertFalse(\App\Support\RiderWorkHours::isWorkTime($store->fresh()));
+    }
+
+    public function test_excellent_month_suggests_a_bonus_to_admin(): void
+    {
+        \Illuminate\Support\Facades\Notification::fake();
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true])->save();
+        \App\Models\Setting::put('rider_bonus', ['US' => ['benchmark_cents' => 1000, 'min_deliveries' => 1, 'min_rating' => 4.8]]);
+        $store = \App\Models\Store::query()->forceCreate(['name' => 'Hub', 'line1' => '1 Main St', 'city' => 'Austin', 'state' => 'TX', 'postal_code' => '73301', 'country' => 'US', 'delivery_radius_km' => 5, 'is_active' => true]);
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+        $rider->stores()->attach($store->id);
+        $buyer = User::factory()->create();
+
+        $this->travelTo(Carbon::parse('2026-09-15 12:00'));
+        $order = \App\Models\Order::query()->forceCreate(['user_id' => $buyer->id, 'market' => 'US', 'status' => 'completed', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500, 'delivery_partner_id' => $rider->id, 'delivered_at' => now(), 'delivery_address' => ['line1' => 'x']]);
+        \App\Models\RiderLedgerEntry::create(['user_id' => $rider->id, 'type' => 'delivery_credit', 'amount_cents' => 5000, 'note' => 'test']);
+        \App\Models\RiderReview::create(['order_id' => $order->id, 'rider_id' => $rider->id, 'user_id' => $buyer->id, 'rating' => 5, 'source' => 'order']);
+
+        $this->travelTo(Carbon::parse('2026-09-25 06:30'));
+        $this->assertSame(1, \App\Support\RiderBonus::suggest());
+        $this->assertSame(0, \App\Support\RiderBonus::suggest()); // once per rider per month
+        \Illuminate\Support\Facades\Notification::assertSentTo($admin, \App\Notifications\AdminNotice::class);
+        Sanctum::actingAs($admin);
+        $id = $this->getJson('/api/admin/notifications')->assertOk()->json('data.rider_bonus_suggestions.0.id');
+        $this->deleteJson("/api/admin/rider-bonus-suggestions/{$id}")->assertOk()->assertJsonCount(0, 'data');
+    }
+
+    public function test_admin_limits_the_days_sellers_may_promise(): void
+    {
+        \App\Models\Setting::put('seller_max_local_days', 2);
+        \App\Models\Setting::put('seller_max_courier_days', 10);
+        $this->assertSame(2, \App\Support\SellerShipping::maxLocalDays());
+        $this->assertSame(10, \App\Support\SellerShipping::maxCourierDays());
+        $shop = $this->shop();
+        Sanctum::actingAs($shop->seller->user);
+        $this->getJson('/api/seller/shipping')->assertOk()->assertJsonPath('data.max_local_days', 2)->assertJsonPath('data.max_courier_days', 10);
+    }
 }

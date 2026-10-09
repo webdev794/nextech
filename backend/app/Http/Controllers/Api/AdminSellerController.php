@@ -628,6 +628,13 @@ class AdminSellerController extends Controller
         if ($detailed) {
             $row += [
                 'cod' => $seller->shop ? SellerCod::status($seller->shop) + ['accepts' => (bool) $seller->shop->accepts_cod] : null,
+                // Riders' private ratings of this seller (admin only — never shown to the seller).
+                'rider_feedback' => $seller->shop ? [
+                    'avg' => ($avg = \App\Models\RiderFeedback::query()->where('shop_id', $seller->shop->id)->whereNotNull('store_rating')->avg('store_rating')) !== null ? round((float) $avg, 1) : null,
+                    'count' => \App\Models\RiderFeedback::query()->where('shop_id', $seller->shop->id)->count(),
+                    'recent' => \App\Models\RiderFeedback::query()->where('shop_id', $seller->shop->id)->latest()->limit(10)->get()
+                        ->map(fn ($f) => ['order_id' => $f->order_id, 'rating' => $f->store_rating, 'note' => $f->note, 'rider' => \App\Models\User::find($f->rider_id)?->name, 'at' => $f->created_at]),
+                ] : null,
                 'tax_id' => $seller->tax_id,
                 'registered_line1' => $seller->registered_line1,
                 'registered_line2' => $seller->registered_line2,

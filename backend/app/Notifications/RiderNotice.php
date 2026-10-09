@@ -12,11 +12,12 @@ class RiderNotice extends Notification
 {
     use Queueable;
 
-    public function __construct(public string $subject, public string $body) {}
+    public function __construct(public string $subject, public string $body, public bool $routine = false) {}
 
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        // Routine reminders can be turned off (they're in the app anyway); important notices always go.
+        return $this->routine && isset($notifiable->email_routine) && ! $notifiable->email_routine ? [] : ['mail'];
     }
 
     public function toMail(object $notifiable): MailMessage

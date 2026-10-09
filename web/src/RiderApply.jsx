@@ -5,7 +5,7 @@ import { brandName } from './useBranding'
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 
 const VEHICLES = [['bicycle', 'Bicycle'], ['scooter', 'Scooter'], ['motorbike', 'Motorbike'], ['car', 'Car']]
-const EMPTY = { phone: '', email: '', date_of_birth: '', experience_months: '', home_address: '', home_lat: null, home_lng: null, store_ids: [], vehicle_type: 'scooter', own_vehicle: false, license_number: '', license_document_path: '', rc_document_path: '', id_document_path: '', education_document_path: '', photo_path: '', education: '', work_history: '', health_issue: false, health_details: '', consent_removal: false }
+const EMPTY = { phone: '', email: '', date_of_birth: '', experience_months: '', home_address: '', home_lat: null, home_lng: null, store_ids: [], vehicle_type: 'scooter', own_vehicle: false, license_number: '', license_document_path: '', rc_document_path: '', id_document_path: '', education_document_path: '', photo_path: '', education: '', work_history: '', health_issue: false, health_details: '', consent_removal: false, signed_name: '', signed_place: '', payout_method: '', holder_name: '', bank_name: '', account_number: '', routing_number: '', payout_email: '' }
 const age = (dob) => { if (!dob) return null; const d = new Date(dob); const n = new Date(); return n.getFullYear() - d.getFullYear() - (n < new Date(n.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0) }
 
 async function readJson(response) {
@@ -91,7 +91,7 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
     if (!form.store_ids.length) { setMessage('Tick at least one store you can deliver for.'); return }
     setBusy(true)
     try {
-      const payload = { ...form, store_ids: form.store_ids.map(Number), experience_months: Number(form.experience_months || 0), education_document_path: form.education_document_path || null, health_details: form.health_issue ? form.health_details : null }
+      const payload = { ...form, payout_method: form.payout_method || chosen?.payout_methods?.[0] || 'bank', store_ids: form.store_ids.map(Number), experience_months: Number(form.experience_months || 0), education_document_path: form.education_document_path || null, health_details: form.health_issue ? form.health_details : null }
       if (payload.vehicle_type === 'bicycle') payload.rc_document_path = null
       if (payload.vehicle_type === 'bicycle') { payload.license_number = null; payload.license_document_path = null }
       const response = await fetch(`${API_URL}/rider-application`, { method: 'POST', headers: headers(true), body: JSON.stringify(payload) })
@@ -202,7 +202,26 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
             <label className="rider-apply-check"><input type="checkbox" checked={form.own_vehicle} onChange={(event) => setForm({ ...form, own_vehicle: event.target.checked })} /> I have my own vehicle and pay its fuel and running costs.</label>
             <label className="rider-apply-check"><input type="checkbox" checked={form.consent_removal} onChange={(event) => setForm({ ...form, consent_removal: event.target.checked })} /> I agree that if stores aren&rsquo;t available, or for bad behaviour, health or other issues, the seller or {brandName()} can remove me at any time. I&rsquo;ll give at least 30 days&rsquo; notice before I stop working; if I leave without notice, my final pay is settled only after the store checks my open orders and any cash I hold, and I may not be hired again. I work the hours the store sets, use my own vehicle, and I&rsquo;m paid per delivery as the store sets it, through {brandName()}. {brandName()}&rsquo;s decision is final on pay, working hours, days off and other matters; the seller I deliver for can also decide these for their store; I hand over any cash I collect the same day, and while I hold cash over the limit I can&rsquo;t take deliveries for any store.</label>
 
-            <button type="submit" disabled={busy || uploading || tooYoung || !form.own_vehicle || !form.consent_removal || !form.id_document_path || !form.photo_path || (needsLicense && (!form.license_document_path || !form.rc_document_path))}>{busy ? 'Sending…' : 'Send application'} &rarr;</button>
+            {/* Last step, once everything above is filled in: the store's terms, then sign with name + place. */}
+            {form.own_vehicle && form.consent_removal && form.id_document_path && form.photo_path && (!needsLicense || (form.license_document_path && form.rc_document_path)) && !tooYoung && (
+              <div className="rider-apply-terms">
+                <h3>How you want to be paid</h3>
+                {(chosen?.payout_methods ?? ['bank']).map((m) => <label key={m} className="rider-apply-check"><input type="radio" checked={(form.payout_method || chosen?.payout_methods?.[0]) === m} onChange={() => setForm({ ...form, payout_method: m })} /> {m === 'bank' ? 'Bank account' : 'PayPal'}</label>)}
+                {(form.payout_method || chosen?.payout_methods?.[0] || 'bank') === 'bank' ? <>
+                  <label>Account holder name<input value={form.holder_name} onChange={(e) => setForm({ ...form, holder_name: e.target.value })} /></label>
+                  <label>Bank name<input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} /></label>
+                  <label>Account number<input value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} /></label>
+                  <label>Routing / IFSC code<input value={form.routing_number} onChange={(e) => setForm({ ...form, routing_number: e.target.value })} /></label>
+                </> : <label>PayPal email<input type="email" value={form.payout_email} onChange={(e) => setForm({ ...form, payout_email: e.target.value })} /></label>}
+                <h3>Before you join — the store&rsquo;s terms</h3>
+                <ul>{(chosen?.terms ?? []).map((t) => <li key={t}>{t}</li>)}</ul>
+                <p className="admin-gate-sub">Sign below to accept these terms and join.</p>
+                <label>Your full name (signature)<input required minLength={2} maxLength={120} autoComplete="name" value={form.signed_name} onChange={(event) => setForm({ ...form, signed_name: event.target.value })} /></label>
+                <label>Your current town or city<input required minLength={2} maxLength={120} value={form.signed_place} onChange={(event) => setForm({ ...form, signed_place: event.target.value })} /></label>
+                <p className="admin-gate-sub">Date: {new Date().toLocaleDateString()}</p>
+              </div>
+            )}
+            <button type="submit" disabled={busy || uploading || tooYoung || !form.own_vehicle || !form.consent_removal || !form.id_document_path || !form.photo_path || (needsLicense && (!form.license_document_path || !form.rc_document_path)) || form.signed_name.trim().length < 2 || form.signed_place.trim().length < 2}>{busy ? 'Sending…' : 'Sign and submit to join'} &rarr;</button>
           </form>
         )}
 

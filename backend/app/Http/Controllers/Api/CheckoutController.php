@@ -359,6 +359,7 @@ class CheckoutController extends Controller
                     'shop_id' => $shopQuote['shop_id'],
                     'mode' => $shopQuote['mode'],
                     'method' => $shopQuote['method'] ?? null,
+                    'local_km' => $shopQuote['local_km'] ?? null,
                     'fee_cents' => $shopQuote['fee_cents'],
                     'seller_fee_cents' => $shopQuote['seller_fee_cents'] ?? null,
                     'paperwork_cents' => $shopQuote['paperwork_cents'] ?? 0,

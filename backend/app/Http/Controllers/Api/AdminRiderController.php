@@ -81,6 +81,8 @@ class AdminRiderController extends Controller
                     ->sortBy(fn ($s) => array_search($s->id, \App\Support\RiderHiring::preferred($app), true))->values(),
                 'documents' => array_filter(['Photo' => $app->photo_path, 'ID proof' => $app->id_document_path, 'Driving licence' => $app->license_document_path, 'Vehicle RC' => $app->rc_document_path, 'Education' => $app->education_document_path]),
                 'applied_at' => $app->created_at,
+                // Their signature on the store's terms, and the terms as signed.
+                'signed' => $app->signed_name ? ['name' => $app->signed_name, 'place' => $app->signed_place, 'at' => $app->signed_at, 'terms' => $app->signed_terms ?? []] : null,
             ] : null,
         ]]);
     }
@@ -238,6 +240,76 @@ class AdminRiderController extends Controller
         $month = \Illuminate\Support\Carbon::parse(($request->validate(['month' => ['sometimes', 'date_format:Y-m']])['month'] ?? now()->format('Y-m')).'-01');
 
         return response()->json(['data' => \App\Support\RiderMoney::table($month, null, Market::adminFilter($request))]);
+    }
+
+    /** Riders suggested to NexTech's own stores (delivered before, live nearby). */
+    public function invites(): JsonResponse
+    {
+        return response()->json(['data' => \App\Models\RiderInvite::query()->whereIn('status', ['suggested', 'invited'])
+            ->whereHas('store', fn ($q) => $q->whereNull('shop_id'))->with(['user:id,name,phone', 'store:id,name'])->get()
+            ->map(fn ($i) => ['id' => $i->id, 'status' => $i->status, 'name' => $i->user?->name, 'phone' => $i->user?->phone, 'store' => $i->store?->name])]);
+    }
+
+    public function decideInvite(Request $request, \App\Models\RiderInvite $invite): JsonResponse
+    {
+        abort_unless($invite->store && ! $invite->store->shop_id, 404);
+        \App\Support\RiderHiring::storeDecides($invite, (bool) $request->validate(['invite' => ['required', 'boolean']])['invite']);
+
+        return $this->invites();
+    }
+
+    /** Approve or decline a rider's move to a new home area. */
+    public function decideMove(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate(['approve' => ['required', 'boolean'], 'reason' => ['nullable', 'string', 'max:300']]);
+        \App\Support\RiderHiring::decideMove($user, $data['approve'], $data['reason'] ?? null);
+
+        return response()->json(['message' => $data['approve'] ? 'Move approved — the rider is told.' : 'Declined — the rider is told.']);
+    }
+
+    /** Dismiss a performance warning. */
+    public function dismissWarning(string $id): JsonResponse
+    {
+        \App\Support\PerformanceWatch::dismiss($id);
+
+        return response()->json(['data' => \App\Support\PerformanceWatch::warnings()]);
+    }
+
+    /** Set a rider's pay plan: per delivery (null) or monthly pay with target, bonus and cap. */
+    public function payPlan(Request $request, User $user): JsonResponse
+    {
+        $data = $request->validate([
+            'plan' => ['present', 'nullable', 'array'],
+            'plan.monthly_cents' => ['required_with:plan', 'integer', 'min:1'],
+            'plan.target' => ['required_with:plan', 'integer', 'min:1', 'max:10000'],
+            'plan.bonus_per_extra_cents' => ['required_with:plan', 'integer', 'min:0'],
+            'plan.bonus_cap_cents' => ['required_with:plan', 'integer', 'min:0'],
+        ]);
+        $user->forceFill(['rider_pay_plan' => $data['plan'] ? ['type' => 'monthly'] + array_map('intval', $data['plan']) : null])->save();
+
+        return response()->json(['data' => $user->fresh()->rider_pay_plan]);
+    }
+
+    /** Top-up pools: last months' pools and riders who fell short. */
+    public function pools(): JsonResponse
+    {
+        return response()->json(['data' => \App\Support\RiderPayPlan::pools()]);
+    }
+
+    public function topUp(Request $request): JsonResponse
+    {
+        $data = $request->validate(['pool_id' => ['required', 'string'], 'rider_id' => ['required', 'integer'], 'amount_cents' => ['required', 'integer', 'min:1']]);
+        \App\Support\RiderPayPlan::topUp($data['pool_id'], $data['rider_id'], $data['amount_cents'], $request->user());
+
+        return $this->pools();
+    }
+
+    /** Remove a bonus suggestion (bonus given, or not needed). */
+    public function dismissBonus(string $id): JsonResponse
+    {
+        \App\Support\RiderBonus::dismiss($id);
+
+        return response()->json(['data' => \App\Support\RiderBonus::suggestions()]);
     }
 
     /** Take cash a rider holds for sellers from their earnings and give it to the sellers now. */
@@ -412,6 +484,12 @@ class AdminRiderController extends Controller
             'experience_months' => \App\Models\RiderApplication::where('user_id', $rider->id)->value('experience_months'),
             'rider_since' => $rider->rider_since,
             'photo_path' => $rider->rider_photo_path,
+            'move_request' => $rider->rider_move_request,
+            'pay_plan' => \App\Support\RiderPayPlan::of($rider),
+            'deliveries_this_month' => \App\Support\RiderPayPlan::of($rider) ? \App\Support\RiderPayPlan::deliveries($rider, now()) : null,
+            // How this rider rates stores and buyers (private; admin only).
+            'feedback_given' => ($fg = \App\Models\RiderFeedback::query()->where('rider_id', $rider->id)->selectRaw('count(*) as c, avg(store_rating) as s, avg(buyer_rating) as b')->first()) && $fg->c
+                ? ['count' => (int) $fg->c, 'store_avg' => $fg->s !== null ? round((float) $fg->s, 1) : null, 'buyer_avg' => $fg->b !== null ? round((float) $fg->b, 1) : null] : null,
             'notice' => $rider->rider_notice_at && ! $rider->rider_notice_processed_at ? ['given_at' => $rider->rider_notice_at, 'leaving_on' => $rider->rider_leaving_on?->toDateString()] : null,
             'stores' => $rider->relationLoaded('stores')
                 ? $rider->stores->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'city' => $s->city, 'country' => $s->country, 'shop_id' => $s->shop_id, 'linked_at' => $s->pivot?->linked_at])->values()

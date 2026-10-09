@@ -164,14 +164,78 @@ class SellerLocalDeliveryController extends Controller
         return response()->json(['data' => $this->payload($shop)]);
     }
 
+    /** A bonus for one of the seller's riders, paid from the seller's earnings (like rider pay). */
+    public function riderBonus(Request $request, User $rider): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $store = SellerStores::ensure($shop);
+        abort_unless($rider->stores()->whereKey($store->id)->exists(), 404);
+        $data = $request->validate(['amount_cents' => ['required', 'integer', 'min:1'], 'note' => ['nullable', 'string', 'max:200']]);
+        abort_if($data['amount_cents'] > max(0, $shop->balanceCents()), 422, 'That’s more than your available earnings.');
+        $note = trim(($data['note'] ?? '') !== '' ? "Bonus: {$data['note']}" : 'Bonus').' — '.$shop->name;
+        \Illuminate\Support\Facades\DB::transaction(function () use ($rider, $shop, $data, $note) {
+            \App\Models\RiderLedgerEntry::create(['user_id' => $rider->id, 'type' => 'bonus', 'amount_cents' => $data['amount_cents'], 'note' => $note]);
+            \App\Models\SellerLedgerEntry::create(['shop_id' => $shop->id, 'order_id' => null, 'type' => 'rider_bonus', 'amount_cents' => -$data['amount_cents'], 'note' => "Bonus for {$rider->name}"]);
+        });
+        try {
+            $rider->notify(new \App\Notifications\RiderNotice('You got a bonus', "{$shop->name} gave you a bonus of ".\App\Support\Money::format($data['amount_cents'], \App\Support\Market::currency($store->country)).(($data['note'] ?? '') !== '' ? ": {$data['note']}" : '').'. It’s added to your earnings.'));
+        } catch (\Throwable $e) {
+            report($e);
+        }
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
+    /** Invite a suggested rider (who delivered before and lives nearby), or no thanks. */
+    public function decideInvite(Request $request, \App\Models\RiderInvite $invite): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($invite->store_id === SellerStores::ensure($shop)->id, 404);
+        \App\Support\RiderHiring::storeDecides($invite, (bool) $request->validate(['invite' => ['required', 'boolean']])['invite']);
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
     /** The hours riders must be on duty for this store (null = no set hours). */
     public function riderHours(Request $request): JsonResponse
     {
         $shop = $this->shop($request);
         $data = $request->validate(\App\Support\RiderWorkHours::rules());
-        SellerStores::ensure($shop)->forceFill(['rider_hours' => $data['hours'] ? ['days' => array_values(array_unique(array_map('intval', $data['hours']['days']))), 'start' => $data['hours']['start'], 'end' => $data['hours']['end']] : null])->save();
+        SellerStores::ensure($shop)->forceFill(['rider_hours' => \App\Support\RiderWorkHours::fromInput($data['hours'])])->save();
 
         return response()->json(['data' => $this->payload($shop)]);
+    }
+
+    /** Every delivery by the seller's riders in a month, as a CSV (to check or pay riders). */
+    public function deliveriesCsv(Request $request)
+    {
+        $shop = $this->shop($request);
+        $month = \Illuminate\Support\Carbon::parse(($request->validate(['month' => ['sometimes', 'date_format:Y-m']])['month'] ?? now()->format('Y-m')).'-01');
+        $packages = \App\Models\OrderPackage::query()->where('shop_id', $shop->id)->whereNotNull('rider_id')->where('status', 'delivered')
+            ->whereBetween('delivered_at', [$month->copy()->startOfMonth(), $month->copy()->endOfMonth()])
+            ->with(['order.shopShipping', 'rider:id,name'])->orderBy('delivered_at')->get();
+        $pay = \App\Models\RiderLedgerEntry::query()->where('type', 'seller_delivery')->whereIn('order_id', $packages->pluck('order_id'))->get()->keyBy(fn ($e) => $e->user_id.'-'.$e->order_id);
+        $cents = fn (int $c) => number_format($c / 100, 2, '.', '');
+        $lines = [['Delivered', 'Order', 'Rider', 'Buyer area', 'Delivery fee paid by buyer', 'Rider pay', 'Cash collected', 'Cash handed over']];
+        foreach ($packages as $p) {
+            $cash = \App\Support\SellerRiders::cashCents($p);
+            $lines[] = [
+                $p->delivered_at?->format('Y-m-d H:i'),
+                '#'.$p->order_id,
+                $p->rider?->name,
+                trim(($p->order?->delivery_address['city'] ?? '').' '.($p->order?->delivery_address['postal_code'] ?? '')),
+                $cents((int) ($p->order?->shopShipping->firstWhere('shop_id', $shop->id)?->fee_cents ?? 0)),
+                $cents((int) ($pay->get($p->rider_id.'-'.$p->order_id)?->amount_cents ?? 0)),
+                $p->cash_collected_at ? $cents($cash) : '',
+                $p->cash_collected_at ? ($p->cash_handed_over_at ? $p->cash_handed_over_at->format('Y-m-d') : 'not yet') : '',
+            ];
+        }
+        $csv = implode("\r\n", array_map(fn ($row) => implode(',', array_map(fn ($v) => '"'.str_replace('"', '""', (string) $v).'"', $row)), $lines))."\r\n";
+
+        return response($csv, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="rider-deliveries-'.$month->format('Y-m').'.csv"',
+        ]);
     }
 
     /** The most cash one rider may hold for the store before they're paused. */
@@ -214,13 +278,22 @@ class SellerLocalDeliveryController extends Controller
             ],
             'min_age' => RiderHiring::minAge($store->country),
             'cash_limit_cents' => \App\Support\SellerRiderCash::limitCents($store),
+            'balance_cents' => max(0, $shop->balanceCents()), // what a bonus can come from
             'rider_pay_cents' => \App\Support\RiderMoney::sellerRateCents($store),
             'rider_pickup_hours' => \App\Support\SellerRiders::pickupHours($store),
             'rider_hours' => \App\Support\RiderWorkHours::of($store),
+            // Riders who delivered before and live nearby (suggested / invited).
+            'invites' => \App\Models\RiderInvite::query()->where('store_id', $store->id)->whereIn('status', ['suggested', 'invited'])->with('user:id,name,phone')->get()
+                ->map(fn ($i) => ['id' => $i->id, 'status' => $i->status, 'name' => $i->user?->name, 'phone' => $i->user?->phone]),
+            // Riders' days off: coming up, and this month's (asked for / missed).
+            'leaves' => \App\Models\RiderLeave::query()->whereIn('user_id', $riders->pluck('id'))->whereDate('date', '>=', now()->startOfMonth()->toDateString())
+                ->with('user:id,name')->orderBy('date')->get()->map(fn ($l) => ['id' => $l->id, 'rider' => $l->user?->name, 'date' => $l->date->toDateString(), 'kind' => $l->kind, 'told_ahead' => $l->told_ahead, 'reason' => $l->reason]),
             'currency' => \App\Support\Market::currency($store->country),
             'apply_url' => rtrim((string) config('app.url'), '/').'/#/rider-apply',
             'riders' => $riders->map(fn (User $r) => [
                 'id' => $r->id,
+                // The store's terms they signed when joining.
+                'signed' => ($app = RiderApplication::query()->where('user_id', $r->id)->whereNotNull('signed_name')->latest()->first()) ? ['name' => $app->signed_name, 'place' => $app->signed_place, 'at' => $app->signed_at, 'terms' => $app->signed_terms ?? []] : null,
                 'name' => $r->name,
                 'phone' => $r->phone,
                 'vehicle' => $vehicles[$r->id]['vehicle_type'] ?? null,

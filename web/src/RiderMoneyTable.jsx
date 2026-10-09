@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 
-export function RiderMoneyTable({ headers, path, currency, admin = false, className = 'admin-table' }) {
+export function RiderMoneyTable({ headers, path, currency, admin = false, className = 'admin-table', csvPath = null }) {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7))
   const [rows, setRows] = useState(null)
   const [error, setError] = useState('')
@@ -21,6 +21,16 @@ export function RiderMoneyTable({ headers, path, currency, admin = false, classN
   return (
     <div className="rider-money">
       <label className="rider-money-month">Month <input type="month" value={month} max={new Date().toISOString().slice(0, 7)} onChange={(e) => setMonth(e.target.value || month)} /></label>
+      {csvPath && <button type="button" className="sc-link" onClick={async () => {
+        try {
+          const res = await fetch(`${API_URL}${csvPath}?month=${month}`, { headers: headers() })
+          if (!res.ok) throw new Error('Could not download.')
+          const url = URL.createObjectURL(await res.blob())
+          const a = document.createElement('a')
+          a.href = url; a.download = `rider-deliveries-${month}.csv`; a.click()
+          setTimeout(() => URL.revokeObjectURL(url), 1000)
+        } catch (e) { setError(e.message) }
+      }}>Download deliveries (CSV)</button>}
       {error && <p className="muted">{error}</p>}
       {rows === null ? <p className="muted">Loading…</p> : rows.length === 0 ? <p className="muted">No riders yet.</p> : (
         <div className="admin-table-wrap"><table className={className}>

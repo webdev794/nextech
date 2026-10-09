@@ -20,6 +20,7 @@ import { ProductDocuments } from './ProductDocuments'
 import { InfoSections } from './InfoSections'
 import { MyReviews, OrderItemReviews, ProductReviews, ReviewerPage } from './Reviews'
 import { openChat } from './chatDockUtils'
+import { onLiveChange } from './useLiveRefresh'
 import { brandName } from './useBranding'
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
@@ -803,6 +804,10 @@ export default function Storefront() {
       .then((data) => setOrders(data.data ?? []))
       .catch(() => setOrders([]))
       .finally(() => setOrdersLoading(false))
+    // While the orders page is open, status changes (rider assigned, out for delivery…) show by themselves.
+    const off = onLiveChange(() => fetch(`${API_URL}/orders`, { headers: { Accept: 'application/json', Authorization: `Bearer ${token}` } })
+      .then(responseJson).then((data) => { if (data?.data) setOrders(data.data) }).catch(() => {}))
+    return off
   }, [ordersOpen])
 
   // First visit only (no country chosen yet): open the store for the visitor's country.
@@ -3274,7 +3279,7 @@ export default function Storefront() {
             ? <RiderRating orderId={chatOrder.id} existing={chatOrder.rider_review} source="chat" onSaved={(rv) => setOrders((current) => current.map((row) => row.id === chatOrder.id ? { ...row, rider_review: rv } : row))} />
             : null
         })()}
-        <div className="chat-log">{(supportView.messages ?? []).map((m) => <div key={m.id} className={`chat-msg ${m.from_seller ? 'staff seller' : m.is_staff ? 'staff' : m.user_id ? 'me' : 'system'}`}>{m.body && <span>{m.body}</span>}<ChatPhotos urls={m.attachments} /><em>{m.from_seller ? `${supportView.seller_shop?.name ?? 'Seller'} (seller) · ` : ''}{new Date(m.created_at).toLocaleString()}</em></div>)}</div>
+        <div className="chat-log">{(supportView.messages ?? []).map((m) => <div key={m.id} className={`chat-msg ${m.from_seller ? 'staff seller' : m.is_staff ? 'staff' : m.user_id ? 'me' : 'system'}`}>{m.body && <span>{m.body}</span>}<ChatPhotos urls={m.attachments} /><em>{m.from_seller ? `${supportView.seller_shop?.name ?? 'Seller'} (seller) · ` : m.is_staff ? `${m.agent_name ? `${m.agent_name} from ` : ''}${brandName()} Support · ` : ''}{new Date(m.created_at).toLocaleString()}</em></div>)}</div>
         {supportView.issue_type !== 'delivery' && (supportView.rating != null || (supportView.messages ?? []).some((m) => m.is_staff)) && (
           <ChatRating key={supportView.id} thread={supportView} onSaved={(t) => { setSupportView(t); loadThreads() }} />
         )}

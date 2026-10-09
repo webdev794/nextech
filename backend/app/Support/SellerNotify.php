@@ -14,11 +14,11 @@ use App\Notifications\SellerNotice;
  */
 class SellerNotify
 {
-    public static function send(Seller $seller, User $sender, string $subject, string $body): void
+    public static function send(Seller $seller, User $sender, string $subject, string $body, bool $routine = false): void
     {
         self::thread($seller)->post($sender, $body, isStaff: true);
         try {
-            $seller->user?->notify(new SellerNotice($subject, $body));
+            $seller->user?->notify(new SellerNotice($subject, $body, $routine));
         } catch (\Throwable $e) {
             report($e);
         }

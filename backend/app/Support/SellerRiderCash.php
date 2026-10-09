@@ -149,9 +149,9 @@ class SellerRiderCash
         $cash = SellerRiders::cashCents($package);
         $held = self::heldCents($rider, $store);
         $shop = $package->shop->name;
-        self::tell($rider, 'Cash collected', 'You collected '.self::money($store, $cash)." for {$shop} (order #{$package->order_id}). You now hold ".self::money($store, $held)." of {$shop}’s cash — hand it over at the store today.");
+        self::tell($rider, 'Cash collected', 'You collected '.self::money($store, $cash)." for {$shop} (order #{$package->order_id}). You now hold ".self::money($store, $held)." of {$shop}’s cash — hand it over at the store today.", true);
         if ($seller = $package->shop->seller) {
-            SellerNotify::send($seller, $rider, 'Your rider collected cash', "{$rider->name} collected ".self::money($store, $cash)." on order #{$package->order_id} and now holds ".self::money($store, $held).' of your cash. Mark it received in Seller Center → Local delivery when they hand it over.');
+            SellerNotify::send($seller, $rider, 'Your rider collected cash', "{$rider->name} collected ".self::money($store, $cash)." on order #{$package->order_id} and now holds ".self::money($store, $held).' of your cash. Mark it received in Seller Center → Local delivery when they hand it over.', true);
         }
         $link = self::link($rider, $store);
         if ($held > self::limitCents($store) && ! $link?->cash_later_at) {
@@ -268,10 +268,10 @@ class SellerRiderCash
         return $out;
     }
 
-    private static function tell(User $rider, string $subject, string $body): void
+    private static function tell(User $rider, string $subject, string $body, bool $routine = false): void
     {
         try {
-            $rider->notify(new RiderNotice($subject, $body));
+            $rider->notify(new RiderNotice($subject, $body, $routine));
         } catch (\Throwable $e) {
             report($e);
         }

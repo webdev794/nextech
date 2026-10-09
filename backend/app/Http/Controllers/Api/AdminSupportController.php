@@ -34,6 +34,8 @@ class AdminSupportController extends Controller
             ->withCount('messages')
             ->when($validated['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
             ->when($issueTypes, fn ($q) => $q->whereIn('issue_type', $issueTypes))
+            // Rider ↔ seller chats only once one of them called the store's team in.
+            ->where(fn ($q) => $q->where('issue_type', '!=', 'rider_seller')->orWhereNotNull('admin_called_at'))
             ->with('sellerShop:id,name')
             ->orderByRaw("status = 'open' desc")
             ->orderByDesc('last_message_at')
@@ -45,9 +47,25 @@ class AdminSupportController extends Controller
                 'current_page' => $threads->currentPage(),
                 'last_page' => $threads->lastPage(),
                 'total' => $threads->total(),
-                'open' => SupportThread::where('status', 'open')->count(),
+                'open' => SupportThread::where('status', 'open')->where(fn ($q) => $q->where('issue_type', '!=', 'rider_seller')->orWhereNotNull('admin_called_at'))->count(),
             ],
         ]);
+    }
+
+    /** Assign a support person to a ticket (replies show their name). */
+    public function assignAgent(Request $request, SupportThread $thread): JsonResponse
+    {
+        \App\Support\RiderSellerChat::assign($thread, $request->validate(['agent' => ['required', 'string', 'max:40']])['agent']);
+
+        return response()->json(['data' => $thread->fresh(), 'agents' => \App\Support\RiderSellerChat::agents()]);
+    }
+
+    /** Close a rider–seller support ticket: resolved, or declined (support can't take it up now). */
+    public function closeTicket(Request $request, SupportThread $thread): JsonResponse
+    {
+        \App\Support\RiderSellerChat::supportCloses($thread, $request->validate(['how' => ['required', 'in:resolved,declined']])['how']);
+
+        return response()->json(['data' => $thread->fresh()]);
     }
 
     /**
@@ -156,7 +174,8 @@ class AdminSupportController extends Controller
             'attachments.*' => ['string', 'max:500', 'starts_with:/api/media/file/support/'],
         ]);
 
-        $thread->post($request->user(), trim((string) ($validated['body'] ?? '')), isStaff: true, attachments: $validated['attachments'] ?? []);
+        $message = $thread->post($request->user(), trim((string) ($validated['body'] ?? '')), isStaff: true, attachments: $validated['attachments'] ?? []);
+        \App\Support\RiderSellerChat::stampAgent($thread, $message); // every chat: "Mak from … Support", never admin
 
         return response()->json(['data' => $this->withSellerOptions($thread->fresh($this->threadRelations()))]);
     }

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { onLiveChange } from './useLiveRefresh'
+import { RiderLeavePanel } from './RiderLeavePanel'
+import { RiderLetters } from './RiderLetters'
+import { RiderRateRecent } from './RiderRateRecent'
+import { RiderSellerChats } from './RiderSellerChats'
+import { EmailRoutineToggle } from './EmailRoutineToggle'
 import { BrandLogo } from './BrandLogo'
 import { formatMoney } from './money'
 import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
@@ -593,6 +598,54 @@ export default function RiderConsole({ token, onSignOut }) {
       </header>
 
       <ShiftBar shift={data.shift} headers={headers} workHours={data.work_hours ?? []} onChange={(s) => setData((d) => ({ ...d, shift: s }))} />
+      {(data.invites ?? []).map((iv) => (
+        <section key={iv.id} className="rider-section rider-invite">
+          <h3>{iv.store} invites you</h3>
+          <p className="rider-card-note">{iv.store}{iv.city ? ` (${iv.city})` : ''} would like you to deliver for them. Join only if you want to — say no thanks if you&rsquo;ve found work elsewhere.</p>
+          {[[true, 'Join', 'rider-btn primary'], [false, 'No thanks', 'rider-btn ghost']].map(([join, label, cls]) => (
+            <button key={label} type="button" className={cls} onClick={async () => {
+              try {
+                const res = await fetch(`${API_URL}/rider/invites/${iv.id}`, { method: 'POST', headers: headers(true), body: JSON.stringify({ join }) })
+                const body = await readJson(res)
+                window.alert(body.message ?? (res.ok ? 'Done.' : 'That failed.'))
+                load()
+              } catch { window.alert('Cannot reach the server.') }
+            }}>{label}</button>
+          ))}
+        </section>
+      ))}
+      <RiderRateRecent items={data.to_rate ?? []} headers={headers} onDone={load} />
+      <RiderSellerChats headers={headers} />
+      <section className="rider-section rider-move">
+        {data.move_request
+          ? <p className="rider-card-note">You asked to move to <b>{data.move_request.address}</b> — waiting for the store to approve or decline.</p>
+          : <button type="button" className="rider-btn ghost" onClick={async () => {
+            const address = window.prompt('Moving to another area (at your own cost)? Your new home address — the store approves or declines. If approved, you stop delivering for your current stores (pay you earned is still paid) and stores near your new home can invite you.', '')
+            if (!address?.trim()) return
+            try {
+              const res = await fetch(`${API_URL}/rider/move`, { method: 'POST', headers: headers(true), body: JSON.stringify({ address: address.trim() }) })
+              const body = await readJson(res)
+              window.alert(body.message ?? (res.ok ? 'Sent.' : 'That failed.'))
+              load()
+            } catch { window.alert('Cannot reach the server.') }
+          }}>Moving to another area?</button>}
+      </section>
+      {data.no_active_store && <section className="rider-section rider-nostore">
+        <h3>No store right now</h3>
+        <p className="rider-card-note">None of your stores is delivering at the moment. Your details stay on file, and a store near your home that starts deliveries may invite you — you choose whether to join. Moving? <a href={`${import.meta.env.BASE_URL}rider/apply`}>Apply to a store near your new home</a>.</p>
+        <button type="button" className="rider-btn reject" onClick={async () => {
+          if (!window.confirm('Delete your rider details?\n\nYour documents and personal details are removed. To deliver again later you’ll need to apply with new documents. Your pay must be settled first.')) return
+          try {
+            const res = await fetch(`${API_URL}/rider/details`, { method: 'DELETE', headers: headers() })
+            const body = await readJson(res)
+            window.alert(body.message ?? (res.ok ? 'Deleted.' : 'Could not delete.'))
+            if (res.ok) onSignOut()
+          } catch { window.alert('Cannot reach the server.') }
+        }}>Delete my details</button>
+      </section>}
+      {!data.no_active_store && <RiderLeavePanel leave={data.leave} headers={headers} onChange={load} />}
+      <RiderLetters headers={headers} />
+      <EmailRoutineToggle headers={headers} className="rider-card-note" />
       {(data.work_hours ?? []).map((w) => <p key={w.store} className="rider-cash">🕘 {w.store}: your working hours are {w.hours}{w.now && !data.shift?.clocked_in ? ' — you should be on duty now: clock in.' : '.'}</p>)}
 
       {pendingOffers.length > 0 && (

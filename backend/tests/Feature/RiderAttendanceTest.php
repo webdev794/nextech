@@ -27,7 +27,7 @@ class RiderAttendanceTest extends TestCase
     {
         $rider = User::factory()->create([
             'is_rider' => true, 'rider_is_active' => true,
-            'rider_base_lat' => 40.7130, 'rider_base_lng' => -74.0058,
+            'rider_base_lat' => 40.7130, 'rider_base_lng' => -74.0058, 'rider_payout_method' => 'bank',
             ...$overrides,
         ]);
         $rider->stores()->attach($store->id);
@@ -380,5 +380,17 @@ class RiderAttendanceTest extends TestCase
         $this->patchJson("/api/admin/customers/{$user->id}", ['is_rider' => true])->assertOk();
 
         $this->assertNotNull($user->fresh()->rider_since);
+    }
+
+    public function test_no_clock_in_without_a_payout_method_the_store_allows(): void
+    {
+        $store = Store::query()->first() ?? Store::query()->forceCreate(['name' => 'Hub', 'line1' => '1 Main St', 'city' => 'New York', 'state' => 'NY', 'postal_code' => '10001', 'country' => 'US', 'delivery_radius_km' => 5, 'is_active' => true, 'latitude' => 40.71, 'longitude' => -74.0]);
+        $rider = $this->rider($store, ['rider_payout_method' => null]);
+        \App\Models\Setting::put('payout_fees', ['US' => ['paypal' => ['enabled' => false]]]);
+        Sanctum::actingAs($rider);
+        $this->postJson('/api/rider/shift', ['action' => 'clock_in'])->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'how you want to be paid'));
+        $this->patchJson('/api/rider/payout-method', ['payout_method' => 'paypal', 'email' => 'r@example.com'])->assertStatus(422); // not allowed here
+        $this->patchJson('/api/rider/payout-method', ['payout_method' => 'bank', 'holder_name' => 'R', 'account_number' => '123', 'routing_number' => '021000021', 'bank_name' => 'Bank'])->assertOk();
+        $this->postJson('/api/rider/shift', ['action' => 'clock_in'])->assertOk();
     }
 }

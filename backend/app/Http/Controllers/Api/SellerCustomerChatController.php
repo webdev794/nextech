@@ -34,12 +34,26 @@ class SellerCustomerChatController extends Controller
                 'status' => $t->status,
                 'order_id' => $t->order_id,
                 'order_status' => $t->order?->status,
-                'customer_name' => Privacy::maskName($t->user?->name),
+                // A rider's chat shows who they are (sellers know their riders); buyers stay masked.
+                'customer_name' => $t->issue_type === 'rider_seller' ? 'Rider '.$t->user?->name : Privacy::maskName($t->user?->name),
+                'kind' => $t->issue_type === 'rider_seller' ? 'rider' : 'customer',
                 'last_message_at' => $t->last_message_at,
                 'needs_seller_reply' => self::needsSellerReply($t),
             ]);
 
         return response()->json(['data' => $threads]);
+    }
+
+    /** A rider's chat: open a support ticket (or close the one the seller opened). */
+    public function ticket(Request $request, SupportThread $thread): JsonResponse
+    {
+        $shop = $this->shop($request);
+        abort_unless($thread->seller_shop_id === $shop->id, 404);
+        $request->validate(['action' => ['required', 'in:open,close']])['action'] === 'open'
+            ? \App\Support\RiderSellerChat::openTicket($thread, $request->user(), 'seller')
+            : \App\Support\RiderSellerChat::withdrawTicket($thread, $request->user(), 'seller');
+
+        return response()->json(['data' => $this->payload($thread->fresh(), $shop)]);
     }
 
     /** The chat as a page of messages, for the docked chat window. */
@@ -98,7 +112,10 @@ class SellerCustomerChatController extends Controller
             'id' => $thread->id,
             'issue_type' => $thread->issue_type,
             'status' => $thread->status,
-            'customer_name' => Privacy::maskName($thread->user?->name),
+            'customer_name' => $thread->issue_type === 'rider_seller' ? 'Rider '.$thread->user?->name : Privacy::maskName($thread->user?->name),
+            'kind' => $thread->issue_type === 'rider_seller' ? 'rider' : 'customer',
+            'ticket_status' => $thread->ticket_status,
+            'ticket_by' => $thread->ticket_by,
             'order' => $thread->order ? [
                 'id' => $thread->order->id,
                 'status' => $thread->order->status,
@@ -113,6 +130,7 @@ class SellerCustomerChatController extends Controller
                 'created_at' => $m->created_at,
                 // Who sent it, from the seller's point of view.
                 'from' => $m->from_seller ? 'you' : ($m->user_id === null ? 'system' : ($m->is_staff ? 'nextech' : 'customer')),
+                'agent' => $m->agent_name, // tickets: "Mak from … Support\"
             ])->values(),
         ];
     }

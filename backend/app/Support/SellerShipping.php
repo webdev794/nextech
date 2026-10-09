@@ -304,6 +304,7 @@ class SellerShipping
                     'shop' => $shop, 'subtotal' => 0, 'fee' => 0, 'min' => 0, 'max' => 0, 'handling' => 0,
                 ];
                 $entry['local'] = true;
+                $entry['local_km'] = $local['km'] ?? null; // how far the buyer is (for the seller's own zone)
                 $entry['subtotal'] += (int) $line['line_total_cents'];
                 $entry['fee'] = (int) ($local['fee_cents'] ?? 0);
                 $entry['max'] = max($entry['max'], (int) ($local['days'] ?? 1));
@@ -348,6 +349,7 @@ class SellerShipping
                 'ships_from' => ! empty($e['intl']) ? $e['shop']->market : null,
                 'mode' => $e['shop']->fulfillment_mode,
                 'method' => ! empty($e['local']) ? 'local' : null,
+                'local_km' => $e['local_km'] ?? null,
                 'fee_cents' => $fee,
                 // International: the seller's own fee in their currency (what they're credited).
                 'seller_fee_cents' => ! empty($e['intl']) ? (int) $e['seller_fee'] : null,
@@ -366,6 +368,17 @@ class SellerShipping
         }
 
         return ['shops' => $shops, 'total_cents' => $total, 'unshippable' => $unshippable];
+    }
+
+    /** The most days admin lets sellers promise: local delivery, and courier transit. */
+    public static function maxLocalDays(): int
+    {
+        return max(1, min(14, (int) Setting::get('seller_max_local_days', 7)));
+    }
+
+    public static function maxCourierDays(): int
+    {
+        return max(1, min(90, (int) Setting::get('seller_max_courier_days', 30)));
     }
 
     /** Whether admin lets sellers offer Own delivery (local): 'available' or 'hidden'. */
@@ -399,7 +412,9 @@ class SellerShipping
 
         $radius = min((float) $local['radius_km'], self::localMaxKm());
 
-        return Geo::haversineKm((float) $lat, (float) $lng, (float) $local['lat'], (float) $local['lng']) <= $radius ? $local : null;
+        $km = Geo::haversineKm((float) $lat, (float) $lng, (float) $local['lat'], (float) $local['lng']);
+
+        return $km <= $radius ? $local + ['km' => round($km, 2)] : null;
     }
 
     /** [lat, lng] for an address: the pin the buyer set, else geocoded; null when unknown. */
