@@ -103,6 +103,7 @@ class SupportThreadController extends Controller
         }
 
         $thread->post($request->user(), trim((string) ($validated['body'] ?? '')), attachments: $validated['attachments'] ?? []);
+        \App\Support\DuplicateOrders::tellSeller($thread, $request->user()); // a seller in the chat hears the reply
 
         return response()->json(['data' => $this->withMessages($thread)]);
     }

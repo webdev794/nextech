@@ -156,6 +156,8 @@ class AdminOrderController extends Controller
         // display courier_name. Clearing the rider (null) only wipes the display
         // name when a replacement name wasn't sent in the same request — so
         // "type a courier name + Save" keeps the typed name.
+        // A digital download has nothing to deliver.
+        abort_if($order->delivery_method === 'digital' && ! empty($validated['delivery_partner_id']), 422, 'This order is a digital download — there’s nothing for a rider to deliver.');
         if (array_key_exists('delivery_partner_id', $validated)) {
             $rider = $validated['delivery_partner_id']
                 ? User::find($validated['delivery_partner_id'])

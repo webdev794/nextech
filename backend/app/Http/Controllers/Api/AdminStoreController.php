@@ -31,6 +31,7 @@ class AdminStoreController extends Controller
             'kind' => $store->shop_id ? 'seller' : 'own',
             'seller_id' => $store->shop?->seller_id,
             'local_delivery_status' => $store->shop_id ? \App\Support\SellerStores::status($store) : ($store->local_delivery_active ? 'on' : 'off'),
+            'off_opens_at' => \App\Support\SellerStores::offOpensAt($store),
         ])]);
     }
 
@@ -74,6 +75,10 @@ class AdminStoreController extends Controller
         $data = $request->validate(['action' => ['required', Rule::in(['on', 'off', 'approve_off', 'keep_on'])], 'reason' => ['nullable', 'string', 'max:500']]);
         abort_if(in_array($data['action'], ['off', 'keep_on'], true) && blank($data['reason'] ?? null), 422, 'Say why — the seller gets it as a message.');
         abort_if(in_array($data['action'], ['approve_off', 'keep_on'], true) && ! $store->local_delivery_off_requested_at, 422, 'The seller hasn’t asked to turn local delivery off.');
+        // The seller and their riders get 3 days to talk it over (the seller may withdraw it meanwhile).
+        if ($data['action'] === 'approve_off' && ($opens = \App\Support\SellerStores::offOpensAt($store)) && $opens->isFuture()) {
+            abort(422, 'The seller can still withdraw this until '.$opens->format('j M H:i').' — you can approve it from then.');
+        }
         match ($data['action']) {
             'on' => \App\Support\SellerStores::adminTurnsOn($store, $request->user()),
             'off' => \App\Support\SellerStores::finishOff($store, $request->user(), reason: $data['reason']),

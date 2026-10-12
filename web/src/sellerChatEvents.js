@@ -26,7 +26,7 @@ export function popOutSellerChat(id, name) {
 // A support thread row (admin list) as a chat for the dock.
 export function supportChat(t, issueLabels = {}) {
   return {
-    key: `support-${t.id}`, kind: 'support', id: t.id,
+    key: `support-${t.id}`, kind: 'support', id: t.id, sellerId: t.seller_id ?? null, userId: t.user_id ?? t.user?.id ?? null, issueType: t.issue_type,
     name: t.user?.name || t.user?.email || `Conversation #${t.id}`,
     subtitle: [issueLabels[t.issue_type] ?? t.issue_type?.replaceAll('_', ' '), t.order_id ? `order #${t.order_id}` : null].filter(Boolean).join(' · '),
     stamp: t.needs_reply ? t.last_message_at : null,

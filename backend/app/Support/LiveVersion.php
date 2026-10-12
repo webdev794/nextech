@@ -41,6 +41,15 @@ final class LiveVersion
         if ($model instanceof User && $model->exists && ! $model->wasRecentlyCreated && array_diff(array_keys($model->getChanges()), self::QUIET_USER_FIELDS) === []) {
             return;
         }
+        self::changed();
+    }
+
+    /** Something changed without a model save (a bulk update): tell open pages. */
+    public static function changed(): void
+    {
+        if (app()->runningUnitTests()) {
+            return;
+        }
         // Written once, at the end of the request (or command), however many records changed.
         if (! self::$pending) {
             self::$pending = true;

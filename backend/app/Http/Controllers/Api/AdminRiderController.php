@@ -284,8 +284,11 @@ class AdminRiderController extends Controller
             'plan.target' => ['required_with:plan', 'integer', 'min:1', 'max:10000'],
             'plan.bonus_per_extra_cents' => ['required_with:plan', 'integer', 'min:0'],
             'plan.bonus_cap_cents' => ['required_with:plan', 'integer', 'min:0'],
+            'plan.period' => ['sometimes', 'in:month,week'],
+            'plan.missed_day_cents' => ['sometimes', 'integer', 'min:0'],
         ]);
-        $user->forceFill(['rider_pay_plan' => $data['plan'] ? ['type' => 'monthly'] + array_map('intval', $data['plan']) : null])->save();
+        $plan = $data['plan'] ? ['type' => 'monthly', 'period' => $data['plan']['period'] ?? 'month'] + array_map('intval', \Illuminate\Support\Arr::except($data['plan'], 'period')) : null;
+        $user->forceFill(['rider_pay_plan' => $plan])->save();
 
         return response()->json(['data' => $user->fresh()->rider_pay_plan]);
     }
@@ -302,6 +305,15 @@ class AdminRiderController extends Controller
         \App\Support\RiderPayPlan::topUp($data['pool_id'], $data['rider_id'], $data['amount_cents'], $request->user());
 
         return $this->pools();
+    }
+
+    /** Accept or decline a day-off request from a rider of NexTech's own stores. */
+    public function decideLeave(Request $request, \App\Models\RiderLeave $leave): JsonResponse
+    {
+        $data = $request->validate(['accept' => ['required', 'boolean'], 'note' => ['nullable', 'string', 'max:300']]);
+        \App\Support\RiderLeaves::decide($leave, $request->user(), $data['accept'], $data['note'] ?? null);
+
+        return response()->json(['message' => $data['accept'] ? 'Accepted — the rider is told.' : 'Declined — the rider is told.']);
     }
 
     /** Remove a bonus suggestion (bonus given, or not needed). */
@@ -484,9 +496,9 @@ class AdminRiderController extends Controller
             'experience_months' => \App\Models\RiderApplication::where('user_id', $rider->id)->value('experience_months'),
             'rider_since' => $rider->rider_since,
             'photo_path' => $rider->rider_photo_path,
-            'move_request' => $rider->rider_move_request,
+            'move_request' => $rider->rider_move_request ? $rider->rider_move_request + ['waiting_for_sellers' => \App\Support\RiderHiring::moveWaitingForSellers($rider->rider_move_request)] : null,
             'pay_plan' => \App\Support\RiderPayPlan::of($rider),
-            'deliveries_this_month' => \App\Support\RiderPayPlan::of($rider) ? \App\Support\RiderPayPlan::deliveries($rider, now()) : null,
+            'deliveries_this_month' => \App\Support\RiderPayPlan::soFar($rider),
             // How this rider rates stores and buyers (private; admin only).
             'feedback_given' => ($fg = \App\Models\RiderFeedback::query()->where('rider_id', $rider->id)->selectRaw('count(*) as c, avg(store_rating) as s, avg(buyer_rating) as b')->first()) && $fg->c
                 ? ['count' => (int) $fg->c, 'store_avg' => $fg->s !== null ? round((float) $fg->s, 1) : null, 'buyer_avg' => $fg->b !== null ? round((float) $fg->b, 1) : null] : null,

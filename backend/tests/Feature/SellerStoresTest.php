@@ -91,7 +91,7 @@ class SellerStoresTest extends TestCase
         $this->getJson('/api/admin/stores?kind=own')->assertOk()->assertJsonPath('data.0.local_delivery_status', 'on');
     }
 
-    public function test_seller_turning_off_with_riders_waits_for_admin_and_riders_hear_only_on_approval(): void
+    public function test_seller_turning_off_with_riders_gives_three_days_then_admin_may_approve(): void
     {
         Notification::fake();
         $shop = $this->shop();
@@ -107,10 +107,15 @@ class SellerStoresTest extends TestCase
             ->assertJsonPath('data.local_store.status', 'off_requested');
         $this->assertNotNull(SellerShipping::localFor($shop->fresh(), $buyer), 'stays on until admin decides');
         Notification::assertSentTo($admin, AdminLocalDeliveryOff::class);
-        Notification::assertNothingSentTo($rider);
+        Notification::assertSentTo($rider, RiderNotice::class); // riders hear now and can talk to the seller
 
+        // Within 3 days: admin can't approve yet; the seller could withdraw.
         Sanctum::actingAs($admin);
-        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.local_delivery_off.0.riders', 1);
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.local_delivery_off.0.riders', 1)->assertJsonPath('data.local_delivery_off.0.ready', false);
+        $this->patchJson("/api/admin/stores/{$store->id}/local-delivery", ['action' => 'approve_off'])->assertStatus(422);
+        $this->travel(3)->days();
+        $this->travel(1)->minutes();
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.local_delivery_off.0.ready', true);
         $this->patchJson("/api/admin/stores/{$store->id}/local-delivery", ['action' => 'approve_off'])->assertOk();
         Notification::assertSentTo($rider, RiderNotice::class);
         $this->assertSame(1, $store->riders()->count(), 'riders stay linked — their pay is still due');
@@ -152,5 +157,35 @@ class SellerStoresTest extends TestCase
         $this->patchJson("/api/admin/stores/{$store->id}/local-delivery", ['action' => 'off'])->assertStatus(422);
         $this->patchJson("/api/admin/stores/{$store->id}/local-delivery", ['action' => 'off', 'reason' => 'Late deliveries'])->assertOk();
         $this->assertSame('locked', SellerStores::status($store->fresh()));
+    }
+
+    public function test_seller_withdraws_a_turn_off_request_within_three_days(): void
+    {
+        Notification::fake();
+        $shop = $this->shop();
+        $store = $this->localOn($shop);
+        $rider = $this->rider($store);
+        Sanctum::actingAs($shop->seller->user);
+        $this->patchJson('/api/seller/shipping', ['local_delivery' => null, 'confirm_off' => true])->assertOk()->assertJsonPath('data.local_store.status', 'off_requested');
+        $this->postJson('/api/seller/local-delivery/withdraw-off')->assertOk();
+        $this->assertSame('on', SellerStores::status($store->fresh()));
+        // After 3 days it's too late to withdraw.
+        $this->patchJson('/api/seller/shipping', ['local_delivery' => null, 'confirm_off' => true])->assertOk();
+        $this->travel(4)->days();
+        $this->postJson('/api/seller/local-delivery/withdraw-off')->assertStatus(422);
+    }
+
+    public function test_admin_turns_on_local_delivery_from_the_seller_page_and_seller_gets_hiring_steps(): void
+    {
+        Notification::fake();
+        $shop = $this->shop();
+        $store = $this->localOn($shop);
+        $admin = $this->admin();
+        \App\Support\SellerStores::finishOff($store, $admin, false);
+        Sanctum::actingAs($admin);
+        $this->getJson("/api/admin/sellers/{$shop->seller_id}")->assertOk()->assertJsonPath('data.local_store.status', 'locked');
+        $this->patchJson("/api/admin/stores/{$store->id}/local-delivery", ['action' => 'on'])->assertOk();
+        $this->getJson("/api/admin/sellers/{$shop->seller_id}")->assertOk()->assertJsonPath('data.local_store.status', 'on');
+        $this->assertTrue(\App\Models\SupportMessage::where('body', 'like', '%Work with us%')->where('body', 'like', '%rider/apply%')->exists());
     }
 }

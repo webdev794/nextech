@@ -32,7 +32,7 @@ function SpeakerIcon({ on }) {
 // count with onUnread(key, n) — it flashes until the person opens the chat,
 // clicks into it or its text box, or replies. onRead(chat, page) then lets
 // the page clear its own unread counts.
-export function ChatWindow({ chat, adapter, labels = {}, readKey, onClose, onToggle, onMaximize, onUnread, onRead, onPopOut, onDetails, dock, popup = false }) {
+export function ChatWindow({ chat, adapter, labels = {}, readKey, onClose, onToggle, onMaximize, onUnread, onRead, onPopOut, onDetails, onTitle, dock, popup = false }) {
   const [messages, setMessages] = useState(null)
   const [hasMore, setHasMore] = useState(false)
   const [loadingOlder, setLoadingOlder] = useState(false)
@@ -151,7 +151,7 @@ export function ChatWindow({ chat, adapter, labels = {}, readKey, onClose, onTog
     <div className={`chatdock-win${minimized ? ' min' : ''}${chat.max ? ' max' : ''}${chat.unread > 0 ? ' alert' : ''}${dock?.floating ? ' floating' : ''}`}
       onPointerDownCapture={() => { if (!minimized && chat.unread > 0) markRead() }} onFocusCapture={() => { if (!minimized && chat.unread > 0) markRead() }}>
       <div className="chatdock-head" onPointerDown={dock?.onPointerDown} onClick={() => { if (!dock?.wasDragged()) onToggle?.(chat.key) }} title={dock?.floating ? 'Drag to move' : undefined}>
-        <span className="chatdock-title" title={[chat.name, chat.subtitle].filter(Boolean).join(' — ')}><b>{chat.name}</b>{chat.unread > 0 && <span className="chatdock-badge">{chat.unread}</span>}{!minimized && chat.subtitle && <small>{chat.subtitle}</small>}</span>
+        <span className="chatdock-title" title={[chat.name, chat.subtitle].filter(Boolean).join(' — ')}>{onTitle && !minimized ? <button type="button" className="chatdock-title-link" title="Open their details" onClick={(e) => { e.stopPropagation(); onTitle(chat) }}><b>{chat.name}</b></button> : <b>{chat.name}</b>}{chat.unread > 0 && <span className="chatdock-badge">{chat.unread}</span>}{!minimized && chat.subtitle && <small>{chat.subtitle}</small>}</span>
         <span className="chatdock-tools" onClick={(e) => e.stopPropagation()}>
           <button type="button" className={sound ? '' : 'off'} title={sound ? 'Sound on — click to mute' : 'Sound off — click to turn on'} aria-pressed={sound} onClick={toggleSound}><SpeakerIcon on={sound} /></button>
           {onDetails && !minimized && <button type="button" title="Details and actions" onClick={() => onDetails(chat)}>⋯</button>}
@@ -321,7 +321,7 @@ export function ChatDock({ storeKey, adapterFor, launcher, initial = [], onPopOu
         const setup = setupOf(chat)
         return (
           <ChatWindow key={chat.key} chat={chat} adapter={setup.adapter} labels={setup.labels} dock={dock}
-            onDetails={setup.onDetails} readKey={`${storeKey}:read:${chat.key}`} onUnread={onUnread} onRead={onRead} onClose={close} onToggle={toggle}
+            onDetails={setup.onDetails} onTitle={setup.onTitle} readKey={`${storeKey}:read:${chat.key}`} onUnread={onUnread} onRead={onRead} onClose={close} onToggle={toggle}
             onMaximize={(key) => setChats((list) => list.map((c) => (c.key === key ? { ...c, max: !c.max } : c)))}
             onPopOut={'documentPictureInPicture' in window || onPopOutFallback ? popOut : undefined} />
         )

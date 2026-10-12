@@ -182,7 +182,8 @@ class SellerOrderController extends Controller
             'created_at' => $order->created_at,
             'pending_until' => $status === 'pending' && $order->status !== 'pending_payment' ? SellerOrders::pendingUntil($order) : null,
             'awaiting_payment' => $order->status === 'pending_payment',
-            'fulfilled_by' => $sellerShips ? ($order->items->every(fn ($i) => $i->fulfilled_by === 'seller') ? 'seller' : 'mixed') : 'nextech',
+            // digital = only downloads (sent automatically once paid — nobody delivers it).
+            'fulfilled_by' => $order->items->every(fn ($i) => $i->fulfilled_by === 'digital') ? 'digital' : ($sellerShips ? ($order->items->every(fn ($i) => $i->fulfilled_by === 'seller') ? 'seller' : 'mixed') : 'nextech'),
             'items' => $order->items->map(fn ($i) => [
                 'id' => $i->id,
                 'product_id' => $i->product_id,
@@ -256,6 +257,13 @@ class SellerOrderController extends Controller
             ->whereHas('items', fn ($q) => $q->where('shop_id', $shop->id)->where('fulfilled_by', 'seller'))
             ->whereDoesntHave('packages', fn ($q) => $q->where('shop_id', $shop->id))
             ->count();
+        // Past the buyer's free-cancel window and not shipped yet: a banner that stays until they're shipped.
+        $unshipped = (clone $mine)->whereNotIn('status', ['completed', 'delivered'])
+            ->whereHas('items', fn ($q) => $q->where('shop_id', $shop->id)->where('fulfilled_by', 'seller'))
+            ->whereDoesntHave('packages', fn ($q) => $q->where('shop_id', $shop->id))
+            ->where('created_at', '<=', now()->subMinutes(\App\Support\SellerOrders::PENDING_MINUTES))
+            ->with(['shopShipping' => fn ($q) => $q->where('shop_id', $shop->id)])->oldest('id')->limit(20)->get()
+            ->map(fn (Order $o) => ['id' => $o->id, 'ship_by' => $o->shopShipping->first()?->ship_by, 'local' => $o->shopShipping->first()?->method === 'local']);
         $recent = (clone $mine)->with(['items' => fn ($q) => $q->where('shop_id', $shop->id), 'shopShipping' => fn ($q) => $q->where('shop_id', $shop->id)])
             ->latest('id')->limit(5)->get()
             ->map(fn (Order $o) => [
@@ -271,6 +279,11 @@ class SellerOrderController extends Controller
         return response()->json(['data' => [
             'latest_order_id' => $recent->first()['id'] ?? null,
             'to_ship' => $toShip,
+            'unshipped' => $unshipped,
+            // Riders' day-off requests waiting for this seller (stays until answered).
+            'leave_requests' => \App\Support\RiderLeaves::waitingFor(\App\Support\SellerStores::ensure($shop))->count()
+                // Riders asking to move away count as a request to answer too.
+                + \App\Support\SellerStores::ensure($shop)->riders()->get()->filter(fn ($r) => ($r->rider_move_request['sellers'][(string) $shop->id] ?? null) === 'waiting')->count(),
             // Orders waiting on the seller's next update (packed / shipped / cash collected ...).
             'needs_update' => SellerProgress::needsUpdate($shop),
             // Live products buyers can't order right now — nothing left in stock.

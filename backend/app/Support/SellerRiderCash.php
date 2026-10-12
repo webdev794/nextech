@@ -91,7 +91,7 @@ class SellerRiderCash
      */
     public static function claimHandover(User $rider, Store $store): int
     {
-        $count = self::outstanding($rider, $store)->whereNull('cash_handover_claimed_at')->update(['cash_handover_claimed_at' => now()]);
+        $count = self::outstanding($rider, $store)->whereNull('cash_handover_claimed_at')->update(['cash_handover_claimed_at' => now()]); \App\Support\LiveVersion::changed();
         abort_if($count === 0, 422, 'There’s no cash to hand over for this store.');
         self::setLink($rider, $store, ['cash_paused_at' => null]);
         if ($seller = $store->shop?->seller) {
@@ -108,7 +108,7 @@ class SellerRiderCash
      */
     public static function notReceived(User $rider, Store $store, string $reason): int
     {
-        $count = self::outstanding($rider, $store)->whereNotNull('cash_handover_claimed_at')->update(['cash_handover_claimed_at' => null, 'cash_disputed_at' => null, 'cash_dispute_note' => null]);
+        $count = self::outstanding($rider, $store)->whereNotNull('cash_handover_claimed_at')->update(['cash_handover_claimed_at' => null, 'cash_disputed_at' => null, 'cash_dispute_note' => null]); \App\Support\LiveVersion::changed();
         abort_if($count === 0, 422, 'There’s no handover to answer.');
         $shop = $store->shop?->name ?? $store->name;
         self::tell($rider, 'Cash not received', "{$shop} says they didn’t get the cash you handed over: {$reason}. You still hold it and are paused until it’s handed over; if it isn’t, it comes out of your earnings.");
@@ -134,7 +134,7 @@ class SellerRiderCash
 
     private static function setLink(User $rider, Store $store, array $values): void
     {
-        DB::table('rider_store')->where('user_id', $rider->id)->where('store_id', $store->id)->update($values);
+        DB::table('rider_store')->where('user_id', $rider->id)->where('store_id', $store->id)->update($values); \App\Support\LiveVersion::changed();
     }
 
     private static function money(Store $store, int $cents): string

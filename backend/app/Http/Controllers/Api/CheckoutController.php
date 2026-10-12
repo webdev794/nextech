@@ -44,6 +44,7 @@ class CheckoutController extends Controller
             'address.city' => ['nullable', 'string', 'max:100'],
             'address.state' => ['nullable', 'string', 'max:60'],
             'address.postal_code' => ['nullable', 'string', 'max:12'],
+            'address.available_times' => ['nullable', 'string', 'max:120'],
             'address.latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'address.longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'delivery_instructions' => ['sometimes', 'nullable', 'string', 'max:500'],

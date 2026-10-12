@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { storeMoney } from './money'
 
-// Admin: a NexTech rider's pay — per delivery, or monthly pay (target, bonus, cap);
+// Admin: a NexTech rider's pay — per delivery, or monthly / weekly pay (target, bonus, cap, missed days);
 // and the top-up pools (extra above bonus caps) to top up riders who fell short.
 
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 
 export function RiderPayPlanEditor({ rider, headers, currency, onSaved }) {
   const p = rider.pay_plan
-  const [on, setOn] = useState(!!p)
-  const [f, setF] = useState({ monthly: p ? p.monthly_cents / 100 : '', target: p?.target ?? 100, bonus: p ? p.bonus_per_extra_cents / 100 : 0, cap: p ? p.bonus_cap_cents / 100 : 0 })
+  const [on, setOn] = useState(p ? (p.period === 'week' ? 'week' : 'month') : '')
+  const [f, setF] = useState({ monthly: p ? p.monthly_cents / 100 : '', target: p?.target ?? 100, bonus: p ? p.bonus_per_extra_cents / 100 : 0, cap: p ? p.bonus_cap_cents / 100 : 0, missed: p ? (p.missed_day_cents ?? 0) / 100 : 0 })
+  const week = on === 'week'
   const money = (c) => storeMoney(c, currency)
   async function save(plan) {
     const res = await fetch(`${API_URL}/admin/riders/${rider.id}/pay-plan`, { method: 'PATCH', headers: headers(), body: JSON.stringify({ plan }) })
@@ -19,15 +20,17 @@ export function RiderPayPlanEditor({ rider, headers, currency, onSaved }) {
   return (
     <div className="admin-alert rider-pay-plan">
       <b>Pay:</b>{' '}
-      <label><input type="radio" checked={!on} onChange={() => { setOn(false); if (p) save(null) }} /> Per delivery</label>{' '}
-      <label><input type="radio" checked={on} onChange={() => setOn(true)} /> Monthly pay</label>
+      <label><input type="radio" checked={!on} onChange={() => { setOn(''); if (p) save(null) }} /> Per delivery</label>{' '}
+      <label><input type="radio" checked={on === 'month'} onChange={() => setOn('month')} /> Monthly pay</label>{' '}
+      <label><input type="radio" checked={week} onChange={() => setOn('week')} /> Weekly pay</label>
       {on && <span className="rider-pay-fields">
-        <label>Monthly pay <input type="number" min="1" value={f.monthly} onChange={(e) => setF({ ...f, monthly: e.target.value })} /></label>
+        <label>{week ? 'Weekly pay' : 'Monthly pay'} <input type="number" min="1" value={f.monthly} onChange={(e) => setF({ ...f, monthly: e.target.value })} /></label>
         <label>at (deliveries) <input type="number" min="1" value={f.target} onChange={(e) => setF({ ...f, target: e.target.value })} /></label>
         <label>bonus per extra <input type="number" min="0" value={f.bonus} onChange={(e) => setF({ ...f, bonus: e.target.value })} /></label>
         <label>bonus up to <input type="number" min="0" value={f.cap} onChange={(e) => setF({ ...f, cap: e.target.value })} /></label>
-        <button type="button" className="act" disabled={!(Number(f.monthly) > 0) || !(Number(f.target) > 0)} onClick={() => save({ monthly_cents: Math.round(Number(f.monthly) * 100), target: Number(f.target), bonus_per_extra_cents: Math.round(Number(f.bonus || 0) * 100), bonus_cap_cents: Math.round(Number(f.cap || 0) * 100) })}>Save</button>
-        {p && rider.deliveries_this_month != null && <small className="muted"> This month: {rider.deliveries_this_month} of {p.target} · full pay {money(p.monthly_cents)}</small>}
+        <label title="Absent without asking, or a day off beyond the allowance. 0 = no deduction.">less per missed day <input type="number" min="0" value={f.missed} onChange={(e) => setF({ ...f, missed: e.target.value })} /></label>
+        <button type="button" className="act" disabled={!(Number(f.monthly) > 0) || !(Number(f.target) > 0)} onClick={() => save({ period: on, monthly_cents: Math.round(Number(f.monthly) * 100), target: Number(f.target), bonus_per_extra_cents: Math.round(Number(f.bonus || 0) * 100), bonus_cap_cents: Math.round(Number(f.cap || 0) * 100), missed_day_cents: Math.round(Number(f.missed || 0) * 100) })}>Save</button>
+        {p && rider.deliveries_this_month != null && <small className="muted"> This {p.period === 'week' ? 'week' : 'month'}: {rider.deliveries_this_month} of {p.target} · full pay {money(p.monthly_cents)}</small>}
       </span>}
     </div>
   )
@@ -42,7 +45,7 @@ export function RiderTopUpPools({ headers, onMessage }) {
   return (
     <div className="admin-form">
       <h3 className="admin-subhead">Top-up pools</h3>
-      <p className="muted">What busy riders on monthly pay earned above their bonus cap. Use it to top up riders who fell short of their monthly pay.</p>
+      <p className="muted">What busy riders on monthly or weekly pay earned above their bonus cap. Use it to top up riders who fell short of their pay.</p>
       {open.map((p) => (
         <div key={p.id}>
           <b>{p.month} · {p.market}</b> — pool {storeMoney(p.pool_cents, p.market === 'IN' ? 'inr' : 'usd')}

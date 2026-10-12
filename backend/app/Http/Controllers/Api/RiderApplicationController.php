@@ -95,7 +95,8 @@ class RiderApplicationController extends Controller
     /** Whether any store is hiring in the visitor's country — turns on the storefront's "Work with us" link. */
     public function hiring(Request $request): JsonResponse
     {
-        $country = VisitorCountry::detect($request);
+        // The country the shopper is browsing (the store's country picker), else a guess from their connection.
+        $country = $request->query('market') ? \App\Support\Market::fromRequest($request) : VisitorCountry::detect($request);
         $count = RiderHiring::hiringStores()->when($country, fn ($q) => $q->where('country', $country))->count();
 
         return response()->json(['data' => ['open' => $count > 0, 'stores' => $count]]);
@@ -129,8 +130,8 @@ class RiderApplicationController extends Controller
             // Signed at the end: their name and the place they are now, after reading the store's terms.
             'signed_name' => ['required', 'string', 'min:2', 'max:120'],
             'signed_place' => ['required', 'string', 'min:2', 'max:120'],
-            // How they want to be paid (so they can start on day one).
-            'payout_method' => ['required', Rule::in(['bank', 'paypal'])],
+            // How they want to be paid: optional here — added in the Rider app after approval.
+            'payout_method' => ['nullable', Rule::in(['bank', 'paypal'])],
             'holder_name' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:160'],
             'account_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],
             'routing_number' => ['required_if:payout_method,bank', 'nullable', 'string', 'max:60'],
@@ -160,10 +161,12 @@ class RiderApplicationController extends Controller
         $store = Store::find($data['store_id']);
         $data['signed_terms'] = RiderHiring::terms($store); // exactly what they signed, kept with the application
         $allowed = array_values(array_filter(['bank', 'paypal'], fn ($m) => (bool) (\App\Support\SellerPayouts::fees($store?->country)[$m]['enabled'] ?? false))) ?: ['bank'];
-        abort_unless(in_array($data['payout_method'], $allowed, true), 422, 'Choose how to be paid from: '.implode(' or ', array_map(fn ($m) => \App\Support\SellerPayouts::label($m), $allowed)).'.');
-        $data['payout_details'] = $data['payout_method'] === 'bank'
-            ? array_intersect_key($data, array_flip(['holder_name', 'account_number', 'routing_number', 'bank_name']))
-            : ['email' => $data['payout_email']];
+        if (! empty($data['payout_method'])) {
+            abort_unless(in_array($data['payout_method'], $allowed, true), 422, 'Choose how to be paid from: '.implode(' or ', array_map(fn ($m) => \App\Support\SellerPayouts::label($m), $allowed)).'.');
+            $data['payout_details'] = $data['payout_method'] === 'bank'
+                ? array_intersect_key($data, array_flip(['holder_name', 'account_number', 'routing_number', 'bank_name']))
+                : ['email' => $data['payout_email']];
+        }
         unset($data['holder_name'], $data['account_number'], $data['routing_number'], $data['bank_name'], $data['payout_email']);
         $min = RiderHiring::minAge($store?->country);
         abort_if(\Illuminate\Support\Carbon::parse($data['date_of_birth'])->age < $min, 422, "Riders must be at least {$min} years old.");

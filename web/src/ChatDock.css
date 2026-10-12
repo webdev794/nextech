@@ -53,3 +53,4 @@
 .chatdock.left{right:auto;left:16px;flex-direction:row}
 .chatdock.left .chatdock-list{right:auto;left:0}
 @media (max-width:640px){.chatdock.left{left:8px}}
+.chatdock-title-link{border:0;background:none;padding:0;color:inherit;cursor:pointer;text-decoration:underline;font:inherit}

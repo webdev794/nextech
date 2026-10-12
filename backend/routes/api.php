@@ -106,6 +106,10 @@ Route::get('/pages/{slug}', [PageController::class, 'show']);
 
 Route::post('/site-feedback', [SiteFeedbackController::class, 'store'])->middleware('throttle:6,1');
 
+// Careers page: open roles, and applying for a (non-rider) role.
+Route::get('/careers/roles', [\App\Http\Controllers\Api\CareersController::class, 'roles']);
+Route::post('/careers/roles/{role}/apply', [\App\Http\Controllers\Api\CareersController::class, 'apply'])->middleware('throttle:5,1');
+
 Route::middleware('auth:sanctum')->group(function () {
     // Routine reminder emails on / off (riders, sellers, admins); important emails always go.
     Route::patch('/me/email-routine', function (\Illuminate\Http\Request $request) {
@@ -178,6 +182,7 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::get('/notifications', [AdminController::class, 'notifications']);
     Route::post('/category-suggestions/decline', [AdminController::class, 'declineCategorySuggestion']);
     Route::get('/settings', [AdminSettingController::class, 'index']);
+    Route::get('/countries/{code}/impact', [AdminSettingController::class, 'countryImpact']);
     Route::patch('/settings', [AdminSettingController::class, 'update']);
     Route::post('/settings/sales-tax/fetch', [AdminSettingController::class, 'fetchSalesTaxStates'])->middleware('throttle:6,1');
     Route::post('/secure-access/challenge', [AdminSettingController::class, 'secureAccessChallenge'])->middleware('throttle:6,1');
@@ -214,8 +219,14 @@ Route::middleware(['auth:sanctum', 'admin'])->prefix('admin')->group(function ()
     Route::delete('/performance-warnings/{id}', [AdminRiderController::class, 'dismissWarning']);
     Route::get('/rider-invites', [AdminRiderController::class, 'invites']);
     Route::post('/riders/{user}/move', [AdminRiderController::class, 'decideMove']);
+    Route::post('/rider-leaves/{leave}', [AdminRiderController::class, 'decideLeave']);
     Route::patch('/riders/{user}/pay-plan', [AdminRiderController::class, 'payPlan']);
     Route::get('/rider-pools', [AdminRiderController::class, 'pools']);
+    Route::get('/careers', [\App\Http\Controllers\Api\CareersController::class, 'adminIndex']);
+    Route::post('/careers/roles', [\App\Http\Controllers\Api\CareersController::class, 'save']);
+    Route::put('/careers/roles/{role}', [\App\Http\Controllers\Api\CareersController::class, 'update']);
+    Route::delete('/careers/roles/{role}', [\App\Http\Controllers\Api\CareersController::class, 'destroy']);
+    Route::patch('/careers/applications/{application}', [\App\Http\Controllers\Api\CareersController::class, 'setStatus']);
     Route::post('/rider-pools/top-up', [AdminRiderController::class, 'topUp']);
     Route::post('/rider-invites/{invite}', [AdminRiderController::class, 'decideInvite']);
     Route::patch('/stores/{store}/rider-hours', [\App\Http\Controllers\Api\AdminStoreController::class, 'riderHours']);
@@ -397,6 +408,9 @@ Route::middleware(['auth:sanctum', 'seller'])->group(function () {
     Route::patch('/seller/local-delivery/rider-pay', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderPay']);
     Route::get('/seller/local-delivery/money', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'money']);
     Route::get('/seller/local-delivery/deliveries.csv', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'deliveriesCsv']);
+    Route::post('/seller/rider-leaves/{leave}', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'decideLeave']);
+    Route::post('/seller/rider-moves/{user}', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'answerMove']);
+    Route::post('/seller/local-delivery/withdraw-off', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'withdrawOff']);
     Route::post('/seller/rider-invites/{invite}', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'decideInvite']);
     Route::post('/seller/riders/{rider}/bonus', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderBonus']);
     Route::patch('/seller/local-delivery/rider-hours', [\App\Http\Controllers\Api\SellerLocalDeliveryController::class, 'riderHours']);
@@ -507,10 +521,12 @@ Route::middleware(['auth:sanctum', 'rider'])->prefix('rider')->group(function ()
     Route::post('/move', [RiderController::class, 'requestMove']);
     Route::post('/feedback', [RiderController::class, 'feedback']);
     Route::get('/seller-chats', [RiderController::class, 'sellerChats']);
+    Route::get('/seller-chats/{store}/chat', [RiderController::class, 'sellerChatPage']);
     Route::post('/seller-chats/{store}', [RiderController::class, 'postSellerChat']);
     Route::post('/seller-chats/thread/{thread}/ticket', [RiderController::class, 'sellerChatTicket']);
     Route::post('/invites/{invite}', [RiderController::class, 'answerInvite']);
     Route::delete('/leave/{leave}', [RiderController::class, 'cancelLeave']);
+    Route::post('/leave/{leave}/move', [RiderController::class, 'moveLeave']);
     Route::get('/earnings', [RiderEarningsController::class, 'show']);
     Route::patch('/payout-method', [RiderEarningsController::class, 'payoutMethod']);
     Route::post('/payout-requests', [RiderEarningsController::class, 'requestPayout']);

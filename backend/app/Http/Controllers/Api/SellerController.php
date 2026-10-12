@@ -82,6 +82,11 @@ class SellerController extends Controller
         // Once admin has checked the registered address it's locked: it changes
         // only when admin asks for it (Request changes → Registered address),
         // and the earlier address is kept in the seller's history.
+        // A hidden country takes no new sellers (a seller sent back for changes keeps their country).
+        $country = strtoupper($data['country']);
+        abort_if($country !== strtoupper((string) $existing?->country) && ! in_array($country, collect(\App\Support\Country::active())->pluck('code')->all(), true),
+            422, 'We aren’t taking new sellers from '.(\App\Support\Country::find($country)['name'] ?? $country).' right now. Please contact us.');
+
         $addressKeys = ['registered_line1', 'registered_line2', 'registered_city', 'registered_state', 'registered_postal_code', 'registered_country'];
         $oldAddress = $existing ? $existing->only($addressKeys) : [];
         $newAddress = array_map(fn ($k) => $k === 'registered_country' ? strtoupper($data[$k]) : ($data[$k] ?? null), array_combine($addressKeys, $addressKeys));
@@ -219,6 +224,8 @@ class SellerController extends Controller
         if ($seller) {
             $market = $seller->shop?->market ?? Market::forCountry($seller->country);
             $seller->market = $market;
+            // Admin hid this country: selling is paused (orders, payouts and support still work).
+            $seller->market_paused = ! in_array(strtoupper((string) ($seller->shop?->market ?? $seller->country)), Market::codes(), true);
             $seller->currency = Market::currency($market);
             $seller->tax_inclusive = Market::taxInclusive($market);
             $seller->gst_rates_bps = Market::profile($market)['gst_rates_bps'] ?? [];

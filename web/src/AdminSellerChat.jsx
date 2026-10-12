@@ -14,16 +14,31 @@ import { brandName } from './useBranding'
 
 const sellerAdapter = (id, authHeaders) => chatAdapter({ url: `${API_URL}/admin/sellers/${id}/chat`, headers: authHeaders })
 
-export function AdminChatDock({ authHeaders, issueLabels, onSupportDetails }) {
+export function AdminChatDock({ authHeaders, issueLabels, onSupportDetails, onOpenSeller, onOpenPerson }) {
   // Chat setups are cached per window, so reach the latest handler through a ref.
   const details = useRef(onSupportDetails)
   useEffect(() => { details.current = onSupportDetails })
+  const openSeller = useRef(onOpenSeller)
+  useEffect(() => { openSeller.current = onOpenSeller })
+  const openPerson = useRef(onOpenPerson)
+  useEffect(() => { openPerson.current = onOpenPerson })
   const adapterFor = useCallback((chat) => (chat.kind === 'seller'
-    ? { adapter: sellerAdapter(chat.id, authHeaders), labels: { seller: chat.name, nextech: `${brandName()}` } }
+    ? { adapter: sellerAdapter(chat.id, authHeaders), labels: { seller: chat.name, nextech: `${brandName()}` }, onTitle: () => openSeller.current?.(chat.id) }
     : {
         adapter: chatAdapter({ url: `${API_URL}/admin/support/threads/${chat.id}/chat`, postUrl: `${API_URL}/admin/support/threads/${chat.id}/messages`, headers: authHeaders }),
         labels: { customer: 'Customer', seller: 'Seller', rider: 'Rider', nextech: `${brandName()}` },
         onDetails: () => details.current(chat.id),
+        // The name opens who it is, behind the chat: a seller's page, a rider's panel, or the buyer's details.
+        // Looked up from the chat itself, so it also works for chat windows opened before this existed.
+        onTitle: async () => {
+          let t = { seller_id: chat.sellerId, user_id: chat.userId, issue_type: chat.issueType }
+          if (!t.issue_type || !t.user_id) {
+            const d = await readJson(await fetch(`${API_URL}/admin/support/threads/${chat.id}`, { headers: authHeaders() }))
+            if (d?.data) t = d.data
+          }
+          if (String(t.issue_type ?? '').startsWith('seller_') && t.seller_id) openSeller.current?.(t.seller_id)
+          else if (t.user_id) openPerson.current?.(['rider_support', 'rider_seller'].includes(t.issue_type) ? 'rider' : 'customer', t.user_id)
+        },
       }), [authHeaders])
   const load = useCallback(async () => {
     const d = await readJson(await fetch(`${API_URL}/admin/support/threads?status=open`, { headers: authHeaders() }))

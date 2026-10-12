@@ -683,3 +683,4 @@ button.admin-bell-more:hover{text-decoration:underline}
 .seller-card-notes{margin:4px 0 0;padding-left:16px;font-size:12px}
 .admin-support-names{list-style:none;padding:0;margin:10px 0;display:grid;gap:6px;max-width:420px}.admin-support-names li{display:flex;gap:8px}.admin-support-names input{flex:1}
 .rider-pay-plan label{margin-right:8px}.rider-pay-fields{display:inline-flex;flex-wrap:wrap;gap:6px 10px;align-items:center;margin-left:8px}.rider-pay-fields input{width:90px}
+.careers-stores{display:flex;flex-wrap:wrap;gap:4px 14px}

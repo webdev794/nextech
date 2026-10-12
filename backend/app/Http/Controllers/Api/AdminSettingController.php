@@ -96,6 +96,20 @@ class AdminSettingController extends Controller
         'footer.text_color' => ['sometimes', 'nullable', 'string', 'max:7'],
     ];
 
+    /** Before hiding a country: what's still open there (orders, sellers, balances). */
+    public function countryImpact(string $code): JsonResponse
+    {
+        $code = strtoupper($code);
+        $shops = \App\Models\Shop::query()->where('market', $code)->get(['id']);
+
+        return response()->json(['data' => [
+            'open_orders' => \App\Models\Order::query()->where('market', $code)->whereNotIn('status', ['completed', 'cancelled', 'refunded', 'pending_payment'])->count(),
+            'sellers' => $shops->count(),
+            'seller_balance_cents' => (int) \App\Models\SellerLedgerEntry::query()->whereIn('shop_id', $shops->pluck('id'))->sum('amount_cents'),
+            'currency' => Market::currency($code),
+        ]]);
+    }
+
     public function index(): JsonResponse
     {
         return response()->json(['data' => $this->payload()]);

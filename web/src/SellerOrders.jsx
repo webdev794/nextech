@@ -166,7 +166,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
                     </span>
                   </td>
                   <td>{o.items.map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.quantity}</span><small className="sc-muted">Goods ID {i.product_id ?? '—'} · SKU {i.sku ?? '—'}</small></div>)}</td>
-                  <td>{o.fulfilled_by === 'nextech' ? <span className="sc-muted">{brandName()} delivers</span> : <>{shortDate(o.ship_by)}<small className="sc-muted">arrives {shortDate(o.deliver_from)}–{shortDate(o.deliver_by)}</small></>}</td>
+                  <td>{o.fulfilled_by === 'digital' ? <span className="sc-muted">Digital download — sent automatically once paid</span> : o.fulfilled_by === 'nextech' ? <span className="sc-muted">{brandName()} delivers</span> : <>{shortDate(o.ship_by)}<small className="sc-muted">arrives {shortDate(o.deliver_from)}–{shortDate(o.deliver_by)}</small></>}</td>
                   <td>{o.packages.length ? o.packages.map((p) => <div key={p.id}>{p.carrier_label ?? p.carrier} {p.tracking_url ? <a href={p.tracking_url} target="_blank" rel="noreferrer">{p.tracking_number}</a> : p.tracking_number}</div>) : <span className="sc-muted">—</span>}</td>
                   <td>
                     <span className={`sc-pill ${STATUS_PILL[o.status]?.[1] ?? ''}`}>{STATUS_PILL[o.status]?.[0] ?? o.status}</span>
@@ -198,7 +198,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
           <div className="ss-modal ss-wide" onClick={(e) => e.stopPropagation()}>
             <div className="sc-head"><h2 className="sc-h2">Order #{detail.id}</h2><span className={`sc-pill ${STATUS_PILL[detail.status]?.[1] ?? ''}`}>{STATUS_PILL[detail.status]?.[0]}</span></div>
             <p className="sc-muted">Placed {dateTime(detail.created_at)}</p>
-            {detail.status === 'pending' && <div className="sc-alert warn"><span>{detail.awaiting_payment ? 'The buyer hasn’t finished paying — don’t ship this order.' : `Pending — don’t ship yet. It moves to Unshipped at ${new Date(detail.pending_until).toLocaleTimeString([], { timeStyle: 'short' })}.`}</span></div>}
+            {detail.status === 'pending' && <div className="sc-alert warn"><span>{detail.awaiting_payment ? 'The buyer hasn’t finished paying — don’t ship this order.' : `New order — the buyer can still cancel or change the address for free until ${new Date(detail.pending_until).toLocaleTimeString([], { timeStyle: 'short' })}. You can pack it now; ship it after that (it then moves to Unshipped).`}</span></div>}
             {detail.buyer_contacted_at && <div className="sc-alert warn"><span>The buyer contacted {brandName()} buyer service about this order (last message {dateTime(detail.buyer_contacted_at)}). {brandName()} will message you if anything is needed from you.</span></div>}
             {detail.address_change && (
               <div className="ss-setup">
@@ -214,7 +214,7 @@ export function ManageOrders({ headers, go, shipsItself, onSummary }) {
             <dl className="ob-facts">
               <dt>{detail.fulfilled_by === 'nextech' ? 'Delivering to' : 'Ship to'}</dt><dd>{addressLines(detail.ship_to).join(', ') || '—'}</dd>
               {detail.fulfilled_by !== 'nextech' && <><dt>Ship by</dt><dd className={detail.overdue ? 'sc-low' : ''}>{shortDate(detail.ship_by)}{detail.overdue ? ' — overdue' : ''}</dd><dt>Delivery promised</dt><dd>{shortDate(detail.deliver_from)} – {shortDate(detail.deliver_by)}</dd></>}
-              <dt>Fulfilled by</dt><dd>{{ seller: 'You ship it', mixed: `You ship some items; ${brandName()} delivers the rest`, nextech: `${brandName()} picks up and delivers` }[detail.fulfilled_by]}</dd>
+              <dt>Fulfilled by</dt><dd>{{ digital: 'Digital download — the buyer gets it automatically once paid', seller: 'You ship it', mixed: `You ship some items; ${brandName()} delivers the rest`, nextech: `${brandName()} picks up and delivers` }[detail.fulfilled_by]}</dd>
             </dl>
             <table className="sc-table">
               <thead><tr><th>Item</th><th>Goods ID</th><th>SKU ID</th><th>Order item ID</th><th>Qty</th><th>Total</th></tr></thead>

@@ -44,7 +44,11 @@ class RiderController extends Controller
                     ->map(fn ($s) => ['store' => $s->shop?->name ?? $s->name, 'hours' => \App\Support\RiderWorkHours::label(\App\Support\RiderWorkHours::of($s)), 'end' => \App\Support\RiderWorkHours::of($s)['end'], 'now' => \App\Support\RiderWorkHours::isWorkTime($s)])->values(),
                 // No store delivering now: details on file, linked again automatically, or delete them.
                 'no_active_store' => \App\Support\RiderHiring::activeStores($request->user())->isEmpty(),
-                'move_request' => $request->user()->rider_move_request,
+                'move_request' => ($m = $request->user()->rider_move_request) ? ['address' => $m['address'], 'waiting_for_sellers' => \App\Support\RiderHiring::moveWaitingForSellers($m)] : null,
+                // For "Welcome, Ravi" at the top of the Rider app.
+                'rider_name' => $request->user()->name,
+                // Sellers I deliver for (chats with them in the chat button).
+                'seller_stores' => $request->user()->stores()->whereNotNull('shop_id')->with('shop:id,name')->get()->map(fn ($s) => ['id' => $s->id, 'name' => $s->shop?->name ?? $s->name])->values(),
                 // Deliveries of the last 3 days to rate (store + buyer; private, only admin sees it).
                 'to_rate' => $this->toRate($request->user()),
                 // Stores inviting me to deliver for them again.
@@ -54,7 +58,7 @@ class RiderController extends Controller
                 'leave' => [
                     'allowed' => \App\Support\RiderWorkHours::allowedFor($request->user()),
                     'used' => \App\Support\RiderWorkHours::usedThisMonth($request->user()),
-                    'list' => \App\Models\RiderLeave::query()->where('user_id', $request->user()->id)->whereDate('date', '>=', now()->startOfMonth()->toDateString())->orderBy('date')->get(['id', 'date', 'kind', 'told_ahead', 'reason']),
+                    'list' => \App\Models\RiderLeave::query()->where('user_id', $request->user()->id)->whereDate('date', '>=', now()->startOfMonth()->toDateString())->orderBy('date')->get(['id', 'date', 'new_date', 'kind', 'status', 'told_ahead', 'reason', 'decision_note']),
                 ]]]);
     }
 
@@ -312,6 +316,14 @@ class RiderController extends Controller
         return response()->json(['data' => $list]);
     }
 
+    /** My chat with one seller, as a chat page (the bottom-right chat window). */
+    public function sellerChatPage(Request $request, \App\Models\Store $store): JsonResponse
+    {
+        abort_unless($store->shop_id && $request->user()->stores()->whereKey($store->id)->exists(), 404);
+
+        return response()->json(['data' => \App\Support\ChatPage::of(\App\Support\RiderSellerChat::thread($request->user(), $store->shop), 'rider', $request->integer('before') ?: null)]);
+    }
+
     /** Send a message to a seller I deliver for. */
     public function postSellerChat(Request $request, \App\Models\Store $store): JsonResponse
     {
@@ -362,25 +374,36 @@ class RiderController extends Controller
         $rider = $request->user();
         abort_if(\App\Support\RiderHiring::activeStores($rider)->isEmpty(), 422, 'You have no store right now, so there’s no day off to ask for.');
         abort_if(\App\Models\RiderLeave::query()->where('user_id', $rider->id)->whereDate('date', $data['date'])->exists(), 422, 'You already have that day off.');
+        \App\Support\RiderLeaves::assertSomeStoreWorks($rider, $data['date']);
         $ahead = $data['date'] > now()->toDateString();
-        \App\Models\RiderLeave::create(['user_id' => $rider->id, 'date' => $data['date'], 'kind' => 'leave', 'told_ahead' => $ahead, 'reason' => $data['reason'] ?? null]);
+        \App\Models\RiderLeave::create(['user_id' => $rider->id, 'date' => $data['date'], 'kind' => 'leave', 'status' => 'requested', 'told_ahead' => $ahead, 'reason' => $data['reason'] ?? null]);
         $used = \App\Support\RiderWorkHours::usedThisMonth($rider);
         $allowed = \App\Support\RiderWorkHours::allowedFor($rider);
         $note = ($ahead ? '' : ' (asked on the day, not a day ahead)').($allowed !== null && $used > $allowed ? " — that's {$used} days off this month, more than the {$allowed} allowed" : '');
         foreach ($rider->stores()->with('shop.seller')->get() as $store) {
-            \App\Support\RiderWorkHours::notifyStore($store, 'Rider day off', "{$rider->name} asked for a day off on {$data['date']}".($data['reason'] ?? '' ? ": {$data['reason']}" : '')."{$note}.", $ahead && $note === '');
+            \App\Support\RiderWorkHours::notifyStore($store, 'Day-off request — please answer', "{$rider->name} asked for a day off on {$data['date']}".($data['reason'] ?? '' ? ": {$data['reason']}" : '')."{$note}. Accept or decline it in ".($store->shop_id ? 'Local delivery & riders' : 'the admin 🔔').'.');
         }
 
-        return response()->json(['message' => $ahead ? 'Day off asked for — your store is told.' : 'Your store is told. Days off should be asked for a day ahead; this may affect today’s pay.'], 201);
+        return response()->json(['message' => $ahead ? 'Sent — your store will accept or decline it; you’re told either way.' : 'Sent — your store will accept or decline it. Days off should be asked for a day ahead; this may affect today’s pay.'], 201);
     }
 
-    /** Take back a day off that hasn't come yet. */
+    /** Take back a day-off request the store hasn't answered yet. */
     public function cancelLeave(Request $request, \App\Models\RiderLeave $leave): JsonResponse
     {
-        abort_unless($leave->user_id === $request->user()->id && $leave->kind === 'leave' && $leave->date->toDateString() > now()->toDateString(), 422, 'Only a day off that hasn’t come yet can be taken back.');
+        abort_unless($leave->user_id === $request->user()->id && $leave->kind === 'leave', 404);
+        abort_unless($leave->status === 'requested', 422, 'Your store has already answered — ask to change the date instead.');
         $leave->delete();
 
-        return response()->json(['message' => 'Day off taken back.']);
+        return response()->json(['message' => 'Request taken back.']);
+    }
+
+    /** Ask to move an accepted day off to another date (the store confirms or declines). */
+    public function moveLeave(Request $request, \App\Models\RiderLeave $leave): JsonResponse
+    {
+        $data = $request->validate(['date' => ['required', 'date_format:Y-m-d'], 'reason' => ['nullable', 'string', 'max:300']]);
+        \App\Support\RiderLeaves::askToMove($leave, $request->user(), $data['date'], $data['reason'] ?? null);
+
+        return response()->json(['message' => 'Sent — your store will confirm or decline the new date. Until then your day off stays as it is.']);
     }
 
     /** Sellers' own-delivery packages given to me, not delivered yet. */
@@ -403,7 +426,8 @@ class RiderController extends Controller
 
         // Each seller store's days off in the next 2 weeks (weekends it doesn't ship, holidays): my timetable.
         $daysOff = $request->user()->stores()->whereNotNull('shop_id')->with('shop')->get()->filter(fn ($s) => $s->shop)
-            ->map(fn ($s) => ['store' => $s->shop->name, 'days' => \App\Support\SellerShipping::daysOff($s->shop, now(), now()->addDays(14))])
+            // Holidays and store days off only — weekends it doesn't work are routine days off, not listed.
+            ->map(fn ($s) => ['store' => $s->shop->name, 'days' => array_values(array_filter(\App\Support\SellerShipping::daysOff($s->shop, now(), now()->addDays(14)), fn ($d) => str_contains($d, '(')))])
             ->filter(fn ($d) => $d['days'] !== [])->values();
 
         // Orders sellers offered to all their riders: the first to take it gets it (same deadline for everyone).
@@ -448,10 +472,19 @@ class RiderController extends Controller
             ->where('delivery_partner_id', $me)
             ->where('status', 'completed');
 
+        // Sellers' store deliveries I made count too.
+        $packages = \App\Models\OrderPackage::query()
+            ->where('rider_id', $me)
+            ->where('status', 'delivered');
+
         $since = fn ($from, $to = null) => (clone $delivered)
             ->where('delivered_at', '>=', $from)
             ->when($to, fn ($q) => $q->where('delivered_at', '<', $to))
-            ->count();
+            ->count()
+            + (clone $packages)
+                ->where('delivered_at', '>=', $from)
+                ->when($to, fn ($q) => $q->where('delivered_at', '<', $to))
+                ->count();
 
         $now = now();
         $weekAgo = $now->copy()->subDays(7);
@@ -459,7 +492,7 @@ class RiderController extends Controller
         $monthAgo = $now->copy()->subDays(30);
         $twoMonthsAgo = $now->copy()->subDays(60);
 
-        $total = (clone $delivered)->count();
+        $total = (clone $delivered)->count() + (clone $packages)->count();
         $verified = (clone $delivered)->where('delivery_verified', true)->count();
         // Cash still in the rider's hand — zeroes out the moment an admin
         // confirms it's been handed back to the store.
@@ -528,7 +561,7 @@ class RiderController extends Controller
             return $locked;
         });
         if (! $taken) {
-            return response()->json(['message' => 'Another rider has already taken this order.'], 422);
+            return response()->json(['message' => 'This delivery is no longer available.'], 422);
         }
 
         return response()->json(['data' => $this->row($taken->fresh(['items', 'user:id,name,phone']))]);
@@ -589,7 +622,7 @@ class RiderController extends Controller
         });
 
         if ($outcome === 'gone') {
-            return response()->json(['message' => 'This offer has moved to another rider.'], 409);
+            return response()->json(['message' => 'This offer has ended.'], 409);
         }
 
         return response()->json(['data' => $this->board($me)
@@ -880,7 +913,9 @@ class RiderController extends Controller
 
     private function assertMine(Request $request, Order $order): void
     {
-        abort_unless($order->delivery_partner_id === $request->user()->id, 404);
+        // NexTech's rider, or a seller's rider delivering a package on this order (until it's delivered).
+        abort_unless($order->delivery_partner_id === $request->user()->id
+            || \App\Models\OrderPackage::query()->where('order_id', $order->id)->where('rider_id', $request->user()->id)->whereNotIn('status', ['delivered', 'returned', 'lost'])->exists(), 404);
     }
 
     /**

@@ -73,7 +73,7 @@ class RiderMoney
         // Nothing left to hand over for a store: no longer paused there.
         foreach ($rider->stores()->whereNotNull('shop_id')->get() as $store) {
             if ($store->pivot?->cash_paused_at && SellerRiderCash::heldCents($rider, $store) === 0) {
-                DB::table('rider_store')->where('user_id', $rider->id)->where('store_id', $store->id)->update(['cash_paused_at' => null, 'cash_later_at' => null]);
+                DB::table('rider_store')->where('user_id', $rider->id)->where('store_id', $store->id)->update(['cash_paused_at' => null, 'cash_later_at' => null]); \App\Support\LiveVersion::changed();
             }
         }
 

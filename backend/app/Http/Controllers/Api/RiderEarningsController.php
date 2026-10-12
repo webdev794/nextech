@@ -62,9 +62,9 @@ class RiderEarningsController extends Controller
                 ->where('type', 'delivery_credit')
                 ->where('created_at', '>=', now()->subDays(7))
                 ->sum('amount_cents'),
-            // Monthly pay (if admin set it): the plan and this month's deliveries so far.
+            // Monthly / weekly pay (if admin set it): the plan and this period's deliveries so far.
             'pay_plan' => \App\Support\RiderPayPlan::of($rider),
-            'deliveries_this_month' => \App\Support\RiderPayPlan::deliveries($rider, now()),
+            'deliveries_this_month' => \App\Support\RiderPayPlan::soFar($rider) ?? \App\Support\RiderPayPlan::deliveries($rider, now()),
             'rates' => [
                 'base_cents' => RiderLedger::baseCents($market),
                 'per_mile_cents' => RiderLedger::perMileCents($market),

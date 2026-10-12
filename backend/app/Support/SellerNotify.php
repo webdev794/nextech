@@ -28,7 +28,7 @@ class SellerNotify
     public static function thread(Seller $seller): SupportThread
     {
         return SupportThread::where('user_id', $seller->user_id)
-            ->whereIn('issue_type', ['seller_product_issue', 'seller_other'])
+            ->whereIn('issue_type', ['seller_product_issue', 'seller_local_delivery', 'seller_other'])
             ->where('status', 'open')
             ->orderByDesc('id')
             ->first()

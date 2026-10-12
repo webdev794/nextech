@@ -67,11 +67,15 @@ function customerChat(t, issueLabel) {
 
 // Rider console: NexTech support (always there, folded) and a chat with the
 // customer of each delivery — two side by side on a wide screen.
-export function RiderChatDock({ headers, orders }) {
+export function RiderChatDock({ headers, orders, sellers = [] }) {
   const adapterFor = useCallback((chat) => (chat.kind === 'nextech'
     ? { adapter: chatAdapter({ url: `${API_URL}/rider/support-chat`, headers }), labels: { nextech: `${brandName()}` } }
-    : { adapter: chatAdapter({ url: `${API_URL}/rider/orders/${chat.id}/chat`, postUrl: `${API_URL}/rider/orders/${chat.id}/messages`, headers }), labels: { customer: 'Customer', nextech: `${brandName()}`, seller: 'Seller' } }), [headers])
-  const items = useMemo(() => [{ ...NEXTECH, subtitle: 'Help with a delivery' }, ...orders.map((o) => ({ key: `order-${o.id}`, kind: 'order', id: o.id, name: `Order #${o.id}`, subtitle: 'Chat with the customer' }))], [orders])
+    : chat.kind === 'sellerchat'
+      ? { adapter: chatAdapter({ url: `${API_URL}/rider/seller-chats/${chat.id}/chat`, postUrl: `${API_URL}/rider/seller-chats/${chat.id}`, headers }), labels: { seller: chat.name, nextech: `${brandName()} Support` } }
+      : { adapter: chatAdapter({ url: `${API_URL}/rider/orders/${chat.id}/chat`, postUrl: `${API_URL}/rider/orders/${chat.id}/messages`, headers }), labels: { customer: 'Customer', nextech: `${brandName()}`, seller: 'Seller' } }), [headers])
+  const items = useMemo(() => [{ ...NEXTECH, subtitle: 'Help with a delivery' },
+    ...sellers.map((s) => ({ key: `sellerchat-${s.id}`, kind: 'sellerchat', id: s.id, name: s.name, subtitle: 'Chat with the seller' })),
+    ...orders.map((o) => ({ key: `order-${o.id}`, kind: 'order', id: o.id, name: `Order #${o.id}`, subtitle: 'Chat with the customer' }))], [orders, sellers])
   const launcher = useMemo(() => ({ label: 'Messages', items }), [items])
   return <ChatDock storeKey="nextech_rider_chats" adapterFor={adapterFor} launcher={launcher} initial={[NEXTECH]} />
 }

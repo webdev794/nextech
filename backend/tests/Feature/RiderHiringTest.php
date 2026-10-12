@@ -344,6 +344,47 @@ class RiderHiringTest extends TestCase
         $this->postJson("/api/rider/local-offers/{$promise->id}/take")->assertStatus(422);
     }
 
+    public function test_answered_day_off_is_moved_not_taken_back_and_declined_is_removed(): void
+    {
+        Notification::fake();
+        $store = $this->sellerStore();
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+        $rider->stores()->attach($store->id);
+        $seller = $store->shop->seller->user;
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-12 08:00'));
+
+        Sanctum::actingAs($rider);
+        $this->postJson('/api/rider/leave', ['date' => '2026-10-15'])->assertCreated();
+        $this->postJson('/api/rider/leave', ['date' => '2026-10-16'])->assertCreated();
+        // The store doesn't work Saturdays: no day off needed (it would only use up the allowance).
+        $store->forceFill(['rider_hours' => ['days' => [1, 2, 3, 4, 5], 'start' => '09:00', 'end' => '18:00']])->save();
+        $this->postJson('/api/rider/leave', ['date' => '2026-10-17'])->assertStatus(422)->assertJsonPath('message', fn ($m) => str_contains($m, 'closed on Sat 17 Oct'));
+        [$a, $b] = \App\Models\RiderLeave::query()->orderBy('date')->pluck('id')->all();
+        Sanctum::actingAs($seller);
+        $this->postJson("/api/seller/rider-leaves/{$a}", ['accept' => true])->assertOk();
+        $this->postJson("/api/seller/rider-leaves/{$b}", ['accept' => false, 'note' => 'Busy day'])->assertOk();
+        $this->assertNull(\App\Models\RiderLeave::find($b)); // declined: the rider is told, nothing kept
+
+        Sanctum::actingAs($rider);
+        $this->deleteJson("/api/rider/leave/{$a}")->assertStatus(422); // answered: can't take it back
+        $this->postJson("/api/rider/leave/{$a}/move", ['date' => '2026-10-20', 'reason' => 'Swap'])->assertOk();
+        $this->postJson("/api/rider/leave/{$a}/move", ['date' => '2026-10-21'])->assertStatus(422); // one at a time
+        Sanctum::actingAs($seller);
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.leave_requests', 1);
+        $this->postJson("/api/seller/rider-leaves/{$a}", ['accept' => true])->assertOk();
+        $this->assertSame('2026-10-20', \App\Models\RiderLeave::find($a)->date->toDateString());
+        $this->assertNull(\App\Models\RiderLeave::find($a)->new_date);
+
+        // Declined move: the day off stays where it was.
+        Sanctum::actingAs($rider);
+        $this->postJson("/api/rider/leave/{$a}/move", ['date' => '2026-10-22'])->assertOk();
+        Sanctum::actingAs($seller);
+        $this->postJson("/api/seller/rider-leaves/{$a}", ['accept' => false])->assertOk();
+        $this->assertSame('2026-10-20', \App\Models\RiderLeave::find($a)->date->toDateString());
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.leave_requests', 0);
+    }
+
     public function test_rider_asks_for_a_day_off_and_missing_without_asking_is_recorded(): void
     {
         Notification::fake();
@@ -356,8 +397,17 @@ class RiderHiringTest extends TestCase
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-12 08:00')); // Monday
         Sanctum::actingAs($rider);
         $this->postJson('/api/rider/leave', ['date' => '2026-10-13', 'reason' => 'Family'])->assertCreated();
-        $this->getJson('/api/rider/orders')->assertOk()->assertJsonPath('data.leave.allowed', 1)->assertJsonPath('data.leave.used', 1);
+        // Waiting for the seller: not a day off yet; the seller is told and sees it until answered.
+        $this->getJson('/api/rider/orders')->assertOk()->assertJsonPath('data.leave.allowed', 1)->assertJsonPath('data.leave.used', 0)->assertJsonPath('data.leave.list.0.status', 'requested');
         Notification::assertSentTo($store->shop->seller->user, \App\Notifications\SellerNotice::class);
+        Sanctum::actingAs($store->shop->seller->user);
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.leave_requests', 1);
+        $leaveId = \App\Models\RiderLeave::query()->value('id');
+        $this->postJson("/api/seller/rider-leaves/{$leaveId}", ['accept' => true])->assertOk();
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.leave_requests', 0);
+        Notification::assertSentTo($rider, \App\Notifications\RiderNotice::class);
+        Sanctum::actingAs($rider);
+        $this->getJson('/api/rider/orders')->assertOk()->assertJsonPath('data.leave.used', 1);
 
         // Tuesday: on leave — not reminded. Wednesday: missed without asking → recorded, over the allowance.
         $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-13 09:40'));
@@ -490,6 +540,39 @@ class RiderHiringTest extends TestCase
         Notification::assertSentTo($admin, \App\Notifications\AdminNotice::class);
     }
 
+    public function test_rider_move_goes_to_the_seller_first_then_admin(): void
+    {
+        Notification::fake();
+        $store = $this->sellerStore();
+        $shop = $store->shop;
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true,
+            'rider_move_request' => ['address' => 'Dallas', 'lat' => 32.78, 'lng' => -96.80, 'at' => now()->toIso8601String(), 'sellers' => [(string) $shop->id => 'waiting']]])->save();
+        $rider->stores()->attach($store->id);
+        $admin = User::factory()->create();
+        $admin->forceFill(['is_admin' => true])->save();
+
+        // Admin can't decide while the seller hasn't answered, and doesn't see it yet.
+        Sanctum::actingAs($admin);
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonCount(0, 'data.rider_moves');
+        $this->postJson("/api/admin/riders/{$rider->id}/move", ['approve' => true])->assertStatus(422);
+
+        Sanctum::actingAs($shop->seller->user);
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.leave_requests', 1);
+        $this->getJson('/api/seller/local-delivery')->assertOk()->assertJsonPath('data.move_requests.0.name', $rider->name);
+        $this->postJson("/api/seller/rider-moves/{$rider->id}", ['let_go' => true])->assertOk();
+
+        Sanctum::actingAs($admin);
+        $this->getJson('/api/admin/notifications')->assertOk()->assertJsonPath('data.rider_moves.0.address', 'Dallas');
+        Notification::assertSentTo($admin, \App\Notifications\AdminNotice::class);
+
+        // Keeping the rider ends the request.
+        $rider->refresh()->forceFill(['rider_move_request' => ['address' => 'Dallas', 'lat' => 32.78, 'lng' => -96.80, 'at' => now()->toIso8601String(), 'sellers' => [(string) $shop->id => 'waiting']]])->save();
+        Sanctum::actingAs($shop->seller->user);
+        $this->postJson("/api/seller/rider-moves/{$rider->id}", ['let_go' => false, 'note' => 'Busy season'])->assertOk();
+        $this->assertNull($rider->fresh()->rider_move_request);
+    }
+
     public function test_rider_move_is_approved_by_the_store_and_new_area_stores_can_invite(): void
     {
         Notification::fake();
@@ -599,5 +682,84 @@ class RiderHiringTest extends TestCase
         $this->assertStringContainsString('"Ravi"', $res->getContent());
         $this->assertStringContainsString('"4.00"', $res->getContent());
         $this->assertStringContainsString('"not yet"', $res->getContent());
+    }
+
+    public function test_a_sellers_rider_can_message_the_buyer_while_delivering(): void
+    {
+        $store = $this->sellerStore();
+        $shop = $store->shop;
+        $rider = User::factory()->create();
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+        $order = Order::query()->forceCreate(['user_id' => User::factory()->create()->id, 'market' => 'US', 'status' => 'processing', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500, 'delivery_address' => ['line1' => 'x']]);
+        $pkg = \App\Models\OrderPackage::query()->forceCreate(['order_id' => $order->id, 'shop_id' => $shop->id, 'rider_id' => $rider->id, 'carrier' => \App\Support\SellerShipping::LOCAL, 'tracking_number' => 'NT-5', 'label_source' => 'local', 'status' => 'out_for_delivery', 'shipped_at' => now()]);
+        Sanctum::actingAs($rider);
+        $this->postJson("/api/rider/orders/{$order->id}/messages", ['body' => 'At your gate'])->assertOk();
+        $this->assertTrue(\App\Models\SupportMessage::where('body', 'At your gate')->exists());
+        $pkg->forceFill(['status' => 'delivered', 'delivered_at' => now()])->save();
+        $this->postJson("/api/rider/orders/{$order->id}/messages", ['body' => 'Again'])->assertNotFound(); // only while delivering
+    }
+
+    public function test_buyer_gets_the_riders_name_and_phone_when_it_goes_out(): void
+    {
+        Notification::fake();
+        $store = $this->sellerStore();
+        $shop = $store->shop;
+        $rider = User::factory()->create(['name' => 'Ravi Kumar', 'phone' => '+91 98765 43210']);
+        $rider->forceFill(['is_rider' => true, 'rider_is_active' => true])->save();
+        $rider->stores()->attach($store->id);
+        $buyer = User::factory()->create();
+        $order = Order::query()->forceCreate(['user_id' => $buyer->id, 'market' => 'US', 'status' => 'processing', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500, 'delivery_address' => ['line1' => 'x']]);
+        $pkg = \App\Models\OrderPackage::query()->forceCreate(['order_id' => $order->id, 'shop_id' => $shop->id, 'carrier' => \App\Support\SellerShipping::LOCAL, 'tracking_number' => 'NT-7', 'label_source' => 'local', 'status' => 'out_for_delivery', 'shipped_at' => now(), 'delivery_code' => '1234']);
+        \App\Support\SellerRiders::assign($pkg, $rider);
+        Notification::assertSentTo($buyer, \App\Notifications\RiderOnTheWay::class);
+        Sanctum::actingAs($buyer);
+        $this->getJson('/api/orders')->assertOk()->assertJsonPath('data.0.packages.0.rider_contact.phone', '+91 98765 43210')->assertJsonPath('data.0.packages.0.rider_contact.name', 'Ravi');
+    }
+
+    public function test_work_with_us_link_uses_the_country_the_shopper_browses(): void
+    {
+        $store = $this->sellerStore(); // US
+        $store->forceFill(['hiring_open' => true, 'local_delivery_active' => true])->save();
+        Sanctum::actingAs(User::factory()->create());
+        $this->getJson('/api/rider-application/hiring?market=US')->assertOk()->assertJsonPath('data.open', true);
+    }
+
+    public function test_unshipped_orders_show_until_shipped(): void
+    {
+        $store = $this->sellerStore();
+        $shop = $store->shop;
+        $order = Order::query()->forceCreate(['user_id' => User::factory()->create()->id, 'market' => 'US', 'status' => 'processing', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500, 'delivery_address' => ['line1' => 'x']]);
+        $product = \App\Models\Product::query()->forceCreate(['name' => 'Earbuds', 'slug' => 'earbuds', 'sku' => 'EB-1', 'price_cents' => 2500, 'shop_id' => $shop->id]);
+        \App\Models\OrderItem::query()->forceCreate(['order_id' => $order->id, 'product_id' => $product->id, 'shop_id' => $shop->id, 'fulfilled_by' => 'seller', 'product_name' => 'Earbuds', 'sku' => 'EB-1', 'quantity' => 1, 'unit_price_cents' => 2500, 'line_total_cents' => 2500]);
+        Sanctum::actingAs($shop->seller->user);
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonCount(0, 'data.unshipped'); // inside the 30 minutes
+        $this->travel(31)->minutes();
+        $this->getJson('/api/seller/orders/alerts')->assertOk()->assertJsonPath('data.unshipped.0.id', $order->id);
+    }
+
+    public function test_same_order_twice_asks_the_buyer_and_the_reply_reaches_the_seller(): void
+    {
+        Notification::fake();
+        $store = $this->sellerStore();
+        $shop = $store->shop;
+        $buyer = User::factory()->create();
+        $product = \App\Models\Product::query()->forceCreate(['name' => 'Earbuds', 'slug' => 'earbuds', 'sku' => 'EB-1', 'price_cents' => 2500, 'shop_id' => $shop->id]);
+        $make = function () use ($buyer, $shop, $product) {
+            $order = Order::query()->forceCreate(['user_id' => $buyer->id, 'market' => 'US', 'status' => 'processing', 'payment_method' => 'card', 'payment_status' => 'paid', 'subtotal_cents' => 2500, 'total_cents' => 2500, 'delivery_address' => ['line1' => 'x']]);
+            \App\Models\OrderItem::query()->forceCreate(['order_id' => $order->id, 'product_id' => $product->id, 'shop_id' => $shop->id, 'fulfilled_by' => 'seller', 'product_name' => 'Earbuds', 'sku' => 'EB-1', 'quantity' => 1, 'unit_price_cents' => 2500, 'line_total_cents' => 2500]);
+
+            return $order;
+        };
+        \App\Support\DuplicateOrders::check($make());
+        $this->assertSame(0, \App\Models\SupportThread::count()); // the first one is fine
+        $second = $make();
+        \App\Support\DuplicateOrders::check($second);
+        $thread = \App\Models\SupportThread::firstOrFail();
+        $this->assertSame($shop->id, $thread->seller_shop_id);
+        $this->assertStringContainsString('same order twice', $thread->messages()->value('body'));
+
+        Sanctum::actingAs($buyer);
+        $this->postJson("/api/support/threads/{$thread->id}/messages", ['body' => 'Yes, a mistake — please cancel the second'])->assertOk();
+        Notification::assertSentTo($shop->seller->user, \App\Notifications\SellerNotice::class);
     }
 }

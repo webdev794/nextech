@@ -99,12 +99,47 @@ class SellerStores
      * the store can turn it on again. With no riders it's simply off, and the
      * seller can turn it on again any time. Returns the new status.
      */
+    /** Days the seller (and their riders) have to talk it over before the store may approve a turn-off. */
+    public const OFF_WAIT_DAYS = 3;
+
+    /** When the store may approve a seller's turn-off request (also the seller's last day to withdraw it). */
+    public static function offOpensAt(Store $store): ?\Illuminate\Support\Carbon
+    {
+        return $store->local_delivery_off_requested_at ? \Illuminate\Support\Carbon::parse($store->local_delivery_off_requested_at)->addDays(self::OFF_WAIT_DAYS) : null;
+    }
+
+    /** The seller takes back their turn-off request (within the 3 days); riders are told it stays on. */
+    public static function sellerWithdrawsOff(Shop $shop): void
+    {
+        $store = self::ensure($shop);
+        abort_unless($store->local_delivery_off_requested_at, 422, 'There’s no request to withdraw.');
+        abort_if(self::offOpensAt($store)->isPast(), 422, 'The 3 days to withdraw have passed — message '.Branding::name().' if you’ve changed your mind.');
+        $store->forceFill(['local_delivery_off_requested_at' => null])->save();
+        foreach ($store->riders()->get() as $rider) {
+            try {
+                $rider->notify(new RiderNotice("{$shop->name} keeps local delivery", "{$shop->name} withdrew its request to stop local deliveries — nothing changes for you."));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+    }
+
     public static function sellerTurnsOff(Shop $shop, User $by): string
     {
         $store = self::ensure($shop);
         $riders = $store->riders()->count();
         if ($riders > 0) {
             $store->forceFill(['local_delivery_off_requested_at' => now()])->save();
+            // Riders hear now: they can talk to the seller, who may withdraw it within 3 days.
+            $until = now()->addDays(self::OFF_WAIT_DAYS)->format('j M');
+            foreach ($store->riders()->get() as $rider) {
+                try {
+                    $rider->notify(new RiderNotice("{$shop->name} asked to stop local deliveries",
+                        "{$shop->name} asked to stop its local deliveries, which would end your deliveries for them. If you’d like to keep working, talk to the seller — they can withdraw the request until {$until}. After that, ".Branding::name().' may approve it. Pay you earned is still paid.'));
+                } catch (\Throwable $e) {
+                    report($e);
+                }
+            }
             try {
                 Notification::send(User::where('is_admin', true)->get(), new AdminLocalDeliveryOff($store->load('shop'), $riders));
             } catch (\Throwable $e) {
@@ -166,6 +201,7 @@ class SellerStores
         $shop = $store->shop;
         abort_unless($shop, 422, 'Only sellers’ stores have this switch.');
         abort_unless($shop->shipsItself(), 422, 'This seller doesn’t ship orders themselves, so local delivery can’t run for them.');
+        abort_unless(SellerShipping::localDeliveryOffered(), 422, 'Local delivery is hidden for all sellers — set it to Available first (Shipping → Sellers’ local delivery).');
         $store->forceFill(['local_delivery_active' => true, 'local_delivery_off_requested_at' => null])->save();
         if (! $shop->local_delivery) {
             abort_unless($store->hasCoordinates(), 422, 'Set the store’s location first (Edit → address or map pin).');
@@ -178,7 +214,11 @@ class SellerStores
         }
         RiderHiring::relinkNearby($store->fresh()); // riders near it with no active store are suggested to it
         if ($seller = $shop->seller) {
-            SellerNotify::send($seller, $by, 'Local delivery is on', 'Your local delivery is on — only buyers within '.$store->delivery_radius_km.' km of your store get it (you or your riders deliver); everyone else still gets courier shipping. Check the fee and delivery days in Shipping settings → Local delivery.');
+            $apply = SiteUrl::to('rider/apply');
+            SellerNotify::send($seller, $by, 'Local delivery is on',
+                'Your local delivery is on — only buyers within '.$store->delivery_radius_km.' km of your store get it (you or your riders deliver); everyone else still gets courier shipping. Check the fee and delivery days in Shipping settings → Local delivery.'
+                ."\n\nNext — hire riders:\n1. Seller Center → Local delivery & riders → switch on “Hiring riders”.\n2. Signed-in buyers near your store then see “Work with us — deliver” in the site footer. Share the link too: {$apply}\n3. Accept the people you like in Applications; ".Branding::name().' checks and approves them.'
+                ."\n4. Set riders' working hours, pay per delivery and cash limit on the same page.");
         }
     }
 }

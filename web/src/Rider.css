@@ -145,3 +145,23 @@
 .email-routine{display:flex;gap:6px;align-items:center;font-size:12px;margin:8px 0}.email-routine small{color:#777}
 .rider-stars{display:inline-flex;gap:2px;align-items:center;margin:4px 0}.rider-stars button{border:0;background:none;font-size:20px;color:#ccc;cursor:pointer;padding:0 2px}.rider-stars button.on{color:#f5a623}.rider-rate input{width:100%;margin:6px 0}
 .rider-chat-list{list-style:none;padding:0;margin:8px 0;max-height:260px;overflow:auto}.rider-chat-list li{margin:4px 0;padding:6px 8px;border-radius:8px;background:#f4f4f4}.rider-chat-list li.from-me{background:#e7f1ff}.rider-chat textarea{width:100%}
+.rider-apply-doc.has-error input[type=file]{outline:2px solid #c62828;border-radius:6px}.rider-apply-x{border:0;background:#eee;border-radius:50%;width:22px;height:22px;cursor:pointer;margin-left:6px;font-weight:700}.rider-apply-missing{position:sticky;bottom:8px;background:#fff4f4;border:1px solid #f0c4c4;padding:8px 10px;border-radius:8px}
+.rider-tabs{display:flex;gap:6px;margin:10px 0;border-bottom:1px solid #ddd}.rider-tabs button{border:0;background:none;padding:10px 14px;font-weight:600;cursor:pointer;color:#555;border-bottom:3px solid transparent}.rider-tabs button.active{color:#111;border-bottom-color:#fb7701}.rider-seller-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0}
+
+/* My account tab: each part a clear box */
+.rider-account{max-width:640px;padding:16px 18px;display:grid;gap:12px}
+.rider-account .rider-section{max-width:none;margin:0;padding:14px 16px;background:#fff;border:1px solid #cdd5c8;border-radius:13px;box-shadow:0 3px 12px rgba(24,33,28,.06)}
+.rider-account .rider-section h3{margin:0 0 8px;font-size:15px;font-weight:700;color:#20291f}
+.rider-account .rider-card-note{font-style:normal;color:#5b6560;margin:0 0 8px;line-height:1.45}
+.rider-account ul{list-style:none;margin:8px 0;padding:0;display:grid;gap:6px}
+.rider-account li{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;padding:8px 10px;border:1px solid #e3e8df;border-radius:9px;background:#fafcf8}
+.rider-account .rider-seller-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e3e8df;border-radius:9px;background:#fafcf8;margin:6px 0}
+.rider-account .rider-seller-row b{min-width:80px}
+.rider-account .rider-leave-form{display:grid;gap:8px;margin-top:8px}
+.rider-account .rider-leave-form label{display:grid;gap:4px;font-size:13px}
+.rider-account .rider-btn{margin-top:4px}
+.rider-account .email-routine{margin:0;font-size:13px}
+.rider-account .rider-letter{margin:8px 0}
+.rider-welcome{margin:14px 18px 0;font-size:16px;font-weight:500;color:#141a12}
+.rider-welcome b{font-weight:600}
+.rider-offer-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:12px 18px 0;max-width:640px;padding:12px 14px;border-radius:12px;background:#fff3e6;border:1px solid #fb7701;color:#5a2d00}

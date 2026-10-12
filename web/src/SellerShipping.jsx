@@ -187,7 +187,7 @@ function StoreDaysOff({ data, headers, onSaved }) {
 // area around the shop, free or for a flat fee. Everyone else gets courier
 // delivery. No tracking number — the buyer reads a delivery code on arrival.
 // ---------------------------------------------------------------------------
-function LocalDelivery({ data, patch, note, setNote }) {
+function LocalDelivery({ data, patch, note, setNote, onSupport }) {
   const ld = data.local_delivery
   const status = data.local_store?.blocked ? 'locked' : data.local_store?.status === 'off_requested' ? 'turning_off' : ld ? 'on' : 'off'
   const [form, setForm] = useState(() => ({ open: !!ld, address: ld?.address_id ?? data.addresses?.[0]?.id ?? '', radius: ld?.radius_km ?? Math.min(10, data.local_max_km ?? 10), selfKm: ld?.self_km ?? '', fee: ld ? (ld.fee_cents / 100).toFixed(2) : '0.00', days: ld?.days ?? 1, lat: ld?.pin_set ? ld?.lat ?? '' : '', lng: ld?.pin_set ? ld?.lng ?? '' : '' }))
@@ -202,22 +202,31 @@ function LocalDelivery({ data, patch, note, setNote }) {
     send({ local_delivery: { address_id: Number(form.address), radius_km: Number(form.radius), fee_cents: Math.round(Number(form.fee || 0) * 100), days: Number(form.days), self_km: form.selfKm === '' ? null : Number(form.selfKm), ...pin } }, localSavedMsg(form, data, !ld))
   }
 
+  async function withdraw() {
+    setNote('Saving…')
+    const ok = await patch(null, null, '/seller/local-delivery/withdraw-off')
+    if (!ok) setNote('Could not withdraw — see the message at the top of the page.')
+    return ok
+  }
+
   function turnOff() {
     // With riders working for the store it's checked by the store first; riders are told.
     const riders = data.local_store?.riders_count ?? 0
     const ok = window.confirm(riders
-      ? `Turn off local deliveries?\n\nYou have ${riders} rider${riders === 1 ? '' : 's'}. ${brandName()} checks it first, then your riders are told they won’t get your orders any more.\n\nAfter that, only ${brandName()} can turn it back on for you.\n\nNearby buyers will get courier delivery instead.`
+      ? `Turn off local deliveries?\n\nYou have ${riders} rider${riders === 1 ? '' : 's'}. They’re told now and may talk to you about it.\n\nYou have 3 days to withdraw this request. After that, ${brandName()} may approve it — and then only ${brandName()} can turn it back on for you.\n\nNearby buyers will get courier delivery instead.`
       : 'Turn off local deliveries? All your orders will go by courier. You can turn it back on any time.')
     if (!ok) return
-    send({ local_delivery: null, confirm_off: true }, riders ? `Request sent. ${brandName()} will check it — local deliveries stay ON until then.` : 'Local deliveries are OFF. All your orders go by courier.')
+    send({ local_delivery: null, confirm_off: true }, riders ? `Request sent. Your riders are told. You can withdraw it within 3 days; local deliveries stay ON until ${brandName()} approves it.` : 'Local deliveries are OFF. All your orders go by courier.')
   }
 
   return (
-    <div className="sc-card">
+    <div className="sc-card" id="local-delivery">
       <h2 className="sc-h2">Local delivery <span className={`ss-status ${status === 'on' ? 'on' : status === 'turning_off' ? 'wait' : 'off'}`}>{status === 'on' ? 'ON' : status === 'turning_off' ? 'Turning off — waiting' : 'OFF'}</span></h2>
       <p className="sc-muted">Deliver orders <b>yourself, or with your riders</b>, to people who live <b>close to your shop</b>. Only people inside the area you choose (for example 10 km around your shop) see this option when they order. Everyone else gets courier delivery as usual.</p>
-      {status === 'locked' && <p className="ss-warn">{brandName()} has turned off local deliveries for your shop. Only {brandName()} can turn them back on — send us a message (for example when you have riders again). Your orders go by courier meanwhile.</p>}
-      {status === 'turning_off' && <p className="ss-warn">You asked to turn off local deliveries. {brandName()} is checking it — they stay ON until then.</p>}
+      {status === 'locked' && <p className="ss-warn"><u><b>{brandName()} has turned off local deliveries for your shop.</b></u> That&rsquo;s why there&rsquo;s no &ldquo;Turn on&rdquo; button here — only {brandName()} can turn them back on. Send them a message, for example when you have riders again or want to start hiring riders online. Your orders go by courier meanwhile.</p>}
+      {status === 'locked' && onSupport && <div className="ss-actions"><button type="button" className="ss-btn-on" onClick={onSupport}>Message {brandName()} to turn it back on</button></div>}
+      {status === 'turning_off' && <p className="ss-warn">You asked to turn off local deliveries. They stay ON until {brandName()} approves it.{data.local_store?.withdraw_until && new Date(data.local_store.withdraw_until) > new Date() && <> You can withdraw it until <b>{new Date(data.local_store.withdraw_until).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</b>.{' '}
+        <button type="button" className="ss-btn-on" onClick={async () => { const ok = await withdraw(); if (ok) setNote('Withdrawn — local deliveries stay ON; your riders are told.') }}>Withdraw request</button></>}</p>}
       <div className="ss-info">
         <b>How local delivery works — please read</b>
         <ul>
@@ -266,7 +275,7 @@ function LocalDelivery({ data, patch, note, setNote }) {
 // ---------------------------------------------------------------------------
 // Shipping settings
 // ---------------------------------------------------------------------------
-export function ShippingSettings({ headers, onChanged }) {
+export function ShippingSettings({ headers, onChanged, onSupport }) {
   const [data, setData] = useState(null)
   const [tab, setTab] = useState('general')
   const [msg, setMsg] = useState('')
@@ -285,10 +294,11 @@ export function ShippingSettings({ headers, onChanged }) {
 
   const [ldNote, setLdNote] = useState('') // own delivery: result shown by its Save button
 
-  async function patch(body, okMsg) {
+  async function patch(body, okMsg, postPath = null) {
     setMsg('')
     try {
-      const d = await send(headers, '/seller/shipping', 'PATCH', body)
+      // postPath: a one-off action (e.g. withdraw a turn-off request), then the settings are reloaded.
+      const d = postPath ? (await send(headers, postPath, 'POST'), await send(headers, '/seller/shipping')) : await send(headers, '/seller/shipping', 'PATCH', body)
       setData(d.data)
       onChanged?.(d.data)
       if (okMsg) setMsg(okMsg)
@@ -416,7 +426,7 @@ export function ShippingSettings({ headers, onChanged }) {
             </div>
           )}
 
-          <LocalDelivery key={JSON.stringify(data.local_delivery ?? {}) + data.fulfillment_mode + (data.addresses?.length ?? 0)} data={data} patch={patch} note={ldNote} setNote={setLdNote} />
+          <LocalDelivery key={JSON.stringify(data.local_delivery ?? {}) + data.fulfillment_mode + (data.addresses?.length ?? 0)} data={data} patch={patch} note={ldNote} setNote={setLdNote} onSupport={onSupport} />
 
           <IntlShipping key={JSON.stringify(data.intl_shipping ?? {}) + data.fulfillment_mode + (data.intl_approval?.status ?? '')} data={data} patch={patch} headers={headers} onData={setData} />
 
@@ -785,8 +795,8 @@ export function ShipOrders({ headers, mode }) {
               <tbody>
                 {toShip.map((o) => (
                   <tr key={o.id}>
-                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.international && <span className="sc-pill">International</span>}{o.shipping?.method === 'local' && <span className="sc-pill approved">Local delivery</span>}{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !onHold(o) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
-                    <td>{o.ship_to.name}<small className="sc-muted">{[o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(', ')}<br />{o.ship_to.city}, {o.ship_to.state} {o.ship_to.postal_code}</small></td>
+                    <td><b>#{o.id}</b><small className="sc-muted">{shortDate(o.created_at)}</small>{o.international && <span className="sc-pill">International</span>}{o.shipping?.method === 'local' && <span className="sc-pill approved">Local delivery</span>}{o.cod && <span className="sc-pill pending ss-cod">Cash on delivery · {money(o.cod_amount_cents)}</span>}{o.shipping?.packed_at ? <small className="ss-packed">✓ Packed {shortDate(o.shipping.packed_at)}</small> : !(onHold(o) && !o.pending) && <button type="button" className="link" onClick={() => act(`/seller/fulfillment/orders/${o.id}/packed`)}>Mark packed</button>}</td>
+                    <td>{o.ship_to.name}<small className="sc-muted">{[o.ship_to.line1, o.ship_to.line2].filter(Boolean).join(', ')}<br />{o.ship_to.city}, {o.ship_to.state} {o.ship_to.postal_code}{o.ship_to.available_times && <><br />🕘 Usually home: {o.ship_to.available_times}</>}</small></td>
                     <td>{o.items.filter((i) => i.remaining > 0).map((i) => <div key={i.id}>{i.product_name}{i.variant_label ? ` · ${i.variant_label}` : ''} <span className="sc-muted">× {i.remaining}</span><PersonalizationView value={i.personalization} download /></div>)}</td>
                     <td className={o.overdue ? 'sc-low' : ''}>{shortDate(o.shipping?.ship_by)}{o.overdue && <small>Overdue</small>}</td>
                     <td>{shortDate(o.shipping?.deliver_from)}–{shortDate(o.shipping?.deliver_by)}</td>
@@ -805,7 +815,7 @@ export function ShipOrders({ headers, mode }) {
                       ))}
                       {(o.label_requests ?? []).filter((r) => r.status === 'cancelled' && r.admin_note && r.admin_note !== 'Cancelled by the seller.').slice(0, 1).map((r) => <small key={r.id} className="sc-low">Label request declined: {r.admin_note}</small>)}
                       {o.international && <button type="button" title="Address label + customs declaration — print and attach to the parcel" onClick={() => downloadInternational(o)}>International Delivery (PDF)</button>}
-                      {onHold(o) && <small className="ss-label-wait">{o.pending ? 'Pending — don’t ship yet (about 30 minutes after the order).' : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
+                      {onHold(o) && <small className="ss-label-wait">{o.pending ? (o.pending_until ? `New order — the buyer can still cancel or change the address for free until ${new Date(o.pending_until).toLocaleTimeString([], { timeStyle: 'short' })}. Pack it now; ship it after that.` : 'The buyer hasn’t finished paying — don’t ship this order yet.') : 'Buyer asked to change the address — decide in Manage orders first.'}</small>}
                       {o.shipping?.method === 'local' && o.items.some((i) => free(i) > 0) && !onHold(o) && <button type="button" className="sc-primary" title="You or your rider takes it now — the buyer gets a delivery code to read out on arrival" onClick={() => {
                         const pick = riderPick[o.id] ?? (o.self_zone || o.local_km == null || !myRiders.length ? '' : 'offer')
                         const rider = myRiders.find((r) => String(r.id) === String(pick))

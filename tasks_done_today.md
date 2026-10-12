@@ -1,61 +1,95 @@
-# Tasks Done Today — 9 Oct 2026
+# Tasks Done Today — 12 Oct 2026
 
-Sellers' local delivery, riders and support. The plan and what's still open are in `Possible_tasks.md`.
+The plan and what's still open are in `Possible_tasks.md`.
 
-## Deliveries and timers
-- **Needs courier:** NexTech local orders no rider takes in time, or outside every store's area with no courier account → admin 🔔 + Orders filter "Needs courier".
-- **One rider timer per order** (default 5 hours): every on-shift rider at the store sees it with the same deadline (riders who come online later too); the first to take it gets it. When the time runs out, the store is told; nobody online at all → told at once.
-- Breaks and clock-out move pending offers on. Long offers have "Decide later".
-- **Sellers' riders:** "Offer to all my riders (first to take it)", with the seller's own hours; "Nobody took it" alert.
-- **Delivery zones:** "You deliver yourself within X km"; nearer orders default to the seller, farther ones to riders. Checkout saves each buyer's distance.
-- **Arrival deadlines:** sellers reminded when an order is due today or tomorrow; admin told when one is late.
-- Admin caps on the days sellers may promise (local default 7, courier default 30).
+## Careers and Partner pages
+- **Partner with us** page (footer): Sell with us, Deliver with us and Other partnerships, each with a button.
+- **Careers** page lists open jobs with **Apply**. Rider jobs go to the rider application; other jobs use a short form (name, email, phone, CV link, message).
+- **Admin → Careers** (new left menu) has two parts:
+  - **Open roles:** add a role (the form opens only on click). Tick one or more stores; "What you need" is one item per line. The default rider job lists age, ID, own vehicle with licence and papers, smartphone, experience, education, health, the local area and store hours.
+  - **Applications:** New / Reviewed / Hired / Declined. New applications also show in the 🔔.
+- A job at a seller's store: the seller is told and sees the applications in Local delivery & riders.
+- Clicking **Careers** (or **Secure access**) again hides its submenu.
 
-## Holidays and working hours
-- Buyers see which seller days off the delivery dates skip; riders see their stores' days off.
-- **Admin Shipping → Holidays:** holidays added per country or per store; sellers ask for days off (add for this store / the whole country / decline).
-- Store closed tomorrow → riders and admin told; riders with no other open store get the day off automatically.
-- **Riders' working hours** set per store (seller / admin): clock-in reminders; the store is told who is missing or who leaves early.
-- **Riders' days off:** allowance per month, asked for a day ahead in the Rider app. Missed days are recorded (may affect pay); breaks over 1 hour → reminder.
+## Local delivery
+- **Turning off: 3 days to talk it over.** Riders are emailed at once. The seller can **withdraw** the request within 3 days. Admin can't approve before then ("Approve from …"), and the 🔔 entry changes to "ready to approve" after.
+- **Admin seller page → Local delivery:** status, riders and hiring, with Turn on / Turn off / Approve / Keep on.
+  - Turning it on sends the seller the hiring steps in chat, with the "Work with us — deliver" footer link and the link to share.
+  - If local delivery is **hidden for all sellers**, the page says so and links to Shipping → Sellers' local delivery; turning it on is refused.
+- **Seller pages:**
+  - Links go straight to Shipping settings → Local delivery.
+  - When it's locked, a clear underlined message explains why there's no Turn on button, with a **Message NexTech to turn it back on** button.
+  - Darker borders between sections.
+- **Seller "What's this about?"** has a new topic: **Local delivery — turn it back on, riders, hiring**.
 
-## Riders
-- Application moved to **/rider/apply**; /rider is the rider login and console again.
-- **Final step: sign to join.** The rider types their name and town after reading the store's terms (manners, on time, days off, own fuel and vehicle costs, bonus for great work, the store's decision is final). The signed text is saved.
-- **Payout method:** chosen on the application from the methods allowed in that country; required before clocking in. On the 25th, riders still missing one are reminded, and so are their sellers.
-- **Documents:** a joining letter (joined on, pay, hours) instead of the full terms.
-- **No store left:** details stay on file. A nearby store can **invite** them, and they **join** only if both agree. Or they can delete their details.
-- **Moving to a new area:** the rider asks, admin approves or declines, and stores near the new home can invite them.
-- **Monthly pay** (NexTech riders): amount, target, bonus per extra delivery and a cap. Paid on the 1st, with a top-up pool for riders who fell short.
-- **Bonuses:** suggested to admin on the 25th for excellent months; sellers can give their own riders a bonus from their earnings.
-- **Riders rate the store and the buyer** (private, admin only); the seller's admin card shows "Riders say".
-- **Rider ↔ seller chat**, with support tickets.
+## Buyers and riders
+- **When you're usually home:** buyers add it to an address; riders and sellers see it.
+- **Rider's position and phone for the buyer** while out for delivery: "📍 Ravi is about 2.3 km away · See on map" and "📞 Ravi: +91 …". The buyer is also emailed who is delivering and their number.
+- **Sellers' riders can message the buyer** while delivering (NexTech riders already could).
 
-## Sellers
-- "Own delivery" renamed **Local delivery**, in plain words: an ON / OFF status, a green "Turn on" button and a red "Turn off" button. The rules are always shown.
-- **Cash on delivery "Only for local deliveries"** (new admin choice); clearer message when it's switched off.
-- Rider money **CSV download** (one row per delivery).
-- Shipping days wording: "I also ship on Saturdays / Sundays".
+## Rider day offs need an answer
+- A rider's day-off request now **waits for the seller** (admin for NexTech's own stores) to **Accept** or **Decline**.
+- The seller sees a 📅 banner and a "Day-off requests — please answer" list in Local delivery & riders until they answer; admin sees it in the 🔔.
+- The rider sees "waiting / accepted / declined" and is told the decision. Only accepted days count as days off.
+- **Once answered, no Take back:** an accepted day off still ahead has **Change date** instead; the store confirms the new date or declines it (the day off then stays as it was). Only a request not answered yet can be taken back.
+- **Declined requests are removed** once the rider is told.
+- **Store closed days:** weekends a store doesn't work are simply days off — not listed or emailed. The Rider app shows only coming holidays ("📅 cs holidays: Diwali (8 Nov)"). A rider can't ask for a day off on a day their stores are closed.
+- Day-off requests made before this change for upcoming dates now wait for an answer too (only past days count as accepted).
 
-## Support and admin
-- **Support names:** every support reply (buyer, seller, rider) shows as "Mak from {store} Support", never admin. Admin edits the names in the new left menu **Support team** (5 default names).
-- **Tickets** on rider–seller chats: shown in the admin 🔔 (no email); a support name is assigned; reply within 1–2 working days; close as "resolved" or "can't take this up now".
-- **Performance watch** (daily): poorly rated products, sellers, riders and buyers; late shipping; missed days → admin 🔔 "Performance warnings".
-- **Emails:** routine reminders can be switched off by riders, sellers and admins; important emails always go.
+## Rider app
+- **Welcome, {rider's name}** at the top of the Rider app.
+- **Deliveries all-time / this week** now also count deliveries for sellers' stores, not just NexTech orders.
+
+## Rider pay
+- **Weekly pay:** Riders → rider → Pay now has Per delivery / Monthly / **Weekly** (paid every Monday for the last week, same target, bonus and top-up pool).
+- **Missed days:** "less per missed day" on monthly / weekly pay — absent without asking, or a day off beyond the allowance.
+
+## Countries
+- Settings → **Countries — show / hide**: hiding one first lists what's still open there (orders, sellers, money owed to sellers).
+- New sellers can't sign up from a hidden country; its existing sellers see "Selling is paused in your country" and can still ship open orders and get paid.
 
 ## Live updates
-- Pages refresh their data by themselves when something changes (a tiny `live.json` marker, light on the server). Tabs in the same browser update instantly.
-- Chats and notifications stay fast.
-- Fixed: the red "Could not load…" messages on the admin dashboard (a bug in the new live-update code).
+- Cash handover / settle / pause changes now show on open pages at once.
 
-## Other
-- MySQL: two corrupted system tables repaired (a backup was made first).
-- cs local delivery area restored to 10 km after a test changed it.
-- New test rider: **rider2@example.com** (password `password`), linked to seller cs (India); listed in `logins.md`.
+## Offers to riders
+- **Bug fixed:** "Store deliveries" was hidden for a rider with no deliveries, so offered orders (e.g. #85 for rider2) never showed. They now show under Store deliveries → Open to take.
+- An orange **Delivery to take** banner at the top of the Rider app (with **See it**) until it's taken; it rings once per new offer, even if the app is opened later.
+- Riders' messages never mention other riders ("is waiting for you", "Please pick it up from cs").
+
+## Rider moving away
+- The request goes to the rider's sellers first (Local delivery & riders → **Let them go / Keep them**, and the 📅 banner until answered). Keep them = the request ends and the rider is told. Once every seller lets them go (or the rider works only for your own stores), admin approves or declines as before.
+
+## Rider app wording
+- When a rider takes an order: "Order #85 is assigned to you for delivery — collect it from cs." The seller is told who will collect it, to check the items at handover, and that handing over is at their own risk.
+- "Store deliveries (1)" counts orders waiting to be taken; they say "Please pick it up from cs."
+- No "Nothing assigned to you" line — My deliveries shows only when there is something in it.
+
+## Admin chats
+- The name at the top of a chat window is a link that opens that seller, rider or buyer's details behind the chat. The Support drawer has "Open seller →".
+
+## Bugs from testing (all fixed)
+- **Pending orders:** a clear reason ("the buyer can still cancel or change the address for free until 12:01"); the seller can **Mark packed** meanwhile.
+- **Rider app tabs:** **Dashboard** (unchanged: shift, stats, earnings, deliveries) and **My account** (sellers, days off, documents, moving, emails — in boxes). Seller chats are also in the chat button (bottom right); offer pop-ups show on every tab.
+- **"Offer to my riders":** every active rider of the seller is emailed, and the Rider app rings with a notice.
+- **"Work with us — deliver" footer link:** uses the country being browsed (it never showed locally). /rider/apply tells existing riders "You're already a rider".
+- **Seller Messages red dot:** no longer shows just because a chat was ended.
+- **Unpaid orders:** the buyer is reminded to pay about 1 hour and 24 hours after ordering.
+- **Digital orders** (e.g. #84): labelled "Digital download" for admin and seller; no rider can be assigned.
+- **Unshipped orders:** a banner at the top of Seller Center that can't be closed, until they're shipped. "Orders / Ship orders" blink with the count.
+- **Same order twice:** the buyer gets an automatic message from the seller's side; their reply reaches the seller (email + customer chats).
+- **Rider application form:** Submit always works and lists what's missing; each upload shows its own error with × to remove; the same file can't be used twice; payment details moved to after approval (the approval email says where to add them).
+- **Links in messages** use the website's address setting (`FRONTEND_URL` / `APP_URL`), e.g. …/rider/apply.
+
+## Fixes
+- Admin "Turn off" for a seller's store crashed after the 3-day change; fixed.
+- A message edit briefly broke a backend file; caught by the tests and fixed.
+- An old helper script was re-run by mistake and added a duplicate seller CSV download; removed the same day.
+- rider@example.com's "1 delivery all-time" is correct: only order #27 was ever delivered by them (no data was deleted).
 
 ## For the server
-- Migrations **2026_10_09_000087 – 000101** (15) to run: `php artisan migrate`.
-- `backend/public` must be writable by PHP (for `live.json`).
-- The scheduler must be running (new daily, hourly and monthly jobs).
+- New migrations **2026_10_12_000102 – 000106** (careers, job role stores, address availability, day-off answers, day-off date changes) on top of 9 Oct's 000087–000101: run `php artisan migrate`.
+- Scheduled jobs (payment reminders, store days off, rider pay) need the scheduler: locally keep `php artisan schedule:work` running; on the server the cron runs `schedule:run` every minute.
+- Optional `.env` setting **FRONTEND_URL** = the shop's address (only needed if it differs from APP_URL; locally it's http://127.0.0.1:5173).
 
 ## Checks
-- Tests: **472, all passing**. ESLint passes; production build passes.
+- Tests: **489, all passing**. ESLint and the production build pass.

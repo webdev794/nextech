@@ -121,6 +121,18 @@ export default function RiderEntry({ apply = false }) {
   }
 
   if (checking) return <div className="admin-gate"><p>Loading&hellip;</p></div>
+  // Already a rider but on the application page: say so, don't jump into the app.
+  if (authed && apply) return (
+    <div className="admin-gate">
+      <div className="admin-gate-card">
+        <div className="entry-logo"><BrandLogo /></div>
+        <h1>You&rsquo;re already a rider</h1>
+        <p className="admin-gate-sub">This account can already deliver. Open the Rider app to see your deliveries — or sign out to apply with another account.</p>
+        <a className="admin-gate-link" href={RIDER_URL}>Open the Rider app &rarr;</a>
+        <button type="button" className="admin-gate-link" onClick={signOut}>Sign out</button>
+      </div>
+    </div>
+  )
   if (authed) return (
     <Suspense fallback={<div className="admin-gate"><p>Loading&hellip;</p></div>}>
       <RiderConsole token={token} onSignOut={signOut} />

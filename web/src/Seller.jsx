@@ -162,7 +162,7 @@ const PRODUCT_STATUS_LABELS = { pending: 'Pending review', approved: 'Live', rej
 const SUPPORT_ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other', delivery: 'Delivery message',
-  seller_product_issue: 'Product issue', seller_other: 'Other',
+  seller_product_issue: 'Product issue', seller_local_delivery: 'Local delivery', seller_other: 'Other',
 }
 
 export default function Seller({ token, onSignOut }) {
@@ -631,7 +631,7 @@ export default function Seller({ token, onSignOut }) {
   // conversation instead of making the seller pick it out of a thread list.
   useEffect(() => {
     if (!me?.status || me.status === 'approved' || supportThread) return
-    const thread = supportThreads.find((t) => t.issue_type === 'seller_product_issue' || t.issue_type === 'seller_other')
+    const thread = supportThreads.find((t) => ['seller_product_issue', 'seller_local_delivery', 'seller_other'].includes(t.issue_type))
     if (!thread) return
     let cancelled = false
     fetch(`${API_URL}/support/threads/${thread.id}?kind=seller`, { headers: authHeaders() }).then(readJson)
@@ -658,7 +658,7 @@ export default function Seller({ token, onSignOut }) {
         const threads = data?.data ?? []
         setSupportThreads(threads)
 
-        const relevant = threads.filter((t) => t.issue_type === 'seller_product_issue' || t.issue_type === 'seller_other')
+        const relevant = threads.filter((t) => ['seller_product_issue', 'seller_local_delivery', 'seller_other'].includes(t.issue_type))
         const seenMap = Object.fromEntries(relevant.map((t) => [t.id, t.last_message_at]))
 
         if (seenMessagesRef.current === null) {
@@ -952,6 +952,8 @@ export default function Seller({ token, onSignOut }) {
     const nextechUnread = (t) => !!t.last_staff_message_at
       && (!t.last_message_at || new Date(t.last_staff_message_at) >= new Date(t.last_message_at))
       && seenMsgs[`s-${t.id}`] !== t.last_staff_message_at
+      // Ending a chat adds an "ended" note — that alone isn't something new to read.
+      && !(t.status === 'resolved' && t.resolved_at && new Date(t.last_staff_message_at) <= new Date(new Date(t.resolved_at).getTime() + 5000))
     const customerUnread = (t) => t.needs_seller_reply && seenMsgs[`c-${t.id}`] !== t.last_message_at
     const unreadCustomerChats = customerChats.filter(customerUnread).length
     const unreadNextech = supportThreads.filter(nextechUnread).length
@@ -974,7 +976,7 @@ export default function Seller({ token, onSignOut }) {
       { key: 'home', label: 'Homepage', icon: '⌂' },
       { key: 'products', label: 'Products', icon: '▣', badge: (orderAlerts?.out_of_stock ?? []).length, children: [['products', 'Manage products'], ['add-product', 'Add products'], ['bulk-upload', 'Bulk import products'], ['compliance-products', 'Product compliance'], ['pricing', 'Pricing health']] },
       { key: 'performance', label: 'Performance', icon: '♡', children: [['account-health', 'Account health']] },
-      { key: 'orders', label: 'Orders', icon: '☰', badge: orderAlerts?.to_ship ?? 0, children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
+      { key: 'orders', label: 'Orders', icon: '☰', badge: orderAlerts?.to_ship ?? 0, blink: (orderAlerts?.to_ship ?? 0) > 0, children: [['orders', 'Manage orders'], ...(shopMode !== 'nextech' ? [['ship-orders', 'Ship orders']] : [])] },
       { key: 'finances', label: 'Finances', icon: '$' },
       { key: 'analytics', label: 'Analytics', icon: '◔' },
       { key: 'messages', label: 'Messages', icon: '✉', badge: unreadThreads },
@@ -1011,11 +1013,11 @@ export default function Seller({ token, onSignOut }) {
           <nav className="sc-nav" aria-label="Seller Center">
             {NAV.map((item) => item.children ? (
               <div key={item.key} className="sc-nav-group">
-                <button type="button" className={`sc-nav-item${item.children.some(([k]) => k === activePage) ? ' in' : ''}`} aria-expanded={!!openGroups[item.key]} onClick={() => setOpenGroups((g) => ({ ...g, [item.key]: !g[item.key] }))}>
-                  <span className="sc-nav-ico" aria-hidden>{item.icon}</span>{item.label}<span className="sc-caret" aria-hidden>{openGroups[item.key] ? '▴' : '▾'}</span>
+                <button type="button" className={`sc-nav-item${item.children.some(([k]) => k === activePage) ? ' in' : ''}${item.blink && !openGroups[item.key] ? ' sc-blink' : ''}`} aria-expanded={!!openGroups[item.key]} onClick={() => setOpenGroups((g) => ({ ...g, [item.key]: !g[item.key] }))}>
+                  <span className="sc-nav-ico" aria-hidden>{item.icon}</span>{item.label}{item.badge > 0 && !openGroups[item.key] && <span className="sc-badge">{item.badge}</span>}<span className="sc-caret" aria-hidden>{openGroups[item.key] ? '▴' : '▾'}</span>
                 </button>
                 {openGroups[item.key] && item.children.map(([key, label]) => (
-                  <button type="button" key={key} className={`sc-nav-sub${activePage === key ? ' active' : ''}`} onClick={() => (key === 'add-product' ? newProduct() : go(key))}>{label}</button>
+                  <button type="button" key={key} className={`sc-nav-sub${activePage === key ? ' active' : ''}${key === 'ship-orders' && (orderAlerts?.to_ship ?? 0) > 0 ? ' sc-blink' : ''}`} onClick={() => (key === 'add-product' ? newProduct() : go(key))}>{label}{key === 'ship-orders' && (orderAlerts?.to_ship ?? 0) > 0 && <span className="sc-badge">{orderAlerts.to_ship}</span>}</button>
                 ))}
               </div>
             ) : (
@@ -1026,10 +1028,29 @@ export default function Seller({ token, onSignOut }) {
           </nav>
 
           <main className="sc-main">
+            {me?.market_paused && (
+              <div className="sc-new-order sc-out-of-stock" role="status">
+                <span>⏸ <b>Selling is paused in your country</b> — buyers there can&rsquo;t shop right now. You can still ship open orders, get paid and contact us.</span>
+              </div>
+            )}
             {(orderAlerts?.out_of_stock ?? []).length > 0 && section !== 'products' && (
               <div className="sc-new-order sc-out-of-stock" role="status">
                 <span>📦 <b>{orderAlerts.out_of_stock.length === 1 ? `“${orderAlerts.out_of_stock[0].name}” is out of stock` : `${orderAlerts.out_of_stock.length} products are out of stock`}</b> — buyers can&rsquo;t order {orderAlerts.out_of_stock.length === 1 ? 'it' : 'them'} until you add stock.</span>
                 <button type="button" className="sc-primary" onClick={() => go('products')}>Update stock</button>
+              </div>
+            )}
+            {/* Riders' day-off requests: stays until each is accepted or declined. */}
+            {(orderAlerts?.leave_requests ?? 0) > 0 && section !== 'local' && (
+              <div className="sc-new-order sc-unshipped" role="alert">
+                <span>📅 <b>{orderAlerts.leave_requests === 1 ? '1 rider request' : `${orderAlerts.leave_requests} rider requests`}</b> waiting for your answer.</span>
+                <button type="button" className="sc-primary" onClick={() => go('local')}>Answer</button>
+              </div>
+            )}
+            {/* Orders to ship: stays until they're shipped (can't be closed). */}
+            {(orderAlerts?.unshipped ?? []).length > 0 && (
+              <div className="sc-new-order sc-unshipped" role="alert">
+                <span>🚚 <b>{orderAlerts.unshipped.length === 1 ? `Order #${orderAlerts.unshipped[0].id} isn’t shipped yet` : `${orderAlerts.unshipped.length} orders aren’t shipped yet`}</b>{orderAlerts.unshipped[0].ship_by ? ` — ship by ${new Date(orderAlerts.unshipped[0].ship_by).toLocaleDateString()}` : ''}{orderAlerts.unshipped[0].local ? ' (local delivery: you or your riders)' : ''}. This stays here until {orderAlerts.unshipped.length === 1 ? 'it’s' : 'they’re'} shipped.</span>
+                {section !== 'ship-orders' && <button type="button" className="sc-primary" onClick={() => go('ship-orders')}>Ship orders</button>}
               </div>
             )}
             {(orderAlerts?.needs_update ?? []).length > 0 && section !== 'ship-orders' && (
@@ -1501,6 +1522,7 @@ export default function Seller({ token, onSignOut }) {
                         <label>What&rsquo;s this about?
                           <select value={newThreadForm.issue_type} onChange={(event) => setNewThreadForm({ ...newThreadForm, issue_type: event.target.value })}>
                             <option value="seller_product_issue">Product issue</option>
+                            <option value="seller_local_delivery">Local delivery — turn it back on, riders, hiring</option>
                             <option value="seller_other">Other</option>
                           </select>
                         </label>
@@ -1561,7 +1583,7 @@ export default function Seller({ token, onSignOut }) {
             ) : section === 'bank' ? (
               <BankAccount headers={authHeaders} onSupport={() => go('messages')} go={go} onChanged={(bankStatus) => setMe((m) => ({ ...m, bank_status: bankStatus }))} />
             ) : section === 'shipping' ? (
-              <ShippingSettings headers={authHeaders} onChanged={(settings) => setMe((m) => (m?.shop ? { ...m, shop: { ...m.shop, fulfillment_mode: settings.fulfillment_mode } } : m))} />
+              <ShippingSettings headers={authHeaders} onSupport={() => { setNewThreadForm({ issue_type: 'seller_local_delivery', message: 'Please turn local delivery back on for my shop. ' }); go('messages') }} onChanged={(settings) => setMe((m) => (m?.shop ? { ...m, shop: { ...m.shop, fulfillment_mode: settings.fulfillment_mode } } : m))} />
             ) : section === 'local' ? (
               <LocalDelivery headers={authHeaders} go={go} />
             ) : section === 'policies' ? (

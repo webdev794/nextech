@@ -42,6 +42,16 @@ class AdminRiderApplicationController extends Controller
 
         $recommended = $application->status === 'seller_accepted';
         DB::transaction(fn () => \App\Support\RiderHiring::hire($application, $request->user(), $data['store_ids'] ?? [], bySeller: $recommended));
+        // The new rider: what to do next (payout details are added in the Rider app, not on the application).
+        try {
+            $application->user?->notify(new \App\Notifications\RiderNotice('You’re approved to deliver',
+                'Welcome! You’re approved to deliver for '.($application->store?->shop?->name ?? $application->store?->name ?? \App\Support\Branding::name()).".\n\n"
+                ."1. Open the Rider app: ".\App\Support\SiteUrl::to('rider')."\n"
+                ."2. Go to Earnings → Payout method and add how you want to be paid — you can’t clock in until it’s added.\n"
+                .'3. Clock in during the store’s working hours to start getting deliveries.'));
+        } catch (\Throwable $e) {
+            report($e);
+        }
         if ($recommended && ($seller = $application->store?->shop?->seller)) {
             \App\Support\SellerNotify::send($seller, $request->user(), 'Rider approved', "{$application->user?->name} is approved and now delivers for your store.");
         }

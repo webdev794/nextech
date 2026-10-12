@@ -29,7 +29,7 @@ class AdminSupportController extends Controller
             ? array_values(array_intersect(explode(',', $validated['issue_type']), SupportThread::ISSUE_TYPES))
             : [];
 
-        $threads = SupportThread::query()
+        $threadsQuery = SupportThread::query()
             ->with(['user:id,name,email', 'order:id,status,total_cents'])
             ->withCount('messages')
             ->when($validated['status'] ?? null, fn ($q, $s) => $q->where('status', $s))
@@ -40,6 +40,9 @@ class AdminSupportController extends Controller
             ->orderByRaw("status = 'open' desc")
             ->orderByDesc('last_message_at')
             ->paginate(30);
+        $threads = $threadsQuery;
+        // The seller in the chat (a seller's own chat, or a chat a seller joined / a rider has with them): admin opens their page.
+        $threads->getCollection()->each(fn ($t) => $t->setAttribute('seller_id', self::sellerIdOf($t)));
 
         return response()->json([
             'data' => $threads->items(),
@@ -117,7 +120,19 @@ class AdminSupportController extends Controller
         $thread->load($this->threadRelations());
         $thread->order?->packages->each->makeVisible('delivery_code');
 
+        $thread->setAttribute('seller_id', self::sellerIdOf($thread));
+
         return response()->json(['data' => $this->withSellerOptions($thread)]);
+    }
+
+    /** The seller a chat is with (their own chat with the store, or one with their shop linked), or null. */
+    public static function sellerIdOf(SupportThread $thread): ?int
+    {
+        if (str_starts_with((string) $thread->issue_type, 'seller_')) {
+            return \App\Models\Seller::query()->where('user_id', $thread->user_id)->value('id');
+        }
+
+        return $thread->seller_shop_id ? \App\Models\Shop::query()->whereKey($thread->seller_shop_id)->value('seller_id') : null;
     }
 
     /**

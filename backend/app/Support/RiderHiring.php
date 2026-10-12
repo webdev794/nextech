@@ -5,6 +5,7 @@ namespace App\Support;
 use App\Models\Order;
 use App\Models\RiderApplication;
 use App\Models\Setting;
+use App\Models\Shop;
 use App\Models\Store;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -111,21 +112,61 @@ class RiderHiring
             $invite->user->name.($join ? ' accepted your invitation and is linked to your store.' : ' said no thanks to your invitation.'));
     }
 
-    /** A rider asks to move to a new home area (at their own expense): the store decides. */
+    /**
+     * A rider asks to move to a new home area (at their own expense). The sellers they
+     * deliver for answer first (can they let the rider go?); once every seller agrees —
+     * or the rider works only for {store}'s own stores — admin approves or declines.
+     */
     public static function requestMove(User $rider, string $address): void
     {
+        abort_if($rider->rider_move_request, 422, 'You already asked to move — wait for the answer.');
         [$lat, $lng] = Geo::geocode($address);
         abort_if($lat === null, 422, 'We couldn’t find that address on the map — check it and try again.');
-        $rider->forceFill(['rider_move_request' => ['address' => $address, 'lat' => $lat, 'lng' => $lng, 'at' => now()->toIso8601String()]])->save();
+        $stores = $rider->stores()->whereNotNull('shop_id')->with('shop.seller')->get()->filter(fn ($s) => $s->shop?->seller);
+        $sellers = $stores->mapWithKeys(fn ($s) => [(string) $s->shop_id => 'waiting'])->all();
+        $rider->forceFill(['rider_move_request' => ['address' => $address, 'lat' => $lat, 'lng' => $lng, 'at' => now()->toIso8601String(), 'sellers' => $sellers]])->save();
+        foreach ($stores as $store) {
+            SellerNotify::send($store->shop->seller, $store->shop->seller->user, 'A rider asks to move away — please answer', "{$rider->name} wants to move to another area and stop delivering for you. Can you let them go? Answer in Local delivery & riders (Let them go / Keep them). Pay they earned is still due.");
+        }
+        if ($sellers === []) {
+            self::moveToAdmin($rider);
+        }
+    }
+
+    /** Still waiting for a seller to answer? */
+    public static function moveWaitingForSellers(?array $move): bool
+    {
+        return in_array('waiting', (array) ($move['sellers'] ?? []), true);
+    }
+
+    private static function moveToAdmin(User $rider): void
+    {
         try {
-            \Illuminate\Support\Facades\Notification::send(User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice("{$rider->name} asks to move", "{$rider->name} wants to move to: {$address}. Approve or decline in Riders → {$rider->name}."));
+            \Illuminate\Support\Facades\Notification::send(User::where('is_admin', true)->get(), new \App\Notifications\AdminNotice("{$rider->name} asks to move", "{$rider->name} wants to move to: {$rider->rider_move_request['address']}".(! empty($rider->rider_move_request['sellers']) ? ' (their sellers agreed)' : '').". Approve or decline in Riders → {$rider->name}."));
         } catch (\Throwable $e) {
             report($e);
         }
-        foreach ($rider->stores()->whereNotNull('shop_id')->with('shop.seller')->get() as $store) {
-            if ($store->shop?->seller) {
-                SellerNotify::send($store->shop->seller, $store->shop->seller->user, 'A rider may move away', "{$rider->name} asked to move to another area. If ".Branding::name().' approves, they stop delivering for you; pay already earned is still due.');
+    }
+
+    /** A seller answers a rider's move: let them go (→ admin once all agree), or keep them (the request ends). */
+    public static function sellerAnswersMove(User $rider, Shop $shop, bool $letGo, ?string $note = null): void
+    {
+        $move = $rider->rider_move_request;
+        abort_unless(($move['sellers'][(string) $shop->id] ?? null) === 'waiting', 422, 'There’s no move request waiting for you.');
+        if (! $letGo) {
+            $rider->forceFill(['rider_move_request' => null])->save();
+            try {
+                $rider->notify(new \App\Notifications\RiderNotice('Move not approved', "{$shop->name} can’t let you go right now".($note ? ": {$note}" : '.').' You keep working for your stores as before.'));
+            } catch (\Throwable $e) {
+                report($e);
             }
+
+            return;
+        }
+        $move['sellers'][(string) $shop->id] = 'agreed';
+        $rider->forceFill(['rider_move_request' => $move])->save();
+        if (! self::moveWaitingForSellers($move)) {
+            self::moveToAdmin($rider);
         }
     }
 
@@ -137,6 +178,7 @@ class RiderHiring
     {
         $move = $rider->rider_move_request;
         abort_unless($move, 422, 'There’s no move request.');
+        abort_if(self::moveWaitingForSellers($move), 422, 'Waiting for the rider’s sellers to answer first.');
         if ($approve) {
             abort_if(\App\Models\Order::query()->where('delivery_partner_id', $rider->id)->whereIn('status', ['ready_for_delivery', 'out_for_delivery'])->exists()
                 || \App\Models\OrderPackage::query()->where('rider_id', $rider->id)->whereNotIn('status', ['delivered', 'returned', 'lost'])->exists(), 422, 'They still have deliveries out — finish or reassign them first.');

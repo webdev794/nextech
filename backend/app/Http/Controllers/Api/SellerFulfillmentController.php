@@ -491,6 +491,7 @@ class SellerFulfillmentController extends Controller
                 'city' => $address['city'] ?? null,
                 'state' => $address['state'] ?? null,
                 'postal_code' => $ownLabel ? ($address['postal_code'] ?? null) : null,
+                'available_times' => $address['available_times'] ?? null, // when the buyer is usually there
             ],
             'shipping' => $promise,
             'local_km' => $localKm,
@@ -511,6 +512,8 @@ class SellerFulfillmentController extends Controller
             'overdue' => $promise && $promise->ship_by->lt(today()) && $items->contains(fn ($i) => SellerFulfillment::remainingQuantity($i) > 0),
             // Not to be shipped yet: still pending, or the buyer's address change is undecided.
             'pending' => SellerOrders::isPending($order),
+            // Until when the buyer can still cancel or change the address for free (then it can ship).
+            'pending_until' => $order->status !== 'pending_payment' && SellerOrders::isPending($order) ? SellerOrders::pendingUntil($order) : null,
             'address_change_pending' => $order->addressChanges()->where('status', 'pending')->exists(),
         ];
     }

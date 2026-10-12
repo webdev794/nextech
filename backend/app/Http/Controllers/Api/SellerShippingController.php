@@ -438,7 +438,7 @@ class SellerShippingController extends Controller
             'local_delivery' => $shop->local_delivery ? collect($shop->local_delivery)->except(! empty($shop->local_delivery['pin_set']) ? [] : ['lat', 'lng'])->all() : null,
             // Its store in Stores / hubs, and whether admin has switched local delivery off.
             'local_store' => ($store = \App\Models\Store::query()->where('shop_id', $shop->id)->withCount('riders')->first())
-                ? ['id' => $store->id, 'active' => $store->is_active, 'blocked' => ! $store->local_delivery_active, 'status' => \App\Support\SellerStores::status($store), 'off_requested_at' => $store->local_delivery_off_requested_at, 'riders_count' => $store->riders_count] : null,
+                ? ['id' => $store->id, 'active' => $store->is_active, 'blocked' => ! $store->local_delivery_active, 'status' => \App\Support\SellerStores::status($store), 'off_requested_at' => $store->local_delivery_off_requested_at, 'withdraw_until' => \App\Support\SellerStores::offOpensAt($store), 'riders_count' => $store->riders_count] : null,
         ];
     }
 

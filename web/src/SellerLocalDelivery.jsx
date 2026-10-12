@@ -6,6 +6,8 @@ import { EmailRoutineToggle } from './EmailRoutineToggle'
 import { RiderHoursEditor } from './RiderHoursEditor'
 import { hoursLabel } from './riderHours'
 
+const dayLabel = (d) => new Date(`${String(d).slice(0, 10)}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })
+
 // Seller Center → Local delivery: the seller's store, a step-by-step guide to
 // hiring riders, the hiring switch, applications to accept or decline, and the
 // riders who deliver for the store (experience and time with the store).
@@ -35,6 +37,16 @@ const since = (date) => {
 }
 
 export function LocalDelivery({ headers, go }) {
+  // Open Shipping settings and scroll to its Local delivery box.
+  // Open Shipping settings and scroll to its Local delivery box once the page has loaded.
+  const goLocal = () => {
+    go('shipping')
+    let tries = 0
+    const t = setInterval(() => {
+      const el = document.getElementById('local-delivery')
+      if (el || ++tries > 30) { clearInterval(t); el?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+    }, 100)
+  }
   const [data, setData] = useState(null)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
@@ -72,13 +84,15 @@ export function LocalDelivery({ headers, go }) {
       <div className="sc-card">
         <h2 className="sc-h2">Your store</h2>
         <p>Local delivery: <b>{STATUS[store.status]}</b>{store.address ? ` · ${store.address}` : ''}{on ? ` · within ${store.radius_km} km` : ''}</p>
-        <p className="sc-muted">Turn it on, and set the address, area and fee, in <button type="button" className="sc-link" onClick={() => go('shipping')}>Shipping settings → Local delivery</button>.</p>
+        {store.status === 'locked'
+          ? <p className="ld-locked"><u><b>{brandName()} has turned off local deliveries for your shop.</b></u> Only {brandName()} can turn them back on — send them a message when you&rsquo;re ready, for example when you have riders again or want to start hiring riders online.{' '}<button type="button" className="sc-link" onClick={() => go('messages')}>Message {brandName()}</button></p>
+          : <p className="sc-muted">Turn it on, and set the address, area and fee, in <button type="button" className="sc-link" onClick={goLocal}>Shipping settings → Local delivery</button>.</p>}
       </div>
 
       <div className="sc-card ld-guide">
         <h2 className="sc-h2">Hire your own riders — step by step</h2>
         <ol>
-          <li className={on ? 'done' : ''}><b>Turn on local delivery</b> in Shipping settings. Until riders join, you deliver these orders yourself — or send any order by courier.</li>
+          <li className={on ? 'done' : ''}><b>Turn on local delivery</b> in {store.status === 'locked' ? <span className="ld-locked">Shipping settings — <u>it&rsquo;s turned off by {brandName()}</u>; message them to turn it back on</span> : <button type="button" className="sc-link" onClick={goLocal}>Shipping settings → Local delivery</button>}. Until riders join, you deliver these orders yourself — or send any order by courier.</li>
           <li className={store.hiring_open ? 'done' : ''}><b>Open hiring</b> below. The <b>&ldquo;Work with us — deliver&rdquo;</b> link then goes live in the {brandName()} footer for signed-in buyers near your store.</li>
           <li><b>Find people:</b> post the job on sites like Quikr or OLX, put a poster outside your shop, or ask people you know and trust who are looking for work. They need <b>their own vehicle</b> (and pay its fuel and running costs) and must be at least <b>{data.min_age}</b>.</li>
           <li><b>They apply:</b> sign up as a buyer on {brandName()}, then open the footer link or this address: <code>{data.apply_url}</code> — with their ID proof, licence (for motor vehicles), experience and contact details.</li>
@@ -87,7 +101,7 @@ export function LocalDelivery({ headers, go }) {
         </ol>
         <label className="sc-check">
           <input type="checkbox" checked={store.hiring_open} disabled={busy || (!on && !store.hiring_open)} onChange={(e) => act('/seller/local-delivery/hiring', 'PATCH', { open: e.target.checked }, e.target.checked ? 'Hiring is open — the Apply link is now live for buyers near your store.' : 'Hiring closed.')} />
-          <b>Hiring riders</b> {store.hiring_open ? '— the Apply link is live near your store' : on ? '' : '(turn on local delivery first)'}
+          <b>Hiring riders</b> {store.hiring_open ? '— the Apply link is live near your store' : on ? '' : store.status === 'locked' ? `(local delivery is off — only ${brandName()} can turn it back on)` : <>(<button type="button" className="sc-link" onClick={goLocal}>turn on local delivery first</button>)</>}
         </label>
       </div>
 
@@ -131,6 +145,10 @@ export function LocalDelivery({ headers, go }) {
         <p className="sc-muted">{brandName()} pays your riders for each delivery they make for you and takes it from your earnings (shown as &ldquo;Rider pay&rdquo; in Finances). Deliveries you make yourself cost nothing.</p>
         <h3 className="ss-sub">Riders&rsquo; working hours</h3>
         <p className="sc-muted">The days and hours your riders must be on duty. A rider who hasn&rsquo;t clocked in when they start gets a reminder; 30 minutes in, you&rsquo;re told who is missing, and if someone clocks out early. Your days off don&rsquo;t count.{data.rider_hours ? <> Now: <b>{hoursLabel(data.rider_hours)}</b>.</> : ' No hours set yet.'}</p>
+        {(data.job_applications ?? []).length > 0 && <div className="ld-leaves">
+          <b>Job applications for your store</b>
+          <ul>{data.job_applications.map((a) => <li key={a.id}>{new Date(a.created_at).toLocaleDateString()} — <b>{a.name}</b> for {a.role?.title}: <a href={`mailto:${a.email}`}>{a.email}</a>{a.phone ? ` · ${a.phone}` : ''}{a.link && <> · <a href={a.link} target="_blank" rel="noreferrer">CV</a></>}{a.message ? <><br /><small className="sc-muted">“{a.message}”</small></> : null}</li>)}</ul>
+        </div>}
         {(data.invites ?? []).length > 0 && <div className="ld-leaves">
           <b>Riders near you who delivered before</b>
           <p className="sc-muted">They have no store right now. Invite the ones you&rsquo;d like — they join only if they accept.</p>
@@ -138,9 +156,26 @@ export function LocalDelivery({ headers, go }) {
             <button type="button" className="sc-link" disabled={busy} onClick={() => act(`/seller/rider-invites/${iv.id}`, 'POST', { invite: true }, `${iv.name} is invited.`)}>Invite</button>{' · '}
             <button type="button" className="sc-link" disabled={busy} onClick={() => act(`/seller/rider-invites/${iv.id}`, 'POST', { invite: false }, 'Done.')}>No thanks</button></>}</li>)}</ul>
         </div>}
+        {(data.move_requests ?? []).length > 0 && <div className="ld-leaves ld-claim">
+          <b>Riders asking to move away — please answer</b>
+          <p className="sc-muted">They want to move to another area and stop delivering for you. Can you let them go? Pay they earned is still due.</p>
+          <ul>{data.move_requests.map((m) => <li key={m.rider_id}><b>{m.name}</b>{' '}
+            <button type="button" className="sc-primary" disabled={busy} onClick={() => act(`/seller/rider-moves/${m.rider_id}`, 'POST', { let_go: true }, `You let ${m.name} go — ${brandName()} finishes the move.`)}>Let them go</button>{' '}
+            <button type="button" className="sc-link" disabled={busy} onClick={() => { const note = window.prompt(`Why do you need ${m.name} to stay? They're told.`, ''); if (note !== null) act(`/seller/rider-moves/${m.rider_id}`, 'POST', { let_go: false, note: note.trim() || null }, `${m.name} stays — they're told.`) }}>Keep them</button>
+          </li>)}</ul>
+        </div>}
+        {(data.leaves ?? []).some((l) => l.status === 'requested' || l.new_date) && <div className="ld-leaves ld-claim">
+          <b>Day-off requests — please answer</b>
+          <ul>{data.leaves.filter((l) => l.status === 'requested' || l.new_date).map((l) => <li key={l.id}>{l.new_date
+            ? <>Move <b>{l.rider}</b>&rsquo;s day off from {dayLabel(l.date)} to <b>{dayLabel(l.new_date)}</b>{l.change_reason ? ` (“${l.change_reason}”)` : ''}</>
+            : <>{dayLabel(l.date)} — <b>{l.rider}</b>{l.reason ? ` (“${l.reason}”)` : ''}{!l.told_ahead ? ' · asked on the day' : ''}</>}{' '}
+            <button type="button" className="sc-primary" disabled={busy} onClick={() => act(`/seller/rider-leaves/${l.id}`, 'POST', { accept: true }, l.new_date ? `Day off moved — ${l.rider} is told.` : `Day off accepted — ${l.rider} is told.`)}>{l.new_date ? 'Confirm new date' : 'Accept'}</button>{' '}
+            <button type="button" className="sc-link" disabled={busy} onClick={() => { const note = window.prompt(l.new_date ? `Why can't ${l.rider} move this day off? It stays on the old date; they're told.` : `Why can't ${l.rider} have this day off? They're told.`, ''); if (note !== null) act(`/seller/rider-leaves/${l.id}`, 'POST', { accept: false, note: note.trim() || null }, `Declined — ${l.rider} is told.`) }}>Decline</button>
+          </li>)}</ul>
+        </div>}
         {(data.leaves ?? []).length > 0 && <div className="ld-leaves">
           <b>Riders&rsquo; days off this month</b>
-          <ul>{data.leaves.map((l) => <li key={l.id} className={l.kind === 'absent' || !l.told_ahead ? 'ld-red' : ''}>{new Date(`${l.date}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} — {l.rider}: {l.kind === 'absent' ? 'missed without asking' : l.told_ahead ? 'asked ahead' : 'asked on the day'}{l.reason ? ` (“${l.reason}”)` : ''}</li>)}</ul>
+          <ul>{data.leaves.map((l) => <li key={l.id} className={l.kind === 'absent' || !l.told_ahead ? 'ld-red' : ''}>{new Date(`${l.date}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })} — {l.rider}: {l.kind === 'absent' ? 'missed without asking' : l.status === 'requested' ? 'waiting for your answer' : l.status === 'declined' ? 'declined' : l.told_ahead ? 'day off (accepted)' : 'day off (asked on the day, accepted)'}{l.reason ? ` (“${l.reason}”)` : ''}</li>)}</ul>
         </div>}
         <RiderHoursEditor key={JSON.stringify(data.rider_hours ?? null)} value={data.rider_hours} onSave={(hours) => act('/seller/local-delivery/rider-hours', 'PATCH', { hours }, hours ? `Riders' hours: ${hoursLabel(hours)}.` : 'No set hours for riders.')} />
         <label className="ld-limit">Hours riders get to take an order you offer them

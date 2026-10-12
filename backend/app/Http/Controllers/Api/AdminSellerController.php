@@ -628,6 +628,11 @@ class AdminSellerController extends Controller
         if ($detailed) {
             $row += [
                 'cod' => $seller->shop ? SellerCod::status($seller->shop) + ['accepts' => (bool) $seller->shop->accepts_cod] : null,
+                // Their local delivery (riders): status and the store record admin switches on / off.
+                'local_store' => $seller->shop ? (fn ($st) => ['id' => $st->id, 'shop_id' => $st->shop_id, 'name' => $seller->shop->name, 'status' => \App\Support\SellerStores::status($st),
+                    'riders_count' => $st->riders()->count(), 'off_opens_at' => \App\Support\SellerStores::offOpensAt($st), 'hiring_open' => (bool) $st->hiring_open,
+                    // Hidden for every seller (Shipping → Sellers' local delivery) → it can't run for anyone.
+                    'offered' => \App\Support\SellerShipping::localDeliveryOffered()])(\App\Support\SellerStores::ensure($seller->shop)) : null,
                 // Riders' private ratings of this seller (admin only — never shown to the seller).
                 'rider_feedback' => $seller->shop ? [
                     'avg' => ($avg = \App\Models\RiderFeedback::query()->where('shop_id', $seller->shop->id)->whereNotNull('store_rating')->avg('store_rating')) !== null ? round((float) $avg, 1) : null,
@@ -713,7 +718,7 @@ class AdminSellerController extends Controller
     private function lastMessage(Seller $seller): ?array
     {
         $message = SupportMessage::whereHas('thread', function ($query) use ($seller): void {
-            $query->where('user_id', $seller->user_id)->whereIn('issue_type', ['seller_product_issue', 'seller_other']);
+            $query->where('user_id', $seller->user_id)->whereIn('issue_type', ['seller_product_issue', 'seller_local_delivery', 'seller_other']);
         })->where('internal', false)->latest()->first();
 
         if (! $message) {

@@ -38,7 +38,8 @@ final class RiderWorkHours
     /** Days off a rider used this month: asked for + missed. */
     public static function usedThisMonth(User $rider): int
     {
-        return \App\Models\RiderLeave::query()->where('user_id', $rider->id)->whereDate('date', '>=', now()->startOfMonth()->toDateString())->whereDate('date', '<=', now()->endOfMonth()->toDateString())->count();
+        // Accepted days off and missed days (a declined or waiting request isn't a day off).
+        return \App\Models\RiderLeave::query()->where('user_id', $rider->id)->where('status', 'approved')->whereDate('date', '>=', now()->startOfMonth()->toDateString())->whereDate('date', '<=', now()->endOfMonth()->toDateString())->count();
     }
 
     /** The fewest days off any of the rider's stores allows (null = no store sets hours). */
@@ -96,7 +97,7 @@ final class RiderWorkHours
             }
             $started = now()->copy()->setTimeFromTimeString($h['start']);
             $today = now()->toDateString();
-            $onLeave = \App\Models\RiderLeave::query()->whereDate('date', $today)->where('kind', 'leave')->pluck('user_id');
+            $onLeave = \App\Models\RiderLeave::query()->whereDate('date', $today)->where('kind', 'leave')->where('status', 'approved')->pluck('user_id');
             $riders = $store->riders()->where('is_rider', true)->where('rider_is_active', true)->get()->reject(fn (User $r) => $onLeave->contains($r->id));
             $missing = $riders->filter(fn (User $r) => ! $r->currentShift() && ! str_starts_with((string) $r->rider_unavailable_reason, 'Day off'));
             // A break much longer than usual during working hours.
@@ -118,7 +119,7 @@ final class RiderWorkHours
                 // Missing without asking a day ahead: recorded as a day missed, and the rider is told what it means.
                 foreach ($missing as $rider) {
                     if (! \App\Models\RiderLeave::query()->where('user_id', $rider->id)->where('kind', 'absent')->whereDate('date', $today)->exists()) {
-                        \App\Models\RiderLeave::create(['user_id' => $rider->id, 'date' => $today, 'kind' => 'absent', 'told_ahead' => false]);
+                        \App\Models\RiderLeave::create(['user_id' => $rider->id, 'date' => $today, 'kind' => 'absent', 'status' => 'approved', 'told_ahead' => false]);
                         $used = self::usedThisMonth($rider);
                         $allowed = self::daysOffAllowed($store);
                         self::tell($rider, 'Not on duty today', 'You weren’t on duty at '.($store->shop?->name ?? $store->name).' today and didn’t ask for the day off a day ahead. This may affect today’s pay or your work agreement with the store.'.($used > $allowed ? " You’ve now had {$used} days off this month — more than the {$allowed} allowed." : " Days off this month: {$used} of {$allowed}."));

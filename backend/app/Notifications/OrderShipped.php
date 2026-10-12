@@ -60,6 +60,10 @@ class OrderShipped extends Notification
                     $mail->action('Track your package', $order->shipment->tracking_url);
                 }
             } else {
+                // Who is bringing it, and their number.
+                if ($order->delivery_partner_id && ($rider = \App\Models\User::find($order->delivery_partner_id))) {
+                    $mail->line(strtok((string) $rider->name, ' ').' is delivering it'.($rider->phone ? " — you can call them on **{$rider->phone}**." : '.'));
+                }
                 $mail->line('Your rider will read out a delivery code when they arrive — we\'ll email it to you then.');
             }
         }

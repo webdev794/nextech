@@ -14,7 +14,7 @@ class SupportThread extends Model
         // Opened by the delivery rider, not chosen by the customer.
         'delivery',
         // Seller <-> admin channel, not a customer order complaint.
-        'seller_product_issue', 'seller_other',
+        'seller_product_issue', 'seller_local_delivery', 'seller_other',
         // A rider's own chat with NexTech (StaffChat).
         'rider_support',
         // A rider and a seller they deliver for (the store's team joins only when called in).

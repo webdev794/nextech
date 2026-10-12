@@ -15,6 +15,12 @@ class SellerOrderAlerts
 {
     public static function newOrder(Order $order): void
     {
+        // The same order placed twice? Ask the buyer (from the seller's side).
+        try {
+            DuplicateOrders::check($order);
+        } catch (\Throwable $e) {
+            report($e);
+        }
         $order->loadMissing(['items', 'shopShipping']);
         foreach ($order->items->whereNotNull('shop_id')->groupBy('shop_id') as $shopId => $items) {
             try {

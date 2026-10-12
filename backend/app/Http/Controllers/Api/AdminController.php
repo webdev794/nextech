@@ -349,7 +349,9 @@ class AdminController extends Controller
 
         // Sellers asking to turn off local delivery (riders linked): admin decides.
         $localOff = \App\Models\Store::query()->whereNotNull('local_delivery_off_requested_at')->with('shop:id,name,seller_id')->withCount('riders')->get()
-            ->map(fn ($s) => ['store_id' => $s->id, 'seller_id' => $s->shop?->seller_id, 'shop_name' => $s->shop?->name, 'riders' => $s->riders_count, 'at' => $s->local_delivery_off_requested_at]);
+            ->map(fn ($s) => ['store_id' => $s->id, 'seller_id' => $s->shop?->seller_id, 'shop_name' => $s->shop?->name, 'riders' => $s->riders_count, 'at' => $s->local_delivery_off_requested_at,
+                // After 3 days it's open to approve (a fresh item in the 🔔); before that, waiting.
+                'opens_at' => \App\Support\SellerStores::offOpensAt($s), 'ready' => \App\Support\SellerStores::offOpensAt($s)->isPast()]);
 
         // Riders who gave notice, until admin marks it processed (due = leaving date reached).
         $riderNotices = User::query()->where('is_rider', true)->whereNotNull('rider_notice_at')->whereNull('rider_notice_processed_at')->orderBy('rider_leaving_on')->get(['id', 'name', 'rider_notice_at', 'rider_leaving_on'])
@@ -367,12 +369,20 @@ class AdminController extends Controller
             'rider_bonus_suggestions' => \App\Support\RiderBonus::suggestions(),
             // Sellers, riders and products performing poorly (daily watch), until dismissed.
             'performance_warnings' => \App\Support\PerformanceWatch::warnings(),
+            // Day-off requests from riders of NexTech's own stores (until accepted / declined).
+            'rider_leave_requests' => \App\Support\RiderLeaves::waiting()
+                ->whereHas('user.stores', fn ($q) => $q->whereNull('shop_id'))->with('user:id,name')->orderBy('date')->get()
+                ->map(fn ($l) => ['id' => $l->id, 'rider' => $l->user?->name, 'date' => $l->date->toDateString(), 'new_date' => $l->new_date?->toDateString(), 'reason' => $l->new_date ? $l->change_reason : $l->reason]),
             // Open rider–seller support tickets: assign a support person to answer (no email).
             'support_tickets' => \App\Models\SupportThread::query()->where('issue_type', 'rider_seller')->where('ticket_status', 'open')->with(['user:id,name', 'sellerShop:id,name'])->oldest('updated_at')->get()
                 ->map(fn ($t) => ['id' => $t->id, 'rider' => $t->user?->name, 'shop' => $t->sellerShop?->name, 'by' => $t->ticket_by, 'agent' => $t->support_agent, 'at' => $t->updated_at]),
             'support_agents' => \App\Support\RiderSellerChat::agents(),
+            // New applications from the Careers page (until marked reviewed / hired / declined).
+            'job_applications' => \App\Models\JobApplication::query()->where('status', 'new')->with('role:id,title')->latest()->limit(20)->get(['id', 'job_role_id', 'name', 'created_at'])
+                ->map(fn ($a) => ['id' => $a->id, 'name' => $a->name, 'role' => $a->role?->title, 'at' => $a->created_at]),
             // Riders asking to move to a new area (approve / decline in their panel).
             'rider_moves' => User::query()->where('is_rider', true)->whereNotNull('rider_move_request')->get(['id', 'name', 'rider_move_request'])
+                ->reject(fn ($u) => \App\Support\RiderHiring::moveWaitingForSellers($u->rider_move_request))->values()
                 ->map(fn ($u) => ['rider_id' => $u->id, 'name' => $u->name, 'address' => $u->rider_move_request['address'] ?? null, 'at' => $u->rider_move_request['at'] ?? null]),
             'holiday_requests' => collect(\App\Support\ExtraHolidays::requests())->map(fn ($r) => $r + ['shop' => $holidayShops[$r['shop_id']] ?? null])->values(),
             'needs_courier' => $needsCourier,

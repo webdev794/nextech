@@ -7,7 +7,7 @@ import { RiderSellerChats } from './RiderSellerChats'
 import { EmailRoutineToggle } from './EmailRoutineToggle'
 import { BrandLogo } from './BrandLogo'
 import { formatMoney } from './money'
-import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop } from './riderAlert'
+import { TONES, loadAlertPrefs, saveAlertPrefs, getCustomTone, saveCustomTone, clearCustomTone, previewTone, startRiderAlarmLoop, stopRiderAlarmLoop, playRiderAlert } from './riderAlert'
 import RiderEarnings from './RiderEarnings'
 import { RiderChatDock } from './SurfaceChats'
 import { openChat } from './chatDockUtils'
@@ -77,12 +77,13 @@ function DeliveryCard({ order, pool, headers, onDone, onChat }) {
       </div>
       <p className="rider-card-addr">{addressText(a)}</p>
       {order.delivery_instructions && <p className="rider-card-note">“{order.delivery_instructions}”</p>}
+      {a.available_times && <p className="rider-card-note">🕘 Usually home: {a.available_times}</p>}
       <ul className="rider-card-items">
         {order.items?.map((it, i) => <li key={i}>{it.quantity} × {it.name}</li>)}
       </ul>
       {order.cod_due > 0 && <p className="rider-card-cod">Collect cash: <b>{money(order.cod_due, order.currency)}</b></p>}
-      {pool && order.pickup_by && <p className="rider-card-note">{order.offer_pending ? 'Offered to another rider' : 'Open to all riders'} — <TimeLeft until={order.pickup_by} /> left to pick it up. Free now? The first to take it gets it.</p>}
-      {!pool && order.offer_pending && <p className="rider-card-note">Offered to you — <TimeLeft until={order.offer_expires_at} /> left. Other riders at the store can take it meanwhile.</p>}
+      {pool && order.pickup_by && <p className="rider-card-note">Delivery for you — <TimeLeft until={order.pickup_by} /> left to pick it up. Free now? Take it.</p>}
+      {!pool && order.offer_pending && <p className="rider-card-note">Offered to you — <TimeLeft until={order.offer_expires_at} /> left to accept it.</p>}
 
       <div className="rider-card-actions">
         <a className="rider-btn ghost" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(addressText(a))}`} target="_blank" rel="noreferrer">Directions</a>
@@ -415,11 +416,18 @@ function OfferPrompt({ offers, headers, onResolved, onLater }) {
 
 // Sellers' own deliveries given to this rider: pick up at the seller's address,
 // deliver, and confirm with the code the buyer reads out (and the cash, if any).
-function SellerDeliveries({ headers, refreshKey }) {
+// Offers this browser has already alerted for (so opening the app later still rings once for new ones).
+const SEEN_OFFERS_KEY = 'nextech_rider_seen_offers'
+function readSeenOffers() {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_OFFERS_KEY) || '[]')) } catch { return new Set() }
+}
+
+function SellerDeliveries({ headers, refreshKey, onChat, onOffers }) {
   const [list, setList] = useState([])
   const [cashBy, setCashBy] = useState([]) // cash I hold per seller store, and where I'm paused
   const [daysOff, setDaysOff] = useState([]) // each seller store's days off in the next 2 weeks
   const [open, setOpen] = useState([]) // orders sellers offered to all their riders (first to take it)
+  const seenOpen = useRef(null) // offers already alerted for, so each rings once
   const [code, setCode] = useState({})
   const [cash, setCash] = useState({})
   const [busy, setBusy] = useState(null)
@@ -428,9 +436,23 @@ function SellerDeliveries({ headers, refreshKey }) {
     try {
       const res = await fetch(`${API_URL}/rider/packages`, { headers: headers() })
       const body = await readJson(res)
-      if (res.ok) { setList(body.data ?? []); setCashBy(body.cash ?? []); setDaysOff(body.days_off ?? []); setOpen(body.open ?? []) }
+      if (res.ok) {
+        setList(body.data ?? []); setCashBy(body.cash ?? []); setDaysOff(body.days_off ?? [])
+        if (!seenOpen.current) seenOpen.current = readSeenOffers()
+        const fresh = (body.open ?? []).filter((o) => !seenOpen.current.has(o.id))
+        // A seller offered an order to its riders: sound + notice (also before clocking in, or when the app opens later).
+        if (fresh.length) {
+          playRiderAlert()
+          setMsg(`New delivery to take from ${fresh[0].store} — see “Open to take” below.`)
+          try { if ('Notification' in window && Notification.permission === 'granted') new Notification(`Delivery to take — ${fresh[0].store}`, { body: `Order #${fresh[0].order_id} is waiting for you — take it in the Rider app.` }) } catch { /* ignore */ }
+        }
+        seenOpen.current = new Set((body.open ?? []).map((o) => o.id))
+        try { localStorage.setItem(SEEN_OFFERS_KEY, JSON.stringify([...seenOpen.current])) } catch { /* ignore */ }
+        setOpen(body.open ?? [])
+        onOffers?.(body.open ?? [])
+      }
     } catch { /* keep last */ }
-  }, [headers])
+  }, [headers, onOffers])
   useEffect(() => {
     Promise.resolve().then(load)
     const off = onLiveChange(load) // a seller offering an order shows at once
@@ -449,19 +471,19 @@ function SellerDeliveries({ headers, refreshKey }) {
     } catch (e) { setMsg(e.message) } finally { setBusy(null) }
   }
 
-  if (!list.length && !cashBy.length) return null
+  if (!list.length && !cashBy.length && !open.length) return null
   const fmt = (cents, cur) => new Intl.NumberFormat(undefined, { style: 'currency', currency: String(cur).toUpperCase() }).format(cents / 100)
   return (
     <section className="rider-section">
-      <h2>Store deliveries ({list.length})</h2>
+      <h2>Store deliveries ({list.length + open.length})</h2>
       {msg && <p className="rider-error">{msg}</p>}
-      {open.length > 0 && <div className="rider-section">
+      {open.length > 0 && <div className="rider-section" id="rider-open-offers">
         <h3>Open to take ({open.length})</h3>
         {open.map((o) => (
           <article key={o.id} className="rider-card">
             <div className="rider-card-top"><strong>{o.store} · Order #{o.order_id}</strong></div>
             <p className="rider-card-addr">To {o.area || 'a buyer nearby'} · {o.items} item{o.items === 1 ? '' : 's'}{o.cod ? ' · cash on delivery' : ''}</p>
-            <p className="rider-card-note">{o.missed ? 'Past the deadline — still open if you can take it now.' : <>The first rider to take it gets it — <TimeLeft until={o.until} /> left.</>}</p>
+            <p className="rider-card-note">Please pick it up from {o.store}.</p>
             <div className="rider-card-actions">
               <button type="button" className="rider-btn primary" disabled={busy === `take-${o.id}`} onClick={async () => {
                 setBusy(`take-${o.id}`)
@@ -469,14 +491,15 @@ function SellerDeliveries({ headers, refreshKey }) {
                   const res = await fetch(`${API_URL}/rider/local-offers/${o.id}/take`, { method: 'POST', headers: headers(true) })
                   const body = await readJson(res)
                   if (!res.ok) throw new Error(body.message ?? 'Could not take it.')
-                  setList(body.data ?? []); setCashBy(body.cash ?? []); setOpen(body.open ?? []); setMsg(`Order #${o.order_id} is yours — pick it up at ${o.store}.`)
+                  setList(body.data ?? []); setCashBy(body.cash ?? []); setOpen(body.open ?? []); setMsg(`Order #${o.order_id} is assigned to you for delivery — collect it from ${o.store}.`)
                 } catch (e) { setMsg(e.message); load() } finally { setBusy(null) }
               }}>Take it</button>
             </div>
           </article>
         ))}
       </div>}
-      {daysOff.map((d) => <p key={d.store} className="rider-cash">📅 {d.store} is closed (no deliveries unless they tell you): {d.days.join(', ')}</p>)}
+      {/* Coming holidays at the store (weekends off are routine, not listed). */}
+      {daysOff.filter((d) => d.days.length).map((d) => <p key={d.store} className="rider-cash">📅 {d.store} holidays: {d.days.join(', ')}</p>)}
       {cashBy.map((c) => (
         <div key={c.store} className={c.paused || c.disputed ? 'rider-error' : 'rider-cash'}>
           {c.held_cents > 0 && <p>{c.paused ? `Paused for ${c.store}: visit the store and hand over the ${fmt(c.held_cents, c.currency)} you hold before more deliveries.` : `You hold ${fmt(c.held_cents, c.currency)} of ${c.store}’s cash (limit ${fmt(c.limit_cents, c.currency)}) — hand it over at the store today.`}</p>}
@@ -499,6 +522,8 @@ function SellerDeliveries({ headers, refreshKey }) {
           {p.pickup && <p>Pick up: {p.pickup}</p>}
           <p>Deliver to: <b>{p.buyer}</b>{p.phone && <> · <a href={`tel:${p.phone}`}>{p.phone}</a></>}<br />{p.address}</p>
           {p.instructions && <p>Note: {p.instructions}</p>}
+          {p.available_times && <p>🕘 Usually home: {p.available_times}</p>}
+          {onChat && <button type="button" className="rider-btn ghost" onClick={() => onChat(p.order_id)}>Message buyer</button>}
           <p>{p.items.join(', ')}</p>
           {p.cash_cents > 0 && <p className="rider-cash">Cash on delivery: collect <b>{new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currency.toUpperCase() }).format(p.cash_cents / 100)}</b></p>}
           <div className="rider-deliver-row">
@@ -525,6 +550,8 @@ export default function RiderConsole({ token, onSignOut }) {
   const [error, setError] = useState('')
   const [alertOpen, setAlertOpen] = useState(false)
   const [payKey, setPayKey] = useState(0)
+  const [view, setView] = useState('deliveries') // Deliveries · Earnings · My account
+  const [offers, setOffers] = useState([]) // sellers' orders open to take (banner at the top until taken)
 
   const load = useCallback(async () => {
     try {
@@ -597,28 +624,29 @@ export default function RiderConsole({ token, onSignOut }) {
         </div>
       </header>
 
-      <ShiftBar shift={data.shift} headers={headers} workHours={data.work_hours ?? []} onChange={(s) => setData((d) => ({ ...d, shift: s }))} />
-      {(data.invites ?? []).map((iv) => (
-        <section key={iv.id} className="rider-section rider-invite">
-          <h3>{iv.store} invites you</h3>
-          <p className="rider-card-note">{iv.store}{iv.city ? ` (${iv.city})` : ''} would like you to deliver for them. Join only if you want to — say no thanks if you&rsquo;ve found work elsewhere.</p>
-          {[[true, 'Join', 'rider-btn primary'], [false, 'No thanks', 'rider-btn ghost']].map(([join, label, cls]) => (
-            <button key={label} type="button" className={cls} onClick={async () => {
-              try {
-                const res = await fetch(`${API_URL}/rider/invites/${iv.id}`, { method: 'POST', headers: headers(true), body: JSON.stringify({ join }) })
-                const body = await readJson(res)
-                window.alert(body.message ?? (res.ok ? 'Done.' : 'That failed.'))
-                load()
-              } catch { window.alert('Cannot reach the server.') }
-            }}>{label}</button>
-          ))}
-        </section>
-      ))}
-      <RiderRateRecent items={data.to_rate ?? []} headers={headers} onDone={load} />
+      {data.rider_name && <p className="rider-welcome">Welcome, <b>{data.rider_name}</b></p>}
+      {offers.length > 0 && (
+        <div className="rider-offer-banner" role="alert">
+          <span>📦 <b>Delivery to take</b> — {offers[0].store}, order #{offers[0].order_id}{offers.length > 1 ? ` (+${offers.length - 1} more)` : ''} is waiting for you.</span>
+          <button type="button" className="rider-btn primary" onClick={() => { setView('deliveries'); setTimeout(() => document.getElementById('rider-open-offers')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60) }}>See it</button>
+        </div>
+      )}
+
+      <nav className="rider-tabs" role="tablist">
+        {[['deliveries', 'Dashboard'], ['account', 'My account']].map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={view === key} className={view === key ? 'active' : ''} onClick={() => setView(key)}>{label}</button>
+        ))}
+      </nav>
+
+
+      {view === 'account' && <div className="rider-account">
       <RiderSellerChats headers={headers} />
+      {!data.no_active_store && <RiderLeavePanel leave={data.leave} headers={headers} onChange={load} />}
+      <section className="rider-section"><h3>Documents</h3><RiderLetters headers={headers} /></section>
       <section className="rider-section rider-move">
+        <h3>Moving to another area</h3>
         {data.move_request
-          ? <p className="rider-card-note">You asked to move to <b>{data.move_request.address}</b> — waiting for the store to approve or decline.</p>
+          ? <p className="rider-card-note">You asked to move to <b>{data.move_request.address}</b> — {data.move_request.waiting_for_sellers ? 'waiting for your seller to answer first.' : 'waiting for approval.'}</p>
           : <button type="button" className="rider-btn ghost" onClick={async () => {
             const address = window.prompt('Moving to another area (at your own cost)? Your new home address — the store approves or declines. If approved, you stop delivering for your current stores (pay you earned is still paid) and stores near your new home can invite you.', '')
             if (!address?.trim()) return
@@ -643,20 +671,37 @@ export default function RiderConsole({ token, onSignOut }) {
           } catch { window.alert('Cannot reach the server.') }
         }}>Delete my details</button>
       </section>}
-      {!data.no_active_store && <RiderLeavePanel leave={data.leave} headers={headers} onChange={load} />}
-      <RiderLetters headers={headers} />
-      <EmailRoutineToggle headers={headers} className="rider-card-note" />
+      <section className="rider-section"><h3>Emails</h3><EmailRoutineToggle headers={headers} /></section>
+      </div>}
+
+      {view === 'deliveries' && <>
+      <ShiftBar shift={data.shift} headers={headers} workHours={data.work_hours ?? []} onChange={(s) => setData((d) => ({ ...d, shift: s }))} />
+      {(data.invites ?? []).map((iv) => (
+        <section key={iv.id} className="rider-section rider-invite">
+          <h3>{iv.store} invites you</h3>
+          <p className="rider-card-note">{iv.store}{iv.city ? ` (${iv.city})` : ''} would like you to deliver for them. Join only if you want to — say no thanks if you&rsquo;ve found work elsewhere.</p>
+          {[[true, 'Join', 'rider-btn primary'], [false, 'No thanks', 'rider-btn ghost']].map(([join, label, cls]) => (
+            <button key={label} type="button" className={cls} onClick={async () => {
+              try {
+                const res = await fetch(`${API_URL}/rider/invites/${iv.id}`, { method: 'POST', headers: headers(true), body: JSON.stringify({ join }) })
+                const body = await readJson(res)
+                window.alert(body.message ?? (res.ok ? 'Done.' : 'That failed.'))
+                load()
+              } catch { window.alert('Cannot reach the server.') }
+            }}>{label}</button>
+          ))}
+        </section>
+      ))}
+      <RiderRateRecent items={data.to_rate ?? []} headers={headers} onDone={load} />
       {(data.work_hours ?? []).map((w) => <p key={w.store} className="rider-cash">🕘 {w.store}: your working hours are {w.hours}{w.now && !data.shift?.clocked_in ? ' — you should be on duty now: clock in.' : '.'}</p>)}
 
-      {pendingOffers.length > 0 && (
-        <OfferPrompt offers={pendingOffers} headers={headers} onResolved={applyBoard} onLater={(id) => setLaterIds((ids) => [...ids, id])} />
-      )}
 
       {error && <p className="rider-error">{error}</p>}
       {data.cash_block && <p className="rider-error"><b>You&rsquo;re paused in every store</b> — {data.cash_block}. Visit the store to hand it over; you can take deliveries again once it&rsquo;s marked received.</p>}
 
-      {stats && <RiderStats stats={stats} />}
 
+
+      {stats && <RiderStats stats={stats} />}
       <RiderEarnings headers={headers} refreshKey={payKey} />
 
       {(data.pending_returns ?? []).length > 0 && (
@@ -671,14 +716,12 @@ export default function RiderConsole({ token, onSignOut }) {
         </div>
       )}
 
-      <SellerDeliveries headers={headers} refreshKey={payKey} />
+      <SellerDeliveries headers={headers} refreshKey={payKey} onChat={chatWithCustomer} onOffers={setOffers} />
 
-      <section className="rider-section">
+      {data.assigned.length > 0 && <section className="rider-section">
         <h2>My deliveries ({data.assigned.length})</h2>
-        {data.assigned.length === 0
-          ? <p className="rider-empty">Nothing assigned to you right now. New assignments appear here automatically.</p>
-          : data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
-      </section>
+        {data.assigned.map((o) => <DeliveryCard key={o.id} order={o} headers={headers} onDone={refresh} onChat={chatWithCustomer} />)}
+      </section>}
 
       {data.pool.length > 0 && (
         <section className="rider-section">
@@ -687,7 +730,13 @@ export default function RiderConsole({ token, onSignOut }) {
         </section>
       )}
 
-      <RiderChatDock headers={headers} orders={data.assigned} />
+      </>}
+
+      <RiderChatDock headers={headers} orders={data.assigned} sellers={data.seller_stores ?? []} />
+      {/* New delivery offers pop up on every tab. */}
+      {pendingOffers.length > 0 && (
+        <OfferPrompt offers={pendingOffers} headers={headers} onResolved={applyBoard} onLater={(id) => setLaterIds((ids) => [...ids, id])} />
+      )}
 
     </div>
   )

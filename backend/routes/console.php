@@ -119,3 +119,15 @@ Artisan::command('riders:monthly-pay', function () {
     $this->info('Riders paid: '.\App\Support\RiderPayPlan::payMonth());
 })->purpose('Pay riders on monthly pay for last month');
 Schedule::command('riders:monthly-pay')->monthlyOn(1, '04:30')->withoutOverlapping();
+
+// Weekly pay (riders admin set to weekly): paid on Monday for last week (Mon–Sun), same rules.
+Artisan::command('riders:weekly-pay', function () {
+    $this->info('Riders paid: '.\App\Support\RiderPayPlan::payWeek());
+})->purpose('Pay riders on weekly pay for last week');
+Schedule::command('riders:weekly-pay')->weeklyOn(1, '04:40')->withoutOverlapping();
+
+// Unpaid card orders: remind the buyer to complete payment (about 1 hour, then 24 hours, after ordering).
+Artisan::command('orders:payment-reminders', function () {
+    $this->info('Reminded: '.\App\Support\PaymentReminders::send());
+})->purpose('Remind buyers to complete payment for unpaid orders');
+Schedule::command('orders:payment-reminders')->hourly()->withoutOverlapping();

@@ -24,6 +24,7 @@ import { AdminHolidays } from './AdminHolidays'
 import { AdminRiderInvites } from './AdminRiderInvites'
 import { EmailRoutineToggle } from './EmailRoutineToggle'
 import { AdminSupportTeam } from './AdminSupportTeam'
+import { AdminCareers } from './AdminCareers'
 import { RiderPayPlanEditor, RiderTopUpPools } from './RiderPayPlan'
 import { RiderHoursEditor } from './RiderHoursEditor'
 import { hoursLabel } from './riderHours'
@@ -200,16 +201,16 @@ function Loading({ children }) {
 }
 // Left sidebar vs top-right. Support/Settings stay top-right (used less often,
 // and Support carries the live badge next to the notification bell).
-const PRIMARY_TABS = ['dashboard', 'orders', 'categories', 'products', 'stores', 'sellers', 'customers', 'emails', 'reviews', 'riders', 'supportteam', 'shipping', 'branding', 'secure']
+const PRIMARY_TABS = ['dashboard', 'orders', 'categories', 'products', 'stores', 'sellers', 'customers', 'emails', 'reviews', 'riders', 'supportteam', 'careers', 'shipping', 'branding', 'secure']
 const TOP_TABS = ['support', 'settings']
 const TAB_LABELS = {
   dashboard: 'Dashboard', orders: 'Orders', products: 'Products', reviews: 'Reviews', categories: 'Categories',
   customers: 'Customers', emails: 'Emails', riders: 'Riders', sellers: 'Sellers', stores: 'Stores / hubs', shipping: 'Shipping', branding: 'Store settings', secure: 'Secure access',
-  supportteam: 'Support team', support: 'Support', settings: 'Settings',
+  supportteam: 'Support team', careers: 'Careers', support: 'Support', settings: 'Settings',
 }
 const TAB_ICONS = {
   dashboard: '\u{1F4CA}', orders: '\u{1F9FE}', products: '\u{1F4E6}', reviews: '\u{2B50}', categories: '\u{1F5C2}️',
-  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', supportteam: '\u{1F3A7}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', shipping: '\u{1F69A}', branding: '\u{1F3A8}', secure: '\u{1F510}',
+  customers: '\u{1F465}', emails: '\u{2709}\u{FE0F}', riders: '\u{1F6F5}', supportteam: '\u{1F3A7}', careers: '\u{1F4CB}', sellers: '\u{1F4BC}', stores: '\u{1F3EC}', shipping: '\u{1F69A}', branding: '\u{1F3A8}', secure: '\u{1F510}',
 }
 // Cross-border currency conversion: the market rate (fetched daily from two
 // sources and cross-checked), an optional fixed rate, and the platform margin
@@ -288,10 +289,10 @@ const ISSUE_LABELS = {
   item_missing: 'Item missing', item_damaged: 'Item damaged', wrong_item: 'Wrong item',
   not_delivered: 'Not delivered', payment_issue: 'Payment issue', other: 'Other',
   delivery: 'Delivery message',
-  seller_product_issue: 'Seller: product issue', seller_other: 'Seller: other',
+  seller_product_issue: 'Seller: product issue', seller_local_delivery: 'Seller: local delivery', seller_other: 'Seller: other',
   rider_seller: 'Rider–seller ticket',
 }
-const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_other']
+const SELLER_ISSUE_TYPES = ['seller_product_issue', 'seller_local_delivery', 'seller_other']
 
 const EMPTY_PRODUCT = { category_id: '', shop_id: '', name: '', sku: '', price: '', compare_at: '', inventory_quantity: 0, description: '', image_url: '', video_url: '', images: [], is_active: true, per_store_stock: false, store_stock: {}, variants: [], condition: '', kind: 'live', affiliate_url: '', affiliate_merchant: '' }
 
@@ -755,6 +756,7 @@ export default function Admin({ token, onClose }) {
   // Shipping (left menu): which shipping form is open.
   const [shipSection, setShipSection] = useState('options')
   const [hoursFor, setHoursFor] = useState(null) // Stores: editing riders' hours for this store
+  const [careersSection, setCareersSection] = useState('roles') // Careers: Open roles · Applications
   // Admin cancelling an order: { order, reason, note } — a reason is required.
   const [cancelling, setCancelling] = useState(null)
   const [shops, setShops] = useState([])
@@ -2441,6 +2443,8 @@ Reason:`, '')
   const riderMoves = notifications.rider_moves ?? [] // riders asking to move, until decided
   const perfWarnings = notifications.performance_warnings ?? [] // poor ratings / late shipping / missed days, until dismissed
   const supportTickets = notifications.support_tickets ?? [] // rider–seller tickets waiting for a support person
+  const leaveRequests = notifications.rider_leave_requests ?? [] // own stores' riders asking for a day off, until answered
+  const jobApps = notifications.job_applications ?? [] // new Careers applications, until reviewed
   const sellerTasks = (notifications.seller_tasks ?? []).filter(notDismissed('task'))
   const codKept = (notifications.cod_kept ?? []).filter(notDismissed('cod'))
   const sellersOwing = (notifications.sellers_owing ?? []).filter(notDismissed('owe'))
@@ -2459,6 +2463,8 @@ Reason:`, '')
     + riderMoves.length
     + perfWarnings.length
     + supportTickets.length
+    + leaveRequests.length
+    + jobApps.length
     + riderPayoutRequests.length
     + riderApplications.length
     + riderNotices.length
@@ -2579,7 +2585,7 @@ Reason:`, '')
                         {localOffRequests.slice(0, BELL_ITEM_CAP).map((r) => (
                           <div className="admin-bell-row" key={`localoff-${r.store_id}`}>
                             <button type="button" className="admin-bell-item warn" onClick={() => { setSellerBellOpen(false); setStoreKind('seller'); goTab('stores') }}>
-                              🛵 {r.shop_name} wants to turn off local delivery — {r.riders} rider{r.riders === 1 ? '' : 's'} linked · approve or keep on
+                              🛵 {r.shop_name} wants to turn off local delivery — {r.riders} rider{r.riders === 1 ? '' : 's'} linked · {r.ready ? 'ready to approve (3 days have passed)' : `the seller may withdraw it — you can approve from ${new Date(r.opens_at).toLocaleDateString([], { day: 'numeric', month: 'short' })}`}
                             </button>
                           </div>
                         ))}
@@ -2700,6 +2706,38 @@ Reason:`, '')
                 <h4>Needs attention</h4>
                 {notificationCount === 0 ? <p className="muted">Nothing outstanding.</p> : (
                   <>
+                    {jobApps.length > 0 && (
+                      <section>
+                        <h5>Job applications</h5>
+                        {jobApps.slice(0, BELL_ITEM_CAP).map((a) => (
+                          <div className="admin-bell-row" key={`job-${a.id}`}>
+                            <button type="button" className="admin-bell-item" onClick={() => { setBellOpen(false); goTab('careers'); setCareersSection('applications') }}>📋 {a.name} — {a.role}</button>
+                          </div>
+                        ))}
+                      </section>
+                    )}
+                    {leaveRequests.length > 0 && (
+                      <section>
+                        <h5>Rider day-off requests</h5>
+                        {leaveRequests.slice(0, BELL_ITEM_CAP).map((l) => (
+                          <div className="admin-bell-row" key={`leave-${l.id}`}>
+                            <span className="admin-bell-item">📅 {l.rider} — {l.new_date ? 'move from ' : ''}{new Date(`${l.date}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}{l.new_date ? ` to ${new Date(`${l.new_date}T00:00:00`).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' })}` : ''}{l.reason ? ` (“${l.reason}”)` : ''}</span>
+                            {[[true, 'Accept'], [false, 'Decline']].map(([accept, label]) => (
+                              <button key={label} type="button" className={accept ? 'act' : 'act ghost'} onClick={async () => {
+                                let note = null
+                                if (!accept) { note = window.prompt(`Why can't ${l.rider} have this day off? They're told.`, ''); if (note === null) return }
+                                try {
+                                  const r = await fetch(`${API_URL}/admin/rider-leaves/${l.id}`, { method: 'POST', headers: jsonHeaders(), body: JSON.stringify({ accept, note }) })
+                                  const d = await readJson(r)
+                                  if (!r.ok) throw new Error(d.message ?? 'Could not answer.')
+                                  setNotifications((n) => ({ ...n, rider_leave_requests: (n.rider_leave_requests ?? []).filter((x) => x.id !== l.id) })); setMessage(d.message)
+                                } catch (error) { fail(error) }
+                              }}>{label}</button>
+                            ))}
+                          </div>
+                        ))}
+                      </section>
+                    )}
                     {supportTickets.length > 0 && (
                       <section>
                         <h5>Support tickets</h5>
@@ -2990,12 +3028,18 @@ Reason:`, '')
         <nav className="admin-sidebar" aria-label="Admin sections">
           {PRIMARY_TABS.map((name) => (<Fragment key={name}>
             <button type="button" className={tab === name ? 'active' : ''} aria-expanded={['products', 'categories', 'shipping'].includes(name) ? (tab === name && !subnavFolded) : undefined}
-              onClick={() => { if (tab === name && ['products', 'categories', 'shipping'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
+              onClick={() => { if (tab === name && ['products', 'categories', 'shipping', 'careers', 'secure'].includes(name)) { setSubnavFolded((f) => !f) } else { setSubnavFolded(false); goTab(name) } }}>
               <span className="nav-ico" aria-hidden>{TAB_ICONS[name]}</span>
               <span className="nav-label">{TAB_LABELS[name]}</span>
               {name === 'reviews' && pendingReviews > 0 && <span className="nav-badge">{pendingReviews}</span>}
               {['products', 'categories', 'shipping'].includes(name) && <span className="nav-caret" aria-hidden>{tab === name && !subnavFolded ? '▾' : '▸'}</span>}
             </button>
+            {name === 'careers' && tab === 'careers' && !subnavFolded && (
+              <div className="admin-nav-sub">
+                <button type="button" className={careersSection === 'roles' ? 'active' : ''} onClick={() => setCareersSection('roles')}>Open roles</button>
+                <button type="button" className={careersSection === 'applications' ? 'active' : ''} onClick={() => setCareersSection('applications')}>Applications{jobApps.length ? ` (${jobApps.length})` : ''}</button>
+              </div>
+            )}
             {name === 'shipping' && tab === 'shipping' && !subnavFolded && (
               <div className="admin-nav-sub">
                 <button type="button" className={shipSection === 'options' ? 'active' : ''} onClick={() => setShipSection('options')}>Seller shipping &amp; labels</button>
@@ -3007,7 +3051,7 @@ Reason:`, '')
                 <button type="button" className={shipSection === 'holidays' ? 'active' : ''} onClick={() => setShipSection('holidays')}>Holidays{(notifications.holiday_requests ?? []).length ? ` (${notifications.holiday_requests.length})` : ''}</button>
               </div>
             )}
-            {name === 'secure' && tab === 'secure' && secureGate === 'unlocked' && (
+            {name === 'secure' && tab === 'secure' && secureGate === 'unlocked' && !subnavFolded && (
               <div className="admin-nav-sub">
                 {SECURE_SECTIONS.map(([key, label]) => <button key={key} type="button" className={secureSection === key ? 'active' : ''} onClick={() => setSecureSection(key)}>{label}</button>)}
               </div>
@@ -3278,7 +3322,7 @@ Reason:`, '')
                     <td>{order.payment_status === 'refund_pending' || (order.status === 'cancelled' && order.payment_status === 'paid') ? <span className="pill pill-refund_due">refund due</span> : <span className={`pill pill-${order.payment_status}`}>{order.payment_status.replace('_', ' ')}</span>}<span className="admin-note">{order.payment_method === 'cod' ? 'C.O.D.' : 'Card'}</span>{order.cancelled_by === 'rider' && <span className="admin-note" style={{ color: '#a23b28' }} title={order.cancel_reason || 'Customer refused to pay on delivery'}>Customer refused to pay</span>}</td>
                     <td className={feedback ? `admin-td-fb-${feedback}` : undefined} title={feedback ? `${feedback} feedback on this order — open it to see why` : undefined}>{STATUS_LABELS[order.status] ?? order.status}{order.needs_courier_at && <span className="pill pill-refund_due" title={order.needs_courier_reason === 'outside_area' ? 'Outside every store’s delivery area, no courier account connected — book a courier and enter it on the order' : 'No rider took it in time — book a courier and enter it on the order'}>Needs courier</span>}{order.status === 'cancelled' && order.cancel_reason && <span className="admin-note" title={order.cancel_reason}>{order.cancelled_by === 'customer' ? 'By customer' : order.cancelled_by === 'rider' ? 'At the door' : `By ${brandName()}`}: {order.cancel_reason}</span>}{order.store && <span className="admin-note" title={`Fulfilled by ${order.store.name}${order.store.city ? `, ${order.store.city}` : ''}`}>🏬 {order.store.name}</span>}{order.status === 'completed' && order.delivery_verified === true && <span className="admin-note" style={{ color: '#2f6d34' }} title={order.delivered_at ? `Confirmed ${new Date(order.delivered_at).toLocaleString()}` : ''}>✓ code verified</span>}{!order.rider_accepted_at && order.rider_offer_expires_at && <span className="admin-note" style={{ color: '#7a5c14' }} title={`Offered${order.delivery_partner?.name ? ` to ${order.delivery_partner.name}` : ''}, expires ${new Date(order.rider_offer_expires_at).toLocaleString()}`}>⏳ offer sent</span>}{order.rider_offer_decline_count > 0 && order.status !== 'completed' && <span className="admin-note" style={{ color: '#a23b28' }} title="Riders who declined or missed this offer">↩ declined ×{order.rider_offer_decline_count}</span>}</td>
                     <td className="admin-courier">
-                      {order.delivery_method === 'seller' ? (
+                      {order.delivery_method === 'digital' ? <span className="pill">Digital download</span> : order.delivery_method === 'seller' ? (
                         <>
                           <span className="pill pill-seller">Seller ships</span>
                           {(order.packages ?? []).filter((pk) => staleSellerUpdate(pk)).slice(0, 1).map((pk) => <span key={`stale-${pk.id}`} className="pill pill-stale" title="The seller hasn't updated this package for 2+ days">No seller update {staleSellerUpdate(pk)}d</span>)}{(order.packages ?? []).map((pk) => <span key={pk.id} className="admin-note" title={pk.tracking_detail ?? undefined}>{pk.carrier} · {pk.tracking_number} · {pk.tracking_label ?? pk.status.replace('_', ' ')}{pk.tracking_events?.[0]?.location ? ` · ${pk.tracking_events[0].location}` : ''}</span>)}
@@ -4046,7 +4090,7 @@ Reason:`, '')
                     <td>{store.shop_id ? <div className="store-local">
                       {{ on: <span className="pill pill-approved">On</span>, off: <span className="pill">Off</span>, off_requested: <span className="pill pill-pending">Seller asks to turn off</span>, locked: <span className="pill store-tag-locked" title="Only admin can turn it on again">Off · locked</span> }[store.local_delivery_status]}
                       {store.local_delivery_status === 'off_requested' ? <>
-                        <button type="button" className="act" onClick={() => localDeliveryAction(store, 'approve_off')}>Approve</button>
+                        <button type="button" className="act" disabled={store.off_opens_at && new Date(store.off_opens_at) > new Date()} title={store.off_opens_at && new Date(store.off_opens_at) > new Date() ? `The seller can withdraw it until ${new Date(store.off_opens_at).toLocaleString()}` : ''} onClick={() => localDeliveryAction(store, 'approve_off')}>{store.off_opens_at && new Date(store.off_opens_at) > new Date() ? `Approve from ${new Date(store.off_opens_at).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Approve'}</button>
                         <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'keep_on')}>Keep on</button>
                       </> : store.local_delivery_status === 'on'
                         ? <button type="button" className="act ghost" onClick={() => localDeliveryAction(store, 'off')}>Turn off</button>
@@ -4353,6 +4397,7 @@ Reason:`, '')
         )
       })()}
 
+      {tab === 'careers' && <AdminCareers headers={jsonHeaders} onMessage={setMessage} section={careersSection} />}
       {tab === 'supportteam' && <AdminSupportTeam key={(settings?.support_agents ?? []).join(',')} names={settings?.support_agents} onSave={(names) => saveSetting({ support_agents: names })} />}
       {tab === 'support' && (
         <section className="admin-panel">
@@ -4745,7 +4790,8 @@ Reason:`, '')
               </div>
 
               <div className="admin-form">
-                <h3>Countries</h3>
+                <h3>Countries — show / hide</h3>
+                <p className="muted"><b>Hiding a country</b> removes it from the storefront country choice, seller sign-up and this console&rsquo;s country switch. Its sellers keep their accounts, can ship their open orders and get paid, and see a &ldquo;selling is paused&rdquo; notice. The default country can&rsquo;t be hidden.</p>
                 <p className="muted">Countries enabled here appear as options in seller registration (business type, tax-ID format, and address labels all follow whichever country a seller picks). Enabling just one keeps the platform single-country; enabling several turns on multi-country selection everywhere that depends on it.</p>
                 {/* Show / hide each country. Hidden: gone from the storefront country choice and seller sign-up;
                     shoppers there are sent to the default country. Its sellers keep their accounts, open orders
@@ -4756,9 +4802,22 @@ Reason:`, '')
                     const shown = activeCodes.includes(country.code)
                     const isDefault = country.code === (settings.home_market ?? 'US')
                     return <label className={`admin-toggle${isDefault ? ' locked' : ''}`} key={country.code} title={isDefault ? 'The default country is always shown — pick another default first to hide it' : undefined}>
-                      <input type="checkbox" role="switch" checked={shown || isDefault} disabled={isDefault} onChange={(event) => {
-                        if (!event.target.checked && !window.confirm(`Hide ${country.name}? Shoppers there will see the ${marketOptions.find((m) => m.code === (settings.home_market ?? 'US'))?.name ?? 'default'} store instead, and new sellers can't sign up from ${country.name}. Its existing sellers, orders and payouts keep working.`)) return
-                        const next = event.target.checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
+                      <input type="checkbox" role="switch" checked={shown || isDefault} disabled={isDefault} onChange={async (event) => {
+                        const checked = event.target.checked
+                        if (!checked) {
+                          // List what's still open there before hiding it.
+                          let open = ''
+                          try {
+                            const res = await fetch(`${API_URL}/admin/countries/${country.code}/impact`, { headers: authHeaders() })
+                            const d = (await res.json())?.data
+                            if (d) {
+                              const bits = [d.open_orders ? `${d.open_orders} open order${d.open_orders === 1 ? '' : 's'}` : '', d.sellers ? `${d.sellers} seller${d.sellers === 1 ? '' : 's'}` : '', d.seller_balance_cents ? `${storeMoney(d.seller_balance_cents, d.currency)} owed to sellers` : ''].filter(Boolean)
+                              if (bits.length) open = `\n\nStill open there: ${bits.join(', ')}. They keep working — sellers can ship open orders and get paid.`
+                            }
+                          } catch { /* confirm without the list */ }
+                          if (!window.confirm(`Hide ${country.name}? Shoppers there will see the ${marketOptions.find((m) => m.code === (settings.home_market ?? 'US'))?.name ?? 'default'} store instead, and new sellers can't sign up from ${country.name}.${open}`)) return
+                        }
+                        const next = checked ? [...activeCodes, country.code] : activeCodes.filter((code) => code !== country.code)
                         saveSetting({ active_countries: next })
                       }} />
                       <span className="admin-toggle-track" aria-hidden><span /></span>
@@ -5029,6 +5088,7 @@ Reason:`, '')
           <aside onClick={(event) => event.stopPropagation()}>
             <button className="admin-close" type="button" onClick={() => setThread(null)}>Close</button>
             <h3>{ISSUE_LABELS[thread.issue_type] ?? thread.issue_type}{thread.order_id ? ` · Order #${thread.order_id}` : ''}</h3>
+            {thread.seller_id && <p><button type="button" className="link" onClick={() => { setThread(null); goTab('sellers'); openSellerDetail(thread.seller_id) }}>Open seller{thread.seller_shop?.name ? `: ${thread.seller_shop.name}` : ''} &rarr;</button></p>}
             <p className="muted">{thread.user?.email} · {thread.status}
               {thread.status === 'open'
                 ? <button className="act" type="button" style={{ marginLeft: 8 }} onClick={() => setThreadResolved('resolved')}>Mark resolved</button>
@@ -5334,6 +5394,18 @@ Reason:`, '')
                             {d.cod.owed_cents > 0 && <span className="admin-note" style={{ color: '#a23b28' }}>Owes {brandName()} {money(d.cod.owed_cents, d.currency)}{d.cod.owed_cents > d.cod.max_owed_cents ? ' — over the limit, paused' : ''}</span>}
                             {d.cod.mode === 'approved' && <button className={d.cod.approved ? 'act ghost' : 'act'} type="button" disabled={busyId === d.id} style={{ marginLeft: 8 }} onClick={() => { if (d.cod.approved || window.confirm(`Allow cash on delivery for ${d.shop.name}? They keep the cash; ${brandName()}’s share comes out of their next orders’ earnings.`)) sellerAction(d, 'cod', { approved: !d.cod.approved }) }}>{d.cod.approved ? 'Stop cash on delivery' : 'Allow cash on delivery'}</button>}
                           </dd></div>}
+                          {d.local_store && <div><dt>Local delivery</dt><dd>
+                            {{ on: 'On', off: 'Off', off_requested: 'Seller asks to turn it off', locked: 'Off — only admin can turn it on' }[d.local_store.status] ?? d.local_store.status}
+                            {' · '}{d.local_store.riders_count} rider{d.local_store.riders_count === 1 ? '' : 's'}{d.local_store.hiring_open ? ' · hiring' : ''}
+                            {d.local_store.status === 'on' && <button type="button" className="act ghost" style={{ marginLeft: 8 }} onClick={async () => { await localDeliveryAction(d.local_store, 'off'); openSellerDetail(d.id) }}>Turn off</button>}
+                            {d.local_store.offered === false && <><br /><span className="admin-note" style={{ color: '#a23b28' }}>Hidden for all sellers — sellers can&rsquo;t offer local delivery.</span>
+                              <button type="button" className="act" style={{ marginLeft: 8 }} onClick={() => { goTab('shipping'); setShipSection('local') }}>Open Shipping → Sellers&rsquo; local delivery</button></>}
+                            {d.local_store.offered !== false && ['off', 'locked'].includes(d.local_store.status) && <button type="button" className="act" style={{ marginLeft: 8 }} onClick={async () => { if (!window.confirm(`Turn on local delivery for ${d.shop.name}? They're sent a message with the hiring steps.`)) return; await localDeliveryAction(d.local_store, 'on'); openSellerDetail(d.id) }}>Turn on</button>}
+                            {d.local_store.status === 'off_requested' && <>
+                              <button type="button" className="act" style={{ marginLeft: 8 }} disabled={d.local_store.off_opens_at && new Date(d.local_store.off_opens_at) > new Date()} onClick={async () => { await localDeliveryAction(d.local_store, 'approve_off'); openSellerDetail(d.id) }}>{d.local_store.off_opens_at && new Date(d.local_store.off_opens_at) > new Date() ? `Approve from ${new Date(d.local_store.off_opens_at).toLocaleDateString([], { day: 'numeric', month: 'short' })}` : 'Approve turning off'}</button>
+                              <button type="button" className="act ghost" style={{ marginLeft: 4 }} onClick={async () => { await localDeliveryAction(d.local_store, 'keep_on'); openSellerDetail(d.id) }}>Keep on</button>
+                            </>}
+                          </dd></div>}
                           <div><dt>Shipping</dt><dd>{{ nextech: `${brandName()} collects & delivers this seller’s orders`, self: 'Ships with their own courier (tracking entered in Seller Center)', label: `Ships on ${brandName()}-bought labels (postage deducted from earnings)` }[d.shop.fulfillment_mode ?? 'nextech']}</dd></div>
                         </dl>
                       </section>
@@ -5414,7 +5486,7 @@ Reason:`, '')
         </div>
       )}
 
-      <AdminChatDock authHeaders={authHeaders} issueLabels={ISSUE_LABELS} onSupportDetails={openThread} />
+      <AdminChatDock authHeaders={authHeaders} issueLabels={ISSUE_LABELS} onSupportDetails={openThread} onOpenSeller={(id) => { goTab('sellers'); openSellerDetail(id) }} onOpenPerson={(kind, id) => { if (kind === 'rider') { goTab('riders'); openRiderDetail(id) } else { goTab('customers'); openCustomer(id) } }} />
 
       {listingReview && (
         <ListingReview
@@ -5649,8 +5721,8 @@ Reason:`, '')
                 )}
                 {riderDetail.view !== 'reviews' && riderDetail.rider?.move_request && (
                   <div className="admin-alert">
-                    <span>Asks to move to <b>{riderDetail.rider.move_request.address}</b> (at their own expense).</span>
-                    {[[true, 'Approve'], [false, 'Decline']].map(([approve, label]) => (
+                    <span>Asks to move to <b>{riderDetail.rider.move_request.address}</b> (at their own expense).{riderDetail.rider.move_request.waiting_for_sellers ? ' Waiting for their sellers to answer first.' : ''}</span>
+                    {!riderDetail.rider.move_request.waiting_for_sellers && [[true, 'Approve'], [false, 'Decline']].map(([approve, label]) => (
                       <button key={label} type="button" className={approve ? 'act' : 'act ghost'} onClick={async () => {
                         let reason = null
                         if (!approve) { reason = window.prompt('Why not? The rider is told.', ''); if (reason === null) return }

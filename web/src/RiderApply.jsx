@@ -5,6 +5,7 @@ import { brandName } from './useBranding'
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000/api'
 
 const VEHICLES = [['bicycle', 'Bicycle'], ['scooter', 'Scooter'], ['motorbike', 'Motorbike'], ['car', 'Car']]
+const DOC_LABELS = { license_document_path: 'licence', rc_document_path: 'vehicle RC', id_document_path: 'ID proof', education_document_path: 'education document', photo_path: 'photo' }
 const EMPTY = { phone: '', email: '', date_of_birth: '', experience_months: '', home_address: '', home_lat: null, home_lng: null, store_ids: [], vehicle_type: 'scooter', own_vehicle: false, license_number: '', license_document_path: '', rc_document_path: '', id_document_path: '', education_document_path: '', photo_path: '', education: '', work_history: '', health_issue: false, health_details: '', consent_removal: false, signed_name: '', signed_place: '', payout_method: '', holder_name: '', bank_name: '', account_number: '', routing_number: '', payout_email: '' }
 const age = (dob) => { if (!dob) return null; const d = new Date(dob); const n = new Date(); return n.getFullYear() - d.getFullYear() - (n < new Date(n.getFullYear(), d.getMonth(), d.getDate()) ? 1 : 0) }
 
@@ -70,10 +71,16 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
   }
 
   // Private uploads (only the applicant, the store and the seller deciding can open them).
+  // Each document shows its own error, can be removed (×), and the same file can't be used twice.
+  const [docs, setDocs] = useState({}) // field → { name, size, error }
+  const [docKey, setDocKey] = useState(0) // resets the file pickers after Remove
   async function upload(file, kind, field) {
     if (!file) return
-    setUploading(true)
     setMessage('')
+    if (!/\.(jpe?g|png|pdf)$/i.test(file.name)) { setDocs((d) => ({ ...d, [field]: { error: 'This file type isn’t accepted — use a JPG, PNG or PDF.' } })); return }
+    const same = Object.entries(docs).find(([f, d]) => f !== field && d?.name && d.name === file.name && d.size === file.size)
+    if (same) { setDocs((d) => ({ ...d, [field]: { error: `That’s the same file as your ${DOC_LABELS[same[0]]} — upload the right document.` } })); return }
+    setUploading(true)
     try {
       const body = new FormData()
       body.append('file', file)
@@ -82,21 +89,58 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
       const data = await readJson(response)
       if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Upload failed.')
       setForm((f) => ({ ...f, [field]: data.data.path }))
-    } catch (error) { setMessage(error.message) } finally { setUploading(false) }
+      setDocs((d) => ({ ...d, [field]: { name: file.name, size: file.size } }))
+    } catch (error) { setDocs((d) => ({ ...d, [field]: { error: error.message } })) } finally { setUploading(false) }
+  }
+  const removeDoc = (field) => { setForm((f) => ({ ...f, [field]: '' })); setDocs((d) => ({ ...d, [field]: undefined })); setDocKey((k) => k + 1) }
+  const docField = (label, kind, field, accept = 'image/jpeg,image/png,application/pdf') => (
+    <div className={`rider-apply-doc${docs[field]?.error ? ' has-error' : ''}`}>
+      <label>{label}
+        <input key={`${field}-${docKey}`} type="file" accept={accept} disabled={uploading} onChange={(event) => upload(event.target.files?.[0], kind, field)} />
+      </label>
+      {form[field] && !docs[field]?.error && <p className="admin-gate-sub">✓ {docs[field]?.name ?? 'Uploaded'} <button type="button" className="rider-apply-x" title="Remove and choose another file" onClick={() => removeDoc(field)}>×</button></p>}
+      {docs[field]?.error && <p className="admin-gate-msg">{docs[field].error} <button type="button" className="rider-apply-x" title="Clear" onClick={() => removeDoc(field)}>×</button></p>}
+    </div>
+  )
+
+  // Everything still missing, in plain words (shown above the button instead of a dead button).
+  function missing() {
+    const m = []
+    if (!form.phone.trim()) m.push('Phone')
+    if (!form.email.trim()) m.push('Email')
+    if (!form.date_of_birth) m.push('Date of birth')
+    else if (tooYoung) m.push(`Age — riders must be at least ${minAge}`)
+    if (!form.education.trim()) m.push('Highest education')
+    if (form.experience_months === '') m.push('Work experience (0 if none)')
+    if (!form.home_address.trim()) m.push('Home address')
+    if (!form.store_ids.length) m.push('Tick at least one store')
+    if (needsLicense && !form.license_number.trim()) m.push('Driving licence number')
+    if (needsLicense && !form.license_document_path) m.push('Licence photo or PDF')
+    if (needsLicense && !form.rc_document_path) m.push('Vehicle RC')
+    if (!form.id_document_path) m.push('ID proof')
+    if (!form.photo_path) m.push('Your photo')
+    if (form.health_issue && !form.health_details.trim()) m.push('Health details')
+    if (!form.own_vehicle) m.push('Tick “I have my own vehicle”')
+    if (!form.consent_removal) m.push('Tick the agreement')
+    if (form.signed_name.trim().length < 2) m.push('Your full name (signature)')
+    if (form.signed_place.trim().length < 2) m.push('Your current town or city')
+    Object.entries(docs).forEach(([f, d]) => { if (d?.error) m.push(`Fix: ${DOC_LABELS[f]}`) })
+    return m
   }
 
   async function submit(event) {
     event.preventDefault()
     setMessage('')
-    if (!form.store_ids.length) { setMessage('Tick at least one store you can deliver for.'); return }
+    const todo = missing()
+    if (todo.length) { setMessage(`Please fill in: ${todo.join(' · ')}`); return }
     setBusy(true)
     try {
-      const payload = { ...form, payout_method: form.payout_method || chosen?.payout_methods?.[0] || 'bank', store_ids: form.store_ids.map(Number), experience_months: Number(form.experience_months || 0), education_document_path: form.education_document_path || null, health_details: form.health_issue ? form.health_details : null }
+      const payload = { ...form, store_ids: form.store_ids.map(Number), experience_months: Number(form.experience_months || 0), education_document_path: form.education_document_path || null, health_details: form.health_issue ? form.health_details : null }
       if (payload.vehicle_type === 'bicycle') payload.rc_document_path = null
       if (payload.vehicle_type === 'bicycle') { payload.license_number = null; payload.license_document_path = null }
       const response = await fetch(`${API_URL}/rider-application`, { method: 'POST', headers: headers(true), body: JSON.stringify(payload) })
       const data = await readJson(response)
-      if (!response.ok) throw new Error(data.message ?? Object.values(data.errors ?? {})[0]?.[0] ?? 'Could not send your application.')
+      if (!response.ok) throw new Error(data.errors ? Object.values(data.errors).flat().join(' · ') : (data.message ?? 'Could not send your application.'))
       setReapply(false)
       await loadState()
     } catch (error) { setMessage(error.message) } finally { setBusy(false) }
@@ -174,45 +218,22 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
             {needsLicense && (
               <>
                 <label>Driving licence number<input required value={form.license_number} onChange={(event) => setForm({ ...form, license_number: event.target.value })} /></label>
-                <label>Licence photo or PDF
-                  <input type="file" accept="image/*,application/pdf" disabled={uploading} onChange={(event) => upload(event.target.files?.[0], 'license_document', 'license_document_path')} />
-                </label>
-                {form.license_document_path && <p className="admin-gate-sub">✓ Licence uploaded.</p>}
-                <label>Vehicle RC (registration certificate)
-                  <input type="file" accept="image/*,application/pdf" disabled={uploading} onChange={(event) => upload(event.target.files?.[0], 'vehicle_rc', 'rc_document_path')} />
-                </label>
-                {form.rc_document_path && <p className="admin-gate-sub">✓ RC uploaded.</p>}
+                {docField('Licence photo or PDF', 'license_document', 'license_document_path')}
+                {docField('Vehicle RC (registration certificate)', 'vehicle_rc', 'rc_document_path')}
               </>
             )}
 
-            <label>ID proof (photo or PDF) — must show your date of birth
-              <input type="file" accept="image/*,application/pdf" disabled={uploading} onChange={(event) => upload(event.target.files?.[0], 'id_document', 'id_document_path')} />
-            </label>
-            {form.id_document_path && <p className="admin-gate-sub">✓ ID uploaded.</p>}
-            <label>Education document <small>optional</small>
-              <input type="file" accept="image/*,application/pdf" disabled={uploading} onChange={(event) => upload(event.target.files?.[0], 'education_document', 'education_document_path')} />
-            </label>
-            {form.education_document_path && <p className="admin-gate-sub">✓ Education document uploaded.</p>}
-            <label>Your photo (passport size, face clearly visible)
-              <input type="file" accept="image/*" disabled={uploading} onChange={(event) => upload(event.target.files?.[0], 'rider_photo', 'photo_path')} />
-            </label>
-            {form.photo_path && <p className="admin-gate-sub">✓ Photo uploaded.</p>}
+            {docField('ID proof (photo or PDF) — must show your date of birth', 'id_document', 'id_document_path')}
+            {docField('Education document (optional)', 'education_document', 'education_document_path')}
+            {docField('Your photo (passport size, face clearly visible)', 'rider_photo', 'photo_path', 'image/jpeg,image/png')}
             <label className="rider-apply-check"><input type="checkbox" checked={form.health_issue} onChange={(event) => setForm({ ...form, health_issue: event.target.checked })} /> I have a health condition that could affect delivery work</label>
             {form.health_issue && <label>Tell us briefly<input required maxLength="300" value={form.health_details} onChange={(event) => setForm({ ...form, health_details: event.target.value })} /></label>}
             <label className="rider-apply-check"><input type="checkbox" checked={form.own_vehicle} onChange={(event) => setForm({ ...form, own_vehicle: event.target.checked })} /> I have my own vehicle and pay its fuel and running costs.</label>
             <label className="rider-apply-check"><input type="checkbox" checked={form.consent_removal} onChange={(event) => setForm({ ...form, consent_removal: event.target.checked })} /> I agree that if stores aren&rsquo;t available, or for bad behaviour, health or other issues, the seller or {brandName()} can remove me at any time. I&rsquo;ll give at least 30 days&rsquo; notice before I stop working; if I leave without notice, my final pay is settled only after the store checks my open orders and any cash I hold, and I may not be hired again. I work the hours the store sets, use my own vehicle, and I&rsquo;m paid per delivery as the store sets it, through {brandName()}. {brandName()}&rsquo;s decision is final on pay, working hours, days off and other matters; the seller I deliver for can also decide these for their store; I hand over any cash I collect the same day, and while I hold cash over the limit I can&rsquo;t take deliveries for any store.</label>
 
-            {/* Last step, once everything above is filled in: the store's terms, then sign with name + place. */}
-            {form.own_vehicle && form.consent_removal && form.id_document_path && form.photo_path && (!needsLicense || (form.license_document_path && form.rc_document_path)) && !tooYoung && (
+            {/* Last step: the store's terms, then sign with name + place. (How you're paid is added in the Rider app after approval.) */}
+            {(
               <div className="rider-apply-terms">
-                <h3>How you want to be paid</h3>
-                {(chosen?.payout_methods ?? ['bank']).map((m) => <label key={m} className="rider-apply-check"><input type="radio" checked={(form.payout_method || chosen?.payout_methods?.[0]) === m} onChange={() => setForm({ ...form, payout_method: m })} /> {m === 'bank' ? 'Bank account' : 'PayPal'}</label>)}
-                {(form.payout_method || chosen?.payout_methods?.[0] || 'bank') === 'bank' ? <>
-                  <label>Account holder name<input value={form.holder_name} onChange={(e) => setForm({ ...form, holder_name: e.target.value })} /></label>
-                  <label>Bank name<input value={form.bank_name} onChange={(e) => setForm({ ...form, bank_name: e.target.value })} /></label>
-                  <label>Account number<input value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} /></label>
-                  <label>Routing / IFSC code<input value={form.routing_number} onChange={(e) => setForm({ ...form, routing_number: e.target.value })} /></label>
-                </> : <label>PayPal email<input type="email" value={form.payout_email} onChange={(e) => setForm({ ...form, payout_email: e.target.value })} /></label>}
                 <h3>Before you join — the store&rsquo;s terms</h3>
                 <ul>{(chosen?.terms ?? []).map((t) => <li key={t}>{t}</li>)}</ul>
                 <p className="admin-gate-sub">Sign below to accept these terms and join.</p>
@@ -221,11 +242,13 @@ export default function RiderApply({ token, onApproved, onSignOut }) {
                 <p className="admin-gate-sub">Date: {new Date().toLocaleDateString()}</p>
               </div>
             )}
-            <button type="submit" disabled={busy || uploading || tooYoung || !form.own_vehicle || !form.consent_removal || !form.id_document_path || !form.photo_path || (needsLicense && (!form.license_document_path || !form.rc_document_path)) || form.signed_name.trim().length < 2 || form.signed_place.trim().length < 2}>{busy ? 'Sending…' : 'Sign and submit to join'} &rarr;</button>
+            <p className="admin-gate-sub">How you want to be paid is added later, in the Rider app (Earnings → Payout method), once you&rsquo;re approved.</p>
+            {message && <p className="admin-gate-msg rider-apply-missing">{message}</p>}
+            <button type="submit" disabled={busy || uploading}>{busy ? 'Sending…' : 'Sign and submit to join'} &rarr;</button>
           </form>
         )}
 
-        {message && <p className="admin-gate-msg">{message}</p>}
+        {message && !showForm && <p className="admin-gate-msg">{message}</p>}
         <button type="button" className="admin-gate-link" onClick={onSignOut}>Sign out</button>
       </div>
     </div>

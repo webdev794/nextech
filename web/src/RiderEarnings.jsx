@@ -77,7 +77,7 @@ export default function RiderEarnings({ headers, refreshKey }) {
       {open && (
         <div className="rider-earnings-body">
           {pay.pay_plan
-            ? <p className="rider-earnings-note">Monthly pay: <b>{money(pay.pay_plan.monthly_cents)}</b> at {pay.pay_plan.target} deliveries (less in proportion below it){pay.pay_plan.bonus_per_extra_cents ? <>, plus {money(pay.pay_plan.bonus_per_extra_cents)} for each extra delivery (up to {money(pay.pay_plan.bonus_cap_cents)})</> : null}. This month so far: <b>{pay.deliveries_this_month} of {pay.pay_plan.target}</b>. Paid on the 1st.</p>
+            ? <p className="rider-earnings-note">{pay.pay_plan.period === 'week' ? 'Weekly' : 'Monthly'} pay: <b>{money(pay.pay_plan.monthly_cents)}</b> at {pay.pay_plan.target} deliveries (less in proportion below it){pay.pay_plan.bonus_per_extra_cents ? <>, plus {money(pay.pay_plan.bonus_per_extra_cents)} for each extra delivery (up to {money(pay.pay_plan.bonus_cap_cents)})</> : null}{pay.pay_plan.missed_day_cents ? <>; {money(pay.pay_plan.missed_day_cents)} less for each missed day (absent without asking, or a day off beyond your allowance)</> : null}. This {pay.pay_plan.period === 'week' ? 'week' : 'month'} so far: <b>{pay.deliveries_this_month} of {pay.pay_plan.target}</b>. Paid {pay.pay_plan.period === 'week' ? 'every Monday' : 'on the 1st'}.</p>
             : <p className="rider-earnings-note">You earn {money(pay.rates.base_cents)} per delivery + {money(pay.rates.per_mile_cents)} per mile from the store to the customer.</p>}
           <ul className="rider-earnings-sums">
             <li><span>Total earned, not yet paid</span><b>{money(pay.balance_cents)}</b></li>

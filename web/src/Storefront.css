@@ -79,3 +79,9 @@
 .cat-sub{padding:7px 14px;border:1px solid #dcdcdc;border-radius:999px;background:#fff;font:500 14px 'Okra',sans-serif;cursor:pointer}
 .cat-sub:hover{border-color:#111}
 .cat-sub.back{background:#f4f4f4}
+
+.careers-roles{margin-top:24px}.careers-role{border:1px solid #e5e5e5;border-radius:10px;padding:14px 16px;margin:10px 0}.careers-role h3{margin:0 0 4px}.careers-where{color:#777;font-size:12px;margin:0 0 6px}
+.careers-btn{display:inline-block;padding:9px 16px;border:0;border-radius:8px;background:#fb7701;color:#fff;font-weight:600;text-decoration:none;cursor:pointer}.careers-link{background:none;border:0;color:#555;cursor:pointer;margin-left:8px}
+.careers-form{display:grid;gap:8px;max-width:460px}.careers-msg{padding:8px 12px;background:#eef8ee;border-radius:8px}
+.partner-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:20px}.partner-card{border:1px solid #e5e5e5;border-radius:12px;padding:18px}.partner-card h3{margin:0 0 6px}.partner-more{grid-column:1/-1;color:#555}
+.order-rider-live{margin:6px 0;padding:6px 10px;border-radius:8px;background:#eef6ff;font-size:13px}

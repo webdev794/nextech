@@ -29,6 +29,19 @@ class OrderController extends Controller
         $orders->getCollection()->each->makeVisible(['delivery_code', 'delivery_code_expires_at']);
         // Same for the seller's own delivery: the buyer reads the code to the seller's delivery person.
         $orders->getCollection()->each(fn ($o) => $o->packages->each(fn ($p) => $p->status === 'out_for_delivery' && $p->makeVisible('delivery_code')));
+        // Out for delivery: where the rider is (live, last 15 minutes) — NexTech riders and sellers' riders.
+        $orders->getCollection()->each(function ($o) {
+            if ($o->status === 'out_for_delivery' && $o->delivery_partner_id) {
+                $o->setAttribute('rider_live', \App\Support\RiderLive::forBuyer($o->delivery_partner_id, (array) $o->delivery_address));
+                $o->setAttribute('rider_contact', \App\Support\RiderLive::contact($o->delivery_partner_id));
+            }
+            $o->packages->each(function ($p) use ($o) {
+                if ($p->status === 'out_for_delivery' && $p->rider_id) {
+                    $p->setAttribute('rider_live', \App\Support\RiderLive::forBuyer($p->rider_id, (array) $o->delivery_address));
+                    $p->setAttribute('rider_contact', \App\Support\RiderLive::contact($p->rider_id));
+                }
+            });
+        });
 
         return response()->json([
             'data' => $orders->items(),

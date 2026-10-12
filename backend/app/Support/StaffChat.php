@@ -12,7 +12,7 @@ use App\Models\User;
 class StaffChat
 {
     public const TYPES = [
-        'seller' => ['seller_product_issue', 'seller_other'],
+        'seller' => ['seller_product_issue', 'seller_local_delivery', 'seller_other'],
         'rider' => ['rider_support'],
     ];
 

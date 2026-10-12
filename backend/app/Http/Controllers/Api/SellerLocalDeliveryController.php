@@ -41,7 +41,7 @@ class SellerLocalDeliveryController extends Controller
         $shop = $this->shop($request);
         $data = $request->validate(['open' => ['required', 'boolean']]);
         $store = SellerStores::ensure($shop);
-        abort_if($data['open'] && SellerStores::status($store) !== 'on', 422, 'Turn on local delivery first (Shipping settings → Own delivery (local)).');
+        abort_if($data['open'] && SellerStores::status($store) !== 'on', 422, 'Turn on local delivery first (Shipping settings → Local delivery).');
         $store->forceFill(['hiring_open' => $data['open']])->save();
 
         return response()->json(['data' => $this->payload($shop)]);
@@ -164,6 +164,34 @@ class SellerLocalDeliveryController extends Controller
         return response()->json(['data' => $this->payload($shop)]);
     }
 
+    /** Accept or decline a rider's day-off request. */
+    public function decideLeave(Request $request, \App\Models\RiderLeave $leave): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $data = $request->validate(['accept' => ['required', 'boolean'], 'note' => ['nullable', 'string', 'max:300']]);
+        \App\Support\RiderLeaves::decide($leave, $request->user(), $data['accept'], $data['note'] ?? null);
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
+    /** A rider of mine asks to move away: let them go, or keep them. */
+    public function answerMove(Request $request, User $user): JsonResponse
+    {
+        $shop = $this->shop($request);
+        $data = $request->validate(['let_go' => ['required', 'boolean'], 'note' => ['nullable', 'string', 'max:300']]);
+        \App\Support\RiderHiring::sellerAnswersMove($user, $shop, $data['let_go'], $data['note'] ?? null);
+
+        return response()->json(['data' => $this->payload($shop)]);
+    }
+
+    /** Withdraw a request to turn off local delivery (within 3 days). */
+    public function withdrawOff(Request $request): JsonResponse
+    {
+        \App\Support\SellerStores::sellerWithdrawsOff($this->shop($request));
+
+        return response()->json(['message' => 'Withdrawn — local delivery stays on; your riders are told.']);
+    }
+
     /** A bonus for one of the seller's riders, paid from the seller's earnings (like rider pay). */
     public function riderBonus(Request $request, User $rider): JsonResponse
     {
@@ -282,14 +310,20 @@ class SellerLocalDeliveryController extends Controller
             'rider_pay_cents' => \App\Support\RiderMoney::sellerRateCents($store),
             'rider_pickup_hours' => \App\Support\SellerRiders::pickupHours($store),
             'rider_hours' => \App\Support\RiderWorkHours::of($store),
+            // Applications for jobs admin opened at this store (Careers page).
+            'job_applications' => \App\Models\JobApplication::query()->whereHas('role', fn ($q) => $q->whereJsonContains('store_ids', $store->id))
+                ->with('role:id,title')->latest()->limit(50)->get(['id', 'job_role_id', 'name', 'email', 'phone', 'link', 'message', 'status', 'created_at']),
             // Riders who delivered before and live nearby (suggested / invited).
             'invites' => \App\Models\RiderInvite::query()->where('store_id', $store->id)->whereIn('status', ['suggested', 'invited'])->with('user:id,name,phone')->get()
                 ->map(fn ($i) => ['id' => $i->id, 'status' => $i->status, 'name' => $i->user?->name, 'phone' => $i->user?->phone]),
             // Riders' days off: coming up, and this month's (asked for / missed).
+            // Riders asking to move away, waiting for this seller's answer.
+            'move_requests' => $riders->filter(fn (User $r) => ($r->rider_move_request['sellers'][(string) $shop->id] ?? null) === 'waiting')
+                ->map(fn (User $r) => ['rider_id' => $r->id, 'name' => $r->name, 'at' => $r->rider_move_request['at'] ?? null])->values(),
             'leaves' => \App\Models\RiderLeave::query()->whereIn('user_id', $riders->pluck('id'))->whereDate('date', '>=', now()->startOfMonth()->toDateString())
-                ->with('user:id,name')->orderBy('date')->get()->map(fn ($l) => ['id' => $l->id, 'rider' => $l->user?->name, 'date' => $l->date->toDateString(), 'kind' => $l->kind, 'told_ahead' => $l->told_ahead, 'reason' => $l->reason]),
+                ->with('user:id,name')->orderBy('date')->get()->map(fn ($l) => ['id' => $l->id, 'rider' => $l->user?->name, 'date' => $l->date->toDateString(), 'new_date' => $l->new_date?->toDateString(), 'change_reason' => $l->change_reason, 'kind' => $l->kind, 'status' => $l->status, 'told_ahead' => $l->told_ahead, 'reason' => $l->reason]),
             'currency' => \App\Support\Market::currency($store->country),
-            'apply_url' => rtrim((string) config('app.url'), '/').'/#/rider-apply',
+            'apply_url' => \App\Support\SiteUrl::to('rider/apply'),
             'riders' => $riders->map(fn (User $r) => [
                 'id' => $r->id,
                 // The store's terms they signed when joining.

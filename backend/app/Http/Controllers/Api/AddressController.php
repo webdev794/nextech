@@ -76,6 +76,8 @@ class AddressController extends Controller
             'city' => ['sometimes', 'nullable', 'string', 'max:100'],
             'state' => ['sometimes', 'nullable', 'string', 'max:60'],
             'postal_code' => ['sometimes', 'nullable', 'string', 'max:12'],
+            // When they're usually there (shown to the rider / seller who delivers).
+            'available_times' => ['sometimes', 'nullable', 'string', 'max:120'],
             'latitude' => ['sometimes', 'nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['sometimes', 'nullable', 'numeric', 'between:-180,180'],
             'is_default' => ['sometimes', 'boolean'],

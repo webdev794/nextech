@@ -156,6 +156,7 @@ class User extends Authenticatable
         $total = (int) $orders->sum('total_cents');
 
         $this->deliveries()->whereIn('id', $orders->pluck('id'))->update(['cash_settled_at' => now()]);
+        \App\Support\LiveVersion::changed();
 
         return $total;
     }

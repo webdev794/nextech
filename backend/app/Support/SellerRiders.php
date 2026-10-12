@@ -97,11 +97,12 @@ class SellerRiders
         $store = SellerStores::ensure($shop);
         $until = now()->addHours(self::pickupHours($store));
         $promise->forceFill(['rider_offer_until' => $until, 'rider_offer_missed_at' => null])->save();
-        $online = $store->riders()->where('is_rider', true)->where('rider_is_active', true)->where('rider_available', true)->get()
-            ->filter(fn (User $r) => $r->currentShift() && ! SellerRiderCash::blockedReason($r));
-        foreach ($online as $rider) {
+        $active = $store->riders()->where('is_rider', true)->where('rider_is_active', true)->get();
+        $online = $active->filter(fn (User $r) => $r->rider_available && $r->currentShift() && ! SellerRiderCash::blockedReason($r));
+        // Every active rider of the store hears about it (not only those on shift — they may clock in for it).
+        foreach ($active as $rider) {
             try {
-                $rider->notify(new RiderNotice("Delivery to take — {$shop->name}", "{$shop->name} has order #{$order->id} for its riders until {$until->format('j M H:i')}. The first to press Take it in the Rider app (Store deliveries) gets it.", true));
+                $rider->notify(new RiderNotice("Delivery to take — {$shop->name}", "{$shop->name} has order #{$order->id} for you until {$until->format('j M H:i')}. Press Take it in the Rider app (Store deliveries) to get it.", true));
             } catch (\Throwable $e) {
                 report($e);
             }
@@ -128,9 +129,16 @@ class SellerRiders
 
         return \Illuminate\Support\Facades\DB::transaction(function () use ($rider, $promise) {
             $locked = \App\Models\OrderShopShipping::whereKey($promise->id)->lockForUpdate()->first();
-            abort_unless($locked?->rider_offer_until, 422, 'Another rider has already taken this order.');
+            abort_unless($locked?->rider_offer_until, 422, 'This delivery is no longer available.');
 
-            return self::dispatchLocal($locked->order, $locked->shop, $rider);
+            $package = self::dispatchLocal($locked->order, $locked->shop, $rider);
+            // The seller hands it over: who's coming, and that it's at the seller's own risk.
+            if ($seller = $locked->shop?->seller) {
+                SellerNotify::send($seller, $seller->user, "{$rider->name} will collect order #{$locked->order_id}",
+                    "{$rider->name} took order #{$locked->order_id} for delivery and will come to collect it. Check the items with them before you hand them over. Handing items to your rider is at your own risk — ".Branding::name().' isn’t responsible for loss or damage after handover.');
+            }
+
+            return $package;
         });
     }
 
@@ -153,6 +161,14 @@ class SellerRiders
     public static function assign(OrderPackage $package, ?User $rider): void
     {
         $package->forceFill(['rider_id' => $rider?->id, 'rider_assigned_at' => $rider ? now() : null])->save();
+        // The buyer hears who is bringing it and how to call them.
+        if ($rider && $package->status === 'out_for_delivery' && $package->order) {
+            try {
+                $package->order->emailCustomer(new \App\Notifications\RiderOnTheWay($package->order, $rider, $package->shop?->name, $package->delivery_code));
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
         if ($rider) {
             $shop = $package->shop?->name ?? 'A store';
             try {
@@ -199,6 +215,7 @@ class SellerRiders
             'phone' => $address['phone'] ?? $order?->user?->phone,
             'address' => implode(', ', array_filter([$address['line1'] ?? null, $address['line2'] ?? null, $address['city'] ?? null, $address['postal_code'] ?? null])),
             'instructions' => $order?->delivery_instructions,
+            'available_times' => $address['available_times'] ?? null,
             'items' => $package->items->map(fn ($i) => ($i->orderItem?->product_name ?? 'Item').' × '.$i->quantity)->values(),
             'cash_cents' => self::cashCents($package),
             'currency' => Market::currency($order?->market),
